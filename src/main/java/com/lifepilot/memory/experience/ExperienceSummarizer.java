@@ -331,9 +331,6 @@ public class ExperienceSummarizer {
             MemoryWriteContext writeContext = resolveExperienceWriteContext(sourceId);
             SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, sourceId, writeContext));
 
-            // 更新向量索引
-            vectorSearcher.upsertEntityVector(entity.id(), experienceText);
-
             log.debug("经验提炼: 新经验已写入, entityId={}, name={}", entity.id(), name);
             return entity;
         } catch (Exception e) {

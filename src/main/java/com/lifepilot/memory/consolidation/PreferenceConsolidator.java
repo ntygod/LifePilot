@@ -2,6 +2,7 @@ package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -46,7 +47,9 @@ public class PreferenceConsolidator {
      */
     public PreferenceSyncStats consolidate() {
         // 1. 查询 L3 当前有效 PREFERENCE 实体
-        var currentEntities = semanticMemory.findCurrentByType(EntityType.PREFERENCE);
+        var currentEntities = semanticMemory.findCurrentByType(EntityType.PREFERENCE).stream()
+                .filter(MemoryQualityPolicy::canPromoteToProcedural)
+                .toList();
 
         // 2. 查询 L4 已有偏好规则
         var existingRules = proceduralMemory.getPreferences(PREFERENCE_CATEGORY);

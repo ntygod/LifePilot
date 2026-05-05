@@ -10,6 +10,7 @@ import com.lifepilot.memory.lifecycle.listeners.L4SyncListener;
 import com.lifepilot.memory.procedural.PreferenceRuleRepository;
 import com.lifepilot.memory.procedural.ProceduralMemoryRepository;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
@@ -120,6 +121,7 @@ class 前端UI编辑触发闭环_场景测试 {
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 
         ruleRepo = new PreferenceRuleRepository(jdbcTemplate);
         var procedureRepo = new ProceduralMemoryRepository(jdbcTemplate);

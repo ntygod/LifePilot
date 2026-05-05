@@ -144,6 +144,28 @@ class MemoryToolProvider_项目上下文测试 {
         assertThat(captured.isUnrestricted()).isTrue();
     }
 
+    @Test
+    void queryAtTime路径_隔离项目_按项目可读范围过滤() {
+        Instant queryTime = Instant.parse("2026-05-04T00:00:00Z");
+        when(chatSessionRepository.findById("s-time"))
+                .thenReturn(Optional.of(session("s-time", "proj-time")));
+        when(projectContextResolver.resolve("proj-time")).thenReturn(
+                new ProjectContext("proj-time", "space-proj-time", "space-personal", "space-experience", true));
+        when(semanticMemory.queryAtTime(eq(queryTime), any())).thenReturn(List.of());
+
+        var tool = registry.resolve("memory").orElseThrow();
+        tool.execute(new ToolInput(tool.id(),
+                Map.of("action", "query-at-time", "timestamp", queryTime.toString()),
+                tool.inputSchema(), null,
+                Map.of("sessionId", "s-time")));
+
+        ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
+        verify(semanticMemory).queryAtTime(eq(queryTime), captor.capture());
+        assertThat(captor.getValue().spaceIds())
+                .containsExactlyInAnyOrder("space-proj-time", "space-personal", "space-experience");
+        assertThat(captor.getValue().restrictsScopes()).isFalse();
+    }
+
     private MemoryReadFilter captureFilter() {
         ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
         verify(hybridRetriever).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), captor.capture());

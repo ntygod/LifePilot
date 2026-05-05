@@ -1692,6 +1692,14 @@ export interface EntitySummary {
   spaceId: string | null
   memoryScope: string | null
   realityType: string | null
+  lifecycleState: string
+  temporality: string
+  expiresAt: string | null
+  evidenceKind: string
+  trustLevel: string
+  trustScore: number
+  evidenceCount: number
+  lastVerifiedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -1712,6 +1720,18 @@ export interface EntityDetail {
   validFrom: string
   validTo: string | null
   sourceConversationId: string | null
+  lifecycleState: string
+  lifecycleReason: string | null
+  expiresAt: string | null
+  temporality: string
+  succeededBy: string | null
+  isDerived: boolean
+  derivationSources: string[]
+  evidenceKind: string
+  trustLevel: string
+  trustScore: number
+  evidenceCount: number
+  lastVerifiedAt: string | null
   extractionConfidence: number
   importanceScore: number
   accessCount: number
@@ -1732,6 +1752,10 @@ export interface EntityProvenance {
   sourceDocumentName: string | null
   sourceKnowledgeBaseId: string | null
   sourceKnowledgeBaseName: string | null
+  evidenceKind: string | null
+  trustLevel: string | null
+  trustScore: number
+  evidenceExcerpt: string | null
   confidence: number
   createdAt: string
 }
@@ -1754,6 +1778,10 @@ export interface MemoryProvenanceSummary {
   sourceDocumentName: string | null
   sourceKnowledgeBaseId: string | null
   sourceKnowledgeBaseName: string | null
+  evidenceKind: string | null
+  trustLevel: string | null
+  trustScore: number
+  evidenceExcerpt: string | null
   confidence: number
   createdAt: string
 }

@@ -2,6 +2,8 @@ package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryTrustLevel;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -56,7 +58,9 @@ class PreferenceConsolidator_单元测试 {
         return new TemporalEntity(
                 "entity-" + name, EntityType.PREFERENCE, name, description,
                 Map.of(), 1, true, now, null, null,
-                0.9f, 0.5f, 0, null, now, now);
+                0.9f, 0.5f, 0, null, now, now)
+                .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT,
+                        0.9f, 1, now);
     }
 
     /** 构建最小有效的 PREFERENCE 类型 TemporalEntity（无 description）。 */
@@ -65,7 +69,9 @@ class PreferenceConsolidator_单元测试 {
         return new TemporalEntity(
                 "entity-" + name, EntityType.PREFERENCE, name, null,
                 Map.of(), 1, true, now, null, null,
-                0.9f, 0.5f, 0, null, now, now);
+                0.9f, 0.5f, 0, null, now, now)
+                .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT,
+                        0.9f, 1, now);
     }
 
     /** 构建对应的 L4 PreferenceRule。 */

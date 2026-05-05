@@ -19,8 +19,11 @@ import com.lifepilot.memory.event.SpringMemoryEventBus;
 import com.lifepilot.memory.experience.ExperienceSummarizer;
 import com.lifepilot.memory.experience.TrajectoryQualityAssessor;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
-import com.lifepilot.memory.forgetting.EntityExpirationJob;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
+import com.lifepilot.memory.projection.MemoryProjectionOutboxProcessor;
+import com.lifepilot.memory.projection.MemoryProjectionOutboxRepository;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.FtsSearcher;
@@ -36,6 +39,7 @@ import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.ConflictResolutionRepository;
 import com.lifepilot.memory.semantic.ConflictResolutionService;
 import com.lifepilot.memory.semantic.ExtractionValidator;
+import com.lifepilot.memory.semantic.MemoryExtractionCandidateRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
@@ -276,6 +280,13 @@ public class MemoryAutoConfiguration {
         return new MemoryEventRecorder(jdbcTemplate);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryAccessPolicy memoryAccessPolicy() {
+        log.info("记忆模块: 注册 MemoryAccessPolicy");
+        return new MemoryAccessPolicy();
+    }
+
     // L3 语义记忆
 
     @Bean
@@ -315,6 +326,34 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public MemoryProjectionOutboxRepository memoryProjectionOutboxRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryProjectionOutboxRepository");
+        return new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionOutboxProcessor memoryProjectionOutboxProcessor(
+            MemoryProjectionOutboxRepository repository,
+            VectorSearcher vectorSearcher,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryProjectionOutboxProcessor");
+        return new MemoryProjectionOutboxProcessor(repository, vectorSearcher, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionService memoryProjectionService(
+            MemoryProjectionOutboxRepository repository,
+            MemoryProjectionOutboxProcessor processor) {
+        log.info("记忆模块: 注册 MemoryProjectionService");
+        return new MemoryProjectionService(repository, processor);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @ConditionalOnBean({ConflictDetector.class, VectorSearcher.class})
     public SemanticMemory semanticMemory(
             JdbcTemplate jdbcTemplate,
@@ -322,11 +361,13 @@ public class MemoryAutoConfiguration {
             VersionMerger versionMerger,
             VectorSearcher vectorSearcher,
             MemorySpaceRepository memorySpaceRepository,
-            org.springframework.context.ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            @Nullable MemoryProjectionService projectionService) {
         log.info("记忆模块: 注册 SemanticMemory");
         var semanticMemory = new SemanticMemory(
                 jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
         semanticMemory.setEventPublisher(eventPublisher);
+        semanticMemory.setProjectionService(projectionService);
         return semanticMemory;
     }
 
@@ -369,19 +410,30 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public MemoryExtractionCandidateRepository memoryExtractionCandidateRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryExtractionCandidateRepository");
+        return new MemoryExtractionCandidateRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public RealtimeExtractor realtimeExtractor(@Nullable GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry,
                                                @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
-                                               Clock clock) {
+                                               Clock clock,
+                                               MemoryAccessPolicy memoryAccessPolicy,
+                                               @Nullable MemoryExtractionCandidateRepository candidateRepository) {
         if (generationRouter == null) {
             log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
         }
         log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, clock);
+                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, candidateRepository);
     }
 
     // 检索
@@ -578,13 +630,6 @@ public class MemoryAutoConfiguration {
         log.info("记忆模块: 注册 FeedbackProcessor");
         return new FeedbackProcessor(injectionRecordRepository, semanticMemory,
                 feedbackRepository, properties);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public EntityExpirationJob entityExpirationJob(JdbcTemplate jdbcTemplate) {
-        log.info("记忆模块: 注册 EntityExpirationJob");
-        return new EntityExpirationJob(jdbcTemplate);
     }
 
     @Bean

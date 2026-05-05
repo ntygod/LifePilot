@@ -27,6 +27,10 @@ public record MemoryProvenanceSummaryDto(
         @Nullable String sourceDocumentName,
         @Nullable String sourceKnowledgeBaseId,
         @Nullable String sourceKnowledgeBaseName,
+        @Nullable String evidenceKind,
+        @Nullable String trustLevel,
+        float trustScore,
+        @Nullable String evidenceExcerpt,
         float confidence,
         Instant createdAt
 ) {}

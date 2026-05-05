@@ -7,6 +7,7 @@ import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.scope.MemoryRealityType;
@@ -28,6 +29,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -129,6 +131,7 @@ public class UserProfileConsolidator {
 
         var allFragments = Stream.of(preferences, habits, goals, skills)
                 .flatMap(List::stream)
+                .filter(MemoryQualityPolicy::isPromptConsumable)
                 .toList();
 
         if (allFragments.isEmpty()) {
@@ -140,12 +143,16 @@ public class UserProfileConsolidator {
         String recentConversations = buildRecentConversations();
 
         // 3. 从 L4 读取偏好规则
-        String recentFeedback = buildRecentFeedback();
+        Set<String> fragmentIds = allFragments.stream()
+                .map(TemporalEntity::id)
+                .collect(Collectors.toSet());
+        String recentFeedback = buildRecentFeedback(fragmentIds);
 
         // 4. 查找已有巩固画像
         var existingProfile = semanticMemory.findCurrentByNameAndType(
                 PROFILE_ENTITY_NAME, EntityType.CUSTOM, filter);
         String currentPortrait = existingProfile
+                .filter(MemoryQualityPolicy::isPromptConsumable)
                 .map(TemporalEntity::description)
                 .orElse("无");
 
@@ -235,13 +242,13 @@ public class UserProfileConsolidator {
                     existing.lastAccessedAt(),
                     existing.createdAt(),
                     now,
-                    // 画像为派生实体 — 继承旧生命周期字段，但强制 isDerived=true
-                    // 并刷新 derivationSources 为本轮聚合使用的 L3 源实体 id 集。
-                    existing.lifecycleState() == null ? LifecycleState.ACTIVE : existing.lifecycleState(),
-                    existing.lifecycleReason(),
-                    existing.expiresAt(),
-                    existing.temporality() == null ? Temporality.PERSISTENT : existing.temporality(),
-                    existing.succeededBy(),
+                    // 画像为派生实体 — 重算成功后必须回到 ACTIVE，避免
+                    // REGENERATION_NEEDED 继续污染消费侧。
+                    LifecycleState.ACTIVE,
+                    null,
+                    null,
+                    Temporality.PERSISTENT,
+                    null,
                     true,
                     derivationSources
             );
@@ -307,7 +314,7 @@ public class UserProfileConsolidator {
     /**
      * 从 L4 读取偏好规则，拼接为摘要文本。
      */
-    private String buildRecentFeedback() {
+    private String buildRecentFeedback(Set<String> consumableFragmentIds) {
         if (proceduralMemory == null) {
             return "无偏好反馈";
         }
@@ -316,6 +323,9 @@ public class UserProfileConsolidator {
             for (var category : PREFERENCE_CATEGORIES) {
                 allRules.addAll(proceduralMemory.getPreferences(category));
             }
+            allRules.removeIf(rule -> rule.sourceEntityId() == null
+                    || rule.sourceEntityId().isBlank()
+                    || !consumableFragmentIds.contains(rule.sourceEntityId()));
             if (allRules.isEmpty()) {
                 return "无偏好反馈";
             }

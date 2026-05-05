@@ -77,6 +77,34 @@ public class StreamingCallback implements IterationCallback {
     @Nullable private Instant tokenBatchOpenedAt;
     private int nextTokenIndex;
 
+    /**
+     * 每次调用 {@link #callLlm} 入口必须重置这些状态。
+     *
+     * <p>StreamingCallback 在整个 turn 复用单实例；若不清理，某次流式异常会残留在字段中，
+     * 导致后续重试或收尾总结被同一个旧异常污染，表现为“明明重试了但还是立即失败”。</p>
+     */
+    private void resetPerCallState() {
+        // 单次调用累积内容必须隔离
+        reasoningContentBuilder.setLength(0);
+        finalContent = null;
+        // 关键：流式异常不能跨调用残留，否则会误判“消费完成仍有异常”
+        streamingError = null;
+        // token 合批缓冲同样按调用隔离（避免跨调用把前一轮尾巴刷到下一轮）
+        clearPendingTokenBatch();
+        // token index 允许跨调用递增（前端按 index 仅用于顺序，不要求从 0 开始）
+    }
+
+    private void throwAndClearStreamingErrorIfPresent(String stage) {
+        if (this.streamingError == null) {
+            return;
+        }
+        Exception err = this.streamingError;
+        // 先清理再抛出，避免上层 catch 后继续复用 callback 时被旧错误污染
+        this.streamingError = null;
+        log.warn("{}完成但存在未传播的异常，重新抛出: error={}", stage, err.getMessage());
+        throw err instanceof RuntimeException re ? re : new RuntimeException(err);
+    }
+
     public StreamingCallback(AgentConfigProperties config,
                              GenerationRouter generationRouter,
                              @Nullable MultimodalRouter multimodalRouter,
@@ -109,10 +137,9 @@ public class StreamingCallback implements IterationCallback {
                                 @Nullable TraceContext traceContext) {
         String scene = config.getLoop().getLlmScene();
 
-        // StreamingCallback 在整个 turn 复用单实例（AgentOrchestrator 持有），ReAct 多轮共享
-        // 同一个 reasoningContentBuilder；每次 callLlm 入口必须重置避免跨轮累加导致
-        // ReactStep.ToolCall.reasoningContent 含前 N 轮残留 reasoning 文本。
-        reasoningContentBuilder.setLength(0);
+        // StreamingCallback 在整个 turn 复用单实例（AgentOrchestrator 持有），
+        // 每次 LLM 调用的错误、正文和 reasoning 都必须独立，避免前一轮异常污染重试或收尾总结。
+        resetPerCallState();
 
         // 动态路由：仅当 UserMessage 含真正的多模态媒体（image / audio / video）时走多模态路径。
         // 文档类附件（pdf / docx / md / txt / csv 等）通过 file.read(attachmentId=...) 按需解析，
@@ -220,10 +247,7 @@ public class StreamingCallback implements IterationCallback {
             log.debug("多模态流式消费因 SSE 连接断开停止: streamId={}", streamId);
         }
         flushPendingTokenBatch();
-        if (this.streamingError != null) {
-            log.warn("多模态流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
-            throw this.streamingError instanceof RuntimeException re ? re : new RuntimeException(this.streamingError);
-        }
+        throwAndClearStreamingErrorIfPresent("多模态流式消费");
 
         String collectedContent = contentBuilder.toString();
         this.finalContent = collectedContent;
@@ -391,11 +415,7 @@ public class StreamingCallback implements IterationCallback {
         }
         flushPendingTokenBatch();
 
-        if (this.streamingError != null) {
-            log.warn("流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
-            throw this.streamingError instanceof RuntimeException re
-                    ? re : new RuntimeException(this.streamingError);
-        }
+        throwAndClearStreamingErrorIfPresent("流式消费");
 
         Instant callEnd = Instant.now();
         String collectedContent = contentBuilder.toString();

@@ -1,10 +1,14 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.memory.scope.MemoryReadFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -21,6 +25,7 @@ public class GraphTraverser {
     private static final Logger log = LoggerFactory.getLogger(GraphTraverser.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private Boolean overlayTableAvailable;
 
     public GraphTraverser(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
@@ -34,12 +39,22 @@ public class GraphTraverser {
      * @return 排名条目列表
      */
     public List<RankedItem> traverse(String query, int topK) {
+        return traverse(query, topK, null);
+    }
+
+    /**
+     * 图遍历检索，并按读取过滤器约束起始实体选择。
+     *
+     * <p>过滤起始实体可以避免隔离项目中同名全局实体抢先成为 graph start，
+     * 导致项目内同名实体的关系无法召回。</p>
+     */
+    public List<RankedItem> traverse(String query, int topK, @Nullable MemoryReadFilter filter) {
         if (query == null || query.isBlank()) {
             return List.of();
         }
 
         // 从查询文本中识别起始实体（名称精确匹配）
-        var startEntities = findStartEntities(query);
+        var startEntities = findStartEntities(query, filter);
         if (startEntities.isEmpty()) {
             log.debug("图遍历: 未识别到起始实体, query={}", query);
             return List.of();
@@ -105,11 +120,78 @@ public class GraphTraverser {
 
     /** 从查询文本中识别起始实体（名称精确匹配 temporal_entities）。 */
     private List<String> findStartEntities(String query) {
-        return jdbcTemplate.query(
+        return findStartEntities(query, null);
+    }
+
+    private List<String> findStartEntities(String query, @Nullable MemoryReadFilter filter) {
+        StringBuilder sql = new StringBuilder(
                 "SELECT id FROM temporal_entities WHERE is_current = 1"
                         + " AND lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')"
-                        + " AND ? LIKE '%' || name || '%' ORDER BY LENGTH(name) DESC",
+                        + " AND ? LIKE '%' || name || '%'");
+        List<Object> params = new ArrayList<>();
+        params.add(query);
+        appendReadFilter(sql, params, filter);
+        sql.append(" ORDER BY LENGTH(name) DESC");
+        return jdbcTemplate.query(
+                sql.toString(),
                 (rs, rowNum) -> rs.getString("id"),
-                query);
+                params.toArray());
+    }
+
+    private void appendReadFilter(StringBuilder sql,
+                                  List<Object> params,
+                                  @Nullable MemoryReadFilter filter) {
+        if (filter == null || filter.isUnrestricted()) {
+            return;
+        }
+        if (filter.restrictsSpaces()) {
+            sql.append(" AND space_id IN (")
+                    .append(buildPlaceholders(filter.spaceIds().size()))
+                    .append(")");
+            params.addAll(filter.spaceIds());
+        }
+        if (filter.restrictsScopes()) {
+            sql.append(" AND memory_scope IN (")
+                    .append(buildPlaceholders(filter.scopes().size()))
+                    .append(")");
+            params.addAll(filter.scopes().stream().map(Enum::name).toList());
+        }
+        appendOverlaySuppression(sql, params, filter);
+    }
+
+    private void appendOverlaySuppression(StringBuilder sql,
+                                          List<Object> params,
+                                          MemoryReadFilter filter) {
+        if (!filter.restrictsSpaces() || !isOverlayTableAvailable()) {
+            return;
+        }
+        sql.append(" AND NOT EXISTS (")
+                .append("SELECT 1 FROM memory_entity_overlays mo ")
+                .append("JOIN memory_entities overlay_root ON overlay_root.id = mo.overlay_entity_id ")
+                .append("WHERE mo.base_entity_id = temporal_entities.id ")
+                .append("AND overlay_root.status = 'ACTIVE' ")
+                .append("AND overlay_root.space_id IN (")
+                .append(buildPlaceholders(filter.spaceIds().size()))
+                .append("))");
+        params.addAll(filter.spaceIds());
+    }
+
+    private boolean isOverlayTableAvailable() {
+        if (overlayTableAvailable != null) {
+            return overlayTableAvailable;
+        }
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory_entity_overlays'",
+                    Integer.class);
+            overlayTableAvailable = count != null && count > 0;
+        } catch (Exception e) {
+            overlayTableAvailable = false;
+        }
+        return overlayTableAvailable;
+    }
+
+    private String buildPlaceholders(int count) {
+        return String.join(",", Collections.nCopies(count, "?"));
     }
 }

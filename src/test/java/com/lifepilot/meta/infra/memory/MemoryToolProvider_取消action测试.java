@@ -5,6 +5,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
@@ -96,9 +97,9 @@ class MemoryToolProvider_取消action测试 {
         assertThat(result.<Integer>getData("count")).isEqualTo(2);
 
         // 核心断言：GOAL + EXPERIENCE 均被 archive，TOPIC 不被触及
-        verify(semanticMemory).archive(goal);
-        verify(semanticMemory).archive(experience);
-        verify(semanticMemory, never()).archive(unrelated);
+        verify(semanticMemory).archive(goal, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory).archive(experience, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory, never()).archive(unrelated, ChangeSource.TOOL_EXPLICIT);
     }
 
     @Test
@@ -118,7 +119,7 @@ class MemoryToolProvider_取消action测试 {
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(0);
         assertThat(result.<String>getData("message")).contains("未找到");
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(TemporalEntity.class), eq(ChangeSource.TOOL_EXPLICIT));
     }
 
     @Test
@@ -143,8 +144,8 @@ class MemoryToolProvider_取消action测试 {
 
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(1);
-        verify(semanticMemory).archive(strong);
-        verify(semanticMemory, never()).archive(weak);
+        verify(semanticMemory).archive(strong, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory, never()).archive(weak, ChangeSource.TOOL_EXPLICIT);
     }
 
     @Test
@@ -180,10 +181,10 @@ class MemoryToolProvider_取消action测试 {
 
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(2);
-        verify(semanticMemory).archive(g1);
-        verify(semanticMemory).archive(g2);
-        verify(semanticMemory, never()).archive(g3);
-        verify(semanticMemory, never()).archive(g4);
+        verify(semanticMemory).archive(g1, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory).archive(g2, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory, never()).archive(g3, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory, never()).archive(g4, ChangeSource.TOOL_EXPLICIT);
     }
 
     @Test
@@ -206,7 +207,7 @@ class MemoryToolProvider_取消action测试 {
 
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(1);
-        verify(semanticMemory).archive(topic);
+        verify(semanticMemory).archive(topic, ChangeSource.TOOL_EXPLICIT);
     }
 
     private TemporalEntity 构造实体(String id, EntityType type, String name) {
@@ -225,10 +226,13 @@ class MemoryToolProvider_取消action测试 {
                 entity.description(),
                 score,
                 new RetrievalResult.ScoreBreakdown(
-                        score, score, 0f, 0f, 0f, 0f, 0f, 0f),
+                        score, score, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
                 "vector",
                 entity.lastAccessedAt(),
                 entity.importanceScore(),
-                entity.validTo());
+                entity.validTo(),
+                false,
+                false,
+                false);
     }
 }

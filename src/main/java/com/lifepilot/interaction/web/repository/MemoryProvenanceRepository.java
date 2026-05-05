@@ -63,6 +63,7 @@ public class MemoryProvenanceRepository {
         String sql = """
                 SELECT origin_type, source_reference, source_conversation_id, source_session_id,
                        source_turn_id, source_entry_id, source_document_id, source_knowledge_base_id,
+                       evidence_kind, trust_level, trust_score, evidence_excerpt,
                        confidence, created_at
                 FROM memory_entity_provenances
                 WHERE %s
@@ -79,6 +80,10 @@ public class MemoryProvenanceRepository {
                 null,
                 rs.getString("source_knowledge_base_id"),
                 null,
+                rs.getString("evidence_kind"),
+                rs.getString("trust_level"),
+                rs.getFloat("trust_score"),
+                rs.getString("evidence_excerpt"),
                 rs.getFloat("confidence"),
                 Instant.parse(rs.getString("created_at"))
         ), params.toArray());
@@ -118,6 +123,10 @@ public class MemoryProvenanceRepository {
                        p.source_entry_id,
                        p.source_document_id,
                        p.source_knowledge_base_id,
+                       p.evidence_kind,
+                       p.trust_level,
+                       p.trust_score,
+                       p.evidence_excerpt,
                        p.confidence,
                        p.created_at
                 FROM memory_entity_provenances p
@@ -153,6 +162,10 @@ public class MemoryProvenanceRepository {
                     null,
                     rs.getString("source_knowledge_base_id"),
                     null,
+                    rs.getString("evidence_kind"),
+                    rs.getString("trust_level"),
+                    rs.getFloat("trust_score"),
+                    rs.getString("evidence_excerpt"),
                     rs.getFloat("confidence"),
                     Instant.parse(rs.getString("created_at"))
             );

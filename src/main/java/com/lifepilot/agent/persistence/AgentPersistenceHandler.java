@@ -411,10 +411,15 @@ public class AgentPersistenceHandler {
             var extractionFuture = CompletableFuture.runAsync(() -> {
                 try {
                     if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                        String userMessageForExtraction = normalizeUserMessageForExtraction(finalState.goal());
+                        if (userMessageForExtraction == null || userMessageForExtraction.isBlank()) {
+                            log.debug("实时记忆抽取跳过：无可治理用户文本, sessionId={}", finalState.sessionId());
+                            return;
+                        }
                         realtimeExtractor.extractAsync(
                                 finalState.sessionId(),
                                 finalState.turnId(),
-                                finalState.goal(),
+                                userMessageForExtraction,
                                 finalState.finalOutput());
                     }
                 } catch (Exception e) {
@@ -575,5 +580,17 @@ public class AgentPersistenceHandler {
             case SuspendReason.BrowserTakeover browserTakeover ->
                     "浏览器人工接管等待：" + browserTakeover.reason();
         };
+    }
+
+    @Nullable
+    private String normalizeUserMessageForExtraction(@Nullable String goal) {
+        String resumeInput = extractResumeUserInput(goal);
+        if (resumeInput != null && !resumeInput.isBlank()) {
+            return stripDocumentParseHint(resumeInput);
+        }
+        if (isA2uiSignalMessage(goal)) {
+            return null;
+        }
+        return stripDocumentParseHint(goal);
     }
 }

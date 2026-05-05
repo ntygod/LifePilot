@@ -125,6 +125,11 @@
 - properties: 可选键值对，仅在信息明确时填写
 - extractionConfidence: 0.0-1.0（<0.6 不提取）
 - importanceScore: 0.0-1.0
+- evidenceKind: 证据类型，必须从以下枚举选择：
+    * USER_EXPLICIT — 用户在"用户:"内容中直接陈述
+    * CHAT_INFERRED — 需要推断但用户没有直接说；除非证据很强，否则不要提取
+    * UNKNOWN — 证据不清楚；此类应返回 NOOP 或不输出
+- evidenceExcerpt: 最小必要证据片段，必须来自"用户:"内容，禁止引用 AI 回复。不要超过 80 个中文字符
 - temporality: 记忆持久度，三选一：
     * EPHEMERAL — 临时情绪或短期吐槽（"最近不想碰 X"、"这阵子在忙 Y"），TTL 约 7 天
     * SHORT_TERM — 短期计划或状态（"下周去出差"、"这个月在学 Rust"），TTL 约 30 天

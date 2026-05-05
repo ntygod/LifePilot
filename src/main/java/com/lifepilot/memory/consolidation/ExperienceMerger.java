@@ -242,7 +242,6 @@ public class ExperienceMerger {
         // 写入合并后的元经验并归档原始经验 — 经验合并属冲突裁决，事件 source=CONFLICT_RESOLVE
         SqliteBusyRetry.run(() -> {
             semanticMemory.upsertWithConflictDetection(mergedEntity, "experience-merge");
-            vectorSearcher.upsertEntityVector(mergedEntity.id(), mergedEntity.textRepresentation());
             semanticMemory.archive(entityA, ChangeSource.CONFLICT_RESOLVE);
             semanticMemory.archive(entityB, ChangeSource.CONFLICT_RESOLVE);
         });

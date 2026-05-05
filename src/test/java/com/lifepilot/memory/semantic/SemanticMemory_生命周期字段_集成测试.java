@@ -5,6 +5,7 @@ import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.SourceType;
 import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,6 +81,7 @@ class SemanticMemory_生命周期字段_集成测试 {
 
         var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         provenanceRepository = new MemoryProvenanceRepository(jdbcTemplate);
     }
 

@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,9 +13,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Instant;
 import java.util.Map;
 
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -36,6 +36,8 @@ class SemanticMemory_归档级联清向量测试 {
     private ConflictDetector conflictDetector;
     @Mock
     private VectorSearcher vectorSearcher;
+    @Mock
+    private MemoryProjectionService projectionService;
 
     private SemanticMemory semanticMemory;
 
@@ -46,28 +48,30 @@ class SemanticMemory_归档级联清向量测试 {
                 conflictDetector,
                 new VersionMerger(),
                 vectorSearcher);
+        semanticMemory.setProjectionService(projectionService);
     }
 
     @Test
-    void 归档实体应同时删除对应向量索引() {
+    void 归档实体应提交向量删除投影任务() {
         var entity = 构造实体("entity-diary", EntityType.GOAL, "写日记");
 
         semanticMemory.archive(entity);
 
-        // 核心断言：vectorSearcher.deleteEntityVector 被调用一次，参数是实体 ID
-        verify(vectorSearcher).deleteEntityVector(eq("entity-diary"));
+        verify(projectionService).enqueueVectorDeleteAfterCommit(eq("entity-diary"));
     }
 
     @Test
-    void 清向量失败不应影响归档事务_仅告警() {
+    void 未装配投影服务时应拒绝归档以避免绕过outbox() {
+        var memoryWithoutProjection = new SemanticMemory(
+                jdbcTemplate,
+                conflictDetector,
+                new VersionMerger(),
+                vectorSearcher);
         var entity = 构造实体("entity-x", EntityType.GOAL, "X");
-        doThrow(new RuntimeException("向量库不可用"))
-                .when(vectorSearcher).deleteEntityVector(anyString());
 
-        // 不应抛出异常 — 跨库操作失败时归档主事务仍应成功
-        semanticMemory.archive(entity);
-
-        verify(vectorSearcher).deleteEntityVector(eq("entity-x"));
+        assertThatThrownBy(() -> memoryWithoutProjection.archive(entity))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MemoryProjectionService 未装配");
     }
 
     private TemporalEntity 构造实体(String id, EntityType type, String name) {

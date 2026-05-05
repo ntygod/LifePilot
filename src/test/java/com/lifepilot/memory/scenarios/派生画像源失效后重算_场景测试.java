@@ -13,6 +13,7 @@ import com.lifepilot.memory.lifecycle.feedback.RegenerationQueueRepository;
 import com.lifepilot.memory.lifecycle.listeners.DerivedEntityListener;
 import com.lifepilot.memory.lifecycle.scanner.DerivationRegenerator;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
@@ -107,6 +108,7 @@ class 派生画像源失效后重算_场景测试 {
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 
         queueRepo = new RegenerationQueueRepository(jdbcTemplate);
         Clock clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);

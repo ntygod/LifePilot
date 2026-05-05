@@ -5,6 +5,7 @@ import com.lifepilot.knowledge.rerank.RerankCandidate;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.procedural.IntentMatcher;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -63,8 +64,6 @@ public class HybridRetriever {
     private final MemoryProvenanceRepository provenanceRepository;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
-    /** 空数据短路标记 — 三路检索全部返回空时设为 true，记忆写入后重置。volatile 保证可见性。 */
-    private volatile boolean knownEmpty = false;
 
     /**
      * 兼容构造器 — 旧 8 参签名，新生命周期闭环依赖（provenanceRepository）默认为 null。
@@ -143,14 +142,6 @@ public class HybridRetriever {
                                           int topK,
                                           RetrievalWeights weights,
                                           @Nullable MemoryReadFilter filter) {
-        // 重置 L4 匹配结果
-
-        // 空数据短路：已知三路检索全部为空时直接返回
-        if (knownEmpty) {
-            log.debug("混合检索: 已知数据为空，短路返回");
-            return List.of();
-        }
-
         long startTime = System.currentTimeMillis();
 
         // 1. 并行执行三路检索 + 可选 L4 意图匹配
@@ -167,7 +158,7 @@ public class HybridRetriever {
         var ftsFuture = CompletableFuture.supplyAsync(
                 () -> ftsSearcher.search(query, topK), virtualThreadExecutor);
         var graphFuture = CompletableFuture.supplyAsync(
-                () -> graphTraverser.traverse(query, topK), virtualThreadExecutor);
+                () -> graphTraverser.traverse(query, topK, filter), virtualThreadExecutor);
 
         // L4: 并行执行 IntentMatcher（不参与 RRF 融合，与三路检索一起等待）
         CompletableFuture<Void> intentFuture = null;
@@ -201,10 +192,7 @@ public class HybridRetriever {
         List<RankedItem> ftsResults = filterRankedItems(safeGet(ftsFuture, "全文搜索"), filter);
         List<RankedItem> graphResults = filterRankedItems(safeGet(graphFuture, "图遍历"), filter);
 
-        // 三路检索全部返回空时，设置 knownEmpty 短路标记
         if (vectorResults.isEmpty() && ftsResults.isEmpty() && graphResults.isEmpty()) {
-            knownEmpty = true;
-            log.debug("混合检索: 三路检索全部返回空，设置 knownEmpty=true");
             return List.of();
         }
 
@@ -212,12 +200,16 @@ public class HybridRetriever {
         //    lifecycleStateMap 用作：① 融合阶段给 FusionAccumulator 补 state；
         //                           ② 最终结果阶段打 isHistorical / isStale 标注。
         Map<String, LifecycleState> lifecycleStateMap = new HashMap<>();
+        Map<String, Float> trustScoreMap = new HashMap<>();
         List<RankedItem> vectorItems = convertVectorResults(vectorResults, filter, lifecycleStateMap);
+        // convertVectorResults 已查到完整实体信息，但 RankedItem 不承载 trustScore，
+        // 此处通过 lifecycleStateMap 补齐后的二次查询统一收集 trustScore。
 
         // 对 FTS / Graph 路径同样按 lifecycle 过滤：SQL 已拦截不可召回态，但防御性再走一次
         //  —— 若其 id 不在 lifecycleStateMap 里，需要补查（因向量路径可能未召回）。
         ftsResults = filterAndTrackLifecycle(ftsResults, filter, lifecycleStateMap);
         graphResults = filterAndTrackLifecycle(graphResults, filter, lifecycleStateMap);
+        collectTrustScores(vectorItems, ftsResults, graphResults, filter, trustScoreMap);
 
         // 3. 自适应权重调整
         float topVectorScore = vectorItems.isEmpty() ? 0.0f : vectorItems.getFirst().score();
@@ -246,7 +238,20 @@ public class HybridRetriever {
             // 重要度加成: ImportanceBoost = importanceBoost × importanceScore
             float impBoost = adaptedWeights.importanceBoost() * acc.importanceScore;
 
-            float fusedScore = rrfScore + recencyBoost + impBoost;
+            // 可信度加成：trustScoreBoostWeight × trust_score（质量门槛之外的排序维度）
+            float trustScore = trustScoreMap.getOrDefault(acc.entityId, 0.0f);
+            float trustBoost = memoryProperties.getRetrieval().getTrustScoreBoostWeight() * trustScore;
+
+            // 生命周期调整：REGENERATION_NEEDED 明确降权；COMPLETED 轻微降权（仍可召回）。
+            LifecycleState lifecycleState = lifecycleStateMap.get(acc.entityId);
+            float lifecycleAdjustment = 0.0f;
+            if (lifecycleState == LifecycleState.REGENERATION_NEEDED) {
+                lifecycleAdjustment -= memoryProperties.getRetrieval().getStaleLifecyclePenalty();
+            } else if (lifecycleState == LifecycleState.COMPLETED) {
+                lifecycleAdjustment -= memoryProperties.getRetrieval().getHistoricalLifecyclePenalty();
+            }
+
+            float fusedScore = rrfScore + recencyBoost + impBoost + trustBoost + lifecycleAdjustment;
 
             // 时间衰减: 基于 updatedAt 与当前时间的天数差，线性衰减
             float timeDecayFactor = 1.0f;
@@ -262,12 +267,14 @@ public class HybridRetriever {
                     acc.vectorScore, acc.vectorScore * adaptedWeights.vectorWeight(),
                     acc.ftsScore, acc.ftsScore * adaptedWeights.ftsWeight(),
                     acc.graphScore, acc.graphScore * adaptedWeights.graphWeight(),
-                    recencyBoost, impBoost);
+                    recencyBoost, impBoost,
+                    trustBoost, lifecycleAdjustment);
 
             results.add(new RetrievalResult(
                     acc.entityId, acc.entityType, acc.name, acc.description,
                     finalScore, breakdown, acc.sourcePath,
-                    acc.lastAccessedAt, acc.importanceScore, acc.validTo));
+                    acc.lastAccessedAt, acc.importanceScore, acc.validTo,
+                    false, false, false));
         }
 
         // 6. 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
@@ -300,7 +307,9 @@ public class HybridRetriever {
                                     original.name(), original.description(),
                                     (float) rc.score(), original.scoreBreakdown(),
                                     original.sourcePath(), original.lastAccessedAt(),
-                                    original.importanceScore(), original.validTo());
+                                    original.importanceScore(), original.validTo(),
+                                    original.isHistorical(), original.isStale(),
+                                    original.needsRevalidation());
                         })
                         .filter(Objects::nonNull)
                         .collect(Collectors.toCollection(ArrayList::new));
@@ -375,10 +384,9 @@ public class HybridRetriever {
      * @return L4 程序记忆匹配的 ReasoningSlot
      */
     /**
-     * 重置空数据标记，供记忆写入后调用。
+     * 兼容旧写入回调入口。检索 miss 不再设置全局空库缓存，因此这里保留为空实现。
      */
     public void resetEmptyFlag() {
-        this.knownEmpty = false;
     }
 
     // --- 内部方法 ---
@@ -506,6 +514,33 @@ public class HybridRetriever {
                     return s != null && s.isRetrievable();
                 })
                 .toList();
+    }
+
+    private void collectTrustScores(List<RankedItem> vectorItems,
+                                    List<RankedItem> ftsItems,
+                                    List<RankedItem> graphItems,
+                                    @Nullable MemoryReadFilter filter,
+                                    Map<String, Float> trustScoreMap) {
+        try {
+            Set<String> ids = new HashSet<>();
+            for (var i : vectorItems) ids.add(i.entityId());
+            for (var i : ftsItems) ids.add(i.entityId());
+            for (var i : graphItems) ids.add(i.entityId());
+            if (ids.isEmpty()) {
+                return;
+            }
+            Map<String, TemporalEntity> entities = filter != null
+                    ? semanticMemory.findByIds(ids, filter)
+                    : semanticMemory.findByIds(ids);
+            for (var e : entities.values()) {
+                if (e == null) continue;
+                // 防御：质量门槛在消费侧过滤，但排序阶段也避免被 UNVERIFIED 拖动
+                if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
+                trustScoreMap.put(e.id(), e.trustScore());
+            }
+        } catch (Exception e) {
+            log.debug("混合检索: trustScore 收集失败，降级为无加成: {}", e.getMessage());
+        }
     }
 
     /** 对单路排名列表应用加权 RRF，累加到 accumulators。 */

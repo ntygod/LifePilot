@@ -28,6 +28,8 @@ import java.util.Map;
  * @param importanceScore 信息重要性评分 [0.0, 1.0]，可能为 null
  * @param temporalityRaw LLM 输出的 temporality 字符串（EPHEMERAL/SHORT_TERM/PERSISTENT），可能为 null
  * @param expiresAtRaw LLM 输出的 ISO 8601 到期时间字符串，可能为 null
+ * @param evidenceKindRaw 证据类型字符串，可能为 null
+ * @param evidenceExcerpt 最小必要证据片段，可能为 null
  * @author zsg
  * @since 2026-03-05
  */
@@ -41,7 +43,9 @@ public record AudnDecision(
         @Nullable @JsonAlias({"confidence", "extraction_confidence"}) Float extractionConfidence,
         @Nullable @JsonAlias({"importance", "importance_score"}) Float importanceScore,
         @Nullable @JsonAlias({"temporality"}) String temporalityRaw,
-        @Nullable @JsonAlias({"expires_at", "expiresAt"}) String expiresAtRaw
+        @Nullable @JsonAlias({"expires_at", "expiresAt"}) String expiresAtRaw,
+        @Nullable @JsonAlias({"evidence_kind", "evidenceKind"}) String evidenceKindRaw,
+        @Nullable @JsonAlias({"evidence_excerpt", "evidenceExcerpt"}) String evidenceExcerpt
 ) {
 
     /**
@@ -58,6 +62,24 @@ public record AudnDecision(
             @Nullable Float importanceScore
     ) {
         this(operation, entityName, entityType, description, properties,
-                extractionConfidence, importanceScore, null, null);
+                extractionConfidence, importanceScore, null, null, null, null);
+    }
+
+    /**
+     * 生命周期字段构造器 — 质量字段全为 null，由治理层按来源推导。
+     */
+    public AudnDecision(
+            AudnOperation operation,
+            String entityName,
+            EntityType entityType,
+            @Nullable String description,
+            @Nullable Map<String, Object> properties,
+            @Nullable Float extractionConfidence,
+            @Nullable Float importanceScore,
+            @Nullable String temporalityRaw,
+            @Nullable String expiresAtRaw
+    ) {
+        this(operation, entityName, entityType, description, properties,
+                extractionConfidence, importanceScore, temporalityRaw, expiresAtRaw, null, null);
     }
 }

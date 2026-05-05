@@ -35,27 +35,6 @@ public record RetrievalResult(
         boolean needsRevalidation
 ) implements Comparable<RetrievalResult> {
 
-    /**
-     * 兼容构造器 — 旧调用方沿用 10 参签名，新标注字段默认全部为 {@code false}。
-     *
-     * <p>保留以避免破坏 MemoryController / MemoryToolProvider 等大量手工构造 RetrievalResult 的测试点。
-     * 新代码建议使用 canonical 构造器显式传入生命周期标注。</p>
-     */
-    public RetrievalResult(String entityId,
-                           String entityType,
-                           String name,
-                           @Nullable String description,
-                           float fusedScore,
-                           ScoreBreakdown scoreBreakdown,
-                           String sourcePath,
-                           @Nullable Instant lastAccessedAt,
-                           float importanceScore,
-                           @Nullable Instant validTo) {
-        this(entityId, entityType, name, description, fusedScore, scoreBreakdown,
-                sourcePath, lastAccessedAt, importanceScore, validTo,
-                false, false, false);
-    }
-
     @Override
     public int compareTo(RetrievalResult other) {
         return Float.compare(other.fusedScore, this.fusedScore);
@@ -80,6 +59,8 @@ public record RetrievalResult(
             float vectorScore, float vectorWeighted,
             float ftsScore, float ftsWeighted,
             float graphScore, float graphWeighted,
-            float recencyBoost, float importanceBoost
-    ) {}
+            float recencyBoost, float importanceBoost,
+            float trustBoost, float lifecycleAdjustment
+    ) {
+    }
 }

@@ -175,8 +175,8 @@ graph TB
 - `ContrastiveLearner` 不再创建独立的对比洞察实体，改为增强源经验（成功经验）的 lessons 列表，追加 `[对比]` 前缀的 lesson 条目并标记 `contrastiveEnriched=true`
 - `ContrastiveInsight` 记录包含 `failureReason`、`successFactor`、`contrastiveLessons` 三个字段（`avoidanceStrategy` 已删除）
 - `SubtaskReflector` 产出的经验带 `toolId`（主工具 ID）和 `granularity=TOOL_LEVEL` 标记
-- 工具级经验不在 `ContextAssembler` 的通用经验注入中出现，而是由 `ProviderMessageBuilder` 在构造 LLM 消息时借助 `ToolTipResolver.tipsFor(toolId)` 动态拼接到工具原始输出之前（呈现层装饰）
-- `ToolTipResolver`（`com.lifepilot.memory.experience.ToolTipResolver`）是独立 Bean，持有 `SemanticMemory` 引用，按 toolId 缓存 30 分钟，仅选取 `granularity=TOOL_LEVEL` 且 `toolId` 匹配的经验 top 2
+- 工具级经验不在 `ContextAssembler` 的通用经验注入中出现，而是由 `ProviderMessageBuilder` 在构造 LLM 消息时借助 `ToolTipResolver.tipsFor(toolId, sessionId)` 动态拼接到工具原始输出之前（呈现层装饰）
+- `ToolTipResolver`（`com.lifepilot.memory.experience.ToolTipResolver`）是独立 Bean，持有 `SemanticMemory` 引用，按会话解析项目读取范围，按 `toolId + project context` 缓存 30 分钟，仅选取可消费、`granularity=TOOL_LEVEL` 且 `toolId` 匹配的经验 top 2
 - 关注点分离：`Observation.output` 始终保持工具原始 JSON（事实源纯净），工具提示等装饰文本仅出现在发送给 LLM 的消息中；Skill 激活、Trace 回放、审计、经验提取等下游消费者解析 `Observation.output` 时都能拿到未被污染的纯 JSON
 - `ToolExecutionCoordinator` 不再感知工具级经验，内部不再持有 `semanticMemory` 字段或 `loadToolTips()` 缓存
 - `ContextAssembler` 会按重要度和适用条件自动注入非工具级经验

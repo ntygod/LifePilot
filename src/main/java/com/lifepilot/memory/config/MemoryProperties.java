@@ -633,6 +633,15 @@ public static class Retrieval {
         /** memory_context 最低相关度阈值 [0.0, 1.0]，默认 0.6。 */
         private float memoryContextScoreThreshold = 0.6f;
 
+        /** 检索排序中 trust_score 的加成权重，默认 0.08。 */
+        private float trustScoreBoostWeight = 0.08f;
+
+        /** REGENERATION_NEEDED 结果的生命周期扣分，默认 0.12。 */
+        private float staleLifecyclePenalty = 0.12f;
+
+        /** COMPLETED 历史结果的生命周期扣分，默认 0.02。 */
+        private float historicalLifecyclePenalty = 0.02f;
+
         public float getMinFusedScore() { return minFusedScore; }
         public void setMinFusedScore(float minFusedScore) { this.minFusedScore = minFusedScore; }
 
@@ -695,6 +704,15 @@ public static class Retrieval {
 
         public float getMemoryContextScoreThreshold() { return memoryContextScoreThreshold; }
         public void setMemoryContextScoreThreshold(float memoryContextScoreThreshold) { this.memoryContextScoreThreshold = memoryContextScoreThreshold; }
+
+        public float getTrustScoreBoostWeight() { return trustScoreBoostWeight; }
+        public void setTrustScoreBoostWeight(float trustScoreBoostWeight) { this.trustScoreBoostWeight = trustScoreBoostWeight; }
+
+        public float getStaleLifecyclePenalty() { return staleLifecyclePenalty; }
+        public void setStaleLifecyclePenalty(float staleLifecyclePenalty) { this.staleLifecyclePenalty = staleLifecyclePenalty; }
+
+        public float getHistoricalLifecyclePenalty() { return historicalLifecyclePenalty; }
+        public void setHistoricalLifecyclePenalty(float historicalLifecyclePenalty) { this.historicalLifecyclePenalty = historicalLifecyclePenalty; }
     }
 
     /**

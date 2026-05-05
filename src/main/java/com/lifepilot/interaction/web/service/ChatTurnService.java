@@ -11,6 +11,7 @@ import com.lifepilot.interaction.web.repository.ChatTurnRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemorySpace;
@@ -61,6 +62,7 @@ public class ChatTurnService {
     private final ChatSessionRepository chatSessionRepository;
     @Nullable
     private final ProjectContextResolver projectContextResolver;
+    private final MemoryAccessPolicy memoryAccessPolicy;
 
     @Autowired
     public ChatTurnService(ChatTurnRepository chatTurnRepository,
@@ -72,7 +74,8 @@ public class ChatTurnService {
                            @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
                            @Nullable MemorySpaceRepository memorySpaceRepository,
                            @Nullable ChatSessionRepository chatSessionRepository,
-                           @Nullable ProjectContextResolver projectContextResolver) {
+                           @Nullable ProjectContextResolver projectContextResolver,
+                           @Nullable MemoryAccessPolicy memoryAccessPolicy) {
         this.chatTurnRepository = chatTurnRepository;
         this.transcriptRepository = transcriptRepository;
         this.objectMapper = objectMapper;
@@ -83,6 +86,7 @@ public class ChatTurnService {
         this.memorySpaceRepository = memorySpaceRepository;
         this.chatSessionRepository = chatSessionRepository;
         this.projectContextResolver = projectContextResolver;
+        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
     }
 
     /** 便捷构造器（测试用）— 由 Spring 管理时使用主构造器。 */
@@ -91,7 +95,7 @@ public class ChatTurnService {
                            ObjectMapper objectMapper,
                            ApplicationEventPublisher eventPublisher) {
         this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
     }
 
     /** 旧版测试构造器 — 不提供 ProjectContext 依赖时使用，保持二进制兼容。 */
@@ -104,7 +108,7 @@ public class ChatTurnService {
                            @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
                            @Nullable MemorySpaceRepository memorySpaceRepository) {
         this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
-                null, null, chatTurnMemorySnapshotRepository, memorySpaceRepository, null, null);
+                null, null, chatTurnMemorySnapshotRepository, memorySpaceRepository, null, null, null);
     }
 
     public ResolvedTurnRequest prepare(String sessionId, ChatRequest request) {
@@ -315,10 +319,11 @@ public class ChatTurnService {
         boolean knowledgeBound = !knowledgeBaseIds.isEmpty();
         List<String> domainReadSpaceIds = resolveDomainReadSpaceIds(knowledgeBaseIds);
         String domainWriteSpaceId = resolveDomainWriteSpaceId(knowledgeBaseIds);
-        List<String> readSpaceIds = new ArrayList<>();
-        readSpaceIds.add(personalSpace.id());
-        readSpaceIds.add(experienceSpace.id());
-        readSpaceIds.addAll(domainReadSpaceIds);
+        List<String> readSpaceIds = memoryAccessPolicy.buildSnapshotReadSpaceIds(
+                projectSpaceId,
+                personalSpace.id(),
+                experienceSpace.id(),
+                domainReadSpaceIds);
         Map<String, Object> resolutionSource = new java.util.LinkedHashMap<>();
         resolutionSource.put("source", "session_config");
         resolutionSource.put("knowledgeBound", knowledgeBound);
@@ -339,7 +344,7 @@ public class ChatTurnService {
                 readSpaceIds,
                 knowledgeBaseIds,
                 !knowledgeBound,
-                false,
+                knowledgeBound && domainWriteSpaceId != null && !domainWriteSpaceId.isBlank(),
                 true,
                 resolutionSource,
                 now

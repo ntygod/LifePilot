@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -106,15 +107,13 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
     }
 
     @Test
-    void 快照缺失_回退spaceId为null() {
+    void 快照缺失_跳过自动学习() {
         String turnId = "turn-no-snapshot";
         when(snapshotRepository.findByTurnId(turnId)).thenReturn(Optional.empty());
 
         extractor.extract("session-no-snapshot", turnId, "我喜欢咖啡", "好的");
 
-        var captor = ArgumentCaptor.forClass(MemoryWriteContext.class);
-        verify(semanticMemory).upsertWithConflictDetection(any(), any(), captor.capture());
-        assertThat(captor.getValue().spaceId()).isNull();
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
     }
 
     private ChatTurnMemorySnapshot newSnapshot(String turnId, String projectSpaceId) {

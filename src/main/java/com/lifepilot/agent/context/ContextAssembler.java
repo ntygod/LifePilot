@@ -18,6 +18,7 @@ import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.semantic.EntityType;
@@ -105,6 +106,19 @@ public class ContextAssembler {
     public record MemoryCounts(String profileLine, String experienceLine, String factLine) {
         public static final MemoryCounts EMPTY = new MemoryCounts("", "", "");
     }
+
+    /** 已格式化上下文片段及其实际进入 prompt 的实体 ID。 */
+    record InjectedMemorySection(String text, List<String> entityIds) {
+        InjectedMemorySection {
+            text = text == null ? "" : text;
+            entityIds = entityIds != null ? List.copyOf(entityIds) : List.of();
+        }
+
+        static InjectedMemorySection empty() {
+            return new InjectedMemorySection("", List.of());
+        }
+    }
+
     private static final Duration METADATA_CACHE_TTL = Duration.ofMinutes(5);
 
     private final AgentConfigProperties config;
@@ -282,7 +296,7 @@ public class ContextAssembler {
             var contextFuture = CompletableFuture.supplyAsync(
                     () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
             var profileFuture = mediaPlaceholder
-                    ? CompletableFuture.completedFuture("")
+                    ? CompletableFuture.completedFuture(InjectedMemorySection.empty())
                     : CompletableFuture.supplyAsync(
                         () -> safeGetUserProfile(state.goal(), userProfileFilter), VIRTUAL_EXECUTOR);
             // 简单任务跳过：state.steps() 中无任何 ToolCall 时，说明还在第一轮探索阶段，
@@ -302,15 +316,30 @@ public class ContextAssembler {
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
             List<WorkspaceItem> workspaceItems = contextSnapshot.workspaceItems();
-            String userProfile = profileFuture.join();
+            InjectedMemorySection rawProfileSection = profileFuture.join();
             List<TemporalEntity> experiences = experiencesFuture.join();
             List<TemporalEntity> relevantMemories = memoryFuture.join();
-            List<String> injectedIds = recordExperienceInjection(state, experiences);
-            String profileSection = safeRedact(formatUserProfileSection(userProfile));
+            InjectedMemorySection rawExperienceSection = formatExperienceSection(experiences);
+            InjectedMemorySection rawMemorySection = formatMemorySection(relevantMemories);
+
+            String profileSection = safeRedact(formatUserProfileSection(rawProfileSection.text()));
             String workspaceSection = safeRedact(formatWorkspaceSection(workspaceItems));
             String artifactSection = safeRedact(contextSnapshot.artifactSection());
-            String experienceSection = safeRedact(formatExperienceSection(experiences));
-            String memorySection = safeRedact(formatMemorySection(relevantMemories));
+            String experienceSection = safeRedact(rawExperienceSection.text());
+            String memorySection = safeRedact(rawMemorySection.text());
+            List<String> profileInjectedIds = profileSection == null || profileSection.isBlank()
+                    ? List.of()
+                    : rawProfileSection.entityIds();
+            List<String> experienceInjectedIds = experienceSection == null || experienceSection.isBlank()
+                    ? List.of()
+                    : rawExperienceSection.entityIds();
+            List<String> memoryInjectedIds = memorySection == null || memorySection.isBlank()
+                    ? List.of()
+                    : rawMemorySection.entityIds();
+            List<String> injectedIds = mergeInjectedEntityIds(
+                    profileInjectedIds, experienceInjectedIds, memoryInjectedIds);
+            recordExperienceInjection(state, experienceInjectedIds);
+            updateInjectedAccessCounts(injectedIds);
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
             MemoryCounts memoryCounts = buildMemoryCounts(userMemoryFilter);
@@ -502,6 +531,7 @@ public class ContextAssembler {
                     .filter(Objects::nonNull)
                     .filter(e -> passesIsolation(e.getKey(), experience))
                     .filter(e -> notToolLevelGranularity(e.getKey()))
+                    .filter(e -> MemoryQualityPolicy.isPromptConsumable(e.getKey()))
                     .sorted(Map.Entry.<TemporalEntity, Float>comparingByValue().reversed())
                     .limit(maxInjection)
                     .map(Map.Entry::getKey)
@@ -543,17 +573,21 @@ public class ContextAssembler {
         return granularity == null || !SubtaskReflector.TOOL_LEVEL.equals(granularity.toString());
     }
 
-    String formatExperienceSection(List<TemporalEntity> experiences) {
+    InjectedMemorySection formatExperienceSection(List<TemporalEntity> experiences) {
         if (experiences == null || experiences.isEmpty() || memoryProperties == null) {
-            return "";
+            return InjectedMemorySection.empty();
         }
 
         int tokenBudget = memoryProperties.getExperience().getInjectionTokenBudget();
         StringBuilder sb = new StringBuilder("\n相关经验:\n");
         int usedTokens = 0;
+        List<String> injectedIds = new ArrayList<>();
 
         for (TemporalEntity experience : experiences) {
-            String entry = "- " + experience.name() + ": "
+            if (!MemoryQualityPolicy.isPromptConsumable(experience)) {
+                continue;
+            }
+            String entry = "- " + qualityTag(experience) + " " + experience.name() + ": "
                     + (experience.description() != null ? experience.description() : "") + "\n";
             int entryTokens = estimateTokens(entry);
             if (usedTokens + entryTokens > tokenBudget) {
@@ -561,9 +595,11 @@ public class ContextAssembler {
             }
             sb.append(entry);
             usedTokens += entryTokens;
+            injectedIds.add(experience.id());
         }
 
-        return sb.toString();
+        return usedTokens == 0 ? InjectedMemorySection.empty()
+                : new InjectedMemorySection(sb.toString(), injectedIds);
     }
 
     /**
@@ -607,6 +643,7 @@ public class ContextAssembler {
             return results.stream()
                     .map(r -> entityMap.get(r.entityId()))
                     .filter(Objects::nonNull)
+                    .filter(MemoryQualityPolicy::isPromptConsumable)
                     .toList();
         } catch (Exception e) {
             log.debug("相关记忆检索已跳过: error={}", e.getMessage());
@@ -617,15 +654,19 @@ public class ContextAssembler {
     /**
      * 格式化记忆实体为注入段 — 按 token 预算截断，避免超出上下文窗口。
      */
-    String formatMemorySection(List<TemporalEntity> memories) {
+    InjectedMemorySection formatMemorySection(List<TemporalEntity> memories) {
         if (memories == null || memories.isEmpty() || memoryProperties == null) {
-            return "";
+            return InjectedMemorySection.empty();
         }
         int tokenBudget = memoryProperties.getRetrieval().getMemoryContextTokenBudget();
         StringBuilder sb = new StringBuilder("\n与当前话题相关的记忆:\n");
         int usedTokens = 0;
+        List<String> injectedIds = new ArrayList<>();
         for (TemporalEntity entity : memories) {
-            String entry = "- [" + entity.type().label() + "] " + entity.name()
+            if (!MemoryQualityPolicy.isPromptConsumable(entity)) {
+                continue;
+            }
+            String entry = "- [" + entity.type().label() + "|" + qualityTag(entity) + "] " + entity.name()
                     + (entity.description() != null ? ": " + entity.description() : "") + "\n";
             int entryTokens = estimateTokens(entry);
             if (usedTokens + entryTokens > tokenBudget) {
@@ -633,8 +674,14 @@ public class ContextAssembler {
             }
             sb.append(entry);
             usedTokens += entryTokens;
+            injectedIds.add(entity.id());
         }
-        return sb.toString();
+        return usedTokens == 0 ? InjectedMemorySection.empty()
+                : new InjectedMemorySection(sb.toString(), injectedIds);
+    }
+
+    private String qualityTag(TemporalEntity entity) {
+        return entity.trustLevel().name() + "/" + entity.evidenceKind().name();
     }
 
     String buildReactSystemPrompt() {
@@ -990,23 +1037,28 @@ public class ContextAssembler {
     /** 巩固画像实体名 — 与 UserProfileConsolidator 约定。 */
     private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
 
-    private String safeGetUserProfile(@Nullable String refinedQuery) {
+    InjectedMemorySection safeGetUserProfile(@Nullable String refinedQuery) {
         return safeGetUserProfile(refinedQuery, MemoryReadFilter.userProfile());
     }
 
-    private String safeGetUserProfile(@Nullable String refinedQuery, MemoryReadFilter profileFilter) {
+    InjectedMemorySection safeGetUserProfile(@Nullable String refinedQuery, MemoryReadFilter profileFilter) {
         if (semanticMemory == null) {
-            return "";
+            return InjectedMemorySection.empty();
         }
         try {
             // 优先读巩固后的连贯画像（由 UserProfileConsolidator 定时生成）
             var consolidated = semanticMemory.findCurrentByNameAndType(
                     CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, profileFilter);
             if (consolidated.isPresent()) {
-                var desc = consolidated.get().description();
-                if (desc != null && !desc.isBlank()) {
+                TemporalEntity profile = consolidated.get();
+                var desc = profile.description();
+                if (desc != null && !desc.isBlank()
+                        && MemoryQualityPolicy.isPromptConsumable(profile)) {
                     // section 标签已由外层 <user_profile_context> 提供, 不再在内容前重复 "用户画像:"
-                    return desc;
+                    return new InjectedMemorySection(
+                            "L3 巩固用户画像:\n- [" + profile.type().label() + "|"
+                                    + qualityTag(profile) + "] " + desc,
+                            List.of(profile.id()));
                 }
             }
 
@@ -1015,10 +1067,9 @@ public class ContextAssembler {
             for (EntityType type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
                 candidates.addAll(semanticMemory.findCurrentByType(type, profileFilter));
             }
-            if (candidates.isEmpty()) {
-                return "";
-            }
-
+            candidates = candidates.stream()
+                    .filter(MemoryQualityPolicy::isPromptConsumable)
+                    .collect(Collectors.toCollection(ArrayList::new));
             int maxEntities = memoryProperties != null
                     ? memoryProperties.getRetrieval().getMaxUserProfileEntities()
                     : 10;
@@ -1057,6 +1108,8 @@ public class ContextAssembler {
                     highConfidencePreferences = proceduralMemory.getPreferences("user-preference").stream()
                             .filter(PreferenceRule::isHighConfidence)
                             .toList();
+                    highConfidencePreferences = keepPreferencesWithConsumableSources(
+                            highConfidencePreferences, profileFilter);
                 } catch (Exception e) {
                     log.warn("加载 L4 偏好规则失败: error={}", e.getMessage());
                 }
@@ -1073,21 +1126,25 @@ public class ContextAssembler {
             }
 
             if (selected.isEmpty() && highConfidencePreferences.isEmpty()) {
-                return "";
+                return InjectedMemorySection.empty();
             }
 
             StringBuilder sb = new StringBuilder();
+            List<String> injectedIds = new ArrayList<>();
             if (!selected.isEmpty()) {
                 sb.append("L3 用户画像:\n");
                 for (TemporalEntity entity : selected) {
                     sb.append("- [")
                             .append(entity.type().label())
+                            .append("|")
+                            .append(qualityTag(entity))
                             .append("] ")
                             .append(entity.name());
                     if (entity.description() != null && !entity.description().isBlank()) {
                         sb.append(": ").append(entity.description());
                     }
                     sb.append('\n');
+                    injectedIds.add(entity.id());
                 }
             }
 
@@ -1101,28 +1158,79 @@ public class ContextAssembler {
                             .append(" (confidence=")
                             .append(rule.confidence())
                             .append(")\n");
+                    if (rule.sourceEntityId() != null && !rule.sourceEntityId().isBlank()) {
+                        injectedIds.add(rule.sourceEntityId());
+                    }
                 }
             }
-            return sb.toString().trim();
+            return new InjectedMemorySection(sb.toString().trim(), injectedIds);
         } catch (Exception e) {
             log.warn("加载用户画像失败: error={}", e.getMessage());
-            return "";
+            return InjectedMemorySection.empty();
         }
     }
 
-    private List<String> recordExperienceInjection(ReactAgentState state, List<TemporalEntity> experiences) {
-        if (experiences == null || experiences.isEmpty()) {
+    private List<PreferenceRule> keepPreferencesWithConsumableSources(List<PreferenceRule> rules,
+                                                                      MemoryReadFilter profileFilter) {
+        if (rules == null || rules.isEmpty() || semanticMemory == null) {
             return List.of();
         }
-        List<String> ids = experiences.stream().map(TemporalEntity::id).toList();
+        Set<String> sourceIds = rules.stream()
+                .map(PreferenceRule::sourceEntityId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (sourceIds.isEmpty()) {
+            return List.of();
+        }
+        Map<String, TemporalEntity> sourceEntities = semanticMemory.findByIds(sourceIds, profileFilter);
+        return rules.stream()
+                .filter(rule -> {
+                    String sourceId = rule.sourceEntityId();
+                    TemporalEntity source = sourceId != null ? sourceEntities.get(sourceId) : null;
+                    return source != null && MemoryQualityPolicy.isPromptConsumable(source);
+                })
+                .toList();
+    }
+
+    private void recordExperienceInjection(ReactAgentState state, List<String> experienceIds) {
+        if (experienceIds == null || experienceIds.isEmpty()) {
+            return;
+        }
         if (effectivenessTracker != null) {
             try {
-                effectivenessTracker.recordInjection(state.traceId(), ids);
+                effectivenessTracker.recordInjection(state.traceId(), experienceIds);
             } catch (Exception e) {
                 log.warn("记录经验注入失败: error={}", e.getMessage());
             }
         }
-        return ids;
+    }
+
+    private List<String> mergeInjectedEntityIds(List<String>... idGroups) {
+        var merged = new LinkedHashSet<String>();
+        if (idGroups != null) {
+            for (List<String> ids : idGroups) {
+                if (ids == null) {
+                    continue;
+                }
+                ids.stream()
+                        .filter(id -> id != null && !id.isBlank())
+                        .forEach(merged::add);
+            }
+        }
+        return List.copyOf(merged);
+    }
+
+    private void updateInjectedAccessCounts(List<String> injectedIds) {
+        if (semanticMemory == null || injectedIds == null || injectedIds.isEmpty()) {
+            return;
+        }
+        for (String id : injectedIds) {
+            try {
+                semanticMemory.incrementAccessCount(id);
+            } catch (Exception e) {
+                log.debug("更新注入记忆访问计数失败: entityId={}, error={}", id, e.getMessage());
+            }
+        }
     }
 
     private TokenBudget buildTokenBudget(int totalTokens,
@@ -1544,8 +1652,8 @@ public class ContextAssembler {
         try {
             return dataRedactor.redact(text);
         } catch (Exception e) {
-            log.warn("数据脱敏失败，改为使用原文: error={}", e.getMessage());
-            return text;
+            log.warn("数据脱敏失败，跳过该上下文片段: error={}", e.getMessage());
+            return "";
         }
     }
 }

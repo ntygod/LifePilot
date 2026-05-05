@@ -1,6 +1,9 @@
 package com.lifepilot.memory.semantic;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.projection.MemoryProjectionOutboxProcessor;
+import com.lifepilot.memory.projection.MemoryProjectionOutboxRepository;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,7 +78,12 @@ class SemanticMemory_实体版本集成测试 {
                     temporality TEXT NOT NULL DEFAULT 'PERSISTENT',
                     succeeded_by TEXT,
                     is_derived INTEGER NOT NULL DEFAULT 0,
-                    derivation_sources TEXT
+                    derivation_sources TEXT,
+                    evidence_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+                    trust_level TEXT NOT NULL DEFAULT 'UNVERIFIED',
+                    trust_score REAL NOT NULL DEFAULT 0.0,
+                    evidence_count INTEGER NOT NULL DEFAULT 0,
+                    last_verified_at TEXT
                 )
                 """);
         jdbcTemplate.execute("""
@@ -110,7 +118,27 @@ class SemanticMemory_实体版本集成测试 {
                     evidence_excerpt TEXT,
                     evidence_hash TEXT,
                     confidence REAL NOT NULL DEFAULT 0.0,
+                    evidence_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+                    trust_score REAL NOT NULL DEFAULT 0.0,
+                    trust_level TEXT NOT NULL DEFAULT 'UNVERIFIED',
                     created_at TEXT NOT NULL
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_projection_outbox (
+                    id TEXT PRIMARY KEY,
+                    aggregate_type TEXT NOT NULL,
+                    aggregate_id TEXT NOT NULL,
+                    projection_type TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT,
+                    last_error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    processed_at TEXT
                 )
                 """);
         jdbcTemplate.execute("""
@@ -138,7 +166,12 @@ class SemanticMemory_实体版本集成测试 {
                     me.temporality AS temporality,
                     me.succeeded_by AS succeeded_by,
                     me.is_derived AS is_derived,
-                    me.derivation_sources AS derivation_sources
+                    me.derivation_sources AS derivation_sources,
+                    me.evidence_kind AS evidence_kind,
+                    me.trust_level AS trust_level,
+                    me.trust_score AS trust_score,
+                    me.evidence_count AS evidence_count,
+                    me.last_verified_at AS last_verified_at
                 FROM memory_entities me
                 JOIN memory_entity_versions mev ON mev.entity_id = me.id
                 LEFT JOIN memory_entity_provenances p ON p.version_id = mev.id
@@ -155,6 +188,9 @@ class SemanticMemory_实体版本集成测试 {
                 vectorSearcher,
                 memorySpaceRepository
         );
+        var outboxRepository = new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
+        var outboxProcessor = new MemoryProjectionOutboxProcessor(outboxRepository, vectorSearcher, objectMapper);
+        semanticMemory.setProjectionService(new MemoryProjectionService(outboxRepository, outboxProcessor));
     }
 
     @Test

@@ -7,6 +7,10 @@ import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.lifecycle.events.EntityWeightChanged;
+import com.lifepilot.memory.projection.MemoryProjectionService;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
@@ -59,7 +63,8 @@ public class SemanticMemory {
     private static final String ENTITY_SELECT_COLUMNS = "id, type, name, description, properties_json, "
             + "version, is_current, valid_from, valid_to, source_conversation_id, "
             + "extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at, "
-            + "lifecycle_state, lifecycle_reason, expires_at, temporality, succeeded_by, is_derived, derivation_sources";
+            + "lifecycle_state, lifecycle_reason, expires_at, temporality, succeeded_by, is_derived, derivation_sources, "
+            + "evidence_kind, trust_level, trust_score, evidence_count, last_verified_at";
 
     private final JdbcTemplate jdbcTemplate;
     private final ConflictDetector conflictDetector;
@@ -71,7 +76,7 @@ public class SemanticMemory {
     @Nullable
     private ApplicationEventPublisher eventPublisher;
 
-    /** 记忆写入回调 — 通知检索引擎数据已变更（重置 knownEmpty 短路标记）。 */
+    /** 记忆写入回调 — 通知检索引擎数据已变更。 */
     @Nullable
     private Runnable writeCallback;
 
@@ -81,6 +86,10 @@ public class SemanticMemory {
      */
     @Nullable
     private ConflictResolutionService conflictResolutionService;
+    @Nullable
+    private Boolean overlayTableAvailable;
+    @Nullable
+    private MemoryProjectionService projectionService;
 
     public SemanticMemory(JdbcTemplate jdbcTemplate,
                           ConflictDetector conflictDetector,
@@ -133,6 +142,11 @@ public class SemanticMemory {
         this.conflictResolutionService = conflictResolutionService;
     }
 
+    /** 注入投影服务。向量 upsert/delete 必须走 outbox。 */
+    public void setProjectionService(@Nullable MemoryProjectionService projectionService) {
+        this.projectionService = projectionService;
+    }
+
     /**
      * 版本感知 upsert：冲突检测 → 合并/新建 → 插入 → 更新向量索引。
      *
@@ -158,6 +172,7 @@ public class SemanticMemory {
                                                       @Nullable String sourceReference,
                                                       @Nullable MemoryWriteContext writeContext) {
         MemoryWriteContext resolvedContext = resolveWriteContext(incoming, sourceReference, writeContext);
+        incoming = MemoryQualityPolicy.applyDefaults(incoming, resolvedContext);
         var existing = conflictDetector.detectConflict(incoming, resolvedContext.spaceId());
 
         if (existing.isPresent()) {
@@ -183,10 +198,13 @@ public class SemanticMemory {
                     existing.get().createdAt(), now,
                     incoming.lifecycleState(), incoming.lifecycleReason(), incoming.expiresAt(),
                     incoming.temporality(), incoming.succeededBy(),
-                    incoming.isDerived(), incoming.derivationSources());
+                    incoming.isDerived(), incoming.derivationSources(),
+                    incoming.evidenceKind(), incoming.trustLevel(), incoming.trustScore(),
+                    Math.max(existing.get().evidenceCount(), incoming.evidenceCount()),
+                    incoming.lastVerifiedAt() != null ? incoming.lastVerifiedAt() : existing.get().lastVerifiedAt());
             insertEntityVersion(entity, resolvedContext, now);
             updateEntityRoot(entity, resolvedContext, now);
-            updateVector(entity);
+            updateVectorAfterCommit(entity);
             notifyWriteCallback();
             triggerConflictResolution(entity);
             log.debug("语义记忆: 版本化更新, name={}, version={}", entity.name(), entity.version());
@@ -203,10 +221,12 @@ public class SemanticMemory {
                     0, null, now, now,
                     incoming.lifecycleState(), incoming.lifecycleReason(), incoming.expiresAt(),
                     incoming.temporality(), incoming.succeededBy(),
-                    incoming.isDerived(), incoming.derivationSources());
+                    incoming.isDerived(), incoming.derivationSources(),
+                    incoming.evidenceKind(), incoming.trustLevel(), incoming.trustScore(),
+                    incoming.evidenceCount(), incoming.lastVerifiedAt());
             insertEntityRoot(entity, resolvedContext, now);
             insertEntityVersion(entity, resolvedContext, now);
-            updateVector(entity);
+            updateVectorAfterCommit(entity);
             notifyWriteCallback();
             // Task 12：新建实体发布 LifecycleChanged(null → newState)，source 由 provenance 推断
             publishAfterCommit(new EntityLifecycleChanged(
@@ -222,12 +242,53 @@ public class SemanticMemory {
         }
     }
 
+    /**
+     * 在项目 space 中创建/更新继承实体的 overlay。
+     *
+     * <p>该方法只写项目 space，不修改 base 实体；随后记录 overlay lineage，
+     * 供读取链路在同一项目视图中遮蔽 base 实体。</p>
+     *
+     * @param incoming        overlay 的实体内容
+     * @param baseEntity      被覆盖的继承实体
+     * @param sourceReference 来源引用
+     * @param writeContext    必须包含项目 spaceId
+     * @return 项目内持久化后的 overlay 实体
+     */
+    @Transactional
+    public TemporalEntity upsertProjectOverlay(TemporalEntity incoming,
+                                               TemporalEntity baseEntity,
+                                               @Nullable String sourceReference,
+                                               MemoryWriteContext writeContext) {
+        if (writeContext == null || writeContext.spaceId() == null || writeContext.spaceId().isBlank()) {
+            throw new IllegalArgumentException("创建项目 overlay 必须提供项目 spaceId");
+        }
+        TemporalEntity overlay = upsertWithConflictDetection(incoming, sourceReference, writeContext);
+        recordEntityOverlay(
+                overlay.id(),
+                baseEntity.id(),
+                writeContext.spaceId(),
+                findEntitySpaceId(baseEntity.id()).orElse(null),
+                "UPDATE");
+        return overlay;
+    }
+
     /** 时间旅行查询：返回指定时间点有效的所有实体。 */
     public List<TemporalEntity> queryAtTime(Instant point) {
+        return queryAtTime(point, null);
+    }
+
+    /** 时间旅行查询：返回指定时间点有效且符合读取过滤条件的实体。 */
+    public List<TemporalEntity> queryAtTime(Instant point, @Nullable MemoryReadFilter filter) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)");
+        List<Object> params = new ArrayList<>();
+        params.add(point.toString());
+        params.add(point.toString());
+        appendEntityReadFilter(sql, params, filter);
         return jdbcTemplate.query(
-                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities WHERE valid_from <= ? AND (valid_to IS NULL OR valid_to > ?)",
+                sql.toString(),
                 (rs, rowNum) -> mapRowToEntity(rs),
-                point.toString(), point.toString());
+                params.toArray());
     }
 
     /** 变更历史：返回指定 name+type 的所有版本，按 version 升序。 */
@@ -339,7 +400,7 @@ public class SemanticMemory {
     public Set<String> findEligibleEntityIds(MemoryReadFilter filter) {
         var sql = new StringBuilder("SELECT id FROM memory_entities WHERE status = 'ACTIVE'");
         var params = new ArrayList<>();
-        appendEntityReadFilter(sql, params, filter);
+        appendEntityReadFilter(sql, params, filter, "memory_entities");
         var ids = new LinkedHashSet<>(
                 jdbcTemplate.queryForList(sql.toString(), String.class, params.toArray()));
         // 结果集过大时返回 null，由调用方回退为后过滤
@@ -417,27 +478,13 @@ public class SemanticMemory {
     }
 
     /**
-     * 注册事务提交后删除向量的钩子；无活跃事务（如单测直接调 archive）时立即删除。
+     * 注册事务提交后删除向量的投影任务。
      */
     private void registerAfterCommitVectorCleanup(String entityId) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    safeDeleteEntityVector(entityId);
-                }
-            });
-        } else {
-            safeDeleteEntityVector(entityId);
+        if (projectionService == null) {
+            throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 直写向量");
         }
-    }
-
-    private void safeDeleteEntityVector(String entityId) {
-        try {
-            vectorSearcher.deleteEntityVector(entityId);
-        } catch (Exception e) {
-            log.warn("语义记忆: 归档后清理向量失败, id={}, error={}", entityId, e.getMessage());
-        }
+        projectionService.enqueueVectorDeleteAfterCommit(entityId);
     }
 
     /**
@@ -742,7 +789,9 @@ public class SemanticMemory {
                 existing.createdAt(), now,
                 existing.lifecycleState(), existing.lifecycleReason(), existing.expiresAt(),
                 existing.temporality(), existing.succeededBy(),
-                existing.isDerived(), existing.derivationSources());
+                existing.isDerived(), existing.derivationSources(),
+                existing.evidenceKind(), existing.trustLevel(), existing.trustScore(),
+                existing.evidenceCount(), existing.lastVerifiedAt());
 
         var writeContext = defaultWriteContext(updated, "user-edit-description");
         insertEntityVersion(updated, writeContext, now);
@@ -750,7 +799,7 @@ public class SemanticMemory {
         jdbcTemplate.update(
                 "UPDATE memory_entities SET updated_at = ?, last_seen_at = ? WHERE id = ?",
                 now.toString(), now.toString(), entityId);
-        updateVector(updated);
+        updateVectorAfterCommit(updated);
         notifyWriteCallback();
         log.debug("语义记忆: updateDescription 版本化, entityId={}, newVersion={}",
                 entityId, updated.version());
@@ -1030,7 +1079,7 @@ public class SemanticMemory {
 
     // --- 内部方法 ---
 
-    /** 通知检索引擎数据已变更，重置 knownEmpty 短路标记。 */
+    /** 通知检索引擎数据已变更。 */
     private void notifyWriteCallback() {
         if (writeCallback != null) {
             try {
@@ -1056,8 +1105,9 @@ public class SemanticMemory {
                     reality_type, status, access_count, last_accessed_at,
                     first_seen_at, last_seen_at, created_at, updated_at,
                     lifecycle_state, lifecycle_reason, expires_at, temporality,
-                    succeeded_by, is_derived, derivation_sources
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    succeeded_by, is_derived, derivation_sources,
+                    evidence_kind, trust_level, trust_score, evidence_count, last_verified_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     canonical_name = excluded.canonical_name,
                     normalized_name = excluded.normalized_name,
@@ -1072,7 +1122,12 @@ public class SemanticMemory {
                     temporality = excluded.temporality,
                     succeeded_by = excluded.succeeded_by,
                     is_derived = excluded.is_derived,
-                    derivation_sources = excluded.derivation_sources
+                    derivation_sources = excluded.derivation_sources,
+                    evidence_kind = excluded.evidence_kind,
+                    trust_level = excluded.trust_level,
+                    trust_score = excluded.trust_score,
+                    evidence_count = excluded.evidence_count,
+                    last_verified_at = excluded.last_verified_at
                 """,
                 entity.id(),
                 spaceId,
@@ -1094,7 +1149,12 @@ public class SemanticMemory {
                 entity.temporality().name(),
                 entity.succeededBy(),
                 entity.isDerived() ? 1 : 0,
-                serializeDerivationSources(entity.derivationSources()));
+                serializeDerivationSources(entity.derivationSources()),
+                entity.evidenceKind().name(),
+                entity.trustLevel().name(),
+                entity.trustScore(),
+                entity.evidenceCount(),
+                entity.lastVerifiedAt() != null ? entity.lastVerifiedAt().toString() : null);
     }
 
     /** 插入实体版本与 provenance。 */
@@ -1144,7 +1204,12 @@ public class SemanticMemory {
                     temporality = ?,
                     succeeded_by = ?,
                     is_derived = ?,
-                    derivation_sources = ?
+                    derivation_sources = ?,
+                    evidence_kind = ?,
+                    trust_level = ?,
+                    trust_score = ?,
+                    evidence_count = ?,
+                    last_verified_at = ?
                 WHERE id = ?
                 """,
                 (writeContext.memoryScope() != null ? writeContext.memoryScope() : resolveDefaultScope(entity.type())).name(),
@@ -1162,6 +1227,11 @@ public class SemanticMemory {
                 entity.succeededBy(),
                 entity.isDerived() ? 1 : 0,
                 serializeDerivationSources(entity.derivationSources()),
+                entity.evidenceKind().name(),
+                entity.trustLevel().name(),
+                entity.trustScore(),
+                entity.evidenceCount(),
+                entity.lastVerifiedAt() != null ? entity.lastVerifiedAt().toString() : null,
                 entity.id());
     }
 
@@ -1175,8 +1245,8 @@ public class SemanticMemory {
                     id, entity_id, version_id, origin_type, source_reference, source_conversation_id,
                     source_session_id, source_turn_id, source_entry_id, source_document_id,
                     source_knowledge_base_id,
-                    confidence, created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    confidence, evidence_kind, trust_score, trust_level, created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 UUID.randomUUID().toString(),
                 entity.id(),
@@ -1190,6 +1260,9 @@ public class SemanticMemory {
                 writeContext.sourceDocumentId(),
                 writeContext.sourceKnowledgeBaseId(),
                 entity.extractionConfidence(),
+                entity.evidenceKind().name(),
+                entity.trustScore(),
+                entity.trustLevel().name(),
                 now.toString());
     }
 
@@ -1233,6 +1306,46 @@ public class SemanticMemory {
                 entityId);
     }
 
+    private void recordEntityOverlay(String overlayEntityId,
+                                     String baseEntityId,
+                                     String overlaySpaceId,
+                                     @Nullable String originSpaceId,
+                                     String overlayKind) {
+        if (!isOverlayTableAvailable()) {
+            log.debug("语义记忆: overlay 表不存在，跳过 lineage 记录, overlayEntityId={}", overlayEntityId);
+            return;
+        }
+        var now = Instant.now().toString();
+        jdbcTemplate.update(
+                """
+                INSERT INTO memory_entity_overlays(
+                    overlay_entity_id, base_entity_id, overlay_space_id,
+                    origin_space_id, overlay_kind, created_at, updated_at
+                ) VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(overlay_entity_id) DO UPDATE SET
+                    base_entity_id = excluded.base_entity_id,
+                    overlay_space_id = excluded.overlay_space_id,
+                    origin_space_id = excluded.origin_space_id,
+                    overlay_kind = excluded.overlay_kind,
+                    updated_at = excluded.updated_at
+                """,
+                overlayEntityId,
+                baseEntityId,
+                overlaySpaceId,
+                originSpaceId,
+                overlayKind,
+                now,
+                now);
+    }
+
+    private Optional<String> findEntitySpaceId(String entityId) {
+        var rows = jdbcTemplate.queryForList(
+                "SELECT space_id FROM memory_entities WHERE id = ?",
+                String.class,
+                entityId);
+        return rows.isEmpty() ? Optional.empty() : Optional.ofNullable(rows.getFirst());
+    }
+
     private String resolveRelationSpaceId(String sourceEntityId, String targetEntityId) {
         List<String> spaceIds = jdbcTemplate.queryForList(
                 "SELECT DISTINCT space_id FROM memory_entities WHERE id IN (?, ?)",
@@ -1255,9 +1368,15 @@ public class SemanticMemory {
         if (writeContext == null) {
             return defaultWriteContext(entity, sourceReference);
         }
+        MemoryScope resolvedScope = writeContext.memoryScope() != null
+                ? writeContext.memoryScope()
+                : resolveDefaultScope(entity.type());
+        String resolvedSpaceId = writeContext.spaceId() != null
+                ? writeContext.spaceId()
+                : resolveDefaultSpaceId(resolvedScope, entity.type());
         return new MemoryWriteContext(
-                writeContext.spaceId(),
-                writeContext.memoryScope(),
+                resolvedSpaceId,
+                resolvedScope,
                 writeContext.originType(),
                 writeContext.realityType(),
                 writeContext.sourceReference() != null ? writeContext.sourceReference() : sourceReference,
@@ -1314,6 +1433,16 @@ public class SemanticMemory {
         };
     }
 
+    private String resolveDefaultSpaceId(MemoryScope scope, EntityType type) {
+        if (scope == MemoryScope.AGENT_EXPERIENCE) {
+            if (memorySpaceRepository != null) {
+                return memorySpaceRepository.ensureDefaultExperienceSpace().id();
+            }
+            return DEFAULT_EXPERIENCE_SPACE_ID;
+        }
+        return resolveDefaultSpaceId(type);
+    }
+
     private String resolveDefaultSpaceId(EntityType type) {
         if (type == EntityType.EXPERIENCE) {
             if (memorySpaceRepository != null) {
@@ -1331,7 +1460,12 @@ public class SemanticMemory {
         if (sourceReference == null || sourceReference.isBlank()) {
             return MemoryOriginType.UNKNOWN;
         }
-        return MemoryOriginType.UNKNOWN;
+        return switch (sourceReference) {
+            case "user-edit-description", "manual-edit" -> MemoryOriginType.MANUAL;
+            case "subtask-reflection", "contrastive-learning", "experience-merge",
+                    "user-profile-consolidation", "proactive-engine" -> MemoryOriginType.CONSOLIDATION;
+            default -> MemoryOriginType.CHAT;
+        };
     }
 
     private String normalizeName(String name) {
@@ -1341,6 +1475,13 @@ public class SemanticMemory {
     private void appendEntityReadFilter(StringBuilder sql,
                                         List<Object> params,
                                         @Nullable MemoryReadFilter filter) {
+        appendEntityReadFilter(sql, params, filter, "temporal_entities");
+    }
+
+    private void appendEntityReadFilter(StringBuilder sql,
+                                        List<Object> params,
+                                        @Nullable MemoryReadFilter filter,
+                                        String outerTableName) {
         if (filter == null || filter.isUnrestricted()) {
             return;
         }
@@ -1356,19 +1497,54 @@ public class SemanticMemory {
                     .append(")");
             params.addAll(filter.scopes().stream().map(Enum::name).toList());
         }
+        appendOverlaySuppression(sql, params, filter, outerTableName);
+    }
+
+    private void appendOverlaySuppression(StringBuilder sql,
+                                          List<Object> params,
+                                          MemoryReadFilter filter,
+                                          String outerTableName) {
+        if (!filter.restrictsSpaces() || !isOverlayTableAvailable()) {
+            return;
+        }
+        sql.append(" AND NOT EXISTS (")
+                .append("SELECT 1 FROM memory_entity_overlays mo ")
+                .append("JOIN memory_entities overlay_root ON overlay_root.id = mo.overlay_entity_id ")
+                .append("WHERE mo.base_entity_id = ")
+                .append(outerTableName)
+                .append(".id ")
+                .append("AND overlay_root.status = 'ACTIVE' ")
+                .append("AND overlay_root.space_id IN (")
+                .append(buildPlaceholders(filter.spaceIds().size()))
+                .append("))");
+        params.addAll(filter.spaceIds());
+    }
+
+    private boolean isOverlayTableAvailable() {
+        if (overlayTableAvailable != null) {
+            return overlayTableAvailable;
+        }
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory_entity_overlays'",
+                    Integer.class);
+            overlayTableAvailable = count != null && count > 0;
+        } catch (Exception e) {
+            overlayTableAvailable = false;
+        }
+        return overlayTableAvailable;
     }
 
     private String buildPlaceholders(int count) {
         return String.join(",", Collections.nCopies(count, "?"));
     }
 
-    /** 更新向量索引（事务外，失败不影响实体持久化）。 */
-    private void updateVector(TemporalEntity entity) {
-        try {
-            vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
-        } catch (Exception e) {
-            log.warn("语义记忆: 向量索引更新失败, entityId={}, error={}", entity.id(), e.getMessage());
+    /** 主库提交后更新向量索引，避免事务回滚后留下孤儿 embedding。 */
+    private void updateVectorAfterCommit(TemporalEntity entity) {
+        if (projectionService == null) {
+            throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 直写向量");
         }
+        projectionService.enqueueVectorUpsertAfterCommit(entity);
     }
 
     /** ResultSet 行映射为 TemporalEntity — 含 V15 生命周期字段。 */
@@ -1389,6 +1565,7 @@ public class SemanticMemory {
         String expiresStr = rs.getString("expires_at");
         String lifecycleStateStr = rs.getString("lifecycle_state");
         String temporalityStr = rs.getString("temporality");
+        String lastVerifiedStr = rs.getString("last_verified_at");
 
         LifecycleState lifecycleState = parseLifecycleState(lifecycleStateStr);
         Temporality temporality = parseTemporality(temporalityStr);
@@ -1416,7 +1593,12 @@ public class SemanticMemory {
                 temporality,
                 rs.getString("succeeded_by"),
                 rs.getInt("is_derived") == 1,
-                deserializeDerivationSources(rs.getString("derivation_sources"))
+                deserializeDerivationSources(rs.getString("derivation_sources")),
+                parseEvidenceKind(rs.getString("evidence_kind")),
+                parseTrustLevel(rs.getString("trust_level")),
+                rs.getFloat("trust_score"),
+                rs.getInt("evidence_count"),
+                lastVerifiedStr != null ? Instant.parse(lastVerifiedStr) : null
         );
     }
 
@@ -1443,6 +1625,32 @@ public class SemanticMemory {
         } catch (IllegalArgumentException ignored) {
             log.warn("语义记忆: 未知 temporality={}，回退 PERSISTENT", raw);
             return Temporality.PERSISTENT;
+        }
+    }
+
+    /** 将 evidence_kind 字符串解析为枚举，异常或空值回退 UNKNOWN。 */
+    private static MemoryEvidenceKind parseEvidenceKind(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return MemoryEvidenceKind.UNKNOWN;
+        }
+        try {
+            return MemoryEvidenceKind.valueOf(raw);
+        } catch (IllegalArgumentException ignored) {
+            log.warn("语义记忆: 未知 evidence_kind={}，回退 UNKNOWN", raw);
+            return MemoryEvidenceKind.UNKNOWN;
+        }
+    }
+
+    /** 将 trust_level 字符串解析为枚举，异常或空值回退 UNVERIFIED。 */
+    private static MemoryTrustLevel parseTrustLevel(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return MemoryTrustLevel.UNVERIFIED;
+        }
+        try {
+            return MemoryTrustLevel.valueOf(raw);
+        } catch (IllegalArgumentException ignored) {
+            log.warn("语义记忆: 未知 trust_level={}，回退 UNVERIFIED", raw);
+            return MemoryTrustLevel.UNVERIFIED;
         }
     }
 

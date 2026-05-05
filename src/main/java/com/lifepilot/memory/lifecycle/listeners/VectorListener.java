@@ -2,11 +2,14 @@ package com.lifepilot.memory.lifecycle.listeners;
 
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -40,9 +43,18 @@ public class VectorListener {
             LifecycleState.COMPLETED);
 
     private final VectorSearcher vectorSearcher;
+    @Nullable
+    private final MemoryProjectionService projectionService;
 
     public VectorListener(VectorSearcher vectorSearcher) {
+        this(vectorSearcher, null);
+    }
+
+    @Autowired
+    public VectorListener(VectorSearcher vectorSearcher,
+                          @Nullable MemoryProjectionService projectionService) {
         this.vectorSearcher = vectorSearcher;
+        this.projectionService = projectionService;
     }
 
     /**
@@ -53,6 +65,10 @@ public class VectorListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onLifecycleChanged(EntityLifecycleChanged event) {
         if (KEEP_VECTOR.contains(event.newState())) {
+            return;
+        }
+        if (projectionService != null) {
+            projectionService.enqueueVectorDeleteAfterCommit(event.entityId());
             return;
         }
         try {

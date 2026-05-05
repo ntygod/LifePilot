@@ -21,6 +21,14 @@ public record EntitySummaryDto(
         @Nullable String spaceId,
         @Nullable String memoryScope,
         @Nullable String realityType,
+        String lifecycleState,
+        String temporality,
+        @Nullable Instant expiresAt,
+        String evidenceKind,
+        String trustLevel,
+        float trustScore,
+        int evidenceCount,
+        @Nullable Instant lastVerifiedAt,
         Instant createdAt,
         Instant updatedAt
 ) {}

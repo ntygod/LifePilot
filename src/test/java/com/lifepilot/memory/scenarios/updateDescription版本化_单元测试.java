@@ -5,6 +5,7 @@ import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.lifecycle.query.MemoryQueryApi;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -81,6 +82,7 @@ class updateDescription版本化_单元测试 {
 
         var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
     }
 

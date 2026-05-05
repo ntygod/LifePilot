@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -115,7 +116,7 @@ class ToolExecutionCoordinatorTest {
         assertThat(observation.success()).isFalse();
         assertThat(observation.output()).contains("exitCode=9009");
 
-        verify(transcriptStore).appendToolResult(
+        verify(transcriptStore, timeout(1000)).appendToolResult(
                 eq("session-1"),
                 nullable(String.class),
                 eq(result.traceId()),

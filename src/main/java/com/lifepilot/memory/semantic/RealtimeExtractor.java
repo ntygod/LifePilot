@@ -5,13 +5,17 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
+import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.Temporality;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.quality.MemoryTrustLevel;
+import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
-import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryRealityType;
 import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.modelservice.model.GenerationCapability;
@@ -27,6 +31,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
@@ -50,7 +55,6 @@ public class RealtimeExtractor {
     private static final Logger log = LoggerFactory.getLogger(RealtimeExtractor.class);
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
     private static final java.util.concurrent.ExecutorService VIRTUAL_EXECUTOR = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
-
     /** EPHEMERAL 类记忆的默认 TTL — 7 天后 expires_at 触发 Cron 回收。 */
     private static final Duration EPHEMERAL_TTL = Duration.ofDays(7);
     /** SHORT_TERM 类记忆的默认 TTL — 30 天后 expires_at 触发 Cron 回收。 */
@@ -68,6 +72,9 @@ public class RealtimeExtractor {
     private final ChatTurnMemorySnapshotRepository snapshotRepository;
     /** Task 23：时钟注入 — 用于非持久性实体自动推导 {@code expires_at}，便于单测注入固定时钟。 */
     private final Clock clock;
+    private final MemoryAccessPolicy memoryAccessPolicy;
+    @Nullable
+    private final MemoryExtractionCandidateRepository candidateRepository;
 
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
@@ -92,6 +99,33 @@ public class RealtimeExtractor {
                              PromptRegistry promptRegistry,
                              @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
                              Clock clock) {
+        this(generationRouter, semanticMemory, properties, extractionValidator,
+                jdbcTemplate, promptRegistry, snapshotRepository, clock, null);
+    }
+
+    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
+                             SemanticMemory semanticMemory,
+                             MemoryProperties properties,
+                             ExtractionValidator extractionValidator,
+                             JdbcTemplate jdbcTemplate,
+                             PromptRegistry promptRegistry,
+                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                             Clock clock,
+                             @Nullable MemoryAccessPolicy memoryAccessPolicy) {
+        this(generationRouter, semanticMemory, properties, extractionValidator,
+                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, null);
+    }
+
+    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
+                             SemanticMemory semanticMemory,
+                             MemoryProperties properties,
+                             ExtractionValidator extractionValidator,
+                             JdbcTemplate jdbcTemplate,
+                             PromptRegistry promptRegistry,
+                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                             Clock clock,
+                             @Nullable MemoryAccessPolicy memoryAccessPolicy,
+                             @Nullable MemoryExtractionCandidateRepository candidateRepository) {
         this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.extractionValidator = extractionValidator;
@@ -101,6 +135,8 @@ public class RealtimeExtractor {
         this.promptRegistry = promptRegistry;
         this.snapshotRepository = snapshotRepository;
         this.clock = clock;
+        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
+        this.candidateRepository = candidateRepository;
     }
 
     /**
@@ -142,7 +178,8 @@ public class RealtimeExtractor {
             log.debug("实时实体提取: GenerationRouter 不可用，跳过");
             return;
         }
-        MemoryWriteContext writeContext = resolveWriteContext(sessionId, turnId);
+        ChatTurnMemorySnapshot snapshot = resolveSnapshot(sessionId, turnId);
+        MemoryWriteContext writeContext = memoryAccessPolicy.resolveAutoLearningWriteContext(snapshot, sessionId, turnId);
         if (writeContext == null) {
             log.debug("实时实体提取: 当前轮次已禁止自动学习, sessionId={}, turnId={}", sessionId, turnId);
             return;
@@ -152,15 +189,30 @@ public class RealtimeExtractor {
         String conversationText = buildConversationText(userMessage, aiResponse);
 
         // 2. 调用 LLM 获取 AUDN 决策列表
-        MemoryReadFilter summaryReadFilter = buildSummaryReadFilter(writeContext);
+        MemoryReadFilter summaryReadFilter = memoryAccessPolicy.buildSummaryReadFilter(writeContext, snapshot);
         var decisions = callLlmForAudnDecisions(conversationText, summaryReadFilter);
         if (decisions == null || decisions.isEmpty()) {
             log.debug("实时实体提取: 无需操作, sessionId={}", sessionId);
             return;
         }
 
-        // 3. 提取后验证
-        var validDecisions = extractionValidator.validate(decisions);
+        // 3. 提取后验证，并记录 rejected 候选，避免质量门控阶段静默丢失审计线索。
+        var validationResult = extractionValidator.validateWithResult(decisions);
+        if (validationResult == null) {
+            validationResult = new ExtractionValidator.ValidationResult(
+                    extractionValidator.validate(decisions),
+                    List.of());
+        }
+        if (candidateRepository != null) {
+            for (var rejected : validationResult.rejectedDecisions()) {
+                candidateRepository.recordRejected(
+                        sessionId,
+                        writeContext,
+                        rejected.decision(),
+                        rejected.reason());
+            }
+        }
+        var validDecisions = validationResult.validDecisions();
         if (validDecisions.isEmpty()) {
             log.debug("实时实体提取: 验证后无有效决策, sessionId={}", sessionId);
             return;
@@ -169,10 +221,19 @@ public class RealtimeExtractor {
         // 4. 逐条执行 AUDN 操作
         int successCount = 0;
         for (var decision : validDecisions) {
+            String candidateId = candidateRepository != null
+                    ? candidateRepository.recordValidated(sessionId, writeContext, decision)
+                    : null;
             try {
-                executeDecision(decision, sessionId, writeContext);
+                var result = executeDecision(decision, sessionId, writeContext, summaryReadFilter);
+                if (candidateRepository != null) {
+                    candidateRepository.markApplied(candidateId, result.persistedEntityId(), result.baseEntityId());
+                }
                 successCount++;
             } catch (Exception e) {
+                if (candidateRepository != null) {
+                    candidateRepository.markFailed(candidateId, e.getMessage());
+                }
                 log.warn("AUDN 单条决策执行失败，跳过: operation={}, entityName={}, error={}",
                         decision.operation(), decision.entityName(), e.getMessage());
             }
@@ -276,48 +337,57 @@ public class RealtimeExtractor {
     }
 
     /** 执行单条 AUDN 决策。 */
-    private void executeDecision(AudnDecision decision, String sessionId, MemoryWriteContext writeContext) {
+    private DecisionExecutionResult executeDecision(AudnDecision decision,
+                                                    String sessionId,
+                                                    MemoryWriteContext writeContext,
+                                                    MemoryReadFilter inheritedReadFilter) {
         switch (decision.operation()) {
             case ADD -> {
                 try {
-                    executeAdd(decision, sessionId, writeContext);
-                    logExtractionEvent(sessionId, decision, true, null);
+                    var result = executeAdd(decision, sessionId, writeContext);
+                    logExtractionEvent(sessionId, writeContext, decision, true, null);
+                    return result;
                 } catch (Exception e) {
-                    logExtractionEvent(sessionId, decision, false, e.getMessage());
+                    logExtractionEvent(sessionId, writeContext, decision, false, e.getMessage());
                     throw e;
                 }
             }
             case UPDATE -> {
                 try {
-                    executeUpdate(decision, sessionId, writeContext);
-                    logExtractionEvent(sessionId, decision, true, null);
+                    var result = executeUpdate(decision, sessionId, writeContext, inheritedReadFilter);
+                    logExtractionEvent(sessionId, writeContext, decision, true, null);
+                    return result;
                 } catch (Exception e) {
-                    logExtractionEvent(sessionId, decision, false, e.getMessage());
+                    logExtractionEvent(sessionId, writeContext, decision, false, e.getMessage());
                     throw e;
                 }
             }
             case DELETE -> {
                 try {
-                    executeDelete(decision, writeContext);
-                    logExtractionEvent(sessionId, decision, true, null);
+                    var result = executeDelete(decision, writeContext);
+                    logExtractionEvent(sessionId, writeContext, decision, true, null);
+                    return result;
                 } catch (Exception e) {
-                    logExtractionEvent(sessionId, decision, false, e.getMessage());
+                    logExtractionEvent(sessionId, writeContext, decision, false, e.getMessage());
                     throw e;
                 }
             }
-            case NOOP -> { /* 跳过 */ }
+            case NOOP -> {
+                return DecisionExecutionResult.empty();
+            }
         }
+        return DecisionExecutionResult.empty();
     }
 
     /** 执行 ADD 操作：创建新实体。 */
-    private void executeAdd(AudnDecision decision, String sessionId, MemoryWriteContext writeContext) {
+    private DecisionExecutionResult executeAdd(AudnDecision decision, String sessionId, MemoryWriteContext writeContext) {
         var now = Instant.now();
         float confidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float importance = safeFloat(decision.importanceScore(), 0.5f);
         // Task 23：从 LLM 响应解析 temporality / expires_at，非持久类自动推导过期时间
         Temporality temporality = resolveTemporality(decision);
         Instant expiresAt = resolveExpiresAt(decision, temporality);
-        var entity = new TemporalEntity(
+        var entity = withDecisionQuality(new TemporalEntity(
                 UUID.randomUUID().toString(),
                 decision.entityType(),
                 decision.entityName(),
@@ -328,22 +398,33 @@ public class RealtimeExtractor {
                 importance,
                 0, null, now, now,
                 LifecycleState.ACTIVE, null, expiresAt,
-                temporality, null, false, List.of());
-        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext));
+                temporality, null, false, List.of()), decision, confidence);
+        var persisted = SqliteBusyRetry.execute(() ->
+                semanticMemory.upsertWithConflictDetection(entity, sessionId, writeContext));
         log.debug("AUDN ADD: name={}, type={}, temporality={}, expiresAt={}",
                 decision.entityName(), decision.entityType(), temporality, expiresAt);
+        return new DecisionExecutionResult(persisted != null ? persisted.id() : entity.id(), null);
     }
 
     /** 执行 UPDATE 操作：查找已有实体并更新。 */
-    private void executeUpdate(AudnDecision decision, String sessionId, MemoryWriteContext writeContext) {
+    private DecisionExecutionResult executeUpdate(AudnDecision decision,
+                                                  String sessionId,
+                                                  MemoryWriteContext writeContext,
+                                                  MemoryReadFilter inheritedReadFilter) {
         MemoryReadFilter readFilter = buildEntityReadFilter(writeContext, decision.entityType());
         var existing = semanticMemory.findCurrentByNameAndType(
                 decision.entityName(), decision.entityType(), readFilter);
         if (existing.isEmpty()) {
+            var inherited = writeContext.spaceId() != null
+                    ? semanticMemory.findCurrentByNameAndType(
+                            decision.entityName(), decision.entityType(), inheritedReadFilter)
+                    : Optional.<TemporalEntity>empty();
+            if (inherited.isPresent()) {
+                return executeOverlayUpdate(decision, sessionId, writeContext, inherited.get());
+            }
             // 找不到已有实体，降级为 ADD
             log.debug("AUDN UPDATE 降级为 ADD: 未找到已有实体, name={}", decision.entityName());
-            executeAdd(decision, sessionId, writeContext);
-            return;
+            return executeAdd(decision, sessionId, writeContext);
         }
         // 构建更新后的实体，通过 upsertWithConflictDetection 版本化更新
         var old = existing.get();
@@ -361,7 +442,7 @@ public class RealtimeExtractor {
                 : old.temporality();
         Instant expiresAt = resolveExpiresAtForUpdate(decision, temporality, old);
 
-        var updated = new TemporalEntity(
+        var updated = withDecisionQuality(new TemporalEntity(
                 null, decision.entityType(), decision.entityName(),
                 decision.description() != null ? decision.description() : old.description(),
                 mergedProps,
@@ -371,33 +452,102 @@ public class RealtimeExtractor {
                 old.accessCount(), old.lastAccessedAt(),
                 old.createdAt(), Instant.now(),
                 old.lifecycleState(), old.lifecycleReason(), expiresAt,
-                temporality, old.succeededBy(), old.isDerived(), old.derivationSources());
-        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext));
+                temporality, old.succeededBy(), old.isDerived(), old.derivationSources()), decision, newConfidence);
+        var persisted = SqliteBusyRetry.execute(() ->
+                semanticMemory.upsertWithConflictDetection(updated, sessionId, writeContext));
         log.debug("AUDN UPDATE: name={}, type={}, temporality={}, expiresAt={}",
                 decision.entityName(), decision.entityType(), temporality, expiresAt);
+        return new DecisionExecutionResult(persisted != null ? persisted.id() : old.id(), null);
+    }
+
+    private DecisionExecutionResult executeOverlayUpdate(AudnDecision decision,
+                                                         String sessionId,
+                                                         MemoryWriteContext writeContext,
+                                                         TemporalEntity baseEntity) {
+        var mergedProps = new java.util.HashMap<>(baseEntity.properties());
+        if (decision.properties() != null) {
+            mergedProps.putAll(decision.properties());
+        }
+        float newConfidence = safeFloat(decision.extractionConfidence(), 0.5f);
+        float newImportance = safeFloat(decision.importanceScore(), 0.5f);
+        Temporality temporality = decision.temporalityRaw() != null && !decision.temporalityRaw().isBlank()
+                ? resolveTemporality(decision)
+                : baseEntity.temporality();
+        Instant expiresAt = resolveExpiresAtForUpdate(decision, temporality, baseEntity);
+        var now = Instant.now();
+        var overlay = withDecisionQuality(new TemporalEntity(
+                null,
+                decision.entityType(),
+                decision.entityName(),
+                decision.description() != null ? decision.description() : baseEntity.description(),
+                mergedProps,
+                1,
+                true,
+                now,
+                null,
+                sessionId,
+                newConfidence,
+                Math.max(baseEntity.importanceScore(), newImportance),
+                0,
+                null,
+                now,
+                now,
+                baseEntity.lifecycleState(),
+                baseEntity.lifecycleReason(),
+                expiresAt,
+                temporality,
+                baseEntity.succeededBy(),
+                baseEntity.isDerived(),
+                baseEntity.derivationSources()), decision, newConfidence);
+        var persisted = SqliteBusyRetry.execute(() ->
+                semanticMemory.upsertProjectOverlay(overlay, baseEntity, sessionId, writeContext));
+        log.debug("AUDN UPDATE 创建项目 overlay: baseId={}, overlayId={}, name={}",
+                baseEntity.id(), persisted != null ? persisted.id() : null, decision.entityName());
+        return new DecisionExecutionResult(persisted != null ? persisted.id() : overlay.id(), baseEntity.id());
+    }
+
+    private TemporalEntity withDecisionQuality(TemporalEntity entity,
+                                               AudnDecision decision,
+                                               float extractionConfidence) {
+        MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.evidenceKindFromDecision(decision);
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, extractionConfidence);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
+        return entity.withQuality(evidenceKind, trustLevel, trustScore, 1, null);
     }
 
     /** 执行 DELETE 操作：将匹配实体标记为非当前。 */
-    private void executeDelete(AudnDecision decision, MemoryWriteContext writeContext) {
+    private DecisionExecutionResult executeDelete(AudnDecision decision, MemoryWriteContext writeContext) {
         MemoryReadFilter readFilter = buildEntityReadFilter(writeContext, decision.entityType());
         var existing = semanticMemory.findCurrentByNameAndType(
                 decision.entityName(), decision.entityType(), readFilter);
         if (existing.isEmpty()) {
             log.debug("AUDN DELETE 跳过: 未找到匹配实体, name={}", decision.entityName());
-            return;
+            return DecisionExecutionResult.empty();
         }
-        SqliteBusyRetry.run(() -> semanticMemory.archive(existing.get()));
+        SqliteBusyRetry.run(() -> semanticMemory.archive(existing.get(), ChangeSource.LLM_SEMANTIC));
         log.debug("AUDN DELETE: name={}, type={}", decision.entityName(), decision.entityType());
+        return new DecisionExecutionResult(existing.get().id(), null);
     }
 
     /** 记录提取事件日志到 extraction_event_log 表。 */
-    private void logExtractionEvent(String sessionId, AudnDecision decision,
+    private void logExtractionEvent(String sessionId,
+                                     MemoryWriteContext writeContext,
+                                     AudnDecision decision,
                                      boolean success, @Nullable String errorMessage) {
         try {
             jdbcTemplate.update(
-                "INSERT INTO extraction_event_log(id, session_id, operation, entity_name, entity_type, extraction_confidence, importance_score, success, error_message, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                """
+                INSERT INTO extraction_event_log(
+                    id, session_id, turn_id, space_id, source_entry_id,
+                    operation, entity_name, entity_type, extraction_confidence,
+                    importance_score, success, error_message, created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
                 UUID.randomUUID().toString(),
                 sessionId,
+                writeContext.sourceTurnId(),
+                writeContext.spaceId(),
+                writeContext.sourceEntryId(),
                 decision.operation().name(),
                 decision.entityName(),
                 decision.entityType().name(),
@@ -503,73 +653,19 @@ public class RealtimeExtractor {
     }
 
     @Nullable
-    private MemoryWriteContext resolveWriteContext(String sessionId, @Nullable String turnId) {
+    private ChatTurnMemorySnapshot resolveSnapshot(String sessionId, @Nullable String turnId) {
         if (snapshotRepository == null || turnId == null || turnId.isBlank()) {
-            return personalWriteContext(sessionId, turnId, null);
+            log.debug("实时实体提取: 缺少轮次作用域快照能力，跳过自动学习, sessionId={}, turnId={}",
+                    sessionId, turnId);
+            return null;
         }
         var snapshot = snapshotRepository.findByTurnId(turnId);
         if (snapshot.isEmpty()) {
-            return personalWriteContext(sessionId, turnId, null);
+            log.debug("实时实体提取: 未找到轮次作用域快照，跳过自动学习, sessionId={}, turnId={}",
+                    sessionId, turnId);
+            return null;
         }
-        var record = snapshot.get();
-        if (record.personalLearningEnabled()) {
-            // 快照里的 projectSpaceId 非空代表当前对话归属隔离项目，
-            // 对话学习按项目 space 落盘；为空则走主账户默认 space（spaceId=null）。
-            return personalWriteContext(sessionId, turnId, record.projectSpaceId());
-        }
-        if (record.domainLearningEnabled() && record.domainWriteSpaceId() != null && !record.domainWriteSpaceId().isBlank()) {
-            return new MemoryWriteContext(
-                    record.domainWriteSpaceId(),
-                    MemoryScope.DOMAIN_MEMORY,
-                    MemoryOriginType.CHAT,
-                    MemoryRealityType.UNKNOWN,
-                    sessionId,
-                    sessionId,
-                    sessionId,
-                    turnId,
-                    null,
-                    null,
-                    null
-            );
-        }
-        return null;
-    }
-
-    /**
-     * 构造对话学习（personal learning）写入上下文。
-     *
-     * <p>{@code projectSpaceId} 非空时，spaceId 用项目 space（ISOLATED 项目）；
-     * null 时 spaceId 留空交由 SemanticMemory 按 entity type 选择默认主账户 space。
-     * memoryScope 永远保持 null，避免错误限定 scope——SemanticMemory.upsertWithConflictDetection
-     * 内部 resolveWriteContext 会按 entity type 推断（PREFERENCE/HABIT → USER_PROFILE，
-     * EXPERIENCE → AGENT_EXPERIENCE，其他 → USER_FACT）。</p>
-     */
-    private MemoryWriteContext personalWriteContext(String sessionId,
-                                                    @Nullable String turnId,
-                                                    @Nullable String projectSpaceId) {
-        return new MemoryWriteContext(
-                projectSpaceId,
-                null,
-                MemoryOriginType.CHAT,
-                MemoryRealityType.UNKNOWN,
-                sessionId,
-                sessionId,
-                sessionId,
-                turnId,
-                null,
-                null,
-                null
-        );
-    }
-
-    private MemoryReadFilter buildSummaryReadFilter(MemoryWriteContext writeContext) {
-        if (writeContext.memoryScope() != null) {
-            return MemoryReadFilter.of(
-                    writeContext.spaceId() != null ? List.of(writeContext.spaceId()) : List.of(),
-                    List.of(writeContext.memoryScope())
-            );
-        }
-        return MemoryReadFilter.userMemory();
+        return snapshot.get();
     }
 
     private MemoryReadFilter buildEntityReadFilter(MemoryWriteContext writeContext, EntityType entityType) {
@@ -598,6 +694,13 @@ public class RealtimeExtractor {
     public record AudnDecisionList(List<AudnDecision> decisions) {
         public AudnDecisionList {
             decisions = decisions != null ? List.copyOf(decisions) : List.of();
+        }
+    }
+
+    private record DecisionExecutionResult(@Nullable String persistedEntityId,
+                                           @Nullable String baseEntityId) {
+        private static DecisionExecutionResult empty() {
+            return new DecisionExecutionResult(null, null);
         }
     }
 }

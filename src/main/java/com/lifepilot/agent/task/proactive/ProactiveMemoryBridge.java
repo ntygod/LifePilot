@@ -3,6 +3,8 @@ package com.lifepilot.agent.task.proactive;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.procedural.PreferenceRule;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryTrustLevel;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -426,7 +428,9 @@ public class ProactiveMemoryBridge {
                     null, EntityType.PREFERENCE, entityName, description,
                     Map.of("category", category, "key", key, "signal", value, "evidence", evidence),
                     1, true, Instant.now(), null, null,
-                    0.8f, Math.max(0.5f, value), 0, null, Instant.now(), Instant.now());
+                    0.8f, Math.max(0.5f, value), 0, null, Instant.now(), Instant.now())
+                    .withQuality(MemoryEvidenceKind.BEHAVIOR_INFERRED, MemoryTrustLevel.INFERRED,
+                            Math.max(0.50f, Math.min(0.75f, value)), 1, null);
             semanticMemory.upsertWithConflictDetection(entity, "proactive-engine");
             log.debug("记忆桥接: 主动洞察回写 L3, name={}", entityName);
         } catch (Exception e) {

@@ -17,6 +17,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
@@ -260,10 +261,11 @@ public class MetaAutoConfiguration {
                                           @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
                                           @Nullable MemoryProperties memoryProperties,
                                           @Nullable ProjectContextResolver projectContextResolver,
-                                          @Nullable ChatSessionRepository chatSessionRepository) {
+                                          @Nullable ChatSessionRepository chatSessionRepository,
+                                          @Nullable MemoryAccessPolicy memoryAccessPolicy) {
         return new MemoryToolProvider(hybridRetriever, semanticMemory,
                 episodicMemory, documentRetriever, sessionKbRepo, sessionKnowledgeScopeResolver,
-                memoryProperties, projectContextResolver, chatSessionRepository);
+                memoryProperties, projectContextResolver, chatSessionRepository, memoryAccessPolicy);
     }
 
     // ==================== 启动后工具注册 ====================

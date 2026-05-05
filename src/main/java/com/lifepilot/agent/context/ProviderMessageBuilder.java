@@ -1,21 +1,18 @@
 package com.lifepilot.agent.context;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.thinking.ReasoningContentMarker;
 import com.lifepilot.memory.experience.ToolTipResolver;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.content.Media;
-import org.springframework.core.io.ByteArrayResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.messages.*;
+import org.springframework.ai.content.Media;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.lang.Nullable;
 import org.springframework.util.MimeTypeUtils;
 
@@ -58,7 +55,7 @@ public class ProviderMessageBuilder {
     }
 
     public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine) {
-        this(hygieneEngine, new SessionPruningEngine(new com.lifepilot.agent.config.AgentConfigProperties(), new ObjectMapper()), null);
+        this(hygieneEngine, new SessionPruningEngine(new AgentConfigProperties(), new ObjectMapper()), null);
     }
 
     public ProviderMessageBuilder(TranscriptHygieneEngine hygieneEngine,
@@ -79,7 +76,7 @@ public class ProviderMessageBuilder {
         rawMessages.add(new SystemMessage(context.systemPrompt()));
         rawMessages.add(buildUserMessage(buildStructuredPrompt(context), context.mediaContents()));
 
-        convertStepsToMessages(state.steps(), rawMessages);
+        convertStepsToMessages(state.steps(), rawMessages, state.sessionId());
 
         TranscriptHygieneEngine.HygieneResult hygieneResult = hygieneEngine.clean(rawMessages);
         return new BuildResult(hygieneResult.messages(), hygieneResult.report());
@@ -100,7 +97,9 @@ public class ProviderMessageBuilder {
      * marker 段，由请求体改写 filter 在请求出去前抽出 marker 注入 OpenAI 协议字段、
      * 并清理 marker 还原 content 为 thoughtText。</p>
      */
-    private void convertStepsToMessages(List<ReactStep> steps, List<Message> out) {
+    private void convertStepsToMessages(List<ReactStep> steps,
+                                        List<Message> out,
+                                        @Nullable String sessionId) {
         var pendingToolCalls = new ArrayList<AssistantMessage.ToolCall>();
         String pendingThoughtText = null;
         String pendingReasoning = null;
@@ -140,7 +139,7 @@ public class ProviderMessageBuilder {
             pendingThoughtText = null;
             pendingReasoning = null;
 
-            Message message = toMessage(step);
+            Message message = toMessage(step, sessionId);
             if (message != null) {
                 out.add(message);
             }
@@ -323,7 +322,7 @@ public class ProviderMessageBuilder {
     }
 
     @Nullable
-    private Message toMessage(ReactStep step) {
+    private Message toMessage(ReactStep step, @Nullable String sessionId) {
         return switch (step) {
             case ReactStep.Progress ignored -> null;
             case ReactStep.Thought thought -> new AssistantMessage(thought.content());
@@ -333,7 +332,7 @@ public class ProviderMessageBuilder {
                 // Skill 指南已提升到系统提示词，对话历史中用摘要替代原文避免重复
                 String content = isPromotedSkillResult(observation)
                         ? buildSkillLoadSummary(observation.output())
-                        : formatObservationForPrompt(observation);
+                        : formatObservationForPrompt(observation, sessionId);
                 yield ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
                                 observation.callId() != null ? observation.callId() : observation.toolId(),
@@ -395,7 +394,8 @@ public class ProviderMessageBuilder {
         return "Skill 指南已加载";
     }
 
-    private String formatObservationForPrompt(ReactStep.Observation observation) {
+    private String formatObservationForPrompt(ReactStep.Observation observation,
+                                              @Nullable String sessionId) {
         String body;
         if (shouldUseObservationPreview(observation)) {
             String preview = pruningEngine.formatCurrentObservationPreview(
@@ -420,8 +420,8 @@ public class ProviderMessageBuilder {
         }
         // 工具级经验提示由呈现层动态拼接，保持 Observation.output 自身为纯净 JSON。
         if (toolTipResolver != null) {
-            String tips = toolTipResolver.tipsFor(observation.toolId());
-            if (!tips.isEmpty()) {
+            String tips = toolTipResolver.tipsFor(observation.toolId(), sessionId);
+            if (tips != null && !tips.isEmpty()) {
                 return tips + "\n" + body;
             }
         }

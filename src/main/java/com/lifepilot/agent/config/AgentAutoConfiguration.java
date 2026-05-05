@@ -32,6 +32,7 @@ import com.lifepilot.media.MediaValidator;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.document.MemoryDocumentRepository;
 import com.lifepilot.memory.experience.*;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -97,8 +98,12 @@ public class AgentAutoConfiguration {
     @ConditionalOnBean(
             SemanticMemory.class)
     public ToolTipResolver toolTipResolver(
-            SemanticMemory semanticMemory) {
-        return new ToolTipResolver(semanticMemory);
+            SemanticMemory semanticMemory,
+            @Autowired(required = false) ProjectContextResolver projectContextResolver,
+            @Autowired(required = false) ChatSessionRepository chatSessionRepository,
+            @Autowired(required = false) MemoryAccessPolicy memoryAccessPolicy) {
+        return new ToolTipResolver(
+                semanticMemory, projectContextResolver, chatSessionRepository, memoryAccessPolicy);
     }
 
     @Bean

@@ -47,6 +47,7 @@ class ReminderReplayEvaluationScheduler_单元测试 {
         notificationProperties = new NotificationProperties();
         notificationProperties.setDefaultUserId("default");
         config = new AgentConfigProperties();
+        config.getTask().setProactiveReminderEnabled(true);
         config.getTask().setProactiveReminderReplayEvaluationUserBatchSize(4);
         evaluationScheduler = new ReminderReplayEvaluationScheduler(
                 scheduler,

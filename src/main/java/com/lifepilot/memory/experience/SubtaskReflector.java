@@ -287,10 +287,7 @@ public class SubtaskReflector {
         );
 
         MemoryWriteContext writeContext = resolveWriteContext(state.sessionId());
-        SqliteBusyRetry.run(() -> {
-            semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection", writeContext);
-            vectorSearcher.upsertEntityVector(entity.id(), entity.textRepresentation());
-        });
+        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, "subtask-reflection", writeContext));
 
         log.info("子任务反思: 子任务经验已写入, entityId={}, name={}", entity.id(), name);
     }

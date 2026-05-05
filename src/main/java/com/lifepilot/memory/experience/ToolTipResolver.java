@@ -1,9 +1,15 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -13,6 +19,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -40,21 +47,36 @@ public class ToolTipResolver {
 
     @Nullable
     private final SemanticMemory semanticMemory;
+    @Nullable
+    private final ProjectContextResolver projectContextResolver;
+    @Nullable
+    private final ChatSessionRepository chatSessionRepository;
+    private final MemoryAccessPolicy memoryAccessPolicy;
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();
     private volatile Instant cacheRefreshedAt = Instant.EPOCH;
 
     public ToolTipResolver(@Nullable SemanticMemory semanticMemory) {
+        this(semanticMemory, null, null, null);
+    }
+
+    public ToolTipResolver(@Nullable SemanticMemory semanticMemory,
+                           @Nullable ProjectContextResolver projectContextResolver,
+                           @Nullable ChatSessionRepository chatSessionRepository,
+                           @Nullable MemoryAccessPolicy memoryAccessPolicy) {
         this.semanticMemory = semanticMemory;
+        this.projectContextResolver = projectContextResolver;
+        this.chatSessionRepository = chatSessionRepository;
+        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
     }
 
     /**
-     * 根据工具 ID 查询经验提示。
+     * 根据工具 ID 和当前会话查询经验提示。
      *
-     * @param toolId 工具标识
-     * @return 提示文本（无提示或 SemanticMemory 未配置时返回空串）
+     * <p>会话可解析到项目上下文时，按项目读取范围检索工具级经验；缺少依赖或解析失败时
+     * 回退主账户经验读取，保持提示链路 fail-soft。</p>
      */
-    public String tipsFor(@Nullable String toolId) {
+    public String tipsFor(@Nullable String toolId, @Nullable String sessionId) {
         if (semanticMemory == null || toolId == null || toolId.isBlank()) {
             return "";
         }
@@ -62,18 +84,22 @@ public class ToolTipResolver {
             cache.clear();
             cacheRefreshedAt = Instant.now();
         }
-        return cache.computeIfAbsent(toolId, this::resolveFromMemory);
+        ProjectContext projectContext = resolveProjectContext(sessionId);
+        String cacheKey = toolId + "|" + contextCacheKey(projectContext);
+        return cache.computeIfAbsent(cacheKey, ignored -> resolveFromMemory(toolId, projectContext));
     }
 
-    private String resolveFromMemory(String toolId) {
+    private String resolveFromMemory(String toolId, @Nullable ProjectContext projectContext) {
         try {
-            // TODO(plan-1-后续): 接入 ProjectContext，按当前项目构造 filter；
-            // Plan 1 先按主账户维度读取工具经验 tip（缓存维度也需同步调整为按 projectId 分桶）。
+            MemoryReadFilter filter = memoryAccessPolicy.buildProjectReadFilter(
+                    projectContext, Set.of(MemoryScope.AGENT_EXPERIENCE));
             var experiences = semanticMemory.findCurrentByType(
-                    EntityType.EXPERIENCE, MemoryReadFilter.agentExperience());
+                    EntityType.EXPERIENCE, filter);
             var tips = experiences.stream()
                     .filter(e -> SubtaskReflector.TOOL_LEVEL.equals(e.properties().get("granularity")))
                     .filter(e -> toolId.equals(e.properties().get("toolId")))
+                    .filter(MemoryQualityPolicy::isPromptConsumable)
+                    .filter(e -> e.trustScore() >= 0.55f)
                     .sorted(Comparator.comparingDouble(TemporalEntity::importanceScore).reversed())
                     .limit(MAX_TIPS_PER_TOOL)
                     .toList();
@@ -94,5 +120,29 @@ public class ToolTipResolver {
             log.debug("工具经验提示加载失败: toolId={}, error={}", toolId, e.getMessage());
             return "";
         }
+    }
+
+    @Nullable
+    private ProjectContext resolveProjectContext(@Nullable String sessionId) {
+        if (projectContextResolver == null || chatSessionRepository == null
+                || sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        try {
+            return chatSessionRepository.findById(sessionId)
+                    .map(session -> projectContextResolver.resolve(session.projectId()))
+                    .orElse(null);
+        } catch (Exception e) {
+            log.debug("工具经验提示解析项目上下文失败: sessionId={}, error={}",
+                    sessionId, e.getMessage());
+            return null;
+        }
+    }
+
+    private String contextCacheKey(@Nullable ProjectContext projectContext) {
+        if (projectContext == null) {
+            return "fallback";
+        }
+        return projectContext.projectId() != null ? projectContext.projectId() : "personal";
     }
 }

@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -149,6 +150,50 @@ class StreamingCallback_单元测试 {
                 anyMap(),
                 isNull()
         );
+    }
+
+    @Test
+    void 单次流式异常不应污染后续调用() {
+        when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
+                .thenReturn(
+                        new StreamingLlmResponse(
+                                Flux.error(new RuntimeException("连接中断")),
+                                "provider-1",
+                                "model-1"),
+                        new StreamingLlmResponse(
+                                Flux.just((LlmStreamEvent) new ContentChunk("恢复成功")),
+                                "provider-1",
+                                "model-1")
+                );
+
+        StreamingCallback callback = new StreamingCallback(
+                config,
+                generationRouter,
+                null,
+                helper,
+                new CancellationToken(),
+                loopContext,
+                sseManager,
+                "stream-1",
+                "session-1",
+                "turn-1",
+                request
+        );
+
+        assertThatThrownBy(() -> callback.callLlm(request, basicMessages(), List.of(), null))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("连接中断");
+
+        callback.callLlm(request, basicMessages(), List.of(), null);
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(sseManager, times(1)).sendEvent(eq("stream-1"), eq(SseEventType.TOKEN), payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) payloadCaptor.getValue();
+        assertThat(payload).containsEntry("content", "恢复成功");
+        assertThat(callback.getFinalContent()).isEqualTo("恢复成功");
+        assertThat(callback.hasStreamingError()).isFalse();
     }
 
     private List<Message> basicMessages() {

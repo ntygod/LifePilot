@@ -1,16 +1,25 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryTrustLevel;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,7 +41,7 @@ class ToolTipResolverTest {
     @Test
     void semanticMemory为null时返回空串() {
         var resolver = new ToolTipResolver(null);
-        assertThat(resolver.tipsFor("file.read")).isEmpty();
+        assertThat(resolver.tipsFor("file.read", null)).isEmpty();
     }
 
     @Test
@@ -40,9 +49,9 @@ class ToolTipResolverTest {
         var semanticMemory = mock(SemanticMemory.class);
         var resolver = new ToolTipResolver(semanticMemory);
 
-        assertThat(resolver.tipsFor(null)).isEmpty();
-        assertThat(resolver.tipsFor("")).isEmpty();
-        assertThat(resolver.tipsFor("  ")).isEmpty();
+        assertThat(resolver.tipsFor(null, null)).isEmpty();
+        assertThat(resolver.tipsFor("", null)).isEmpty();
+        assertThat(resolver.tipsFor("  ", null)).isEmpty();
         verify(semanticMemory, never()).findCurrentByType(any(), any());
     }
 
@@ -53,7 +62,7 @@ class ToolTipResolverTest {
                 .thenReturn(List.of());
 
         var resolver = new ToolTipResolver(semanticMemory);
-        assertThat(resolver.tipsFor("file.read")).isEmpty();
+        assertThat(resolver.tipsFor("file.read", null)).isEmpty();
     }
 
     @Test
@@ -67,7 +76,7 @@ class ToolTipResolverTest {
                 .thenReturn(List.of(exp));
 
         var resolver = new ToolTipResolver(semanticMemory);
-        String tips = resolver.tipsFor("file.read");
+        String tips = resolver.tipsFor("file.read", null);
 
         assertThat(tips)
                 .startsWith("[历史经验提示]")
@@ -85,7 +94,7 @@ class ToolTipResolverTest {
                 .thenReturn(List.of(other));
 
         var resolver = new ToolTipResolver(semanticMemory);
-        assertThat(resolver.tipsFor("file.read")).isEmpty();
+        assertThat(resolver.tipsFor("file.read", null)).isEmpty();
     }
 
     @Test
@@ -99,7 +108,7 @@ class ToolTipResolverTest {
                 .thenReturn(List.of(taskLevel));
 
         var resolver = new ToolTipResolver(semanticMemory);
-        assertThat(resolver.tipsFor("file.read")).isEmpty();
+        assertThat(resolver.tipsFor("file.read", null)).isEmpty();
     }
 
     @Test
@@ -113,9 +122,9 @@ class ToolTipResolverTest {
                 .thenReturn(List.of(exp));
 
         var resolver = new ToolTipResolver(semanticMemory);
-        resolver.tipsFor("file.read");
-        resolver.tipsFor("file.read");
-        resolver.tipsFor("file.read");
+        resolver.tipsFor("file.read", null);
+        resolver.tipsFor("file.read", null);
+        resolver.tipsFor("file.read", null);
 
         // 同一 toolId 三次查询只应触发一次 SemanticMemory 读取
         verify(semanticMemory, org.mockito.Mockito.times(1))
@@ -132,7 +141,7 @@ class ToolTipResolverTest {
                 .thenReturn(List.of(low, high, mid));
 
         var resolver = new ToolTipResolver(semanticMemory);
-        String tips = resolver.tipsFor("file.read");
+        String tips = resolver.tipsFor("file.read", null);
 
         assertThat(tips)
                 .contains("最高优")
@@ -147,7 +156,46 @@ class ToolTipResolverTest {
                 .thenThrow(new RuntimeException("DB down"));
 
         var resolver = new ToolTipResolver(semanticMemory);
-        assertThat(resolver.tipsFor("file.read")).isEmpty();
+        assertThat(resolver.tipsFor("file.read", null)).isEmpty();
+    }
+
+    @Test
+    void 带sessionId时按项目上下文构造经验读取filter() {
+        var semanticMemory = mock(SemanticMemory.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        var session = ChatSession.createWithId("session-1", "项目对话");
+        var context = new ProjectContext(
+                "project-1",
+                "space-project",
+                "space-personal",
+                "space-experience",
+                true);
+        var exp = experience("file.read",
+                SubtaskReflector.TOOL_LEVEL,
+                List.of("项目内经验"),
+                0.9f);
+        when(chatSessionRepository.findById("session-1")).thenReturn(Optional.of(
+                new ChatSession(session.id(), session.title(), session.summary(), session.messageCount(),
+                        session.isPinned(), session.archived(), session.lastMessageAt(),
+                        session.createdAt(), session.updatedAt(), "project-1")));
+        when(projectContextResolver.resolve("project-1")).thenReturn(context);
+        when(semanticMemory.findCurrentByType(eq(EntityType.EXPERIENCE), any(MemoryReadFilter.class)))
+                .thenReturn(List.of(exp));
+
+        var resolver = new ToolTipResolver(
+                semanticMemory,
+                projectContextResolver,
+                chatSessionRepository,
+                new MemoryAccessPolicy());
+
+        String tips = resolver.tipsFor("file.read", "session-1");
+
+        assertThat(tips).contains("项目内经验");
+        ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
+        verify(semanticMemory).findCurrentByType(eq(EntityType.EXPERIENCE), captor.capture());
+        assertThat(captor.getValue().spaceIds())
+                .containsExactlyInAnyOrder("space-project", "space-personal", "space-experience");
     }
 
     // ==================== helper ====================
@@ -173,6 +221,8 @@ class ToolTipResolverTest {
                 0,
                 null,
                 now,
-                now);
+                now)
+                .withQuality(MemoryEvidenceKind.LLM_SUMMARIZED_EXPERIENCE,
+                        MemoryTrustLevel.DERIVED, 0.7f, 1, null);
     }
 }

@@ -10,8 +10,13 @@ import com.lifepilot.memory.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.forgetting.ForgettingLogRepository;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
 import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.scope.MemoryOriginType;
 import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.scope.MemoryRealityType;
+import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.semantic.EntityType;
@@ -19,6 +24,8 @@ import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import jakarta.annotation.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
@@ -48,6 +55,7 @@ import java.util.stream.Collectors;
 public class MemoryController {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryController.class);
+    private static final String MANUAL_SOURCE = "manual-edit";
 
     private final @Nullable SemanticMemory semanticMemory;
     private final @Nullable EpisodicMemory episodicMemory;
@@ -58,6 +66,8 @@ public class MemoryController {
     private final @Nullable UserProfileConsolidator userProfileConsolidator;
     private final ForgettingLogRepository forgettingLogRepository;
     private final MemoryProvenanceRepository provenanceRepository;
+    private final @Nullable ProjectContextResolver projectContextResolver;
+    private final MemoryAccessPolicy memoryAccessPolicy;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
     private final AtomicBoolean deduplicating = new AtomicBoolean(false);
 
@@ -69,7 +79,9 @@ public class MemoryController {
                             @Nullable EntityDeduplicator entityDeduplicator,
                             @Nullable UserProfileConsolidator userProfileConsolidator,
                             ForgettingLogRepository forgettingLogRepository,
-                            MemoryProvenanceRepository provenanceRepository) {
+                            MemoryProvenanceRepository provenanceRepository,
+                            @Nullable ProjectContextResolver projectContextResolver,
+                            @Nullable MemoryAccessPolicy memoryAccessPolicy) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
@@ -79,6 +91,8 @@ public class MemoryController {
         this.userProfileConsolidator = userProfileConsolidator;
         this.forgettingLogRepository = forgettingLogRepository;
         this.provenanceRepository = provenanceRepository;
+        this.projectContextResolver = projectContextResolver;
+        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
     }
 
     /** 检查记忆系统是否启用，未启用时抛出 503。 */
@@ -181,7 +195,8 @@ public class MemoryController {
     @GetMapping("/search")
     public ApiResponse<List<MemorySearchResultDto>> search(
             @RequestParam String q,
-            @RequestParam(defaultValue = "10") int topK) {
+            @RequestParam(defaultValue = "10") int topK,
+            @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
         if (q == null || q.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "搜索关键词不能为空");
@@ -189,9 +204,9 @@ public class MemoryController {
         if (hybridRetriever == null) {
             return ApiResponse.ok(List.of());
         }
-        // TODO(plan-1-后续): 接入 ProjectContext，按当前查看项目构造 filter；
-        // Plan 1 先按主账户维度读取，UI 端点保留原行为。
-        var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var readFilter = toProjectReadFilter(projectContext, Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+        var results = hybridRetriever.retrieve(q, topK, RetrievalWeights.DEFAULT, readFilter);
         Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 results.stream().map(r -> r.entityId()).toList()
         );
@@ -223,6 +238,7 @@ public class MemoryController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String type,
             @RequestParam(required = false) @Nullable String q,
+            @RequestParam(required = false) @Nullable String projectId,
             @RequestParam(required = false) @Nullable String spaceId,
             @RequestParam(required = false) @Nullable String memoryScope,
             @RequestParam(required = false) @Nullable String realityType,
@@ -235,7 +251,8 @@ public class MemoryController {
             @RequestParam(defaultValue = "desc") String order) {
         requireMemoryEnabled();
 
-        var entities = semanticMemory.findAllCurrent();
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var entities = semanticMemory.findAllCurrent(toProjectReadFilter(projectContext, Set.of()));
 
         // type 过滤
         if (type != null && !type.isBlank()) {
@@ -342,9 +359,11 @@ public class MemoryController {
      * 实体详情。
      */
     @GetMapping("/entities/{id}")
-    public ApiResponse<EntityDetailDto> getEntity(@PathVariable String id) {
+    public ApiResponse<EntityDetailDto> getEntity(@PathVariable String id,
+                                                  @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
-        var entity = semanticMemory.findById(id)
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var entity = findReadableEntity(id, projectContext)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         return ApiResponse.ok(toEntityDetail(entity, loadEntityMetadata(id)));
     }
@@ -353,13 +372,20 @@ public class MemoryController {
      * 实体版本变更历史。
      */
     @GetMapping("/entities/{id}/history")
-    public ApiResponse<List<EntityDetailDto>> getEntityHistory(@PathVariable String id) {
+    public ApiResponse<List<EntityDetailDto>> getEntityHistory(@PathVariable String id,
+                                                               @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
-        var entity = semanticMemory.findById(id)
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var readFilter = toProjectReadFilter(projectContext, Set.of());
+        var entity = findReadableEntity(id, projectContext)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        EntityMetadata metadata = provenanceRepository.loadEntityMetadata(List.of(id)).get(id);
-        return ApiResponse.ok(semanticMemory.getChangeHistory(entity.name(), entity.type()).stream()
-                .map(history -> toEntityDetail(history, metadata))
+        var history = semanticMemory.getChangeHistory(entity.name(), entity.type());
+        Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
+                history.stream().map(TemporalEntity::id).toList());
+        return ApiResponse.ok(history.stream()
+                .filter(historyEntity -> projectContext == null
+                        || matchesReadFilter(metadataById.get(historyEntity.id()), readFilter))
+                .map(historyEntity -> toEntityDetail(historyEntity, metadataById.get(historyEntity.id())))
                 .toList());
     }
 
@@ -369,11 +395,22 @@ public class MemoryController {
     @GetMapping("/entities/{id}/related")
     public ApiResponse<List<EntitySummaryDto>> getRelatedEntities(
             @PathVariable String id,
-            @RequestParam(defaultValue = "2") int maxDepth) {
+            @RequestParam(defaultValue = "2") int maxDepth,
+            @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
-        semanticMemory.findById(id)
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var readFilter = toProjectReadFilter(projectContext, Set.of());
+        findReadableEntity(id, projectContext)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         var relatedEntities = semanticMemory.findRelated(id, maxDepth);
+        if (projectContext != null && !relatedEntities.isEmpty()) {
+            var visibleById = semanticMemory.findByIds(
+                    relatedEntities.stream().map(TemporalEntity::id).toList(),
+                    readFilter);
+            relatedEntities = relatedEntities.stream()
+                    .filter(e -> visibleById.containsKey(e.id()))
+                    .toList();
+        }
         Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 relatedEntities.stream().map(TemporalEntity::id).toList()
         );
@@ -388,11 +425,13 @@ public class MemoryController {
     @GetMapping("/entities/{id}/provenances")
     public ApiResponse<List<EntityProvenanceDto>> getEntityProvenances(
             @PathVariable String id,
+            @RequestParam(required = false) @Nullable String projectId,
             @RequestParam(required = false) @Nullable String originType,
             @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
             @RequestParam(required = false) @Nullable String sourceDocumentId) {
         requireMemoryEnabled();
-        semanticMemory.findById(id)
+        var projectContext = resolveProjectContextForRequest(projectId);
+        findReadableEntity(id, projectContext)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
         var rawItems = provenanceRepository.findEntityProvenances(
                 id, originType, sourceKnowledgeBaseId, sourceDocumentId);
@@ -421,10 +460,20 @@ public class MemoryController {
      * 归档实体。
      */
     @DeleteMapping("/entities/{id}")
-    public ApiResponse<Void> deleteEntity(@PathVariable String id) {
+    public ApiResponse<Void> deleteEntity(@PathVariable String id,
+                                          @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
-        var entity = semanticMemory.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var entity = findWritableEntity(id, projectContext).orElse(null);
+        if (entity == null) {
+            if (projectContext != null && projectContext.isolated()
+                    && findReadableEntity(id, projectContext).isPresent()) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "隔离项目不能直接归档继承记忆，请先创建项目内覆盖版本");
+            }
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id);
+        }
         SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
         return ApiResponse.ok();
     }
@@ -435,8 +484,10 @@ public class MemoryController {
      * <p>extractionConfidence 固定为 1.0 表示手动创建。</p>
      */
     @PostMapping("/entities")
-    public ApiResponse<EntityDetailDto> createEntity(@RequestBody EntityCreateRequest request) {
+    public ApiResponse<EntityDetailDto> createEntity(@RequestBody EntityCreateRequest request,
+                                                     @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
+        var projectContext = resolveProjectContextForRequest(projectId);
 
         // 校验 name 非空
         if (request.name() == null || request.name().isBlank()) {
@@ -472,10 +523,14 @@ public class MemoryController {
                 now
         );
 
-        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(entity, null));
-        log.info("手动创建实体: id={}, name={}, type={}", entity.id(), entity.name(), entity.type());
-        var metadata = provenanceRepository.loadEntityMetadata(List.of(entity.id())).get(entity.id());
-        return ApiResponse.ok(toEntityDetail(entity, metadata));
+        var created = SqliteBusyRetry.execute(() ->
+                semanticMemory.upsertWithConflictDetection(
+                        entity,
+                        MANUAL_SOURCE,
+                        toManualProjectWriteContext(projectContext)));
+        log.info("手动创建实体: id={}, name={}, type={}", created.id(), created.name(), created.type());
+        var metadata = provenanceRepository.loadEntityMetadata(List.of(created.id())).get(created.id());
+        return ApiResponse.ok(toEntityDetail(created, metadata));
     }
 
     /**
@@ -485,11 +540,24 @@ public class MemoryController {
      */
     @PutMapping("/entities/{id}")
     public ApiResponse<EntityDetailDto> updateEntity(@PathVariable String id,
-                                        @RequestBody EntityUpdateRequest request) {
+                                                     @RequestParam(required = false) @Nullable String projectId,
+                                                     @RequestBody EntityUpdateRequest request) {
         requireMemoryEnabled();
+        var projectContext = resolveProjectContextForRequest(projectId);
 
-        var existing = semanticMemory.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+        var existing = findWritableEntity(id, projectContext).orElse(null);
+        if (existing == null) {
+            if (projectContext != null && projectContext.isolated()) {
+                var inherited = findReadableEntity(id, projectContext)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+                var overlay = updateInheritedEntityAsOverlay(inherited, request, projectContext);
+                log.info("隔离项目更新继承实体为 overlay: baseId={}, overlayId={}, name={}",
+                        inherited.id(), overlay.id(), overlay.name());
+                var metadata = provenanceRepository.loadEntityMetadata(List.of(overlay.id())).get(overlay.id());
+                return ApiResponse.ok(toEntityDetail(overlay, metadata));
+            }
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id);
+        }
 
         if (!existing.isCurrent()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体已归档: " + id);
@@ -499,6 +567,7 @@ public class MemoryController {
         String description = request.description() != null ? request.description() : existing.description();
         Map<String, Object> properties = request.properties() != null ? request.properties() : existing.properties();
         float importance = request.importanceScore() != null ? request.importanceScore() : existing.importanceScore();
+        EntityMetadata existingMetadata = loadEntityMetadata(id);
 
         var updated = new TemporalEntity(
                 existing.id(),
@@ -519,10 +588,13 @@ public class MemoryController {
                 Instant.now()
         );
 
-        SqliteBusyRetry.run(() -> semanticMemory.upsertWithConflictDetection(updated, null));
-        log.info("更新实体: id={}, name={}", updated.id(), updated.name());
-        var metadata = provenanceRepository.loadEntityMetadata(List.of(updated.id())).get(updated.id());
-        return ApiResponse.ok(toEntityDetail(updated, metadata));
+        var saved = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(
+                updated, MANUAL_SOURCE, projectContext != null
+                        ? toManualProjectWriteContext(projectContext)
+                        : writeContextFromMetadata(existingMetadata)));
+        log.info("更新实体: id={}, name={}", saved.id(), saved.name());
+        var metadata = provenanceRepository.loadEntityMetadata(List.of(saved.id())).get(saved.id());
+        return ApiResponse.ok(toEntityDetail(saved, metadata));
     }
 
     // ========== Req 3: L3 关系查询 ==========
@@ -535,11 +607,17 @@ public class MemoryController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) @Nullable String entityId,
-            @RequestParam(required = false) @Nullable String relationType) {
+            @RequestParam(required = false) @Nullable String relationType,
+            @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var readFilter = toProjectReadFilter(projectContext, Set.of());
 
         List<TemporalRelation> relations;
         if (entityId != null && !entityId.isBlank()) {
+            if (projectContext != null && findReadableEntity(entityId, projectContext).isEmpty()) {
+                return ApiResponse.ok(new PageResult<>(List.of(), page, size, 0L));
+            }
             relations = semanticMemory.findRelationsByEntityId(entityId);
         } else {
             relations = semanticMemory.findAllCurrentRelations();
@@ -559,7 +637,16 @@ public class MemoryController {
             entityIds.add(r.targetEntityId());
         }
         Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(entityIds);
+        if (projectContext != null) {
+            entityMap = semanticMemory.findByIds(entityIds, readFilter);
+            Map<String, TemporalEntity> visibleEntityMap = entityMap;
+            relations = relations.stream()
+                    .filter(r -> visibleEntityMap.containsKey(r.sourceEntityId())
+                            && visibleEntityMap.containsKey(r.targetEntityId()))
+                    .toList();
+        }
         Map<String, EntityMetadata> entityMetadataMap = provenanceRepository.loadEntityMetadata(entityIds);
+        Map<String, TemporalEntity> relationEntityMap = entityMap;
 
         // 分页
         long total = relations.size();
@@ -567,9 +654,9 @@ public class MemoryController {
         int toIndex = Math.min(fromIndex + size, relations.size());
         var pageItems = relations.subList(fromIndex, toIndex).stream()
                 .map(r -> {
-                    var source = entityMap.get(r.sourceEntityId());
+                    var source = relationEntityMap.get(r.sourceEntityId());
                     var sourceMetadata = entityMetadataMap.get(r.sourceEntityId());
-                    var target = entityMap.get(r.targetEntityId());
+                    var target = relationEntityMap.get(r.targetEntityId());
                     var targetMetadata = entityMetadataMap.get(r.targetEntityId());
                     return new RelationDto(
                             r.id(),
@@ -890,6 +977,104 @@ public class MemoryController {
 
     // ========== 内部辅助方法 ==========
 
+    @Nullable
+    private ProjectContext resolveProjectContextForRequest(@Nullable String projectId) {
+        if (projectId == null || projectId.isBlank()) {
+            return null;
+        }
+        if (projectContextResolver == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "项目上下文解析器未启用");
+        }
+        return projectContextResolver.resolve(projectId.trim());
+    }
+
+    private MemoryReadFilter toProjectReadFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
+        return memoryAccessPolicy.buildProjectReadFilter(ctx, scopes);
+    }
+
+    private MemoryWriteContext toManualProjectWriteContext(@Nullable ProjectContext ctx) {
+        return memoryAccessPolicy.buildProjectWriteContext(
+                ctx,
+                null,
+                null,
+                null,
+                MANUAL_SOURCE,
+                MemoryOriginType.MANUAL,
+                MemoryRealityType.UNKNOWN);
+    }
+
+    private Optional<TemporalEntity> findReadableEntity(String entityId, @Nullable ProjectContext ctx) {
+        if (ctx == null) {
+            return semanticMemory.findById(entityId);
+        }
+        return semanticMemory.findByIds(List.of(entityId), toProjectReadFilter(ctx, Set.of()))
+                .values()
+                .stream()
+                .findFirst();
+    }
+
+    private Optional<TemporalEntity> findWritableEntity(String entityId, @Nullable ProjectContext ctx) {
+        if (ctx == null) {
+            return semanticMemory.findById(entityId);
+        }
+        return semanticMemory.findByIds(List.of(entityId), memoryAccessPolicy.buildWritableEntityFilter(ctx))
+                .values()
+                .stream()
+                .findFirst();
+    }
+
+    private boolean matchesReadFilter(@Nullable EntityMetadata metadata, MemoryReadFilter filter) {
+        if (filter.isUnrestricted()) {
+            return true;
+        }
+        if (metadata == null) {
+            return false;
+        }
+        boolean spaceMatches = !filter.restrictsSpaces()
+                || filter.spaceIds().contains(metadata.spaceId());
+        boolean scopeMatches = !filter.restrictsScopes()
+                || filter.scopes().stream().anyMatch(scope -> scope.name().equals(metadata.memoryScope()));
+        return spaceMatches && scopeMatches;
+    }
+
+    private TemporalEntity updateInheritedEntityAsOverlay(TemporalEntity baseEntity,
+                                                          EntityUpdateRequest request,
+                                                          ProjectContext projectContext) {
+        var now = Instant.now();
+        String description = request.description() != null ? request.description() : baseEntity.description();
+        Map<String, Object> properties = request.properties() != null ? request.properties() : baseEntity.properties();
+        float importance = request.importanceScore() != null ? request.importanceScore() : baseEntity.importanceScore();
+        var overlay = new TemporalEntity(
+                null,
+                baseEntity.type(),
+                baseEntity.name(),
+                description,
+                properties,
+                1,
+                true,
+                now,
+                null,
+                baseEntity.sourceConversationId(),
+                baseEntity.extractionConfidence(),
+                importance,
+                0,
+                null,
+                now,
+                now,
+                baseEntity.lifecycleState(),
+                baseEntity.lifecycleReason(),
+                baseEntity.expiresAt(),
+                baseEntity.temporality(),
+                baseEntity.succeededBy(),
+                baseEntity.isDerived(),
+                baseEntity.derivationSources());
+        return SqliteBusyRetry.execute(() -> semanticMemory.upsertProjectOverlay(
+                overlay,
+                baseEntity,
+                MANUAL_SOURCE,
+                toManualProjectWriteContext(projectContext)));
+    }
+
     private EntityDetailDto toEntityDetail(TemporalEntity e, @Nullable EntityMetadata metadata) {
         return new EntityDetailDto(
                 e.id(), e.type().name(), e.type().label(), e.name(), e.description(),
@@ -898,6 +1083,10 @@ public class MemoryController {
                 metadata != null ? metadata.realityType() : null,
                 e.properties(), e.version(), e.isCurrent(),
                 e.validFrom(), e.validTo(), e.sourceConversationId(),
+                e.lifecycleState().name(), e.lifecycleReason(), e.expiresAt(),
+                e.temporality().name(), e.succeededBy(), e.isDerived(), e.derivationSources(),
+                e.evidenceKind().name(), e.trustLevel().name(), e.trustScore(),
+                e.evidenceCount(), e.lastVerifiedAt(),
                 e.extractionConfidence(), e.importanceScore(), e.accessCount(),
                 e.lastAccessedAt(), e.createdAt(), e.updatedAt());
     }
@@ -915,6 +1104,14 @@ public class MemoryController {
                 metadata != null ? metadata.spaceId() : null,
                 metadata != null ? metadata.memoryScope() : null,
                 metadata != null ? metadata.realityType() : null,
+                e.lifecycleState().name(),
+                e.temporality().name(),
+                e.expiresAt(),
+                e.evidenceKind().name(),
+                e.trustLevel().name(),
+                e.trustScore(),
+                e.evidenceCount(),
+                e.lastVerifiedAt(),
                 e.createdAt(),
                 e.updatedAt()
         );
@@ -942,6 +1139,10 @@ public class MemoryController {
                         lookupName(documentNames, item.sourceDocumentId()),
                         item.sourceKnowledgeBaseId(),
                         lookupName(knowledgeBaseNames, item.sourceKnowledgeBaseId()),
+                        item.evidenceKind(),
+                        item.trustLevel(),
+                        item.trustScore(),
+                        item.evidenceExcerpt(),
                         item.confidence(),
                         item.createdAt()
                 ))
@@ -976,6 +1177,10 @@ public class MemoryController {
                         lookupName(documentNames, item.sourceDocumentId()),
                         item.sourceKnowledgeBaseId(),
                         lookupName(knowledgeBaseNames, item.sourceKnowledgeBaseId()),
+                        item.evidenceKind(),
+                        item.trustLevel(),
+                        item.trustScore(),
+                        item.evidenceExcerpt(),
                         item.confidence(),
                         item.createdAt()
                 ))
@@ -993,6 +1198,35 @@ public class MemoryController {
     @Nullable
     private EntityMetadata loadEntityMetadata(String entityId) {
         return provenanceRepository.loadEntityMetadata(List.of(entityId)).get(entityId);
+    }
+
+    private MemoryWriteContext writeContextFromMetadata(@Nullable EntityMetadata metadata) {
+        return new MemoryWriteContext(
+                metadata != null ? metadata.spaceId() : null,
+                parseMemoryScope(metadata != null ? metadata.memoryScope() : null),
+                MemoryOriginType.MANUAL,
+                MemoryRealityType.UNKNOWN,
+                MANUAL_SOURCE,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    @Nullable
+    private MemoryScope parseMemoryScope(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return MemoryScope.valueOf(raw.trim());
+        } catch (IllegalArgumentException e) {
+            log.warn("实体记忆范围元数据非法，按默认范围写入: memoryScope={}", raw);
+            return null;
+        }
     }
 
     private ConversationSummaryDto toConversationSummary(ConversationRecord c) {

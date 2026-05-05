@@ -7,6 +7,7 @@ import com.lifepilot.memory.lifecycle.feedback.FeedbackLedgerRepository;
 import com.lifepilot.memory.lifecycle.feedback.FeedbackThresholdConfig;
 import com.lifepilot.memory.lifecycle.listeners.NegativeFeedbackListener;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
@@ -88,6 +89,7 @@ class TrustUpgradeService_溯源_集成测试 {
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 
         // 捕获事件并转发给 listener —— 还原"AFTER_COMMIT 代发 → NegativeFeedbackListener 消费"
         publishedEvents = new ArrayList<>();

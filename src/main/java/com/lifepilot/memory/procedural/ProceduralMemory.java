@@ -95,7 +95,7 @@ public class ProceduralMemory {
      */
     public Optional<ProcedureTemplate> findById(String templateId) {
         var results = jdbcTemplate.query(
-                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE template_id = ?",
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE template_id = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> mapRowToTemplate(rs),
                 templateId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -164,7 +164,7 @@ public class ProceduralMemory {
      */
     public void recordExecution(String templateId, boolean success) {
         var results = jdbcTemplate.query(
-                "SELECT success_rate, use_count FROM procedure_templates WHERE template_id = ?",
+                "SELECT success_rate, use_count FROM procedure_templates WHERE template_id = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> new float[]{rs.getFloat("success_rate"), rs.getInt("use_count")},
                 templateId);
 
@@ -227,7 +227,7 @@ public class ProceduralMemory {
      */
     public Optional<PreferenceRule> findPreference(String category, String key) {
         var results = jdbcTemplate.query(
-                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ? AND key = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ? AND key = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category, key);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -241,7 +241,7 @@ public class ProceduralMemory {
      */
     public List<PreferenceRule> getPreferences(String category) {
         var results = jdbcTemplate.query(
-                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category);
         return List.copyOf(results);
@@ -262,7 +262,7 @@ public class ProceduralMemory {
                 SET observation_count = observation_count + 1,
                     confidence = MIN(1.0, confidence + 0.05),
                     updated_at = ?
-                WHERE rule_id = ?
+                WHERE rule_id = ? AND deactivated_reason IS NULL
                 """,
                 now, ruleId);
 

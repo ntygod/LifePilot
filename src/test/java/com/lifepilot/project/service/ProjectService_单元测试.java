@@ -3,6 +3,7 @@ package com.lifepilot.project.service;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.MemorySpaceType;
@@ -60,6 +61,9 @@ class ProjectService_单元测试 {
 
     @Mock
     KnowledgeBaseManager knowledgeBaseManager;
+
+    @Mock
+    VectorSearcher vectorSearcher;
 
     @InjectMocks
     ProjectService service;
@@ -230,6 +234,26 @@ class ProjectService_单元测试 {
         verify(memorySpaceRepository).deleteById("ms-1");
         // 无 KB 绑定时 Step 0 不调 deleteKnowledgeBase
         verify(knowledgeBaseManager, never()).deleteKnowledgeBase(anyString());
+    }
+
+    @Test
+    void deleteProject_删除主库后清理实体向量索引() {
+        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
+        when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
+                .thenReturn(List.of());
+        when(jdbcTemplate.queryForList(
+                eq("SELECT id FROM memory_entities WHERE space_id = ?"),
+                eq(String.class),
+                eq("ms-1")))
+                .thenReturn(List.of("e-1", "e-2"));
+
+        service.deleteProject("p-1");
+
+        verify(vectorSearcher).deleteEntityVector("e-1");
+        verify(vectorSearcher).deleteEntityVector("e-2");
     }
 
     @Test
