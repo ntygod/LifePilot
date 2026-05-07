@@ -6,6 +6,7 @@ import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.lifecycle.ChangeSource;
+import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
@@ -36,10 +37,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * MemoryToolProvider cancel action 行为测试 — 验证"按语义批量归档已取消目标"能力。
+ * MemoryToolProvider cancel action 行为测试 — 验证"按语义批量取消目标"能力。
  *
  * <p>回归场景：用户说"取消定时任务"后，LLM 应能通过 cancel 工具
- * 把 GOAL/EXPERIENCE 类旧记忆批量归档，而不是仅 create 一条 PREFERENCE 了事。</p>
+ * 把 GOAL/EXPERIENCE 类旧记忆转为 CANCELLED，而不是仅 create 一条 PREFERENCE 了事。</p>
  *
  * @author zsg
  * @since 2026-04-21
@@ -96,14 +97,17 @@ class MemoryToolProvider_取消action测试 {
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(2);
 
-        // 核心断言：GOAL + EXPERIENCE 均被 archive，TOPIC 不被触及
-        verify(semanticMemory).archive(goal, ChangeSource.TOOL_EXPLICIT);
-        verify(semanticMemory).archive(experience, ChangeSource.TOOL_EXPLICIT);
-        verify(semanticMemory, never()).archive(unrelated, ChangeSource.TOOL_EXPLICIT);
+        // 核心断言：GOAL + EXPERIENCE 均转 CANCELLED，TOPIC 不被触及
+        verify(semanticMemory).updateLifecycleState(
+                "goal-diary", LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory).updateLifecycleState(
+                "exp-daily", LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory, never()).updateLifecycleState(
+                eq("topic-x"), any(), any(), eq(ChangeSource.TOOL_EXPLICIT));
     }
 
     @Test
-    void cancel在无命中时应返回友好消息且不调用archive() {
+    void cancel在无命中时应返回友好消息且不调用状态更新() {
         when(hybridRetriever.retrieve(
                 anyString(), anyInt(), any(RetrievalWeights.class), eq(MemoryReadFilter.all())))
                 .thenReturn(List.of());
@@ -119,7 +123,7 @@ class MemoryToolProvider_取消action测试 {
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(0);
         assertThat(result.<String>getData("message")).contains("未找到");
-        verify(semanticMemory, never()).archive(any(TemporalEntity.class), eq(ChangeSource.TOOL_EXPLICIT));
+        verify(semanticMemory, never()).updateLifecycleState(any(), any(), any(), any());
     }
 
     @Test
@@ -144,8 +148,10 @@ class MemoryToolProvider_取消action测试 {
 
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(1);
-        verify(semanticMemory).archive(strong, ChangeSource.TOOL_EXPLICIT);
-        verify(semanticMemory, never()).archive(weak, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory).updateLifecycleState(
+                "goal-strong", LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory, never()).updateLifecycleState(
+                eq("goal-weak"), any(), any(), eq(ChangeSource.TOOL_EXPLICIT));
     }
 
     @Test
@@ -181,10 +187,14 @@ class MemoryToolProvider_取消action测试 {
 
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(2);
-        verify(semanticMemory).archive(g1, ChangeSource.TOOL_EXPLICIT);
-        verify(semanticMemory).archive(g2, ChangeSource.TOOL_EXPLICIT);
-        verify(semanticMemory, never()).archive(g3, ChangeSource.TOOL_EXPLICIT);
-        verify(semanticMemory, never()).archive(g4, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory).updateLifecycleState(
+                "g1", LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory).updateLifecycleState(
+                "g2", LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory, never()).updateLifecycleState(
+                eq("g3"), any(), any(), eq(ChangeSource.TOOL_EXPLICIT));
+        verify(semanticMemory, never()).updateLifecycleState(
+                eq("g4"), any(), any(), eq(ChangeSource.TOOL_EXPLICIT));
     }
 
     @Test
@@ -207,7 +217,32 @@ class MemoryToolProvider_取消action测试 {
 
         assertThat(result.ok()).isTrue();
         assertThat(result.<Integer>getData("count")).isEqualTo(1);
-        verify(semanticMemory).archive(topic, ChangeSource.TOOL_EXPLICIT);
+        verify(semanticMemory).updateLifecycleState(
+                "topic-1", LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT);
+    }
+
+    @Test
+    void cancel带编号精确命中时应绕过默认类型限制() {
+        var preference = 构造实体("pref-cancel", EntityType.PREFERENCE,
+                "MT-CANCEL-0507 不提醒下午5点检查记忆抽取日志");
+        when(semanticMemory.findAllCurrent(eq(MemoryReadFilter.all())))
+                .thenReturn(List.of(preference));
+
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query",
+                        "取消 MT-CANCEL-0507，以后不要再提醒我下午5点检查记忆抽取日志"),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.<Integer>getData("count")).isEqualTo(1);
+        assertThat(result.<Boolean>getData("exact")).isTrue();
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+        verify(semanticMemory).updateLifecycleState(
+                "pref-cancel", LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT);
     }
 
     private TemporalEntity 构造实体(String id, EntityType type, String name) {

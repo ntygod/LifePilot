@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -204,7 +205,7 @@ public class SemanticMemory {
                     incoming.lastVerifiedAt() != null ? incoming.lastVerifiedAt() : existing.get().lastVerifiedAt());
             insertEntityVersion(entity, resolvedContext, now);
             updateEntityRoot(entity, resolvedContext, now);
-            updateVectorAfterCommit(entity);
+            enqueueVectorUpsertProjection(entity);
             notifyWriteCallback();
             triggerConflictResolution(entity);
             log.debug("语义记忆: 版本化更新, name={}, version={}", entity.name(), entity.version());
@@ -226,7 +227,7 @@ public class SemanticMemory {
                     incoming.evidenceCount(), incoming.lastVerifiedAt());
             insertEntityRoot(entity, resolvedContext, now);
             insertEntityVersion(entity, resolvedContext, now);
-            updateVectorAfterCommit(entity);
+            enqueueVectorUpsertProjection(entity);
             notifyWriteCallback();
             // Task 12：新建实体发布 LifecycleChanged(null → newState)，source 由 provenance 推断
             publishAfterCommit(new EntityLifecycleChanged(
@@ -301,35 +302,42 @@ public class SemanticMemory {
 
     /** 图遍历：递归 CTE 沿当前有效关系边遍历最多 maxDepth 跳。 */
     public List<TemporalEntity> findRelated(String entityId, int maxDepth) {
+        if (entityId == null || entityId.isBlank() || maxDepth <= 0) {
+            return List.of();
+        }
+        String now = Instant.now().toString();
         return jdbcTemplate.query(
                 """
                 WITH RECURSIVE related(id, depth) AS (
-                    SELECT target_entity_id, 1 FROM temporal_relations
-                    WHERE source_entity_id = ? AND valid_to IS NULL
+                    SELECT tr.target_entity_id, 1
+                    FROM temporal_relations tr
+                    JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
+                    WHERE tr.source_entity_id = ? AND tr.valid_to IS NULL
                     UNION
-                    SELECT target_entity_id, 1 FROM temporal_relations
-                    WHERE target_entity_id = ? AND valid_to IS NULL
+                    SELECT tr.source_entity_id, 1
+                    FROM temporal_relations tr
+                    JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
+                    WHERE tr.target_entity_id = ? AND tr.valid_to IS NULL
                     UNION
                     SELECT CASE
                         WHEN tr.source_entity_id = r.id THEN tr.target_entity_id
                         ELSE tr.source_entity_id
                     END, r.depth + 1
                     FROM temporal_relations tr
+                    JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
                     JOIN related r ON (tr.source_entity_id = r.id OR tr.target_entity_id = r.id)
                     WHERE tr.valid_to IS NULL AND r.depth < ?
                 )
-                SELECT DISTINCT te.id, te.type, te.name, te.description, te.properties_json,
-                                te.version, te.is_current, te.valid_from, te.valid_to, te.source_conversation_id,
-                                te.extraction_confidence, te.importance_score, te.access_count, te.last_accessed_at,
-                                te.created_at, te.updated_at,
-                                te.lifecycle_state, te.lifecycle_reason, te.expires_at, te.temporality,
-                                te.succeeded_by, te.is_derived, te.derivation_sources
+                SELECT DISTINCT te.*
                 FROM temporal_entities te
                 JOIN related r ON te.id = r.id
                 WHERE te.is_current = 1 AND te.id != ?
+                  AND te.lifecycle_state IN ('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')
+                  AND (te.valid_to IS NULL OR te.valid_to > ?)
+                  AND (te.expires_at IS NULL OR te.expires_at > ?)
                 """,
                 (rs, rowNum) -> mapRowToEntity(rs),
-                entityId, entityId, maxDepth, entityId);
+                entityId, entityId, maxDepth, entityId, now, now);
     }
 
     /** 查找当前版本实体。 */
@@ -424,12 +432,8 @@ public class SemanticMemory {
 
     /**
      * 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系；
-     * 向量清理走 afterCommit 钩子在事务外执行，避免事务回滚后留下"向量已删、主库未改"的不一致。
-     *
-     * <p>跨库（vectors.db 与主库分离）写入不能加入本地事务，因此注册
-     * {@link TransactionSynchronization#afterCommit()}：主库事务真正提交后再删向量，
-     * 回滚路径下向量保持原状。钩子里的失败仅告警；残留向量最终由检索链路的
-     * {@code findByIds} + {@code is_current = 1} 过滤拦截，不会被注入上下文。</p>
+     * 向量清理只登记 {@code memory_projection_outbox} DELETE 任务，避免事务回滚后留下
+     * "向量已删、主库未改"的不一致。
      *
      * <p>B5 follow-up：增加 {@code source} 入参，替代原先写死的 {@link ChangeSource#UI_EDIT}。
      * 允许 {@code ForgettingEngine} / {@code ExperienceMerger} / {@code EntityDeduplicator}
@@ -444,7 +448,14 @@ public class SemanticMemory {
         var now = Instant.now();
         closeCurrentEntityVersion(entity.id(), now);
         jdbcTemplate.update(
-                "UPDATE memory_entities SET status = 'ARCHIVED', last_seen_at = ?, updated_at = ? WHERE id = ?",
+                """
+                UPDATE memory_entities
+                SET status = 'ARCHIVED',
+                    lifecycle_state = 'ARCHIVED',
+                    last_seen_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
                 now.toString(), now.toString(), entity.id());
         jdbcTemplate.update(
                 """
@@ -463,7 +474,7 @@ public class SemanticMemory {
                 "UPDATE memory_relations SET status = 'ARCHIVED', updated_at = ? WHERE (source_entity_id = ? OR target_entity_id = ?) AND status = 'ACTIVE'",
                 now.toString(), entity.id(), entity.id());
 
-        registerAfterCommitVectorCleanup(entity.id());
+        enqueueVectorDeleteProjection(entity.id());
 
         // Task 12：归档发布 LifecycleChanged(旧态 → ARCHIVED)
         publishAfterCommit(new EntityLifecycleChanged(
@@ -478,9 +489,9 @@ public class SemanticMemory {
     }
 
     /**
-     * 注册事务提交后删除向量的投影任务。
+     * 登记删除向量的投影任务。
      */
-    private void registerAfterCommitVectorCleanup(String entityId) {
+    private void enqueueVectorDeleteProjection(String entityId) {
         if (projectionService == null) {
             throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 直写向量");
         }
@@ -799,7 +810,7 @@ public class SemanticMemory {
         jdbcTemplate.update(
                 "UPDATE memory_entities SET updated_at = ?, last_seen_at = ? WHERE id = ?",
                 now.toString(), now.toString(), entityId);
-        updateVectorAfterCommit(updated);
+        enqueueVectorUpsertProjection(updated);
         notifyWriteCallback();
         log.debug("语义记忆: updateDescription 版本化, entityId={}, newVersion={}",
                 entityId, updated.version());
@@ -958,7 +969,12 @@ public class SemanticMemory {
      */
     public long countCurrentRelations() {
         var count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM temporal_relations WHERE valid_to IS NULL",
+                """
+                SELECT COUNT(*)
+                FROM temporal_relations tr
+                JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
+                WHERE tr.valid_to IS NULL
+                """,
                 Long.class);
         return count != null ? count : 0L;
     }
@@ -1000,7 +1016,15 @@ public class SemanticMemory {
      */
     public List<TemporalRelation> findAllCurrentRelations() {
         return jdbcTemplate.query(
-                "SELECT id, source_entity_id, target_entity_id, relation_type, strength, properties_json, valid_from, valid_to, source_conversation_id, created_at FROM temporal_relations WHERE valid_to IS NULL ORDER BY created_at DESC",
+                """
+                SELECT tr.id, tr.source_entity_id, tr.target_entity_id, tr.relation_type,
+                       tr.strength, tr.properties_json, tr.valid_from, tr.valid_to,
+                       tr.source_conversation_id, tr.created_at
+                FROM temporal_relations tr
+                JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
+                WHERE tr.valid_to IS NULL
+                ORDER BY tr.created_at DESC
+                """,
                 (rs, rowNum) -> mapRowToRelation(rs));
     }
 
@@ -1012,9 +1036,77 @@ public class SemanticMemory {
      */
     public List<TemporalRelation> findRelationsByEntityId(String entityId) {
         return jdbcTemplate.query(
-                "SELECT id, source_entity_id, target_entity_id, relation_type, strength, properties_json, valid_from, valid_to, source_conversation_id, created_at FROM temporal_relations WHERE (source_entity_id = ? OR target_entity_id = ?) AND valid_to IS NULL ORDER BY created_at DESC",
+                """
+                SELECT tr.id, tr.source_entity_id, tr.target_entity_id, tr.relation_type,
+                       tr.strength, tr.properties_json, tr.valid_from, tr.valid_to,
+                       tr.source_conversation_id, tr.created_at
+                FROM temporal_relations tr
+                JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
+                WHERE (tr.source_entity_id = ? OR tr.target_entity_id = ?)
+                  AND tr.valid_to IS NULL
+                ORDER BY tr.created_at DESC
+                """,
                 (rs, rowNum) -> mapRowToRelation(rs),
                 entityId, entityId);
+    }
+
+    /**
+     * 按实体 ID 批量查询 provenance 中的 source_entry_id。
+     *
+     * <p>知识库图谱把 {@code source_entry_id} 用作 chunk id，图检索可据此从 L3 domain 实体
+     * 回到具体文档分块；对话记忆等其他来源也可复用此方法做证据回溯。</p>
+     *
+     * @param entityIds 实体 ID 集合
+     * @return entityId -> source_entry_id 列表
+     */
+    public Map<String, List<String>> findSourceEntryIdsByEntityIds(Collection<String> entityIds) {
+        return findProvenanceValuesByEntityIds(entityIds, "source_entry_id", true);
+    }
+
+    /**
+     * 按实体 ID 批量查询 provenance 中的 source_document_id。
+     *
+     * @param entityIds 实体 ID 集合
+     * @param onlyValid 是否只返回仍有效的 provenance
+     * @return entityId -> source_document_id 列表
+     */
+    public Map<String, List<String>> findSourceDocumentIdsByEntityIds(Collection<String> entityIds,
+                                                                      boolean onlyValid) {
+        return findProvenanceValuesByEntityIds(entityIds, "source_document_id", onlyValid);
+    }
+
+    private Map<String, List<String>> findProvenanceValuesByEntityIds(Collection<String> entityIds,
+                                                                      String column,
+                                                                      boolean onlyValid) {
+        if (entityIds == null || entityIds.isEmpty()) {
+            return Map.of();
+        }
+        var ids = entityIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        if (!Set.of("source_entry_id", "source_document_id").contains(column)) {
+            throw new IllegalArgumentException("不支持的 provenance 列: " + column);
+        }
+        var sql = "SELECT entity_id, " + column + " AS source_value FROM memory_entity_provenances "
+                + "WHERE " + column + " IS NOT NULL AND " + column + " <> '' "
+                + (onlyValid ? "AND status = 'VALID' " : "")
+                + "AND entity_id IN (" + buildPlaceholders(ids.size()) + ") "
+                + "ORDER BY created_at DESC";
+        Map<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
+        jdbcTemplate.query(sql, rs -> {
+            grouped.computeIfAbsent(rs.getString("entity_id"), ignored -> new LinkedHashSet<>())
+                    .add(rs.getString("source_value"));
+        }, ids.toArray());
+        return grouped.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> List.copyOf(entry.getValue()),
+                        (left, right) -> left,
+                        LinkedHashMap::new));
     }
 
     /**
@@ -1539,8 +1631,8 @@ public class SemanticMemory {
         return String.join(",", Collections.nCopies(count, "?"));
     }
 
-    /** 主库提交后更新向量索引，避免事务回滚后留下孤儿 embedding。 */
-    private void updateVectorAfterCommit(TemporalEntity entity) {
+    /** 登记向量 upsert 投影任务，避免事务回滚后留下孤儿 embedding。 */
+    private void enqueueVectorUpsertProjection(TemporalEntity entity) {
         if (projectionService == null) {
             throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 直写向量");
         }

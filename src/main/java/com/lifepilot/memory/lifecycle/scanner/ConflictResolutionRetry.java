@@ -4,6 +4,7 @@ import com.lifepilot.memory.semantic.ConflictResolutionRepository;
 import com.lifepilot.memory.semantic.ConflictResolutionService;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -42,11 +43,12 @@ public class ConflictResolutionRetry {
     private static final int MAX_ATTEMPTS = 3;
 
     private final ConflictResolutionRepository queueRepository;
+    @Nullable
     private final ConflictResolutionService resolutionService;
     private final SemanticMemory semanticMemory;
 
     public ConflictResolutionRetry(ConflictResolutionRepository queueRepository,
-                                   ConflictResolutionService resolutionService,
+                                   @Nullable ConflictResolutionService resolutionService,
                                    SemanticMemory semanticMemory) {
         this.queueRepository = queueRepository;
         this.resolutionService = resolutionService;
@@ -68,6 +70,10 @@ public class ConflictResolutionRetry {
      * 测试友好入口 —— 与 {@link #retry()} 共享逻辑，方便手动触发和单元测试直接调用。
      */
     public void retryNow() {
+        if (resolutionService == null) {
+            log.debug("ConflictResolutionRetry 冲突裁决服务不可用，跳过");
+            return;
+        }
         var pending = queueRepository.findFailedRetriable(MAX_ATTEMPTS);
         if (pending.isEmpty()) {
             log.debug("ConflictResolutionRetry 无可重试项，跳过");

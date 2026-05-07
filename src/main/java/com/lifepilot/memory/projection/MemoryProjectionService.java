@@ -37,13 +37,38 @@ public class MemoryProjectionService {
         enqueueVectorAfterCommit(entityId, "DELETE", Map.of("entityId", entityId));
     }
 
+    public void enqueueProcedureTemplateVectorUpsertAfterCommit(String templateId, String triggerIntent) {
+        Map<String, Object> payload = Map.of(
+                "entityId", templateId,
+                "text", triggerIntent
+        );
+        enqueueAfterCommit("PROCEDURE_TEMPLATE", templateId, "PROCEDURE_TEMPLATE_VECTOR", "UPSERT", payload);
+    }
+
+    public void enqueueProcedureTemplateVectorDeleteAfterCommit(String templateId) {
+        enqueueAfterCommit(
+                "PROCEDURE_TEMPLATE",
+                templateId,
+                "PROCEDURE_TEMPLATE_VECTOR",
+                "DELETE",
+                Map.of("entityId", templateId));
+    }
+
     private void enqueueVectorAfterCommit(String entityId,
                                           String operation,
                                           Map<String, Object> payload) {
+        enqueueAfterCommit("MEMORY_ENTITY", entityId, "VECTOR", operation, payload);
+    }
+
+    private void enqueueAfterCommit(String aggregateType,
+                                    String aggregateId,
+                                    String projectionType,
+                                    String operation,
+                                    Map<String, Object> payload) {
         String outboxId = repository.enqueue(
-                "MEMORY_ENTITY",
-                entityId,
-                "VECTOR",
+                aggregateType,
+                aggregateId,
+                projectionType,
                 operation,
                 payload);
         runAfterCommit(() -> processor.processOne(outboxId));

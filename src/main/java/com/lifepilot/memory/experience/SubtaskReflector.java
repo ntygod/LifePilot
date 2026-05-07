@@ -47,6 +47,7 @@ public class SubtaskReflector {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
+    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Subtask config;
@@ -58,7 +59,7 @@ public class SubtaskReflector {
 
     public SubtaskReflector(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            GenerationRouter generationRouter,
+                            @Nullable GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             MemoryProperties memoryProperties) {
         this(semanticMemory, vectorSearcher, generationRouter, promptRegistry,
@@ -67,7 +68,7 @@ public class SubtaskReflector {
 
     public SubtaskReflector(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            GenerationRouter generationRouter,
+                            @Nullable GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             MemoryProperties memoryProperties,
                             @Nullable ChatSessionRepository chatSessionRepository,
@@ -91,6 +92,10 @@ public class SubtaskReflector {
     public void reflect(ReactAgentState state) {
         if (!config.isEnabled()) {
             log.debug("子任务反思: 功能已关闭");
+            return;
+        }
+        if (generationRouter == null) {
+            log.debug("子任务反思: GenerationRouter 不可用，跳过");
             return;
         }
 

@@ -3,7 +3,7 @@ package com.lifepilot.project.service;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
-import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.MemorySpaceType;
@@ -63,7 +63,7 @@ class ProjectService_单元测试 {
     KnowledgeBaseManager knowledgeBaseManager;
 
     @Mock
-    VectorSearcher vectorSearcher;
+    MemoryProjectionService projectionService;
 
     @InjectMocks
     ProjectService service;
@@ -237,7 +237,7 @@ class ProjectService_单元测试 {
     }
 
     @Test
-    void deleteProject_删除主库后清理实体向量索引() {
+    void deleteProject_删除主库前登记实体向量删除投影任务() {
         Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
                 Instant.now(), Instant.now());
         when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
@@ -252,8 +252,8 @@ class ProjectService_单元测试 {
 
         service.deleteProject("p-1");
 
-        verify(vectorSearcher).deleteEntityVector("e-1");
-        verify(vectorSearcher).deleteEntityVector("e-2");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-1");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-2");
     }
 
     @Test

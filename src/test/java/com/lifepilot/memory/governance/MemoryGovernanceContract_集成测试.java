@@ -185,6 +185,29 @@ class MemoryGovernanceContract_集成测试 {
     }
 
     @Test
+    void 投影outbox_程序模板向量通过独立投影类型消费() {
+        String upsertId = outboxRepository.enqueue(
+                "PROCEDURE_TEMPLATE",
+                "tpl-reminder",
+                "PROCEDURE_TEMPLATE_VECTOR",
+                "UPSERT",
+                Map.of("entityId", "tpl-reminder", "text", "帮我创建提醒"));
+        String deleteId = outboxRepository.enqueue(
+                "PROCEDURE_TEMPLATE",
+                "tpl-reminder",
+                "PROCEDURE_TEMPLATE_VECTOR",
+                "DELETE",
+                Map.of("entityId", "tpl-reminder"));
+
+        outboxProcessor.processOne(upsertId);
+        outboxProcessor.processOne(deleteId);
+
+        verify(vectorSearcher).upsertEntityVector("tpl-reminder", "帮我创建提醒");
+        verify(vectorSearcher).deleteEntityVector("tpl-reminder");
+        assertThat(outboxRepository.countByStatus("PROCESSED")).isEqualTo(2);
+    }
+
+    @Test
     void 提取候选_可记录并回写应用结果() {
         var decision = new AudnDecision(
                 AudnOperation.ADD,

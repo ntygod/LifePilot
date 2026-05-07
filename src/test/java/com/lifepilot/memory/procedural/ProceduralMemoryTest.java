@@ -1,7 +1,6 @@
 package com.lifepilot.memory.procedural;
 
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,7 +20,7 @@ import static org.mockito.Mockito.*;
  * ProceduralMemory 模板 CRUD 单元测试。
  *
  * <p>使用内存 SQLite 验证 save → findById → update → delete 完整流程。
- * VectorSearcher 使用 Mock，避免依赖 LLM 和 sqlite-vec。</p>
+ * 模板向量通过投影服务 Mock 验证，避免依赖 LLM 和 sqlite-vec。</p>
  *
  * @author zsg
  * @since 2026-03-01
@@ -30,7 +29,7 @@ class ProceduralMemoryTest {
 
     private SingleConnectionDataSource dataSource;
     private JdbcTemplate jdbcTemplate;
-    private VectorSearcher vectorSearcher;
+    private MemoryProjectionService projectionService;
     private ProceduralMemory proceduralMemory;
 
     @BeforeEach
@@ -85,13 +84,8 @@ class ProceduralMemoryTest {
                     created_at          TEXT NOT NULL DEFAULT (datetime('now'))
                 )""");
 
-        // Mock VectorSearcher — 避免依赖 LLM 和 sqlite-vec
-        vectorSearcher = mock(VectorSearcher.class);
-
-        var properties = new MemoryProperties();
-        properties.setEmbeddingDimensions(128);
-
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, vectorSearcher, properties);
+        projectionService = mock(MemoryProjectionService.class);
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
     }
 
     @AfterEach
@@ -136,8 +130,8 @@ class ProceduralMemoryTest {
         // 验证 variables 反序列化
         assertThat(loaded.variables()).containsKeys("taskName", "deadline");
 
-        // 验证 VectorSearcher 被调用
-        verify(vectorSearcher).upsertEntityVector(template.templateId(), "帮我添加一个待办");
+        verify(projectionService).enqueueProcedureTemplateVectorUpsertAfterCommit(
+                template.templateId(), "帮我添加一个待办");
     }
 
     @Test
@@ -168,8 +162,8 @@ class ProceduralMemoryTest {
         assertThat(found.get().useCount()).isEqualTo(10);
         assertThat(found.get().variables()).containsEntry("newVar", "value");
 
-        // 验证 VectorSearcher 被调用两次（save + update）
-        verify(vectorSearcher, times(2)).upsertEntityVector(anyString(), anyString());
+        verify(projectionService, times(2))
+                .enqueueProcedureTemplateVectorUpsertAfterCommit(anyString(), anyString());
     }
 
     @Test
@@ -183,7 +177,7 @@ class ProceduralMemoryTest {
         proceduralMemory.delete(template.templateId());
 
         assertThat(proceduralMemory.findById(template.templateId())).isEmpty();
-        verify(vectorSearcher).deleteEntityVector(template.templateId());
+        verify(projectionService).enqueueProcedureTemplateVectorDeleteAfterCommit(template.templateId());
     }
 
     @Test

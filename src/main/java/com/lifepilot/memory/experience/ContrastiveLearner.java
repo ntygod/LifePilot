@@ -14,6 +14,7 @@ import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -34,13 +35,14 @@ public class ContrastiveLearner {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
+    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Contrastive config;
 
     public ContrastiveLearner(SemanticMemory semanticMemory,
                                VectorSearcher vectorSearcher,
-                               GenerationRouter generationRouter,
+                               @Nullable GenerationRouter generationRouter,
                                PromptRegistry promptRegistry,
                                MemoryProperties memoryProperties) {
         this.semanticMemory = semanticMemory;
@@ -58,6 +60,10 @@ public class ContrastiveLearner {
     public void learn(TemporalEntity newExperience) {
         if (!config.isEnabled()) {
             log.debug("对比学习: 功能已关闭");
+            return;
+        }
+        if (generationRouter == null) {
+            log.debug("对比学习: GenerationRouter 不可用，跳过");
             return;
         }
 

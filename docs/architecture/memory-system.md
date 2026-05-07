@@ -1,317 +1,584 @@
-# 记忆系统 — 架构设计
+# 记忆系统 — 架构设计与演进路线
 
-> **文档性质**：架构设计文档
-> **模块归属**：`com.lifepilot.memory`
-> **最后更新**：2026-05-03
+> **文档性质**：记忆模块整体心智模型与演进路线
+> **模块归属**：`com.lifepilot.memory` + `com.lifepilot.agent.context` + `com.lifepilot.meta.infra.memory`
+> **最后更新**：2026-05-07（补充统一检索编排未来演进方向）
+> **当前基线**：`ffd39833 feat(memory): 完善记忆治理与消费链路`
+> **配套终态契约**：[memory-data-flow.md](./memory-data-flow.md)
+>
+> 本文档回答“知微记忆系统应该如何理解、如何演进”。涉及写入链路、事件契约、Schema、生命周期、项目隔离、质量门槛和消费边界时，以 `memory-data-flow.md` 为 source of truth。
 
-## 1. 模块概述
+---
 
-当前记忆系统采用“会话层 + L1 临时工作区 + L2 情景记忆 + L3 语义记忆 + L4 程序记忆”的分层模型：
+## 0. 一句话模型
 
-- **会话层（L0）**：`session_store / session_transcript_entries`，是原始对话的唯一真源
-- **L1 临时工作区**：`session_workspace_items`，保存跨轮但临时的任务状态
-- **L2 情景记忆**：基于会话层和 `chat_messages_fts` 提供跨会话片段回忆
-- **L3 语义记忆**：维护时序知识图谱，存放稳定事实、画像和经验实体
-- **L4 程序记忆**：存放偏好规则和操作模板（策略模式已删除）
+知微记忆不是一个“自动塞进 Prompt 的大数据库”，而是一条分层闭环：
 
-这套设计明确取消了“L1 作为对话缓存并 flush 到 L2”的旧链路。当前会话连续性直接来自会话层，跨会话对话检索通过 `memory.recall` 显式触发，L1 不再承载原始对话。
+**L0 会话真源保存原始事实，L1 工作区保存短期任务状态，L2 会话检索负责冷召回，L3 语义主库存放可治理事实，L3.5 热记忆摘要提供小而稳定的 Prompt 表面，L4 程序记忆沉淀可执行偏好和流程，Projection outbox 维护向量/图谱等派生索引。**
 
-## 2. 架构图
+后续改造的核心目标是让用户和 Agent 都能清楚区分：
+
+| 类型 | 定位 | 是否默认进 Prompt | 典型入口 |
+|---|---|---:|---|
+| 热记忆 | 少量、高信任、总是有用的用户画像 / 项目约定 / 经验摘要 | 是，严格预算 | `ContextAssembler` |
+| 冷记忆 | 大量长期事实、历史对话、证据、经验细节 | 否，按需搜索 | `memory.search` / `memory.recall` |
+| 深层记忆 | L3 主库、L4 规则、向量/图谱投影、候选审计 | 否，系统内部治理 | `SemanticMemory` / outbox / scanner |
+
+这与 Hermes Agent 的设计取向一致：常驻上下文必须小、可解释、可治理；历史对话和深层知识应该按需搜索，而不是长期污染系统提示词。
+
+参考调研：
+
+- Hermes Persistent Memory：<https://hermes-agent.nousresearch.com/docs/user-guide/features/memory/>
+- Hermes Memory Providers：<https://hermes-agent.nousresearch.com/docs/user-guide/features/memory-providers/>
+- Hermes Sessions / session_search：<https://hermes-agent.nousresearch.com/docs/user-guide/sessions/>
+- Hindsight memory graph：<https://github.com/vectorize-io/hindsight>
+- Hindsight 0.5 图检索变更：<https://hindsight.vectorize.io/blog/2026/04/07/version-0-5-0>
+- LangChain MultiQueryRetriever：<https://python.langchain.com/docs/how_to/MultiQueryRetriever/>
+- LlamaIndex RouterQueryEngine / SubQuestionQueryEngine：<https://docs.llamaindex.ai/>
+- Haystack ConditionalRouter：<https://docs.haystack.deepset.ai/docs/conditionalrouter>
+- Microsoft GraphRAG / DRIFT：<https://microsoft.github.io/graphrag/>
+- Letta Memory：<https://docs.letta.com/concepts/memory/overview>
+- Mem0：<https://docs.mem0.ai/>
+
+---
+
+## 1. Hermes 对知微的启发
+
+Hermes 的内置记忆分成三块：
+
+| Hermes 做法 | 关键思想 | 知微对应设计 |
+|---|---|---|
+| `MEMORY.md` / `USER.md` 有严格字符预算 | 常驻记忆必须小而精，不追求全量 | `L3.5 HotMemoryDigest`，从 L3 派生小型热摘要 |
+| session_search 搜索全量历史会话 | 历史对话不自动进 Prompt，只在需要时召回 | L2 `memory.recall` 基于 transcript / FTS 召回片段 |
+| 外部 provider 与内置记忆并存 | 深层能力是 additive，不替代核心热记忆 | L3/L4/Projection 是内建 provider，未来可抽象 `MemoryProviderPort` |
+| 写入后不立即改当前 Prompt 快照 | 保持当前轮上下文稳定，避免自污染 | 当前 turn 的写入只影响下一次上下文组装 |
+| provider 可 prefetch / sync / extract | 写入、召回、注入解耦 | 候选表 + outbox + ContextAssembler 分层消费 |
+
+知微不应照搬 markdown 文件存储。知微已有项目隔离、overlay、质量字段、生命周期和主库版本化能力，更适合做成数据库内的**派生热摘要层**，而不是把 L3 降级为文件。
+
+### 1.1 Hindsight 对图记忆的启发
+
+Hindsight 的图记忆重点不是“把图谱文本塞进 Prompt”，而是把事实、实体、实体共现、事实间链接变成冷召回信号。它的 retain 阶段把 sentence / fact 级记忆写成 `memory_units`，再抽取 canonical `entities`、`unit_entities`、`entity_cooccurrences` 和 `memory_links`；recall 阶段并行跑语义、BM25、时间和图扩展，再融合排序。
+
+| Hindsight 做法 | 关键思想 | 知微对应设计 |
+|---|---|---|
+| fact / unit 级记忆与实体分离 | 检索对象和实体索引不要混成一张表 | L3 当前以实体为主；后续可把对话/文档证据片段作为检索关键事实单元，实体是索引和治理锚点 |
+| `memory_links` 支持 temporal / semantic / entity / causal 等类型和权重 | 图边是 typed weighted signal，不只是“有关系” | `memory_relations.relation_type + strength + properties_json` 应继续强化类型、方向、证据和质量 |
+| entity co-occurrence 物化 | 高频共现用于召回扩展，但要限制 fanout | 知微图遍历必须有 depth / seed / fanout 上限，避免高连接实体污染搜索 |
+| recall 从语义/BM25/时间种子出发再做 link expansion | 图扩展应补充强种子，而不是只靠 query 文本精确命中实体名 | `HybridRetriever` 中图路径应从多路候选实体扩展；当前 `GraphTraverser` 先做多起点 name seed，后续升级为 vector / FTS seed expansion |
+| causal / semantic link 在融合前加权累积 | 不同边类型对答案价值不同 | 知微后续应按 `relation_type` 给 graph score 加权，因果/依赖类边高于弱共现边 |
+| 反思 observation 必须引用原始 memory id / quote | 洞察必须可追溯 | 知微 L3 派生洞察、L3.5 热摘要和 L4 规则都必须保留 L3 source entity id |
+
+Hindsight 0.5 又进一步把传统 BFS / 多路径传播收敛为 `LinkExpansionRetriever`，优先使用预计算的一等链接信号（entity / semantic kNN / causal），并把高 fanout 实体扩展做 per-entity cap 或超时降级。知微现阶段仍是 SQL 递归图，因此先用 depth / seed 上限控制风险；后续物化图投影时再靠预计算链接减少在线遍历成本。
+
+因此，知微图记忆的目标不是替代热摘要，而是增强 `memory.search` / `knowledge.search` 等冷召回：从高质量种子出发，沿有证据、有生命周期、有读取边界的关系边做有界扩展，并把图分数作为 score breakdown 的一部分。
+
+---
+
+## 2. 分层架构
 
 ```mermaid
-graph TB
-    subgraph "会话层（L0）"
-        CHS["ConversationHistoryStore<br/>写入原始对话"]
-        CE["ContextEngine<br/>读取最近完整轮次"]
-        CMS["session_store / session_transcript_entries"]
-        CHS --> CMS
-        CE --> CMS
+flowchart TB
+    subgraph L0["L0 会话真源"]
+        Transcript["session_store / session_transcript_entries<br/>原始对话、工具调用、turn 快照"]
+        FTS["session_transcript_entries_fts<br/>L0 派生全文索引"]
+        ToolRaw["tool_result.outputJson<br/>工具完整原始结果"]
     end
 
-    subgraph "L1 临时工作区"
-        SWS["SessionWorkspaceService"]
-        WCJ["WorkspaceCleanupJob"]
-        SWI["session_workspace_items"]
-        SWS --> SWI
-        WCJ --> SWS
+    subgraph L1["L1 临时工作区"]
+        Workspace["session_workspace_items<br/>PendingDecision / TaskState / WorkingSet"]
     end
 
-    subgraph "L2 情景记忆"
-        EM["EpisodicMemory"]
-        FTS["chat_messages_fts"]
-        CSR["ConversationSnippetRecord"]
-        EM --> CMS
-        EM --> FTS
-        EM --> CSR
+    subgraph L2["L2 冷会话召回"]
+        Episodic["EpisodicMemory<br/>memory.recall / session snippet"]
     end
 
-    subgraph "L3 语义记忆"
-        SM["SemanticMemory"]
-        RE["RealtimeExtractor"]
-        TE["TemporalEntity / TemporalRelation"]
-        RE --> SM
-        SM --> TE
+    subgraph TraceRead["审计 / 复盘读取"]
+        ToolReplay["trace / transcript 工具结果查询<br/>按权限、脱敏、预算返回"]
     end
 
-    subgraph "L4 程序记忆"
-        PM["ProceduralMemory"]
-        IM["IntentMatcher"]
-        PR["PreferenceRule / ProcedureTemplate"]
-        IM --> PM
-        PM --> PR
-        Note["templateEnabled 默认启用"]
+    subgraph L3["L3 治理语义主库"]
+        Candidates["memory_extraction_candidates<br/>候选审计"]
+        Entities["memory_entities / versions / provenances<br/>事实主库"]
+        Overlays["memory_entity_overlays<br/>项目局部视图"]
+        Lifecycle["lifecycle listeners / scanners<br/>过期、失活、重算、反馈"]
     end
 
-    subgraph "检索与工具"
-        HR["HybridRetriever"]
-        MTP["MemoryToolProvider"]
-        VS["VectorSearcher<br/>(pre-filter 支持)"]
-        HR --> SM
-        HR --> VS
-        IM --> HR
-        EM --> MTP
-        HR --> MTP
-        SM --> MTP
+    subgraph L35["L3.5 热记忆摘要（目标层）"]
+        HotDigest["HotMemoryDigest<br/>小预算、带来源、可解释 Prompt 表面"]
     end
 
-    subgraph "巩固与遗忘"
-        CP["ConsolidationPipeline"]
-        FE["ForgettingEngine"]
-        ECS["EpisodicToSemanticConsolidator"]
-        ECP["EpisodicToProceduralConsolidator"]
-        CP --> ECS
-        CP --> ECP
-        ECS --> SM
-        ECP --> PM
-        FE --> SM
+    subgraph L4["L4 程序记忆"]
+        Procedure["preference_rules / procedure_templates<br/>偏好规则、操作模板"]
     end
+
+    subgraph Projection["派生投影"]
+        Outbox["memory_projection_outbox"]
+        Vector["entity_embeddings / graph projection"]
+    end
+
+    Transcript --> FTS --> Episodic
+    Transcript --> ToolRaw --> ToolReplay
+    Transcript -->|用户可治理文本| Candidates
+    Candidates --> Entities
+    Entities --> Overlays
+    Entities --> Lifecycle
+    Entities --> HotDigest
+    Entities --> Procedure
+    Entities --> Outbox
+    Procedure --> Outbox
+    Outbox --> Vector
 ```
 
-## 3. 核心组件
+### 2.1 L0 会话真源
 
-### 3.1 会话层（L0）
+- `session_store` / `session_transcript_entries` 是原始对话的唯一真源。
+- L0 保存完整执行事实，不只是 user/assistant 文本。典型 `entry_type` 包含 `user_message`、`assistant_message`、`tool_call`、`tool_result`、`artifact_ref`、`compaction_summary`、`memory_flush_event`。
+- 工具调用与工具结果通过 `toolId / callId / turnId / traceId` 关联；`tool_result.payload_json.outputJson` 保存工具返回的完整原始结果，`tool_call.payload_json.inputJson` 保存完整入参。
+- `ToolExecutionCoordinator` 中的 `rawOutput` 是工具完整结果。写入 `ReactStep.Observation` 时可能因媒体提取产生面向模型的 `observationOutput`，但 transcript 的 `tool_result.outputJson` 仍记录原始 `rawOutput`。
+- 工具级经验提示只允许在 `ProviderMessageBuilder + ToolTipResolver` 呈现层拼到模型消息前面，不能写回 `Observation.output`、transcript 或 trace，避免污染 JSON、审计和回放。
+- `tool_result` 默认 `visibleToModel=true`、`visibleToUser=false`：它是模型续跑、审计、trace 回放和经验提取的事实源，不等同于前端时间线可见内容。
+- 自动学习只能从用户可治理文本提取事实，不能从系统 wrapper、提示词注入片段、自动 UI signal 直接提取长期记忆。
+- `ChatTurnMemorySnapshot` 是自动学习的治理凭证：缺快照、缺 turnId、解析异常时自动学习 fail-closed。
 
-- 原始对话统一写入 `session_transcript_entries`，由 `ConversationHistoryStore` 承担写入抽象
-- 当前会话的最近完整轮次由 `ContextEngine` 直接从会话层读取
-- `ContextAssembler` 组装当前上下文时做四路并行检索（contextSnapshot + userProfile + experiences + relevantMemories），不再依赖 L1 或 L2 的对话副本
-- `ContextAssembler` 在 system prompt 中注入 `<memory_metadata>` 标签（记忆统计信息：画像数、经验数、事实数），带 5 分钟 TTL 缓存
+工具完整结果与其他层的关系：
 
-### 3.2 SessionWorkspaceService（L1 临时工作区）
+| 去向 | 是否保存完整结果 | 说明 |
+|---|---:|---|
+| L0 transcript | 是 | `tool_result.outputJson` 是完整原始结果，供审计、回放和后续证据追溯。 |
+| ReAct state / Observation | 否，不保证完整 | 面向模型续跑，可经过媒体占位、失败输出截断或 provider 消息 hygiene。 |
+| L1 WorkingSet | 否 | 只对少量关键工具保存最长约 300 字摘要和 `toolId` 元数据。 |
+| L2 recall snippet | 否 | 默认只返回过去会话的 user/assistant 可见片段，不直接展开工具大结果。 |
+| L3 语义记忆 | 否 | 只有经过候选、质量门控或显式工具写入后，工具结果中的事实才会变成长期记忆。 |
 
-- `SessionWorkspaceService` 负责持久化跨轮临时状态，底层表为 `session_workspace_items`
-- 当前定义三类工作区条目：
-  - `PendingDecisionItem`：等待用户确认
-  - `TaskStateItem`：未完成任务的进度状态（由 `ReflectContentBuilder.buildTaskStateSummary()` 生成逐步执行明细，包含每步工具的关键参数和结果摘要，超过 10 步时折叠早期步骤为统计汇总）
-  - `WorkingSetItem`：供下一轮继续使用的中间结果摘要
-- 工作区明确不保存原始 user/assistant 消息、思维链和原始工具大结果
-- `WorkspaceCleanupJob` 按 TTL 过期活动项，并清理终态条目
-- 主写入点有三处：
-  - `AgentPersistenceHandler.saveWorkspaceForSuspend()`：用于挂起、确认等待和任务续跑
-  - `ToolExecutionCoordinator.persistToolResultToWorkspace()`：关键工具（`memory.create/update/tag`、`code`）执行成功后自动写入 `WorkingSetItem`
-  - `ReactAgentLoop`：反思触发后将反思结论写入 `WorkingSetItem`（截断至 300 字符），增强长对话上下文保持
+### 2.2 L1 临时工作区
 
-### 3.3 EpisodicMemory（L2 情景记忆）
+- L1 只保存跨轮任务状态，不保存原始聊天记录。
+- 典型条目：
+  - `PendingDecisionItem`：等待用户确认。
+  - `TaskStateItem`：未完成任务进度。
+  - `WorkingSetItem`：下一轮仍可能使用的中间结果摘要。
+- 关键工具成功后可以写入 `WorkingSetItem`，但只保存截断摘要，不保存完整工具输出；完整结果仍以 L0 `tool_result` 为准。
+- L1 到期后清理；L1 内容不是长期事实，不能绕过候选表直接写 L3。
 
-- `EpisodicMemory` 的主读路径基于 `chat_sessions / chat_messages`
-- 跨会话回忆使用 `chat_messages_fts` 做全文检索，再回到 `chat_messages` 组装 snippet
-- `searchSnippetsExcludingSession()` 会：
-  - 排除当前 session
-  - 先命中消息，再按前后完整轮次扩展为片段
-  - 返回 `ConversationSnippetRecord`，而不是零散单条消息
-- L2 不再承担“当前会话连续性”的职责，也不再接收来自 L1 的 flush
+### 2.3 L2 冷会话召回
 
-### 3.4 SemanticMemory（L3 语义记忆）
+- L2 面向“我们之前聊过什么”的问题。
+- L2 没有独立事实主库；它是 L0 transcript 的读模型：`session_transcript_entries_fts` 是 L0 的全文索引，`session_transcript_compressions` 是 L0 条目的压缩读模型。
+- `memory.recall` 通过 `session_transcript_entries_fts` 命中过去会话，再回读 `session_transcript_entries` 组装上下文片段。
+- 当前 snippet 组装只使用 `user_message / assistant_message` 且 `visible_to_user=1` 的可见对话文本；工具完整结果不直接出现在 L2 片段里。
+- L2 不默认进入 Prompt，不承担当前会话连续性，也不承担长期事实主库职责。
 
-- `SemanticMemory` 存放版本化实体与关系，是稳定事实、用户画像和经验实体的主存储
-- `EntityType` 枚举包含 12 种类型：PERSON、ORGANIZATION、PLACE、EVENT、PROJECT、TOPIC、PREFERENCE、HABIT、GOAL、SKILL、EXPERIENCE、CUSTOM
-- `RealtimeExtractor` 在对话后异步提取实体写入 L3
-- SQL 聚合方法（`countCurrentByType`、`countRecentlyAccessed`、`averageImportanceScore`）用于记忆健康度 API，避免全量加载实体到 JVM 内存
-- `ContextAssembler` 当前自动注入的长期信息主要来自：
-  - `PREFERENCE / HABIT / GOAL`（用户画像）
-  - `EXPERIENCE`（排除工具级经验；工具级经验由 `ProviderMessageBuilder` + `ToolTipResolver` 在构造 LLM 消息时按 toolId 动态前置到工具输出之前，不污染 `Observation.output`）
-  - 通过 `HybridRetriever` 检索的相关记忆实体（排除已由画像和经验路径覆盖的类型），注入到 `<memory_context>` 标签
+L0 与 L2 的关系可以理解为：
 
-### 3.5 ProceduralMemory（L4 程序记忆）
+| 层 | 数据形态 | 是否真源 | 典型用途 |
+|---|---|---:|---|
+| L0 transcript | 原始条目：消息、工具调用、工具结果、artifact 引用、压缩事件 | 是 | 审计、回放、当前会话上下文、证据追溯 |
+| L2 FTS | `session_transcript_entries_fts` 命中行 | 否 | 找到相关 session / entry |
+| L2 snippet | 基于命中 entry 前后轮次拼出的 `ConversationSnippetRecord` | 否 | 给 Agent 按需回忆过去对话 |
+| L2 compression | `session_transcript_compressions` | 否 | 长上下文压缩和片段读模型 |
 
-- `ProceduralMemory` 保存偏好规则和操作模板（`StrategyPattern` 已删除）
-- 操作模板聚类通过 `lifepilot.memory.procedural.templateEnabled` 配置开关控制，默认启用
-- `IntentMatcher` 负责在检索和编排阶段提供程序化建议
-- 当前上下文组装会读取高置信度偏好规则，与 L3 画像一起构成用户画像区
+因此，删除 session 或 transcript 条目会级联影响 L2；重建 L2 索引不能反向恢复 L0 原始事实。
 
-### 3.6 HybridRetriever 与记忆工具
+### 2.4 L3 治理语义主库
 
-- `HybridRetriever` 继续负责 L3/L4 的混合检索，包含向量、FTS 和图遍历三路融合
-- `HybridRetriever` 支持可选的 `RerankRouter` 步骤，对记忆候选进行精排重排序
-- `HybridRetriever` 实现 `knownEmpty` 短路优化：当检索空间已知为空时，跳过实际检索直接返回空结果
-- `HybridRetriever` 向量路径支持 pre-filter：当 `MemoryReadFilter` 限制了 space_id / memory_scope 时，先通过 `SemanticMemory.findEligibleEntityIds()` 查询合规实体 ID 集合，传入 `VectorSearcher` 做内存过滤；候选集超过 1000 时自动回退为后过滤，避免内存压力
-- `MemoryToolProvider` 注册的 `memory` 工具通过单个 `action` 参数暴露 11 种操作，另加独立的 `knowledge.search` 工具：
-  - `memory(action=search)`：搜索知识实体
-  - `memory(action=recall)`：回忆别的会话里的对话片段
-  - `memory(action=create)` / `update` / `delete`：实体 CRUD，其中 `delete` 按已知 `entityId` 归档单条
-  - `memory(action=cancel)`：按语义描述批量归档已取消的实体（默认 `GOAL / EXPERIENCE / HABIT`，可通过 `entityTypes` 覆盖到任意类型）；支持 `entityId` 精确单条 或 `query` 语义批量；可选 `maxArchive`（默认 5）/ `minScore`（默认 0.5）；覆盖"取消定时任务 / 撤销目标 / 不再做 X"这类需要清理多个旧目标/经验的场景
-  - `memory(action=complete)`：标记 `GOAL / PROJECT` 已完成，驱动 lifecycle 状态机进入终态
-  - `memory(action=supersede)`：旧实体被新实体替代，lifecycle 上建立 superseded_by 关系
-  - `memory(action=tag)`：建立实体关系
-  - `memory(action=query-at-time)`：时间点查询
-  - `memory(action=search-experience)`：检索执行经验
-  - `knowledge.search`：独立工具，搜索会话绑定的资料文档
-- `cancel` 调用 `HybridRetriever.retrieve` + `MemoryReadFilter.all()` 召回候选（覆盖 USER_PROFILE/USER_FACT 与 AGENT_EXPERIENCE 双域），按类型和阈值过滤后逐条 `semanticMemory.archive()`；LLM 在用户表达"取消 / 撤销 / 不再做 / 以后别提 / X 不做了"等语义时应优先调用该 action，仅 `create PREFERENCE` 无法挡住后续对旧 GOAL/EXPERIENCE 的召回
-- `recall` 只在工具调用时显式触发，不会自动把别的 session 对话塞进主 prompt
-- 归档链路（`delete` / `cancel` / 巩固流程 / 遗忘引擎）统一走 `SemanticMemory.archive()`：事务内置 `is_current=0` + 关系收尾，通过 `afterCommit` 钩子调 `VectorSearcher.deleteEntityVector()` 级联清理向量索引，避免归档实体继续被向量路径召回；回滚路径下向量保持原状，失败仅告警由后续 archive 重试兜底
-- 检索链路对归档实体的屏蔽双保险：主库 `is_current = 1` 过滤 + 向量索引级联清理；`temporal_entities` / `temporal_relations` 视图仍然 `WHERE status <> 'DELETED'`，保留时间旅行查询能力
+- L3 是长期事实主库，维护实体、版本、provenance、质量字段、生命周期和项目隔离。
+- `memory_entities` / `memory_entity_versions` / `memory_entity_provenances` 是事实来源；向量和图谱只是派生索引。
+- 所有自动提取先落 `memory_extraction_candidates`，通过质量门控后才能写实体。
+- `MemoryAccessPolicy` 是唯一读写边界策略层。
+- 隔离项目读取可继承主账户 personal / experience，写入只能进入项目 space；更新继承实体时创建项目 overlay。
 
-### 3.7 ConsolidationPipeline 与 ForgettingEngine
+### 2.5 L3.5 热记忆摘要
 
-- 巩固链路仍然负责将情景信息沉淀为语义和程序记忆
-- `ConsolidationPipeline` 顺序执行六步：语义巩固 → 程序巩固 → 偏好同步 → 经验合并 → 用户画像巩固 → 经验提升
-- `checkIdleConsolidation()` 基于空闲时间触发巩固，不依赖 L1 flush
-- `ForgettingEngine` 继续负责实体遗忘、压缩和归档；LLM 压缩调用走 `skipCache=true`，避免不同实体共享同一条摘要；归档动作统一经由 `SemanticMemory.archive()` 在事务提交后级联清理向量索引（详见 `memory-advanced.md`）
+L3.5 是本轮 Hermes 调研后新增的目标层，解决“记忆模块能力强但 Prompt 消费面混乱”的问题。
 
-### 3.8 经验学习子系统
+热记忆摘要不是新事实主库，而是从 L3 派生出来的**小型、可解释、带来源的 Prompt 表面**：
 
-- `ExperienceSummarizer`、`EffectivenessTracker`、`ContrastiveLearner`、`SubtaskReflector` 继续保留
-- 经验写入 L3 的 `EXPERIENCE` 实体
-- `ExperienceSummarizer.quickLearn()` 提供即时经验写入路径：反思触发时由 `ReactAgentLoop` 异步调用（虚拟线程），仅在工具失败反思时触发，跳过质量评估和 LLM 提炼，直接从反思内容提取关键教训写入 L3 EXPERIENCE 实体
-- `ContrastiveLearner` 不再创建独立的对比洞察实体，改为增强源经验（成功经验）的 lessons 列表，追加 `[对比]` 前缀的 lesson 条目并标记 `contrastiveEnriched=true`
-- `ContrastiveInsight` 记录包含 `failureReason`、`successFactor`、`contrastiveLessons` 三个字段（`avoidanceStrategy` 已删除）
-- `SubtaskReflector` 产出的经验带 `toolId`（主工具 ID）和 `granularity=TOOL_LEVEL` 标记
-- 工具级经验不在 `ContextAssembler` 的通用经验注入中出现，而是由 `ProviderMessageBuilder` 在构造 LLM 消息时借助 `ToolTipResolver.tipsFor(toolId, sessionId)` 动态拼接到工具原始输出之前（呈现层装饰）
-- `ToolTipResolver`（`com.lifepilot.memory.experience.ToolTipResolver`）是独立 Bean，持有 `SemanticMemory` 引用，按会话解析项目读取范围，按 `toolId + project context` 缓存 30 分钟，仅选取可消费、`granularity=TOOL_LEVEL` 且 `toolId` 匹配的经验 top 2
-- 关注点分离：`Observation.output` 始终保持工具原始 JSON（事实源纯净），工具提示等装饰文本仅出现在发送给 LLM 的消息中；Skill 激活、Trace 回放、审计、经验提取等下游消费者解析 `Observation.output` 时都能拿到未被污染的纯 JSON
-- `ToolExecutionCoordinator` 不再感知工具级经验，内部不再持有 `semanticMemory` 字段或 `loadToolTips()` 缓存
-- `ContextAssembler` 会按重要度和适用条件自动注入非工具级经验
-- `memory.search-experience` 允许 Agent 主动检索经验
+| 属性 | 规则 |
+|---|---|
+| 来源 | 只能来自可消费 L3 实体，不从 transcript 或 L2 直接生成长期热记忆 |
+| 预算 | 严格 token / char 上限，超限必须合并、替换或降级为冷召回 |
+| 证据 | 每条摘要必须能追溯 `source_entity_ids` |
+| 质量 | 只允许 `VERIFIED / EXPLICIT / DERIVED` 默认进入；`INFERRED` 需强相关且显式标注 |
+| 生命周期 | 源实体过期、取消、归档、重算时摘要失效或重建 |
+| 项目隔离 | 按 `MemoryAccessPolicy` 构造读取视图，overlay 优先 |
+| 写入稳定性 | 当前 turn 内的记忆写入不修改已组装 Prompt，只影响下一次组装 |
 
-## 4. 核心流程
+概念数据结构：
 
-### 4.1 当前会话上下文组装
+| 字段 | 说明 |
+|---|---|
+| `digest_id` | 摘要版本 ID |
+| `view_key` | 主账户 / 项目 / domain 视图键 |
+| `section` | `USER_PROFILE` / `PROJECT_MEMORY` / `EXPERIENCE` / `FACTS`；L4 偏好规则归入 `USER_PROFILE` |
+| `content` | 已脱敏、已压缩、可直接注入 Prompt 的文本 |
+| `source_entity_ids` | 来源 L3 实体 ID 列表 |
+| `budget_tokens` | 生成时预算 |
+| `source_revision` | 来源集合版本或 hash |
+| `built_at` / `expires_at` | 构建时间与缓存过期时间 |
+
+当前最小实现是 `HotMemoryDigestService` 按读取视图实时构建快照，不新增事实表：它读取 `SemanticMemory.findAllCurrent(filter)`，经 `MemoryQualityPolicy.isPromptConsumable`、生命周期、默认排除 `INFERRED`、工具级经验过滤和脱敏后，输出 `USER_PROFILE / PROJECT_MEMORY / EXPERIENCE / FACTS` 四类 section；同时读取高置信 L4 `PreferenceRule`，只在其 `source_entity_id` 指向可消费 L3 实体时合并进 `USER_PROFILE`。`source_revision` 覆盖 L3 实体和被注入的 L4 规则，固定本次组装版本。
+
+是否落独立表由后续实现决定；文档终态要求是：`ContextAssembler` 不再各处拼散乱实体，自动记忆注入只消费统一热摘要。热摘要为空、构建失败或服务缺失时，本轮不回退旧画像 / 经验 / 相关记忆检索；需要更多历史或事实时由 Agent 显式调用冷召回工具。
+
+`__consolidated_profile` 是 `USER_PROFILE` 的 L3 派生输入之一，但它自身的重算不应只靠时间到点。`UserProfileConsolidator` 以可消费 L3 画像碎片、可消费源校验后的 L4 偏好反馈和最近对话摘要生成源签名，签名未变化时直接跳过 LLM；签名变化后再套用最小间隔防抖。最近对话摘要只作为当前语境辅助，不允许绕过 L3 质量门控沉淀新的长期事实。
+
+### 2.6 L4 程序记忆
+
+- L4 存放可执行偏好和操作模板。
+- `preference_rules` / `procedure_templates` 必须带 `source_entity_id`，失活规则不得匹配。
+- L4 不是事实主库。L3 源实体失效时，L4 规则或模板必须同步失活或重算。
+- Prompt 层只自动注入高置信 L4 偏好规则，并且统一经 `HotMemoryDigest.USER_PROFILE` 输出；无源或源实体不可消费的规则不注入。
+- L4 操作模板不默认文本注入 Prompt，继续由 `IntentMatcher` / 工具执行链路按意图匹配消费。
+
+### 2.7 Projection outbox
+
+- 向量、图谱、持久化摘要、L4 同步都应视为主库派生投影。
+- 派生投影必须通过 outbox 进入可重试状态机，禁止在主事务外直接写索引。
+- 事务回滚不得留下向量或持久化摘要幻影。
+- 当前热摘要按需从 L3 读取构建，尚未持久化，因此暂不需要 outbox 失效任务。
+
+### 2.8 图记忆：检索关键图与可视化图
+
+知微当前已有 L3 SQL 图：
+
+- 节点：`memory_entities` + `memory_entity_versions` + `memory_entity_provenances`。
+- 边：`memory_relations` + `memory_relation_versions` + `memory_relation_provenances`。
+- 读视图：`temporal_relations`。
+- 入口：知识库文档提取实体/关系、`memory(action="tag")` 显式标注、`HybridRetriever` 图遍历、`GraphKnowledgeSearcher` 领域图检索。
+
+终态要把图分成两类：
+
+| 类型 | 用途 | 写入要求 | 消费方式 |
+|---|---|---|---|
+| 检索关键图 | 影响 `memory.search` / `knowledge.search` 的召回和排序 | 必须有来源、质量、生命周期、space 和方向/类型 | 从多路种子出发有界扩展，进入 score breakdown |
+| 可视化/治理图 | 管理端展示、审计、人工整理 | 可以包含低置信候选或弱关联，但要标注状态 | 不直接影响默认 Prompt；需提升为检索关键图后才能参与召回 |
+
+图记忆不默认进入 `HotMemoryDigest`。热摘要只保留少量高信任事实；图扩展属于冷召回，只有 Agent 调用 `memory.search` / `knowledge.search` 后才进入本轮上下文。
+
+图读路径必须遵守以下规则：
+
+- 起始种子不能只取第一个匹配实体；至少支持多个有界 seed，并按读取 filter / overlay 先过滤。
+- 反向边遍历必须返回相反端点，不能把起点自身作为 related 节点。
+- 只沿当前有效关系边遍历：`memory_relations.status='ACTIVE'` 且当前 relation version `valid_to is null`。
+- 只返回可召回实体：`ACTIVE / COMPLETED / REGENERATION_NEEDED`，并防御性过滤 `valid_to / expires_at`。
+- 图分数要可解释：depth、relation strength、relation type、seed source 都应能进入 `scoreBreakdown` 或调试日志。
+- 高 fanout 实体必须限流；后续图投影可以物化 entity co-occurrence / semantic links，但仍必须走 outbox。
+
+当前本轮先修正 SQL 图读路径的反向边和多起点问题；关系候选治理、relation quality 字段、图投影 outbox 和对话关系自动提取作为后续阶段推进。
+
+---
+
+## 3. 写入链路
+
+### 3.1 自动对话学习
 
 ```mermaid
 sequenceDiagram
-    participant U as 用户
-    participant CHS as ConversationHistoryStore
-    participant DB as session_transcript_entries
-    participant CE as ContextEngine
-    participant SWS as SessionWorkspaceService
-    participant SM as SemanticMemory
-    participant HR as HybridRetriever
-    participant CA as ContextAssembler
+    participant T as session_transcript_entries
+    participant S as ChatTurnMemorySnapshot
+    participant R as RealtimeExtractor
+    participant C as memory_extraction_candidates
+    participant Q as MemoryQualityPolicy
+    participant M as SemanticMemory
+    participant O as memory_projection_outbox
 
-    U->>CHS: 发送消息
-    CHS->>DB: 写入 user/assistant 原始消息
-    Note over CA: 四路并行检索（CompletableFuture + Virtual Thread）
-    par contextSnapshot
-        CA->>CE: load(sessionId, budget)
-        CE->>DB: 读取最近完整轮次 + 工作区
-    and userProfile
-        CA->>SM: 读取 PREFERENCE/HABIT/GOAL
-    and experiences
-        CA->>SM: 读取 EXPERIENCE（排除 TOOL_LEVEL）
-    and relevantMemories
-        CA->>HR: retrieve(query, userMemory scope)
-    end
-    CA->>CA: buildAugmentedSystemPrompt（含 memory_metadata）
-    CA-->>U: 组装后的 Prompt
+    T->>R: 用户可治理文本
+    S->>R: 本轮读写范围快照
+    R->>R: LLM AUDN 决策
+    R->>C: 写候选与证据
+    C->>Q: 质量门控
+    Q-->>R: VALIDATED / REJECTED
+    R->>M: governed upsert / archive
+    M->>O: after-commit projection task
 ```
 
-当前自动注入顺序是：
+硬规则：
 
-1. 系统提示词（含 `<memory_metadata>` 记忆统计）
-2. 当前用户请求
-3. 当前 session 最近完整轮次
-4. 活跃工作区摘要（`workspace_context`）
-5. 用户画像（`user_profile_context`）
-6. 经验（`experience_context`，排除工具级经验）
-7. 相关记忆（`memory_context`，通过 HybridRetriever 检索，排除已被画像和经验覆盖的类型）
-8. 其他段落按需预留
+- 缺 `ChatTurnMemorySnapshot` 直接跳过自动学习。
+- `RealtimeExtractor` 的 existing summary 可以读取继承空间，但 UPDATE / DELETE 只能命中可写空间。
+- `UNKNOWN` 证据不得写主库；低质量候选必须留审计。
+- `importance_score` 不是质量分；是否可写、可注入、可派生由 `trust_level` / `trust_score` / `evidence_kind` 决定。
 
-### 4.2 跨会话回忆
+### 3.2 经验学习
 
-```mermaid
-sequenceDiagram
-    participant Agent as Agent
-    participant Tool as memory.recall
-    participant EM as EpisodicMemory
-    participant FTS as chat_messages_fts
-    participant DB as chat_messages
+- `ExperienceSummarizer` 只写可迁移的任务级经验。
+- `SubtaskReflector` 只写工具级经验，带 `toolId` 和 `granularity=TOOL_LEVEL`。
+- 工具级经验不进入通用经验注入；只由 `ToolTipResolver` 在匹配工具时提供提示。
+- `ContrastiveLearner` 的终态应产出独立派生洞察，而不是无血缘地原地增强。
 
-    Agent->>Tool: recall(query)
-    Tool->>EM: searchSnippetsExcludingSession(query, currentSessionId, topK)
-    EM->>FTS: FTS5 检索命中消息
-    EM->>DB: 回读命中前后完整轮次
-    EM-->>Tool: ConversationSnippetRecord[]
-    Tool-->>Agent: snippet 结果
-```
+### 3.3 显式工具与 Web 写入
 
-### 4.3 挂起与恢复
+- `memory.create/update/delete/cancel/complete/supersede/tag` 必须通过 `MemoryAccessPolicy` 校验可写范围。
+- 隔离项目更新继承实体时创建 overlay，不能改主账户实体。
+- 隔离项目删除继承实体在 `HIDE` overlay 落地前必须 fail-closed。
+- 用户显式操作默认是 `USER_CONFIRMED`，质量等级高于自动推断。
 
-```mermaid
-sequenceDiagram
-    participant Loop as ReactAgentLoop
-    participant PH as AgentPersistenceHandler
-    participant SWS as SessionWorkspaceService
-    participant CA as ContextAssembler
+---
 
-    Loop->>PH: saveWorkspaceForSuspend(state)
-    PH->>SWS: savePendingDecision()/saveTaskState()
-    Note over SWS: 状态落入 session_workspace_items
-    CA->>SWS: listActive(sessionId)
-    CA-->>Loop: 将活跃工作区摘要注入下一轮 Prompt
-    PH->>SWS: resolveByTaskId()/resolveBySourceTraceId()
-```
+## 4. 消费链路
 
-## 5. 设计决策
+### 4.1 默认上下文组装
 
-| 决策 | 选择 | 理由 |
-|------|------|------|
-| 原始对话真源 | 会话层 | 避免 L1/L2 与会话存储重复维护同一份对话 |
-| L1 定位 | 临时工作区 | 用于保存跨轮临时状态，而不是聊天记录缓存 |
-| 当前上下文拼接 | 最近完整轮次按时间正序 | 保证 user/assistant 成对保留，不按 importance 打散 |
-| 跨会话对话进入 Prompt | 仅通过 recall 工具显式触发 | 避免在主上下文里自动混入别的会话 |
-| L2 数据来源 | 会话层读模型 | 消除 L1 flush 才可见的时序问题 |
-| 工作区持久化 | SQLite + TTL | 支持挂起恢复，同时保留自动清理能力 |
+`ContextAssembler` 的默认记忆注入已收口为单一路径：同一次上下文组装只构建并消费一次 `HotMemoryDigest` 快照。组装顺序如下：
 
-## 6. 集成点
+1. 系统提示词与工具/skill 能力说明。
+2. 当前用户请求。
+3. 当前 session 最近完整轮次。
+4. L1 工作区摘要。
+5. L3.5 热记忆摘要：用户画像、L4 高置信偏好、项目约定、高价值经验、常用事实。
+6. 工具级经验只在工具 observation 呈现层由 `ToolTipResolver` 注入。
 
-| 集成模块 | 方向 | 说明 |
-|---------|------|------|
-| Agent 引擎（`com.lifepilot.agent`） | Agent → Memory | `ContextAssembler` 四路并行读取最近轮次、工作区、用户画像、经验和相关记忆；按 `ProjectContext` 构造 `MemoryReadFilter`（`buildForProject` / `fromProjectContextOrFallback`），ISOLATED 项目允许读取 `[项目 space + 主账户 personal + 主账户 experience]`；`metadataCache` 按 filter 分键避免跨项目污染；`ProviderMessageBuilder` 借助 `ToolTipResolver` 在构造 LLM 消息时按 toolId 动态前置工具级经验提示（`Observation.output` 保持纯 JSON）；`ToolExecutionCoordinator` 在关键工具执行成功后写入 L1 工作区；`ReactAgentLoop` 反思触发时异步写入即时经验并将反思结论写入 L1 工作区 |
-| 对话系统（`com.lifepilot.conversation`） | Memory → Conversation | L0 对话真源来自 `ConversationHistoryStore` 与 transcript 读模型；`ChatTurnService.persistTurnMemorySnapshot` 按 `ChatSession.projectId` 反查 `ProjectContext`，ISOLATED 时把 `projectSpaceId` 固化到 `chat_turn_memory_snapshots.project_space_id`（V18） |
-| 项目工作空间（`com.lifepilot.project`） | Project → Memory | `ProjectService.createProject` 通过 `MemorySpaceRepository.ensureProjectSpace` 创建 `type=PROJECT` 空间；`ProjectContext` / `ProjectContextResolver` 是记忆读写路径的决策载体；隔离语义与 PROJECT 类型说明详见 [项目工作空间架构](./project.md) 与 [记忆领域隔离设计](./memory-domain-isolation.md) |
-| 元能力工具（`com.lifepilot.meta.infra.memory`） | Tool → Memory | `MemoryToolProvider`（完整路径：`com.lifepilot.meta.infra.memory.MemoryToolProvider`）暴露记忆检索、资料检索、实体写入与经验检索工具 |
-| 知识库（`com.lifepilot.knowledge`） | Memory → Knowledge | `knowledge.search` 工具通过知识库检索补充外部文档片段 |
-| 主动引擎（`com.lifepilot.agent.task.proactive`） | Proactive → Memory | `ImplicitSignalCollector` 隐式信号同时回写 L4 偏好（`observePreference`）和 L3 语义记忆（`syncInsightToL3`），使洞察可被 `HybridRetriever` 检索 |
-| Web API（`com.lifepilot.interaction.web.controller`） | REST → Memory | `MemoryController` 提供记忆健康度（`GET /api/memories/health`）和用户画像（`GET/PUT /api/memories/profile`）REST 端点 |
+消费门槛：
 
-## 7. 配置参考
+- 自动注入只允许可消费实体。
+- `UNVERIFIED` 永不注入。
+- `INFERRED` 只有在当前 query 强相关时才可注入，并且必须标注“推断”。
+- 脱敏失败时丢弃该条，不允许 fail-open 注入原文。
+- `recordInjection` 只能记录最终进入 Prompt 的实体 ID，不能记录检索候选。
+- 自动上下文组装不再额外运行旧画像拼接、任务经验检索或相关记忆冷搜索。
 
-当前主路径最关键的配置为：
+### 4.2 冷召回工具
 
-| 配置键 | 说明 |
-|--------|------|
-| `lifepilot.memory.enabled` | 记忆系统总开关 |
-| `lifepilot.memory.workspace.enabled` | 是否启用 L1 临时工作区 |
-| `lifepilot.memory.workspace.prompt-max-items` | 注入 Prompt 的工作区条目上限 |
-| `lifepilot.memory.workspace.pending-decision-ttl-hours` | 待确认条目 TTL |
-| `lifepilot.memory.workspace.task-state-ttl-hours` | 任务状态条目 TTL |
-| `lifepilot.memory.workspace.working-set-ttl-hours` | 工作集条目 TTL |
-| `lifepilot.memory.workspace.cleanup-cron` | 工作区清理调度 |
-| `lifepilot.memory.agentic-tool.*` | 记忆工具默认检索参数 |
-| `lifepilot.memory.retrieval.*` | L3/L4 检索、用户画像和回退参数 |
-| `lifepilot.memory.retrieval.injectionWeights` | 记忆注入权重（relevance/importance/recency，默认 0.4/0.3/0.3） |
-| `lifepilot.memory.retrieval.memoryContextEnabled` | 是否启用 `<memory_context>` 注入（默认 true） |
-| `lifepilot.memory.retrieval.memoryContextMaxEntities` | memory_context 最大实体数（默认 5） |
-| `lifepilot.memory.retrieval.memoryContextTokenBudget` | memory_context token 预算（默认 800） |
-| `lifepilot.memory.retrieval.memoryContextScoreThreshold` | memory_context 最低相关度阈值（默认 0.6） |
-| `lifepilot.memory.procedural.templateEnabled` | 是否启用 L4 操作模板聚类（默认 true） |
-| `lifepilot.memory.consolidation.*` | 巩固触发模式与阈值 |
-| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 近期访问保护天数（默认 7），在此天数内被访问过的实体受保护 |
-| `lifepilot.memory.forgetting.highAccessCountProtection` | 高频访问保护阈值（默认 10），accessCount 达到此值的实体受保护 |
-| `lifepilot.memory.episodic-cleanup.*` | L2 清理策略 |
-| `lifepilot.memory.experience.*` | 经验注入、隔离、合并与反馈配置 |
+| 工具 | 数据层 | 用途 | 约束 |
+|---|---|---|---|
+| `memory.recall` | L2 | 找过去会话片段 | 只在用户或 Agent 明确需要历史对话时调用 |
+| `memory.search` | L3 | 搜长期事实 | 返回质量、生命周期、scoreBreakdown |
+| `memory.search-experience` | L3 | 搜任务级经验 | 排除工具级经验 |
+| `knowledge.search` | KB / domain | 搜绑定资料 | 不直接变成长期个人记忆 |
+| trace / transcript 工具结果查询 | L0 | 复盘某次工具完整输入输出 | 不属于默认记忆注入；返回前必须按权限、脱敏和预算处理 |
 
-## 8. 当前限制
+Prompt 中应明确引导 Agent：当用户提到“上次、之前、我们聊过、你还记得”时，优先使用冷召回工具，不要凭热记忆猜测。
 
-- `WorkingSetItem` 已在工具执行（关键工具结果）和反思结论两个场景形成主链路写入
-- `ContextAssembler` 目前自动注入的是最近轮次、工作区、画像、经验和相关记忆（`memory_context`），知识库与跨会话对话仍以工具调用为主
-- `MemoryProperties` 内仍保留部分历史配置字段，但当前主架构已不再依赖旧的 `WorkingMemory`/`flush` 语义
+### 4.3 热摘要快照策略
+
+借鉴 Hermes 的 frozen snapshot 思路，知微采用“本次上下文组装快照稳定”原则：
+
+- `ContextAssembler` 开始组装后，本轮 Prompt 看到的是同一个热摘要版本。
+- 本轮工具写入记忆后，工具响应可展示 live state，但不回写已组装 Prompt。
+- 下一轮或下一次上下文组装时，才读取新热摘要或触发重建。
+
+这样可以避免 Agent 在同一轮里把自己刚写入的候选记忆当成外部事实再次放大。
+
+---
+
+## 5. 项目与空间语义
+
+项目隔离是读写非对称的：
+
+| 场景 | 规则 |
+|---|---|
+| ISOLATED 项目读取 | 项目 space + 主账户 personal + 主账户 experience |
+| ISOLATED 项目写入 | 仅项目 space |
+| ISOLATED 更新继承实体 | 创建项目 overlay |
+| SHARED / 主账户读取 | personal + experience |
+| SHARED / 主账户写入 | 默认 personal / experience |
+| KB 绑定对话 | 仅在明确 domain write space 存在时写 domain memory |
+
+热记忆摘要必须按同一规则构建。项目视图中若存在 overlay，应遮蔽对应 base 实体，避免 Prompt 同时看到主账户版本和项目局部版本。
+
+---
+
+## 6. 旧代码清理方向
+
+不考虑兼容性后，旧路径应按以下优先级清理：
+
+| 优先级 | 清理项 | 状态 | 原因 |
+|---:|---|---|---|
+| P0 | 删除旧 `EntityExpirationJob` | 已完成 | TTL 终态只允许 `ExpirationScanner -> updateLifecycleState(EXPIRED)` |
+| P0 | 移除向量直写 / 直删 fallback | 已完成 | 所有派生索引必须走 outbox |
+| P0 | 项目删除后的向量清理改为 projection task | 已完成 | 避免绕过 outbox，保留失败补偿能力 |
+| P1 | `VectorListener` 去掉 `VectorSearcher` fallback 依赖 | 已完成 | projection 缺失应 fail-fast，而不是静默直删 |
+| P1 | L4 模板向量改为独立 projection 类型 | 已完成 | 程序记忆索引也应有投影状态与重试 |
+| P1 | 清理 `MemoryProperties` 中旧 WorkingMemory / flush 语义字段 | 已完成 | 降低心智负担，防止误用 |
+| P2 | 收敛 `ContextAssembler` 中分散的画像 / 经验 / 相关记忆拼接 | 本轮处理 | 由热摘要层提供稳定消费表面 |
+| P2 | 清理文档里的旧 `knownEmpty`、直删向量、原地对比增强描述 | 已完成 | 文档必须只描述终态 |
+
+---
+
+## 7. 演进路线
+
+### Phase A：文档与对账
+
+目标：让团队先拥有同一张图。
+
+- `memory-system.md` 采用本文的热 / 冷 / 深层模型。
+- `memory-data-flow.md` 增补热摘要消费契约。
+- grep 清单标出所有旧向量直写、旧过期任务、旧 WorkingMemory 配置（本轮已清理）。
+
+验收：
+
+- 文档不再把 L3 描述成“所有相关实体都可自动注入”。
+- 文档不再保留 `knownEmpty` 全局空库、向量直删、旧 `EntityExpirationJob` 作为主路径。
+
+### Phase B：清理旧路径
+
+目标：先把不符合终态的旧代码删干净。
+
+- 删除未注册但仍存在的旧过期任务。
+- 所有实体向量 upsert/delete 统一通过 `memory_projection_outbox`。
+- 项目删除、生命周期 listener、程序模板索引补齐 outbox。
+- 删除兼容 fallback 后补契约测试。
+
+验收：
+
+- `rg "deleteEntityVector"` 只允许出现在 projection processor 或低层实现中。
+- 缺 projection service 时写入链路 fail-fast。
+
+### Phase C：实现 L3.5 热记忆摘要
+
+目标：给 Prompt 一个小而清晰的记忆入口。
+
+- 已新增 `HotMemoryDigestService`：按主账户 / 项目视图实时构建摘要。
+- 已接入 `ContextAssembler`：`user_profile_context / experience_context / memory_context` 只消费热摘要。
+- 已保证摘要内容只来自可消费实体，记录 `source_entity_ids`，并执行脱敏。
+- 已将高置信 L4 偏好规则并入 `USER_PROFILE`，但必须校验可消费 L3 源实体。
+- 已按 section 配置预算：用户画像、项目约定、任务级经验、常用事实分开限额。
+- 待后续：如需持久化热摘要，再通过 outbox 标记摘要失效或重建。
+
+验收：
+
+- 热摘要中每条内容都能追溯源实体。
+- 隔离项目 overlay 优先。
+- `UNVERIFIED` 和过期实体不会进入摘要。
+- `HotMemoryDigestService_单元测试` 覆盖质量过滤、默认排除推断记忆、巩固画像优先、L4 偏好源实体校验和脱敏。
+
+### Phase D：改造 ContextAssembler
+
+目标：上下文消费从“多处拼实体”收口为“只消费热摘要；冷召回走工具”。
+
+- `user_profile_context` 来自热摘要 `USER_PROFILE`，其中包含 L3 画像和 L4 高置信偏好规则。
+- `experience_context` 来自热摘要 `EXPERIENCE`。
+- `memory_context` 来自热摘要 `PROJECT_MEMORY / FACTS`。
+- 删除旧画像路径、旧经验检索路径和自动相关记忆冷搜索路径。
+- `recordInjection` 与 access count 只记录实际注入实体。
+
+验收：
+
+- 一次上下文组装中，热摘要版本稳定。
+- 脱敏失败不会注入原文。
+- 注入 ID 与最终 Prompt 内容一致。
+
+### Phase E：强化冷召回
+
+目标：让 Agent 主动查，而不是让 Prompt 背负所有历史。
+
+- `memory.recall` 强化 session snippet 摘要与元数据。
+- `memory.search` 输出 `rawCount / qualityFilteredCount / truncatedCount / scoreBreakdown`。
+- 明确 trace / transcript 级工具结果查询入口，供复盘工具完整结果，不混入 L2 默认 snippet。
+- Prompt 中强化使用冷召回的触发条件。
+
+验收：
+
+- 用户问“上次聊过什么”时走 L2 recall。
+- 用户问稳定事实时走 L3 search。
+- 搜索结果能区分高置信、需确认、仅参考。
+
+### Phase F：强化图记忆召回
+
+目标：把图从“单实体名递归扩展”升级为“多路种子 + 有界 typed link expansion”。
+
+- 本轮修正 `SemanticMemory.findRelated` 反向边遍历，确保反向一跳返回源实体，并按生命周期过滤返回实体。
+- 本轮修正 `GraphTraverser` 只取第一个起始实体的问题，改为读取 filter 后的多起点有界遍历。
+- 后续让图扩展从 vector / FTS 种子出发，而不是只依赖 query 文本包含实体名。
+- 后续为关系补齐 `evidence_kind / trust_level / trust_score / evidence_excerpt` 或独立 relation candidate 表。
+- 后续将 entity co-occurrence、semantic link、causal link 等派生图边纳入 `memory_projection_outbox`。
+
+验收：
+
+- 正向和反向关系在 `maxDepth=1` 下都能召回相反端实体。
+- 不可召回生命周期实体不会通过图路径返回。
+- 多个起始实体不会被第一个命中实体吞掉。
+- 图结果能在 `scoreBreakdown.graphScore` 中解释来源。
+
+### Phase G：治理 UI 与运维
+
+目标：让用户看得懂、改得动、追得回。
+
+- 管理端展示热摘要、源实体、质量、生命周期、space、overlay 血缘。
+- 支持用户 pin / hide / confirm / reject 摘要条目。
+- 补偿任务可重放 FAILED projection。
+
+验收：
+
+- 用户可以解释“为什么这条记忆进了 Prompt”。
+- 用户可以把错误热记忆降级、隐藏或删除。
+
+### Phase H：统一检索编排（未来演进方向）
+
+目标：把记忆召回和知识库检索从“多个工具各自触发”升级为“面向最终答案质量的证据编排层”。这不是本轮收尾范围；当前代码先保持 L2/L3/KB 工具分离，后续在测试集和指标稳定后再推进。
+
+调研结论：
+
+- LangChain `MultiQueryRetriever`、NVIDIA Query Decomposition 证明 query 改写 / 多查询召回能提升复杂问题覆盖率，但必须受预算和复杂度门控，不能把简单问题都拆成多路检索。
+- LlamaIndex `RouterQueryEngine` / `SubQuestionQueryEngine`、Haystack `ConditionalRouter` 更接近知微需要的形态：先路由数据源，再按需拆解问题，而不是默认全源检索。
+- Microsoft GraphRAG / DRIFT、Hindsight 图记忆说明图检索应提供证据扩展和聚合视角，但应后置于稳定的多源证据编排之后。
+- Letta / Mem0 的工程取向是让 memory search 成为显式工具能力；知微也应保持“热摘要默认注入、冷证据按需召回”的边界。
+
+拟议组件：
+
+| 组件 | 职责 | 首批范围 |
+|---|---|---|
+| `RetrievalOrchestrator` | 统一编排 L2、L3、知识库、图谱和 trace 证据源 | 先只服务显式冷召回，不接管默认 Prompt 注入 |
+| `QueryPlanner` | 判断问题需要哪些数据源、是否需要拆解、预算如何分配 | 规则 + 轻量 LLM 判断，优先覆盖“之前聊过 / 项目资料 / 长期事实 / 工具复盘” |
+| `QueryDecomposer` | 将复杂查询改写成少量子查询或关键词 | 只对复杂问题启用；短查询和实体名查询保持直查 |
+| Source Adapter | 把 L2 snippet、L3 entity、KB chunk、KB graph、L0 trace 统一成证据项 | 先适配 L2/L3/KB chunk，图和 trace 后置 |
+| `EvidenceBundle` | 给 Agent 返回结构化证据、来源、可信度、生命周期和分数解释 | 替代散乱工具结果拼接，便于回答和测试断言 |
+| Fusion / Rerank | 多源结果融合排序 | 先用 RRF + trust / lifecycle / recency / provenance 加权；学习型重排后置 |
+
+推进顺序：
+
+1. 建立真实流式对话回归集：覆盖 L2 助手回答命中、L3 语义实体、KB chunk、KB 图关系、L2+L3 混合证据、无结果追问。
+2. 给 `memory.recall` / `memory.search` / 知识库搜索建立共同的评估指标：命中率、证据正确率、工具调用次数、首 token 延迟、总耗时、误召回率。
+3. 先做轻量 query 改写：例如“你还记得之前小明是谁吗？”提取 `小明`，同时保留原问题用于排序解释。
+4. 再做 `RetrievalOrchestrator` 骨架和 source adapter，保持现有工具可独立使用。
+5. 最后引入受控 query decomposition、图扩展和更复杂的重排。
+
+验收：
+
+- 同一问题能解释“为什么查 L2 / L3 / KB / 图谱”，不能无理由全源检索。
+- 返回结果统一携带 `sourceType / sourceId / excerpt / quality / lifecycle / scoreBreakdown`。
+- 简单事实查询的延迟不因编排层显著上升。
+- 复杂问题的答案质量由测试集证明提升，而不是只因为技术链路更复杂。
+
+---
+
+## 8. 不变量
+
+这些规则不应再被局部代码绕过：
+
+- 原始对话真源只在 L0。
+- L1 不是长期记忆。
+- L2 是冷召回，不默认注入。
+- L3 是事实主库，向量 / 图谱 / 热摘要都是派生。
+- `importance_score` 不代表可信度。
+- 项目继承读取不等于可写。
+- 自动学习缺快照必须 fail-closed。
+- 低质量候选不能静默丢弃。
+- Prompt 常驻记忆必须小预算、带来源、可解释。
+- L4 规则必须能追溯 L3 源实体。
+
+---
+
+## 9. 与相关模块的边界
+
+| 模块 | 边界 |
+|---|---|
+| `conversation` | 负责 L0 transcript 和 turn snapshot，不直接治理长期事实 |
+| `agent.context` | 负责消费记忆，不能绕过质量 / 生命周期 / 项目 filter |
+| `meta.infra.memory` | 暴露工具入口，所有写操作必须校验可写范围 |
+| `project` | 决定 project space 与隔离语义，不直接改主账户记忆 |
+| `knowledge` | 提供 domain evidence 和资料搜索；KB 图实体写入 `DOMAIN_MEMORY`，不进入默认热记忆注入，不自动污染 personal memory |
+| `proactive` | 只能写带来源和信任等级的洞察，行为推断不得覆盖用户显式偏好 |
+
+---
+
+## 10. 文档更新约定
+
+记忆模块后续改动按以下顺序推进：
+
+1. 先更新 `memory-data-flow.md` 的数据契约。
+2. 再更新本文档的整体模型或路线。
+3. 最后改代码和测试。
+
+如果代码与本文档不一致，不能用“兼容旧路径”解释漂移；要么改代码贴合终态，要么更新文档并说明为什么终态变了。

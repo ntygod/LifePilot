@@ -214,11 +214,9 @@ lifepilot:
     # 已全部迁移到 prompts/agent/react-system.st 的 <tool_protocol> 段，不再从 yaml 硬编码。
   memory:
     # ===== 记忆系统配置 =====
-    # 四层认知记忆：L1 工作记忆 + L2 情景记忆 + L3 语义记忆 + L4 程序记忆
-    # L1/L2 不依赖 LLM，L3/L4 依赖 Embedding（LLM 不可用时自动降级）
+    # 分层记忆：L0 transcript 真源 + L1 工作区 + L2 冷召回 + L3 治理主库 + L3.5 热摘要 + L4 程序记忆
+    # L3 主库不依赖 LLM；向量检索、经验提炼、压缩和部分 L4 能力依赖模型路由，缺失时自动降级
     enabled: true
-    working-memory-token-budget: 8000
-    idle-session-timeout-minutes: 30
     compression-threshold-tokens: 4000
     consolidation-lookback-days: 7
     forgetting-threshold: 0.7
@@ -226,24 +224,17 @@ lifepilot:
     embedding-dimensions: 1024
     semantic-match-threshold: 0.92
     vector-db-url: "jdbc:sqlite:${zhiwei.data-dir}/vectors.db"
-    token-budget:
-      system-prompt-ratio: 0.10
-      user-message-ratio: 0.15
-      high-relevance-working-memory: 40
-      high-relevance-retrieval: 35
-      long-conversation-working-memory: 60
-      long-conversation-retrieval: 15
-      default-working-memory: 50
-      default-retrieval: 25
-      high-relevance-threshold: 0.9
-      long-conversation-turns-threshold: 10
-      # 六区域独立 Token 预算上限
-      user-profile-max: 500
-      current-session-max: 4000
-      cross-session-max: 1000
-      knowledge-entity-max: 500
-      procedural-max: 300
-      knowledge-base-max: 500
+    # L3.5 热记忆摘要（小预算、带来源，从 L3 可消费实体和 L4 高置信偏好实时派生）
+    hot-digest:
+      enabled: true
+      user-profile-token-budget: 500
+      project-memory-token-budget: 400
+      experience-token-budget: 500
+      facts-token-budget: 400
+      user-profile-max-entries: 6
+      project-memory-max-entries: 4
+      experience-max-entries: 3
+      facts-max-entries: 4
     # L4 程序记忆
     procedural:
       max-templates: 200
@@ -304,8 +295,6 @@ lifepilot:
       min-cross-session-bm25-score: 1.0
       low-quality-score-threshold: 0.3
       low-quality-budget-ratio: 0.5
-      max-user-profile-entities: 10
-      fallback-user-profile-count: 3
       time-decay-rate: 0.002
       min-time-decay-factor: 0.5
       min-cross-session-semantic-score: 0.45
@@ -345,8 +334,6 @@ lifepilot:
       enabled: true
       max-input-tokens: 4000
       dedup-similarity-threshold: 0.90
-      max-injection-count: 3
-      injection-token-budget: 500
       max-retention-days: 90
       llm-timeout-seconds: 120
       min-tool-success-ratio: 0.3

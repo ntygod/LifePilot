@@ -125,4 +125,45 @@ class FtsSearcher_集成测试 {
         assertThat(results.getFirst().entityId()).isEqualTo("entity-1");
         assertThat(results.getFirst().name()).isEqualTo("oolong preference");
     }
+
+    @Test
+    void search_长自然语言查询包含编号时应命中实体文本() {
+        Instant now = Instant.parse("2026-05-07T06:10:00Z");
+        jdbcTemplate.update("""
+                        INSERT INTO temporal_entities (
+                            id, type, name, description, version, is_current, valid_from,
+                            source_conversation_id, extraction_confidence, importance_score,
+                            access_count, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, 1, 1, ?, ?, 0.9, 0.2, 0, ?, ?)
+                        """,
+                "entity-cancel",
+                "PREFERENCE",
+                "MT-CANCEL-0507 不提醒下午5点检查记忆抽取日志",
+                "用户明确要求取消 MT-CANCEL-0507，并且以后不要再提醒下午5点检查记忆抽取日志。",
+                now.toString(),
+                "session-cancel",
+                now.toString(),
+                now.toString());
+        jdbcTemplate.update("""
+                        INSERT INTO temporal_entities (
+                            id, type, name, description, version, is_current, valid_from,
+                            source_conversation_id, extraction_confidence, importance_score,
+                            access_count, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, 1, 1, ?, ?, 0.9, 1.0, 0, ?, ?)
+                        """,
+                "entity-other",
+                "CUSTOM",
+                "高重要度无关实体",
+                "这条实体不包含目标编号。",
+                now.toString(),
+                "session-other",
+                now.toString(),
+                now.toString());
+
+        var results = ftsSearcher.search("取消 MT-CANCEL-0507，以后不要再提醒我下午5点检查记忆抽取日志", 5);
+
+        assertThat(results).isNotEmpty();
+        assertThat(results.getFirst().entityId()).isEqualTo("entity-cancel");
+        assertThat(results.getFirst().score()).isGreaterThanOrEqualTo(4.0f);
+    }
 }

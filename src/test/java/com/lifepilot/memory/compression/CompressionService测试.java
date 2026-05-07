@@ -78,6 +78,21 @@ class CompressionService测试 {
     }
 
     @Test
+    void 生成路由器缺失时跳过压缩且不写回() {
+        var serviceWithoutRouter = new CompressionService(null, episodicMemory, promptRegistry, properties);
+        var messages = new ArrayList<MessageRecord>();
+        for (int i = 0; i < 25; i++) {
+            messages.add(createMessage("msg-" + i, false, 100));
+        }
+
+        assertDoesNotThrow(() ->
+                serviceWithoutRouter.compressWithSlidingWindow("conv-no-router", messages, CompressionLevel.SUMMARY));
+
+        verify(promptRegistry, never()).render(anyString(), anyMap());
+        verify(episodicMemory, never()).compress(anyString(), any(), anyMap());
+    }
+
+    @Test
     void 全部Pinned消息不会参与压缩() {
         var messages = new ArrayList<MessageRecord>();
         for (int i = 0; i < 25; i++) {

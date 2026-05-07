@@ -628,6 +628,8 @@ class MemoryControllerTest {
             mockMvc.perform(post("/api/memories/consolidate"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("accepted"));
+
+            verify(consolidationPipeline, timeout(500)).consolidate(true);
         }
     }
 

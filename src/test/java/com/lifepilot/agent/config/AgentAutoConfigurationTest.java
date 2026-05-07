@@ -140,7 +140,7 @@ class AgentAutoConfigurationTest {
         @Bean
         ContextAssembler customContextAssembler(AgentConfigProperties config, PromptRegistry promptRegistry) {
             return new ContextAssembler(config, promptRegistry,
-                    null, null, null, null, null, null, null);
+                    null, null, null, null, null);
         }
     }
 }

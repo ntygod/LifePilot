@@ -165,6 +165,48 @@ class EpisodicMemorySessionReadModelTest {
     }
 
     @Test
+    void searchSnippetsExcludingSession_长查询包含编号时应通过精确兜底召回() {
+        insertSession("s1", "current", "current summary", Instant.parse("2026-05-07T06:15:00Z"));
+        insertTurn("s1", "m1", "user", "请回忆一下我之前提到过的 MT-RECALL-0507，验证码是什么？",
+                Instant.parse("2026-05-07T06:15:01Z"));
+
+        insertSession("s2", "recall marker", "验证码记录", Instant.parse("2026-05-07T05:00:00Z"));
+        insertTurn("s2", "m2", "user", "MT-RECALL-0507 的验证码是 RQ-7391，请稍后验证召回。",
+                Instant.parse("2026-05-07T05:00:01Z"));
+        insertTurn("s2", "m3", "assistant", "已记录这条测试验证码。",
+                Instant.parse("2026-05-07T05:00:02Z"));
+
+        var snippets = episodicMemory.searchSnippetsExcludingSession(
+                "请回忆一下我之前提到过的 MT-RECALL-0507，验证码是什么？", "s1", 3);
+
+        assertThat(snippets).hasSize(1);
+        assertThat(snippets.getFirst().sessionId()).isEqualTo("s2");
+        assertThat(snippets.getFirst().messages()).extracting(MessageRecord::content)
+                .anySatisfy(content -> assertThat(content).contains("RQ-7391"));
+    }
+
+    @Test
+    void searchSnippetsExcludingSession_泛化跨会话问题应返回最近会话片段() {
+        insertSession("s1", "current", "current summary", Instant.parse("2026-05-07T06:20:00Z"));
+        insertTurn("s1", "m1", "user", "你还记得我在别的会话里和你聊过什么吗",
+                Instant.parse("2026-05-07T06:20:01Z"));
+
+        insertSession("s2", "memory review", "跨会话召回复盘", Instant.parse("2026-05-07T06:10:00Z"));
+        insertTurn("s2", "m2", "user", "我们讨论了 transcript FTS 没有同步导致 recall 失效。",
+                Instant.parse("2026-05-07T06:10:01Z"));
+        insertTurn("s2", "m3", "assistant", "结论是需要补齐 FTS 触发器和泛化查询兜底。",
+                Instant.parse("2026-05-07T06:10:02Z"));
+
+        var snippets = episodicMemory.searchSnippetsExcludingSession(
+                "你还记得我在别的会话里和你聊过什么吗", "s1", 3);
+
+        assertThat(snippets).hasSize(1);
+        assertThat(snippets.getFirst().sessionId()).isEqualTo("s2");
+        assertThat(snippets.getFirst().messages()).extracting(MessageRecord::content)
+                .contains("我们讨论了 transcript FTS 没有同步导致 recall 失效。");
+    }
+
+    @Test
     void sessionReadModelUsesSessionStoreAndTranscriptAsSourceOfTruth() {
         insertSession("s1", "tea preferences", "tea notes", Instant.parse("2026-03-19T09:00:00Z"));
         insertTurn("s1", "m1", "user", "My favorite is oolong tea.", Instant.parse("2026-03-19T09:00:01Z"));

@@ -2,11 +2,13 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.knowledge`
-> **最后更新**：2026-05-04
+> **最后更新**：2026-05-05（知识库图谱改为 chunk 级证据链）
 
 ## 1. 模块概述
 
 知识库管理模块为知微提供文档级知识管理能力，支持多格式文档导入（PDF / Word / Markdown / TXT）、智能分块（含 Parent-Child 两级分块）、向量索引、三路混合检索（向量 + FTS5 + 知识图谱）和可选精排。用户可创建多个独立知识库，每个知识库独立配置 Embedding 模型和分块策略。模块通过 `DocumentIngester` 实现完整的文档摄入管线，通过 `DocumentRetriever` 实现三路检索 + 自适应 RRF 融合 + 去重 + Corrective RAG，为 Agent 的上下文增强提供知识库片段。Token 计数基于 jtokkit（兼容 tiktoken 编码），FTS5 使用 trigram tokenizer 天然支持 CJK 子串匹配。
+
+知识库图谱不是独立图数据库。当前实现把文档 chunk 中抽取出的实体和关系写入 L3 `SemanticMemory` 的 `DOMAIN_MEMORY` space：实体 / 关系属于知识库 domain memory，证据回指 `document_id / knowledge_base_id / chunk_id`。检索时 `GraphKnowledgeSearcher` 只把图谱当成第三路冷召回信号，优先通过实体 provenance 的 `source_entry_id` 回到命中的 chunk，再由 `DocumentRetriever` 统一做 Parent-Child 解析、RRF 融合和去重。
 
 ## 2. 架构图
 
@@ -75,8 +77,9 @@ graph TB
         KQU["KnowledgeQueryUtils<br/>(SQL / 类型解析)"]
     end
 
-    subgraph "知识提取"
-        KEP["KnowledgeExtractionPipeline<br/>(实体提取到 L3)"]
+    subgraph "知识提取 / 图构建"
+        KEP["KnowledgeExtractionPipeline<br/>(chunk 级实体/关系提取到 L3)"]
+        SM["SemanticMemory<br/>(L3 DOMAIN_MEMORY 图主库)"]
     end
 
     subgraph "存储层"
@@ -88,9 +91,11 @@ graph TB
     DI -->|"解析+分块+索引"| VI
     DI -->|"解析+分块+索引"| FI
     DI -->|"可选提取"| KEP
+    KEP -->|"实体/关系 + chunk 证据"| SM
     DR -->|"向量检索"| VI
     DR -->|"全文检索"| FI
-    DR -->|"图谱检索"| KEP
+    DR -->|"图谱检索"| GS
+    GS -->|"读 L3 图 + provenance"| SM
     RE -->|"执行检索"| DR
     KBM --> KBR
     KBM --> DOCR
@@ -104,6 +109,7 @@ graph TB
 - 职责：提供知识库和文档的基础 CRUD 操作
 - 支持创建、查询（按关键词/标签/时间范围）、更新、删除知识库
 - 文档删除时级联清理分块，并刷新知识库统计（文档数、分块数）
+- 文档 / 知识库删除后发布 `SourceInvalidated` 事件，使 L3 domain 图谱 provenance 失效；图检索只消费仍为 `VALID` 的 chunk 级证据
 - 写操作标注 `@Transactional`，通过 `@Bean` 注册
 
 ### 3.2 DocumentIngester（文档摄入管线）
@@ -200,14 +206,30 @@ graph TB
 
 ### 3.9 KnowledgeExtractionPipeline（知识提取管线）
 
-- 职责：从文档分块中提取结构化实体，写入 L3 语义记忆
+- 职责：从文档分块中提取结构化实体和关系，写入 L3 语义记忆的 `DOMAIN_MEMORY`
 - 可选启用，在文档摄入管线的最后阶段执行
-- 为记忆系统的巩固管线提供知识提取能力
+- 提取 prompt 将每个 chunk 包在带 `sourceChunkId` 的边界内，LLM 输出实体和关系时必须带来源 chunk id
+- 实体写入 `memory_entity_provenances.source_entry_id = chunkId`，`source_document_id = documentId`，`source_knowledge_base_id = kbId`
+- 关系写入 `memory_relation_provenances.source_reference = documentId#chunkId`，并保留 document / kb 来源
+- 知识库文档不得产生用户画像类实体（`PREFERENCE / HABIT / GOAL`），这些只应从对话学习产生
+
+知识库图构建采用 chunk 级证据图，而不是文档级粗图：
+
+1. 分块阶段先生成 parent / child chunk。
+2. 提取阶段把每个 chunk 用 `<chunk id="...">...</chunk>` 包裹交给 LLM。
+3. LLM 输出实体、关系及 `sourceChunkId`；批量提取时只接受本批次真实 chunk id，单 chunk 批次允许缺省回退。
+4. 写入阶段按知识库解析到独立 domain `MemorySpace`，实体和关系都写入 L3 `DOMAIN_MEMORY`。
+5. provenance 记录 `knowledgeBaseId / documentId / chunkId`，其中实体的 `source_entry_id` 在 KB 场景中表示 `document_chunks.id`。
+6. 删除文档时发布 `SourceInvalidated(DOCUMENT, documentId, DELETED)`；删除知识库时发布 `SourceInvalidated(KNOWLEDGE_BASE, kbId, DELETED)` 并逐文档发布 DOCUMENT 失效事件。
+7. 下游 provenance listener 将相关 `memory_entity_provenances` 标为 `STALE`；`GraphKnowledgeSearcher` 只用 `status='VALID'` 的 `source_entry_id` 回到 chunk。
 
 ### 3.10 GraphKnowledgeSearcher（图谱检索服务）
 
 - 职责：通过知识图谱遍历找到与查询相关的文档分块
-- 算法：从查询中提取候选实体名 → 匹配 `SemanticMemory`（L3 语义记忆）中的实体 → 2-hop 图遍历 → 通过实体的 `sourceConversationId` 定位文档 → 返回该文档的 parent 分块（chunkLevel=0）
+- 算法：从查询中提取候选实体名 → 匹配 `SemanticMemory`（L3 语义记忆）中的 domain 实体 → 2-hop 图遍历 → 通过实体 provenance 的 `source_entry_id` 定位 chunk → 返回命中 chunk，后续由 `DocumentRetriever` 统一解析 parent chunk
+- 兼容旧数据：若实体没有 chunk 级 provenance，则回退到 `sourceConversationId` / documentId 定位文档级 parent 分块
+- 读取边界：指定知识库检索时，实体匹配先收窄到对应 KB domain `MemorySpace`，避免同名实体跨知识库误召回
+- 污染边界：KB 图实体写在 `DOMAIN_MEMORY`，不会进入默认 `HotMemoryDigest` 自动记忆注入；只有显式 `knowledge.search` 走图谱冷召回
 - 评分规则：直接命中实体 → 基础分 1.0 * importanceScore；1-hop 关联 → 0.5 * importanceScore；2-hop 关联 → 0.3 * importanceScore
 - importanceScore 归一化到 [0.3, 1.0] 区间，避免低分实体被完全忽略
 - 匹配的实体类型：PERSON、ORGANIZATION、TOPIC、PROJECT、EVENT、PLACE
@@ -282,7 +304,9 @@ sequenceDiagram
     end
 
     opt 知识提取启用
-        DI->>KEP: extract(docId, chunks)
+        DI->>KEP: extract(doc, chunks)
+        Note over KEP: LLM 提取实体/关系，并标注 sourceChunkId
+        KEP->>KEP: 写 L3 DOMAIN_MEMORY + chunk 级 provenance
     end
 
     DI-->>U: Document（摄入完成）
@@ -310,6 +334,7 @@ sequenceDiagram
             DR->>VI: search(query, scopes, candidateK)
             DR->>FI: search(query, scopes, candidateK)
             DR->>GS: search(query, scopes, candidateK)
+            Note over GS: 图命中实体后反查 source_entry_id → chunkId
         end
     end
 

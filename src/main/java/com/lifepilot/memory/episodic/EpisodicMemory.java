@@ -2,6 +2,8 @@ package com.lifepilot.memory.episodic;
 
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.SQLiteFtsQueryNormalizer;
+import com.lifepilot.memory.support.MemoryQuerySignals;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +17,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -61,8 +64,8 @@ public class EpisodicMemory {
         Instant lastMessageAt = record.messages().isEmpty()
                 ? record.updatedAt()
                 : record.messages().getLast().createdAt();
-        // 记忆导入通道默认 project_id = NULL（归属主账户），
-        // TODO(Task 14+)：接入 ProjectContext 后按当前项目归属写入
+        // 记忆导入通道没有会话级 ProjectContext，默认 project_id = NULL，归属主账户。
+        // 真实对话的项目归属由 TranscriptStore / ChatTurnService 写入。
         jdbcTemplate.update("""
                         INSERT INTO session_store (
                             session_id, channel, chat_type, title, summary, message_count,
@@ -203,33 +206,16 @@ public class EpisodicMemory {
         }
         try {
             int candidateLimit = Math.max(limit * RECALL_CANDIDATE_MULTIPLIER, limit);
-            List<RecallHitRow> hits = jdbcTemplate.query(
-                    """
-                    SELECT e.id AS entry_id,
-                           e.session_id AS session_id,
-                           COALESCE(s.title, '') AS session_title,
-                           COALESCE(s.summary, '') AS session_summary,
-                           e.created_at AS created_at
-                    FROM session_transcript_entries_fts
-                    JOIN session_transcript_entries e ON e.rowid = session_transcript_entries_fts.rowid
-                    LEFT JOIN session_store s ON s.session_id = e.session_id
-                    WHERE session_transcript_entries_fts MATCH ?
-                      AND e.session_id <> ?
-                    ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
-                    LIMIT ?
-                    """,
-                    (rs, rowNum) -> new RecallHitRow(
-                            rs.getString("entry_id"),
-                            rs.getString("session_id"),
-                            normalizeBlank(rs.getString("session_title")),
-                            normalizeBlank(rs.getString("session_summary")),
-                            Instant.parse(rs.getString("created_at"))),
-                    escapeFts5Query(query),
-                    excludeSessionId,
-                    candidateLimit);
+            List<RecallHitRow> hits = searchRecallHits(query, excludeSessionId, candidateLimit);
 
             if (hits.isEmpty()) {
-                return List.of();
+                if (!shouldUseRecentRecallFallback(query)) {
+                    return List.of();
+                }
+                hits = searchRecentRecallHits(excludeSessionId, candidateLimit);
+                if (hits.isEmpty()) {
+                    return List.of();
+                }
             }
 
             Map<String, List<TimelineMessage>> timelineCache = new HashMap<>();
@@ -466,20 +452,184 @@ public class EpisodicMemory {
                                           @Nullable String excludeSessionId,
                                           int limit) {
         int candidateLimit = limit > 0 ? Math.max(limit * RECALL_CANDIDATE_MULTIPLIER, limit) : DEFAULT_SEARCH_LIMIT;
-        List<String> hitSessionIds = excludeSessionId == null
-                ? jdbcTemplate.query(
+        LinkedHashSet<String> hitSessionIds = new LinkedHashSet<>();
+        searchSessionIdsByText(query, excludeSessionId, candidateLimit).forEach(hitSessionIds::add);
+        String normalizedQuery = SQLiteFtsQueryNormalizer.normalize(query);
+        if (!normalizedQuery.isBlank()) {
+            searchSessionIdsByFts(normalizedQuery, excludeSessionId, candidateLimit).forEach(hitSessionIds::add);
+        }
+
+        if (hitSessionIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> sessionIds = new ArrayList<>(hitSessionIds);
+        if (limit > 0 && sessionIds.size() > limit) {
+            return List.copyOf(sessionIds.subList(0, limit));
+        }
+        return List.copyOf(sessionIds);
+    }
+
+    private List<RecallHitRow> searchRecallHits(String query,
+                                                String excludeSessionId,
+                                                int candidateLimit) {
+        LinkedHashSet<RecallHitRow> ordered = new LinkedHashSet<>();
+        ordered.addAll(searchRecallHitsByText(query, excludeSessionId, candidateLimit));
+        String normalizedQuery = SQLiteFtsQueryNormalizer.normalize(query);
+        if (!normalizedQuery.isBlank()) {
+            ordered.addAll(searchRecallHitsByFts(normalizedQuery, excludeSessionId, candidateLimit));
+        }
+        return List.copyOf(ordered);
+    }
+
+    private boolean shouldUseRecentRecallFallback(String query) {
+        if (query == null || query.isBlank()) {
+            return true;
+        }
+        if (!MemoryQuerySignals.highSignalTerms(query).isEmpty()) {
+            return false;
+        }
+        String normalized = query.toLowerCase(Locale.ROOT);
+        return normalized.contains("别的会话")
+                || normalized.contains("其他会话")
+                || normalized.contains("跨会话")
+                || normalized.contains("历史会话")
+                || normalized.contains("之前的会话")
+                || normalized.contains("以前的会话")
+                || normalized.contains("之前聊")
+                || normalized.contains("以前聊")
+                || normalized.contains("上次聊")
+                || normalized.contains("聊过什么")
+                || normalized.contains("我们聊过")
+                || normalized.contains("previous session")
+                || normalized.contains("past conversation");
+    }
+
+    private List<RecallHitRow> searchRecentRecallHits(String excludeSessionId, int candidateLimit) {
+        return jdbcTemplate.query(
                 """
-                SELECT e.session_id
+                SELECT e.id AS entry_id,
+                       e.session_id AS session_id,
+                       COALESCE(s.title, '') AS session_title,
+                       COALESCE(s.summary, '') AS session_summary,
+                       e.created_at AS created_at
+                FROM session_transcript_entries e
+                LEFT JOIN session_store s ON s.session_id = e.session_id
+                WHERE e.session_id <> ?
+                  AND e.entry_type IN ('user_message', 'assistant_message')
+                  AND e.visible_to_user = 1
+                  AND trim(COALESCE(json_extract(e.payload_json, '$.content'), '')) <> ''
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM session_transcript_entries newer
+                      WHERE newer.session_id = e.session_id
+                        AND newer.entry_type IN ('user_message', 'assistant_message')
+                        AND newer.visible_to_user = 1
+                        AND trim(COALESCE(json_extract(newer.payload_json, '$.content'), '')) <> ''
+                        AND (
+                            newer.created_at > e.created_at
+                            OR (newer.created_at = e.created_at AND newer.rowid > e.rowid)
+                        )
+                  )
+                ORDER BY e.created_at DESC, e.rowid DESC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new RecallHitRow(
+                        rs.getString("entry_id"),
+                        rs.getString("session_id"),
+                        normalizeBlank(rs.getString("session_title")),
+                        normalizeBlank(rs.getString("session_summary")),
+                        Instant.parse(rs.getString("created_at"))),
+                excludeSessionId,
+                candidateLimit);
+    }
+
+    private List<RecallHitRow> searchRecallHitsByFts(String normalizedQuery,
+                                                     String excludeSessionId,
+                                                     int candidateLimit) {
+        return jdbcTemplate.query(
+                """
+                SELECT e.id AS entry_id,
+                       e.session_id AS session_id,
+                       COALESCE(s.title, '') AS session_title,
+                       COALESCE(s.summary, '') AS session_summary,
+                       e.created_at AS created_at
                 FROM session_transcript_entries_fts
                 JOIN session_transcript_entries e ON e.rowid = session_transcript_entries_fts.rowid
+                LEFT JOIN session_store s ON s.session_id = e.session_id
                 WHERE session_transcript_entries_fts MATCH ?
+                  AND e.session_id <> ?
                 ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
                 LIMIT ?
                 """,
-                (rs, rowNum) -> rs.getString("session_id"),
-                escapeFts5Query(query),
-                candidateLimit)
-                : jdbcTemplate.query(
+                (rs, rowNum) -> new RecallHitRow(
+                        rs.getString("entry_id"),
+                        rs.getString("session_id"),
+                        normalizeBlank(rs.getString("session_title")),
+                        normalizeBlank(rs.getString("session_summary")),
+                        Instant.parse(rs.getString("created_at"))),
+                normalizedQuery,
+                excludeSessionId,
+                candidateLimit);
+    }
+
+    private List<RecallHitRow> searchRecallHitsByText(String query,
+                                                      String excludeSessionId,
+                                                      int candidateLimit) {
+        List<String> terms = MemoryQuerySignals.lookupTerms(query);
+        if (terms.isEmpty()) {
+            return List.of();
+        }
+        String contentClause = MemoryQuerySignals.likeWhereClause(
+                "json_extract(e.payload_json, '$.content')", terms.size());
+        String sql = """
+                SELECT e.id AS entry_id,
+                       e.session_id AS session_id,
+                       COALESCE(s.title, '') AS session_title,
+                       COALESCE(s.summary, '') AS session_summary,
+                       e.created_at AS created_at
+                FROM session_transcript_entries e
+                LEFT JOIN session_store s ON s.session_id = e.session_id
+                WHERE e.session_id <> ?
+                  AND e.entry_type IN ('user_message', 'assistant_message')
+                  AND e.visible_to_user = 1
+                  AND trim(COALESCE(json_extract(e.payload_json, '$.content'), '')) <> ''
+                  AND (%s)
+                ORDER BY e.created_at DESC
+                LIMIT ?
+                """.formatted(contentClause);
+        List<Object> args = new ArrayList<>();
+        args.add(excludeSessionId);
+        for (String term : terms) {
+            args.add(MemoryQuerySignals.likePattern(term));
+        }
+        args.add(candidateLimit);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new RecallHitRow(
+                rs.getString("entry_id"),
+                rs.getString("session_id"),
+                normalizeBlank(rs.getString("session_title")),
+                normalizeBlank(rs.getString("session_summary")),
+                Instant.parse(rs.getString("created_at"))), args.toArray());
+    }
+
+    private List<String> searchSessionIdsByFts(String normalizedQuery,
+                                               @Nullable String excludeSessionId,
+                                               int candidateLimit) {
+        if (excludeSessionId == null) {
+            return jdbcTemplate.query(
+                    """
+                    SELECT e.session_id
+                    FROM session_transcript_entries_fts
+                    JOIN session_transcript_entries e ON e.rowid = session_transcript_entries_fts.rowid
+                    WHERE session_transcript_entries_fts MATCH ?
+                    ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
+                    LIMIT ?
+                    """,
+                    (rs, rowNum) -> rs.getString("session_id"),
+                    normalizedQuery,
+                    candidateLimit);
+        }
+        return jdbcTemplate.query(
                 """
                 SELECT e.session_id
                 FROM session_transcript_entries_fts
@@ -490,20 +640,41 @@ public class EpisodicMemory {
                 LIMIT ?
                 """,
                 (rs, rowNum) -> rs.getString("session_id"),
-                escapeFts5Query(query),
+                normalizedQuery,
                 excludeSessionId,
                 candidateLimit);
+    }
 
-        if (hitSessionIds.isEmpty()) {
+    private List<String> searchSessionIdsByText(String query,
+                                                @Nullable String excludeSessionId,
+                                                int candidateLimit) {
+        List<String> terms = MemoryQuerySignals.lookupTerms(query);
+        if (terms.isEmpty()) {
             return List.of();
         }
-
-        LinkedHashSet<String> ordered = new LinkedHashSet<>(hitSessionIds);
-        List<String> sessionIds = new ArrayList<>(ordered);
-        if (limit > 0 && sessionIds.size() > limit) {
-            return List.copyOf(sessionIds.subList(0, limit));
+        String contentClause = MemoryQuerySignals.likeWhereClause(
+                "json_extract(e.payload_json, '$.content')", terms.size());
+        String excludeClause = excludeSessionId == null ? "" : "AND e.session_id <> ?";
+        String sql = """
+                SELECT e.session_id
+                FROM session_transcript_entries e
+                WHERE e.entry_type IN ('user_message', 'assistant_message')
+                  AND e.visible_to_user = 1
+                  AND trim(COALESCE(json_extract(e.payload_json, '$.content'), '')) <> ''
+                  %s
+                  AND (%s)
+                ORDER BY e.created_at DESC
+                LIMIT ?
+                """.formatted(excludeClause, contentClause);
+        List<Object> args = new ArrayList<>();
+        if (excludeSessionId != null) {
+            args.add(excludeSessionId);
         }
-        return List.copyOf(sessionIds);
+        for (String term : terms) {
+            args.add(MemoryQuerySignals.likePattern(term));
+        }
+        args.add(candidateLimit);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("session_id"), args.toArray());
     }
 
     @Nullable

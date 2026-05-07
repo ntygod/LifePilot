@@ -8,8 +8,12 @@ import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.memory.lifecycle.InvalidationKind;
+import com.lifepilot.memory.lifecycle.SourceType;
+import com.lifepilot.memory.lifecycle.events.SourceInvalidated;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.Nullable;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,15 +38,25 @@ public class KnowledgeBaseManager {
     private final DocumentRepository docRepository;
     private final DocumentChunkRepository chunkRepository;
     private final @Nullable VectorIndexer vectorIndexer;
+    private final @Nullable ApplicationEventPublisher eventPublisher;
 
     public KnowledgeBaseManager(KnowledgeBaseRepository kbRepository,
                                 DocumentRepository docRepository,
                                 DocumentChunkRepository chunkRepository,
                                 @Nullable VectorIndexer vectorIndexer) {
+        this(kbRepository, docRepository, chunkRepository, vectorIndexer, null);
+    }
+
+    public KnowledgeBaseManager(KnowledgeBaseRepository kbRepository,
+                                DocumentRepository docRepository,
+                                DocumentChunkRepository chunkRepository,
+                                @Nullable VectorIndexer vectorIndexer,
+                                @Nullable ApplicationEventPublisher eventPublisher) {
         this.kbRepository = kbRepository;
         this.docRepository = docRepository;
         this.chunkRepository = chunkRepository;
         this.vectorIndexer = vectorIndexer;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -163,6 +177,10 @@ public class KnowledgeBaseManager {
 
         // 3. 删除知识库（CASCADE 自动删除 documents 和 document_chunks，并由触发器清理 FTS5）
         kbRepository.deleteById(id);
+        publishSourceInvalidated(SourceType.KNOWLEDGE_BASE, id, InvalidationKind.DELETED);
+        for (Document doc : docs) {
+            publishSourceInvalidated(SourceType.DOCUMENT, doc.id(), InvalidationKind.DELETED);
+        }
         log.info("知识库删除成功: id={}", id);
     }
 
@@ -226,6 +244,7 @@ public class KnowledgeBaseManager {
 
         // 3. 删除文档
         docRepository.deleteById(documentId);
+        publishSourceInvalidated(SourceType.DOCUMENT, documentId, InvalidationKind.DELETED);
 
         // 4. 刷新知识库的文档数和分块数
         var remainingDocs = docRepository.findByKnowledgeBaseId(kbId);
@@ -234,6 +253,14 @@ public class KnowledgeBaseManager {
         kbRepository.updateDocumentCount(kbId, docCount, totalChunks);
 
         log.info("文档删除成功: id={}, 知识库统计已更新: kbId={}", documentId, kbId);
+    }
+
+    private void publishSourceInvalidated(SourceType sourceType, String sourceId, InvalidationKind kind) {
+        if (eventPublisher == null) {
+            log.debug("事件发布器未注入，跳过来源失效事件: sourceType={}, sourceId={}", sourceType, sourceId);
+            return;
+        }
+        eventPublisher.publishEvent(new SourceInvalidated(sourceType, sourceId, kind));
     }
 
 }

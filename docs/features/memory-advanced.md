@@ -23,7 +23,7 @@
 
 - 通过向量相似度匹配用户意图与模板触发意图
 - 匹配结果包含模板详情、匹配分数和历史成功率
-- 集成到 HybridRetriever 中，作为 ReasoningSlot 返回给 ContextAssembler
+- 集成到 `HybridRetriever` 的冷检索链路中，供 `memory.search` 等显式搜索使用；不再作为 `ContextAssembler` 默认自动注入入口
 - 匹配失败静默处理，不影响主检索流程
 
 ### 2.3 记忆巩固管线

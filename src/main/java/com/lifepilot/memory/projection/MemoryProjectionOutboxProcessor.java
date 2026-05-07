@@ -59,7 +59,7 @@ public class MemoryProjectionOutboxProcessor {
     }
 
     private void processTask(MemoryProjectionOutboxRepository.ProjectionTask task) throws Exception {
-        if (!"VECTOR".equals(task.projectionType())) {
+        if (!"VECTOR".equals(task.projectionType()) && !"PROCEDURE_TEMPLATE_VECTOR".equals(task.projectionType())) {
             throw new IllegalArgumentException("未知投影类型: " + task.projectionType());
         }
         Map<String, Object> payload = objectMapper.readValue(task.payloadJson(), MAP_TYPE);

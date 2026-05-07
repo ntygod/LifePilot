@@ -5,6 +5,14 @@
 <instructions>
 从以下文本中提取实体和关系，写入知识图谱。
 
+层级边界：这是知识库 / domain 文档提取，不是用户画像或个人长期记忆提取。只提取文档中有明确证据的实体和关系，不把文档观点当成用户偏好。
+
+## 来源 chunk 规则
+- 输入内容会按 `<chunk id="...">...</chunk>` 包裹。
+- 每个实体和关系都必须填写 `sourceChunkId`，值必须来自对应证据所在的 chunk id。
+- 如果一个实体跨多个 chunk 出现，选择描述最完整、证据最直接的 chunk id。
+- 不要输出输入中不存在的 chunk id。
+
 ## 实体类型及适用场景
 - PERSON — 人名、角色名。如"刘慈欣"、"Kael Stormborn"
 - ORGANIZATION — 组织、团队、公司。如"铁帷教团"、"Google"
@@ -31,13 +39,14 @@
 - 关系类型使用简短的动词或介词短语（如"创作""位于""领导""属于"）
 - strength 取值 0.0-1.0，反映关系的明确程度（文本直接陈述 → 0.8+，需要推断 → 0.5-0.7）
 - 只提取文本中有证据的关系，不要推测
+- 不确定、只出现一次且无上下文支撑的实体宁可不提取
 </instructions>
 
 <constraints>
 以 JSON 格式返回，不要包含任何解释或 markdown 代码块：
 {
-  "entities": [{"name": "实体名", "type": "PERSON", "description": "一句话描述其在文中的角色或含义"}],
-  "relations": [{"sourceEntity": "实体A", "targetEntity": "实体B", "relationType": "关系类型", "strength": 0.8}]
+  "entities": [{"name": "实体名", "type": "PERSON", "description": "一句话描述其在文中的角色或含义", "sourceChunkId": "chunk-id"}],
+  "relations": [{"sourceEntity": "实体A", "targetEntity": "实体B", "relationType": "关系类型", "strength": 0.8, "sourceChunkId": "chunk-id"}]
 }
 如果文本中没有值得提取的实体，返回 {"entities": [], "relations": []}
 </constraints>

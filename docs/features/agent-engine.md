@@ -107,8 +107,8 @@ public class ReactAgentLoop {
   - 天气摘要通过 `WeatherService`（实现为 `OpenMeteoWeatherService`）注入到 `{weather}` 模板变量
 - 当前 session 最近完整轮次（通过 `ContextEngine` 从 transcript 读取）
 - L1 临时工作区摘要（通过 `ContextEngine.ContextSnapshot.workspaceItems()` 读取）
-- L3 用户画像与经验实体
-  - 用户画像优先读取 `UserProfileConsolidator` 巩固后的连贯画像（`__consolidated_profile` CUSTOM 实体），降级为零散实体拼接
+- L3.5 热记忆摘要（通过 `HotMemoryDigestService` 一次性生成）
+  - `<user_profile_context>` / `<experience_context>` / `<memory_context>` 只消费同一份热摘要；用户画像可包含巩固画像与高置信 L4 偏好规则
 - 其他段落按需预留
 
 位置通过 `LocationResolver` 解析（配置手动覆盖 > IP 自动检测），天气通过 `OpenMeteoWeatherService` 获取（仅读缓存，不阻塞对话路径）。

@@ -883,7 +883,7 @@ public class MemoryController {
         }
         Thread.startVirtualThread(() -> {
             try {
-                consolidationPipeline.consolidate();
+                consolidationPipeline.consolidate(true);
             } finally {
                 consolidating.set(false);
             }

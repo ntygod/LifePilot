@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.consolidation.PreferenceConsolidator;
 import com.lifepilot.memory.consolidation.PreferenceSyncStats;
 import com.lifepilot.memory.lifecycle.ChangeSource;
@@ -122,10 +121,10 @@ class L3归档时L4规则同步失效_场景测试 {
 
         var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
 
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, vectorSearcher, new MemoryProperties());
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
         ruleRepo = new PreferenceRuleRepository(jdbcTemplate);
         procedureRepo = new ProceduralMemoryRepository(jdbcTemplate);
         preferenceConsolidator = new PreferenceConsolidator(semanticMemory, proceduralMemory);

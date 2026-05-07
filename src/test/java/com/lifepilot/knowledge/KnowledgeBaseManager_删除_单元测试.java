@@ -6,12 +6,17 @@ import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.memory.lifecycle.InvalidationKind;
+import com.lifepilot.memory.lifecycle.SourceType;
+import com.lifepilot.memory.lifecycle.events.SourceInvalidated;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.List;
@@ -37,6 +42,7 @@ class KnowledgeBaseManager_删除_单元测试 {
     @Mock DocumentRepository docRepository;
     @Mock DocumentChunkRepository chunkRepository;
     @Mock VectorIndexer vectorIndexer;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     KnowledgeBaseManager manager;
     private static final String KB_ID = "kb-001";
@@ -45,7 +51,7 @@ class KnowledgeBaseManager_删除_单元测试 {
 
     @BeforeEach
     void setUp() {
-        manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository, vectorIndexer);
+        manager = new KnowledgeBaseManager(kbRepository, docRepository, chunkRepository, vectorIndexer, eventPublisher);
     }
 
     // ---- 辅助方法 ----
@@ -91,6 +97,19 @@ class KnowledgeBaseManager_删除_单元测试 {
         verify(docRepository).deleteById(DOC_ID_1);
         // vectorIndexer 为 null，不应有任何调用
         verifyNoInteractions(vectorIndexer);
+    }
+
+    @Test
+    void removeDocument_删除后发布文档来源失效事件() {
+        var doc = 创建测试文档(DOC_ID_1, KB_ID);
+        when(docRepository.findById(DOC_ID_1)).thenReturn(Optional.of(doc));
+        when(docRepository.findByKnowledgeBaseId(KB_ID)).thenReturn(List.of());
+
+        manager.removeDocument(DOC_ID_1);
+
+        var captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertSourceInvalidated(captor.getValue(), SourceType.DOCUMENT, DOC_ID_1, InvalidationKind.DELETED);
     }
 
     // ---- deleteKnowledgeBase 测试 ----
@@ -155,5 +174,34 @@ class KnowledgeBaseManager_删除_单元测试 {
         verify(kbRepository).deleteById(KB_ID);
         // 无文档，不应调用索引清理
         verifyNoInteractions(vectorIndexer);
+    }
+
+    @Test
+    void deleteKnowledgeBase_删除后发布知识库和文档来源失效事件() {
+        var doc1 = 创建测试文档(DOC_ID_1, KB_ID);
+        var doc2 = 创建测试文档(DOC_ID_2, KB_ID);
+        when(docRepository.findByKnowledgeBaseId(KB_ID)).thenReturn(List.of(doc1, doc2));
+
+        manager.deleteKnowledgeBase(KB_ID);
+
+        var captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, times(3)).publishEvent(captor.capture());
+        assertThatSourceEvents(captor.getAllValues(),
+                new SourceInvalidated(SourceType.KNOWLEDGE_BASE, KB_ID, InvalidationKind.DELETED),
+                new SourceInvalidated(SourceType.DOCUMENT, DOC_ID_1, InvalidationKind.DELETED),
+                new SourceInvalidated(SourceType.DOCUMENT, DOC_ID_2, InvalidationKind.DELETED));
+    }
+
+    private void assertSourceInvalidated(Object event,
+                                         SourceType sourceType,
+                                         String sourceId,
+                                         InvalidationKind kind) {
+        org.assertj.core.api.Assertions.assertThat(event)
+                .isEqualTo(new SourceInvalidated(sourceType, sourceId, kind));
+    }
+
+    private void assertThatSourceEvents(List<Object> actual, SourceInvalidated... expected) {
+        org.assertj.core.api.Assertions.assertThat(actual)
+                .containsExactlyInAnyOrder((Object[]) expected);
     }
 }

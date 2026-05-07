@@ -1,21 +1,18 @@
 package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.quality.MemoryEvidenceKind;
-import com.lifepilot.memory.quality.MemoryTrustLevel;
-import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.retrieval.RetrievalResult;
-import com.lifepilot.memory.retrieval.RetrievalWeights;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.agent.model.Budget;
+import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.interaction.model.InteractionSource;
+import com.lifepilot.memory.hot.HotMemoryDigest;
+import com.lifepilot.memory.hot.HotMemoryDigestService;
+import com.lifepilot.memory.hot.HotMemorySectionKind;
 import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.prompt.PromptRegistry;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -23,8 +20,11 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -36,130 +36,116 @@ import static org.mockito.Mockito.when;
 @DisplayName("ContextAssembler 记忆消费契约")
 class ContextAssembler_记忆消费契约测试 {
 
-    private SemanticMemory semanticMemory;
-    private HybridRetriever hybridRetriever;
-    private ContextAssembler assembler;
+    @Test
+    void assemble只消费热摘要并记录来源实体Id() {
+        var semanticMemory = mock(SemanticMemory.class);
+        when(semanticMemory.countByEntityType(any())).thenReturn(Map.of());
+        var contextEngine = mock(ContextEngine.class);
+        when(contextEngine.load(any(), anyInt())).thenReturn(ContextEngine.ContextSnapshot.empty());
+        var hotDigestService = mock(HotMemoryDigestService.class);
+        when(hotDigestService.build(any(), anyString())).thenReturn(new HotMemoryDigest(
+                "hot-1",
+                "personal",
+                Instant.now(),
+                "rev-1",
+                List.of(
+                        new HotMemoryDigest.HotMemorySection(
+                                HotMemorySectionKind.USER_PROFILE,
+                                "L3.5 热记忆 - 用户画像:\n- [L4偏好|EXPLICIT/USER_CONFIRMED|confidence=0.9] response_language = 中文",
+                                List.of("pref-1"),
+                                500),
+                        new HotMemoryDigest.HotMemorySection(
+                                HotMemorySectionKind.EXPERIENCE,
+                                "L3.5 热记忆 - 高价值经验:\n- [经验|DERIVED/LLM_SUMMARIZED_EXPERIENCE] 先跑测试",
+                                List.of("exp-1"),
+                                500),
+                        new HotMemoryDigest.HotMemorySection(
+                                HotMemorySectionKind.FACTS,
+                                "L3.5 热记忆 - 常用事实:\n- [主题|VERIFIED/DOCUMENT_GROUNDED] 项目使用 SQLite",
+                                List.of("fact-1"),
+                                400))));
+        var assembler = newAssembler(semanticMemory, contextEngine, hotDigestService);
 
-    @BeforeEach
-    void 初始化() {
-        semanticMemory = mock(SemanticMemory.class);
-        hybridRetriever = mock(HybridRetriever.class);
-        assembler = new ContextAssembler(
+        var context = assembler.assemble(state("继续优化记忆"));
+
+        String contextText = context.contextMessages().stream()
+                .map(org.springframework.ai.chat.messages.Message::getText)
+                .reduce("", (left, right) -> left + "\n" + right);
+        assertThat(contextText)
+                .contains("response_language = 中文")
+                .contains("先跑测试")
+                .contains("项目使用 SQLite");
+        assertThat(context.injectedEntityIds()).containsExactly("pref-1", "exp-1", "fact-1");
+        verify(hotDigestService).build(any(), anyString());
+        verify(semanticMemory, never()).findCurrentByNameAndType(anyString(), any(), any());
+        verify(semanticMemory, never()).findCurrentByType(any(), any());
+        verify(semanticMemory, never()).findByIds(any(), any());
+    }
+
+    @Test
+    void 热摘要构建失败时不回退旧画像或冷检索路径() {
+        var semanticMemory = mock(SemanticMemory.class);
+        when(semanticMemory.countByEntityType(any())).thenReturn(Map.of());
+        var contextEngine = mock(ContextEngine.class);
+        when(contextEngine.load(any(), anyInt())).thenReturn(ContextEngine.ContextSnapshot.empty());
+        var hotDigestService = mock(HotMemoryDigestService.class);
+        when(hotDigestService.build(any(), anyString())).thenThrow(new IllegalStateException("构建失败"));
+        var assembler = newAssembler(semanticMemory, contextEngine, hotDigestService);
+
+        var context = assembler.assemble(state("继续优化记忆"));
+
+        String contextText = context.contextMessages().stream()
+                .map(org.springframework.ai.chat.messages.Message::getText)
+                .reduce("", (left, right) -> left + "\n" + right);
+        assertThat(contextText)
+                .doesNotContain("用户画像")
+                .doesNotContain("相关经验")
+                .doesNotContain("与当前话题相关的记忆");
+        assertThat(context.injectedEntityIds()).isEmpty();
+        verify(semanticMemory, never()).findCurrentByNameAndType(anyString(), any(), any());
+        verify(semanticMemory, never()).findCurrentByType(any(), any());
+        verify(semanticMemory, never()).findByIds(any(), any());
+    }
+
+    private ContextAssembler newAssembler(SemanticMemory semanticMemory,
+                                          ContextEngine contextEngine,
+                                          HotMemoryDigestService hotDigestService) {
+        var promptRegistry = mock(PromptRegistry.class);
+        when(promptRegistry.render(anyString())).thenReturn("");
+        when(promptRegistry.render(anyString(), anyMap())).thenReturn("");
+        var assembler = new ContextAssembler(
                 new AgentConfigProperties(),
-                mock(PromptRegistry.class),
+                promptRegistry,
                 null,
                 semanticMemory,
-                new MemoryProperties(),
                 null,
                 null,
                 null,
+                contextEngine,
                 null,
                 null,
                 null,
-                null,
-                null,
-                null,
-                hybridRetriever);
+                null);
+        assembler.setHotMemoryDigestService(hotDigestService);
+        return assembler;
     }
 
-    @Test
-    void memoryContext只返回可注入质量的实体() {
-        var verified = 实体("verified-1", "可信主题")
-                .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f, 1, Instant.now());
-        var unverified = 实体("unverified-1", "未知主题");
-        var filter = MemoryReadFilter.userMemory();
-
-        when(hybridRetriever.retrieve(eq("主题"), anyInt(), any(RetrievalWeights.class), eq(filter)))
-                .thenReturn(List.of(
-                        检索结果(verified.id(), EntityType.TOPIC, 0.8f),
-                        检索结果(unverified.id(), EntityType.TOPIC, 0.9f)));
-        when(semanticMemory.findByIds(any(), eq(filter)))
-                .thenReturn(Map.of(verified.id(), verified, unverified.id(), unverified));
-
-        var result = assembler.safeRetrieveRelevantMemories("主题", filter);
-
-        assertThat(result).containsExactly(verified);
-    }
-
-    @Test
-    void 格式化memoryContext时只记录实际进入prompt的实体Id() {
-        var verified = 实体("verified-2", "可信事实")
-                .withQuality(MemoryEvidenceKind.DOCUMENT_GROUNDED, MemoryTrustLevel.VERIFIED, 0.86f, 1, Instant.now());
-        var unverified = 实体("unverified-2", "未知事实");
-
-        var section = assembler.formatMemorySection(List.of(verified, unverified));
-
-        assertThat(section.text()).contains("可信事实")
-                .contains("VERIFIED/DOCUMENT_GROUNDED")
-                .doesNotContain("未知事实");
-        assertThat(section.entityIds()).containsExactly(verified.id());
-    }
-
-    @Test
-    void userProfile优先使用巩固画像且必须满足可消费门槛并记录实体Id() {
-        var profile = new TemporalEntity(
-                "profile-1",
-                EntityType.CUSTOM,
-                "__consolidated_profile",
-                "稳定画像文本",
-                Map.of(),
-                1,
-                true,
-                Instant.parse("2026-05-05T00:00:00Z"),
-                null,
-                "session-1",
-                0.8f,
-                0.6f,
-                0,
-                null,
-                Instant.parse("2026-05-05T00:00:00Z"),
-                Instant.parse("2026-05-05T00:00:00Z")
-        ).withQuality(MemoryEvidenceKind.DERIVED, MemoryTrustLevel.DERIVED, 0.7f, 1, Instant.now());
-
-        when(semanticMemory.findCurrentByNameAndType(eq("__consolidated_profile"), eq(EntityType.CUSTOM), any()))
-                .thenReturn(java.util.Optional.of(profile));
-
-        var section = assembler.safeGetUserProfile("随便", MemoryReadFilter.userProfile());
-
-        assertThat(section.text()).contains("巩固用户画像");
-        assertThat(section.entityIds()).containsExactly("profile-1");
-    }
-
-    private TemporalEntity 实体(String id, String name) {
-        var now = Instant.parse("2026-05-05T00:00:00Z");
-        return new TemporalEntity(
-                id,
-                EntityType.TOPIC,
-                name,
-                "测试描述",
-                Map.of(),
-                1,
-                true,
-                now,
-                null,
-                "session-1",
-                0.8f,
-                0.7f,
-                0,
-                null,
-                now,
-                now);
-    }
-
-    private RetrievalResult 检索结果(String id, EntityType type, float score) {
-        return new RetrievalResult(
-                id,
-                type.name(),
-                "name-" + id,
-                "desc",
-                score,
-                new RetrievalResult.ScoreBreakdown(score, score, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
-                "vector",
-                null,
-                0.7f,
-                null,
-                false,
-                false,
-                false);
+    private ReactAgentState state(String goal) {
+        return ReactAgentState.builder()
+                .traceId("trace-1")
+                .sessionId("session-1")
+                .goal(goal)
+                .source(InteractionSource.system("test"))
+                .steps(List.of())
+                .shortTermMemory(List.of())
+                .mentionedEntities(List.of())
+                .budget(Budget.builder()
+                        .maxTokens(4096)
+                        .maxSteps(10)
+                        .maxDuration(Duration.ofMinutes(5))
+                        .elapsed(Duration.ZERO)
+                        .build())
+                .completionMode(com.lifepilot.agent.model.CompletionMode.NORMAL)
+                .build();
     }
 }

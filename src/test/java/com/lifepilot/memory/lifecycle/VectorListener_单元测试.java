@@ -2,19 +2,20 @@ package com.lifepilot.memory.lifecycle;
 
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.lifecycle.listeners.VectorListener;
-import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
- * {@link VectorListener} 单元测试 —— 验证非活状态触发向量删除，COMPLETED/ACTIVE 保留向量。
+ * {@link VectorListener} 单元测试 —— 验证非活状态登记向量删除投影任务，COMPLETED/ACTIVE 保留向量。
  *
  * @author zsg
  * @since 2026-04-23
@@ -23,7 +24,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class VectorListener_单元测试 {
 
     @Mock
-    VectorSearcher vectorSearcher;
+    MemoryProjectionService projectionService;
 
     @InjectMocks
     VectorListener listener;
@@ -37,7 +38,7 @@ class VectorListener_单元测试 {
 
         listener.onLifecycleChanged(event);
 
-        verify(vectorSearcher).deleteEntityVector("e-1");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-1");
     }
 
     @Test
@@ -49,7 +50,7 @@ class VectorListener_单元测试 {
 
         listener.onLifecycleChanged(event);
 
-        verify(vectorSearcher).deleteEntityVector("e-2");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-2");
     }
 
     @Test
@@ -61,7 +62,7 @@ class VectorListener_单元测试 {
 
         listener.onLifecycleChanged(event);
 
-        verify(vectorSearcher).deleteEntityVector("e-3");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-3");
     }
 
     @Test
@@ -73,7 +74,7 @@ class VectorListener_单元测试 {
 
         listener.onLifecycleChanged(event);
 
-        verify(vectorSearcher).deleteEntityVector("e-4");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-4");
     }
 
     @Test
@@ -85,7 +86,7 @@ class VectorListener_单元测试 {
 
         listener.onLifecycleChanged(event);
 
-        verify(vectorSearcher).deleteEntityVector("e-5");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-5");
     }
 
     @Test
@@ -97,7 +98,7 @@ class VectorListener_单元测试 {
 
         listener.onLifecycleChanged(event);
 
-        verifyNoInteractions(vectorSearcher);
+        verifyNoInteractions(projectionService);
     }
 
     @Test
@@ -109,21 +110,21 @@ class VectorListener_单元测试 {
 
         listener.onLifecycleChanged(event);
 
-        verifyNoInteractions(vectorSearcher);
+        verifyNoInteractions(projectionService);
     }
 
     @Test
-    void 删除失败应warn不抛异常() {
+    void 投影登记失败应向上抛出() {
         doThrow(new RuntimeException("sqlite-vec 未加载"))
-                .when(vectorSearcher).deleteEntityVector("e-8");
+                .when(projectionService).enqueueVectorDeleteAfterCommit("e-8");
         var event = new EntityLifecycleChanged(
                 "e-8", "EXPERIENCE",
                 LifecycleState.ACTIVE, LifecycleState.EXPIRED,
                 "ttl", ChangeSource.CRON_EXPIRE);
 
-        // 期望：方法正常返回，不向上抛异常
-        listener.onLifecycleChanged(event);
-
-        verify(vectorSearcher).deleteEntityVector("e-8");
+        assertThatThrownBy(() -> listener.onLifecycleChanged(event))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("sqlite-vec 未加载");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-8");
     }
 }

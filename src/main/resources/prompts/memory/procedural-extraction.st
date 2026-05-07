@@ -5,6 +5,12 @@
 <instructions>
 任务：从重复出现的工具调用序列中提炼可复用的操作模板
 
+层级边界：
+- 本提示词产出 L4 procedure template 候选，只描述可执行流程，不保存用户事实或画像。
+- 只有多条轨迹共享同一稳定流程时才提炼模板；一次性操作、偶然顺序、失败纠错过程不要模板化。
+- 模板必须能追溯到输入轨迹中的工具调用；不要发明未出现过的工具、参数或动作。
+- 触发意图应描述用户何时需要这个流程，不要写成助手内部实现细节。
+
 输入数据：
 {combinedSequences}
 
@@ -13,6 +19,7 @@
 2. 将变化点抽象为变量（使用 ${variable} 占位符）
 3. 提取触发意图（triggerIntent）：用户表达此操作的自然语言模式
 4. 为每个步骤提供清晰的描述
+5. 若共同模式不足以形成稳定模板，输出空模板：name/description/triggerIntent 为空字符串，steps 为空数组
 </instructions>
 
 <constraints>
@@ -38,4 +45,5 @@
 - parameterTemplate 中的变量名应具有语义（如 ${title}, ${priority}）
 - 固定值不要使用占位符
 - triggerIntent 应覆盖用户可能的表达方式
+- steps 只包含输入轨迹中真实出现且跨轨迹稳定复用的工具调用
 </constraints>

@@ -24,6 +24,7 @@ import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
+import com.lifepilot.memory.support.MemoryQuerySignals;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
@@ -144,6 +145,8 @@ public class MemoryToolProvider {
                 .name("记忆管理")
                 .description("""
                         搜索并管理用户长期记忆。action 控制具体语义：search/recall/create/update/delete/cancel/complete/supersede/tag/query-at-time/search-experience。
+                        用户说"取消/不再/以后别提/停止提醒"时优先用 cancel；带 MT-xxx 等编号时把编号原样放入 query。
+                        complete 只允许 GOAL/PROJECT，禁止用于 PREFERENCE/HABIT/CUSTOM。tag 禁止把关系连到 __consolidated_profile 这类派生画像。
                         search 默认搜索长期记忆（scope=memory）；scope=knowledge 时搜索会话绑定的知识库文档。""")
                 .inputSchema(JsonSchema.of(Map.of(
                         "type", "object",
@@ -154,10 +157,10 @@ public class MemoryToolProvider {
                                         "enum", List.of("search", "recall", "create", "update", "delete",
                                                 "cancel", "complete", "supersede", "tag", "query-at-time", "search-experience"),
                                         "description", "记忆操作类型。search=搜索知识实体, recall=回忆历史对话, " +
-                                                "create/update/delete=实体 CRUD, cancel=撤销/取消（支持 entityId 单条或 query 语义批量）, " +
-                                                "complete=标记 GOAL/PROJECT 已完成, supersede=旧实体被新实体替代, " +
+                                                "create/update/delete=实体 CRUD, cancel=撤销/取消（支持 entityId 单条或 query 精确编号/语义批量）, " +
+                                                "complete=仅标记 GOAL/PROJECT 已完成，禁止用于偏好/习惯/自定义画像, supersede=旧实体被新实体替代, " +
                                                 "tag=建立关系, query-at-time=时间点查询, search-experience=检索执行经验")),
-                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 必填；cancel 未传 entityId 时必填")),
+                                Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 必填；cancel 未传 entityId 时必填，若用户给出 MT-xxx/RQ-xxx 编号必须原样包含")),
                                 Map.entry("top_k", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
                                 Map.entry("scope", Map.of("type", "string",
                                         "enum", List.of("memory", "knowledge"),
@@ -170,7 +173,7 @@ public class MemoryToolProvider {
                                         "items", Map.of("type", "string", "enum", List.of("PERSON", "ORGANIZATION", "PLACE", "EVENT", "PROJECT", "TOPIC", "PREFERENCE", "HABIT", "GOAL", "SKILL", "EXPERIENCE", "CUSTOM")),
                                         "description", "cancel 语义批量模式限定归档的实体类型集合，默认 [GOAL, EXPERIENCE, HABIT]")),
                                 Map.entry("maxArchive", Map.of("type", "integer", "description", "cancel 语义批量模式最多归档数量，默认 5")),
-                                Map.entry("minScore", Map.of("type", "number", "description", "cancel 语义批量模式最小相关性阈值（0-1），默认 0.5")),
+                                Map.entry("minScore", Map.of("type", "number", "description", "cancel 语义批量模式最小相关性阈值，默认 0.5；精确编号命中不使用该阈值")),
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
                                 Map.entry("conversationId", Map.of("type", "string", "description", "来源会话 ID")),
                                 Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete/complete/supersede 必填，cancel 单条模式必填")),
@@ -286,10 +289,6 @@ public class MemoryToolProvider {
                 .findFirst();
     }
 
-    private boolean isWritableEntity(String entityId, @Nullable ProjectContext ctx) {
-        return findWritableEntity(entityId, ctx).isPresent();
-    }
-
     ToolResult executeSearch(ToolInput input) {
         String scope = input.getOptionalParam("scope", String.class).orElse("memory");
         if ("knowledge".equals(scope)) {
@@ -298,7 +297,7 @@ public class MemoryToolProvider {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
             String query = input.getParam("query", String.class);
-            if (query == null || query.isBlank()) {
+            if (query.isBlank()) {
                 return ToolResult.error("query 参数不能为空");
             }
             int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
@@ -312,7 +311,7 @@ public class MemoryToolProvider {
             List<RetrievalResult> consumableResults = rawResults.stream()
                     .filter(result -> {
                         TemporalEntity entity = entityMap.get(result.entityId());
-                        return entity != null && MemoryQualityPolicy.isPromptConsumable(entity);
+                        return MemoryQualityPolicy.isPromptConsumable(entity);
                     })
                     .toList();
             List<RetrievalResult> results = consumableResults.stream()
@@ -552,6 +551,8 @@ public class MemoryToolProvider {
     /** cancel 默认最小相关性阈值 — 低于此分数的候选不归档。 */
     private static final float DEFAULT_CANCEL_MIN_SCORE = 0.5f;
 
+    private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
+
     /**
      * 按语义批量归档已取消的实体，或按 entityId 单条转 CANCELLED。
      *
@@ -592,48 +593,99 @@ public class MemoryToolProvider {
             int retrieveTopK = Math.max(maxArchive * 3, 10);
             ProjectContext projectContext = resolveProjectContext(input);
             MemoryReadFilter cancelFilter = toWritableEntityFilter(projectContext);
+            List<ScoredEntity> exactTargets = findExactCancelTargets(
+                    query, cancelFilter, targetTypes, maxArchive);
+            if (!exactTargets.isEmpty()) {
+                var cancelled = cancelEntities(exactTargets, sessionId, "exact");
+                return ToolResult.success(Map.of(
+                        "cancelled", cancelled,
+                        "count", cancelled.size(),
+                        "exact", true));
+            }
+
             List<RetrievalResult> candidates = hybridRetriever.retrieve(
                     query, retrieveTopK, RetrievalWeights.DEFAULT, cancelFilter);
 
-            var toArchive = candidates.stream()
+            var toCancel = candidates.stream()
                     .filter(r -> r.fusedScore() >= minScore)
                     .filter(r -> matchesType(r.entityType(), targetTypes))
                     .limit(maxArchive)
+                    .map(r -> findWritableEntity(r.entityId(), projectContext)
+                            .map(entity -> new ScoredEntity(entity, r.fusedScore()))
+                            .orElse(null))
+                    .filter(java.util.Objects::nonNull)
                     .toList();
 
-            if (toArchive.isEmpty()) {
+            if (toCancel.isEmpty()) {
                 log.info("记忆 cancel: 无命中, query={}, types={}, sessionId={}",
                         query, formatTypes(targetTypes), sessionId);
                 return ToolResult.success(Map.of(
-                        "archived", List.of(),
+                        "cancelled", List.of(),
                         "count", 0,
-                        "message", "未找到相关的 " + formatTypes(targetTypes) + " 记忆，无需归档"));
+                        "message", "未找到相关的 " + formatTypes(targetTypes) + " 记忆，无需取消"));
             }
 
-            var archivedList = new ArrayList<Map<String, Object>>();
-            for (var r : toArchive) {
-                var entityOpt = findWritableEntity(r.entityId(), projectContext);
-                if (entityOpt.isEmpty()) {
-                    continue;
-                }
-                var entity = entityOpt.get();
-                SqliteBusyRetry.run(() -> semanticMemory.archive(entity, ChangeSource.TOOL_EXPLICIT));
-                archivedList.add(Map.of(
-                        "id", entity.id(),
-                        "name", entity.name(),
-                        "type", entity.type().name(),
-                        "score", r.fusedScore()));
-                log.info("记忆 cancel: 归档实体, id={}, name={}, type={}, score={}, sessionId={}",
-                        entity.id(), entity.name(), entity.type(), r.fusedScore(), sessionId);
-            }
+            var cancelledList = cancelEntities(toCancel, sessionId, "semantic");
 
             return ToolResult.success(Map.of(
-                    "archived", archivedList,
-                    "count", archivedList.size()));
+                    "cancelled", cancelledList,
+                    "count", cancelledList.size()));
         } catch (Exception e) {
             log.error("批量取消记忆失败: sessionId={}, error={}", sessionId, e.getMessage(), e);
             return ToolResult.error("批量取消记忆失败: " + e.getMessage());
         }
+    }
+
+    private List<ScoredEntity> findExactCancelTargets(String query,
+                                                      MemoryReadFilter filter,
+                                                      Set<EntityType> targetTypes,
+                                                      int maxArchive) {
+        boolean hasHighSignal = !MemoryQuerySignals.highSignalTerms(query).isEmpty();
+        List<String> lookupTerms = MemoryQuerySignals.lookupTerms(query);
+        if (lookupTerms.isEmpty()) {
+            return List.of();
+        }
+        List<TemporalEntity> entities = semanticMemory.findAllCurrent(filter);
+        if (entities == null || entities.isEmpty()) {
+            return List.of();
+        }
+        float minExactScore = hasHighSignal ? 4.0f : 2.5f;
+        return entities.stream()
+                .filter(entity -> entity.lifecycleState() == LifecycleState.ACTIVE)
+                .map(entity -> new ScoredEntity(
+                        entity,
+                        MemoryQuerySignals.textMatchScore(query, entity.name(), entity.description())))
+                .filter(scored -> scored.score() >= minExactScore)
+                .filter(scored -> hasHighSignal || targetTypes.contains(scored.entity().type()))
+                .sorted(Comparator
+                        .comparingDouble(ScoredEntity::score).reversed()
+                        .thenComparing(scored -> scored.entity().importanceScore(), Comparator.reverseOrder())
+                        .thenComparing(scored -> scored.entity().updatedAt(), Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(maxArchive)
+                .toList();
+    }
+
+    private List<Map<String, Object>> cancelEntities(List<ScoredEntity> targets,
+                                                     @Nullable String sessionId,
+                                                     String sourcePath) {
+        var cancelledList = new ArrayList<Map<String, Object>>();
+        for (var target : targets) {
+            TemporalEntity entity = target.entity();
+            if (entity.lifecycleState() != LifecycleState.ACTIVE) {
+                continue;
+            }
+            SqliteBusyRetry.run(() -> semanticMemory.updateLifecycleState(
+                    entity.id(), LifecycleState.CANCELLED, "user-cancel", ChangeSource.TOOL_EXPLICIT));
+            cancelledList.add(Map.of(
+                    "id", entity.id(),
+                    "name", entity.name(),
+                    "type", entity.type().name(),
+                    "score", target.score(),
+                    "sourcePath", sourcePath));
+            log.info("记忆 cancel: 转 CANCELLED, id={}, name={}, type={}, score={}, sourcePath={}, sessionId={}",
+                    entity.id(), entity.name(), entity.type(), target.score(), sourcePath, sessionId);
+        }
+        return cancelledList;
     }
 
     /**
@@ -812,8 +864,13 @@ public class MemoryToolProvider {
             String conversationId = input.getOptionalParam("conversationId", String.class).orElse(null);
             String sessionId = input.getContextValue("sessionId", String.class).orElse(conversationId);
             ProjectContext projectContext = resolveProjectContext(input);
-            if (!isWritableEntity(sourceId, projectContext) || !isWritableEntity(targetId, projectContext)) {
+            var sourceEntity = findWritableEntity(sourceId, projectContext).orElse(null);
+            var targetEntity = findWritableEntity(targetId, projectContext).orElse(null);
+            if (sourceEntity == null || targetEntity == null) {
                 return ToolResult.error("关系两端实体必须都在当前可写范围内");
+            }
+            if (isConsolidatedProfile(sourceEntity) || isConsolidatedProfile(targetEntity)) {
+                return ToolResult.error("__consolidated_profile 是派生聚合画像，不能作为关系端点；请定位具体 PREFERENCE/HABIT/GOAL 等原子实体");
             }
             MemoryWriteContext writeContext = toProjectWriteContext(projectContext, sessionId);
             var now = Instant.now();
@@ -827,6 +884,10 @@ public class MemoryToolProvider {
             log.error("添加记忆标签失败: {}", e.getMessage(), e);
             return ToolResult.error("添加记忆标签失败: " + e.getMessage());
         }
+    }
+
+    private boolean isConsolidatedProfile(TemporalEntity entity) {
+        return entity.type() == EntityType.CUSTOM && CONSOLIDATED_PROFILE_NAME.equals(entity.name());
     }
 
     ToolResult executeQueryAtTime(ToolInput input) {
@@ -1040,6 +1101,9 @@ public class MemoryToolProvider {
         return sessionKbRepo.findKnowledgeBaseIdsBySessionId(sessionId).stream()
                 .map(KnowledgeSearchScope::new)
                 .toList();
+    }
+
+    private record ScoredEntity(TemporalEntity entity, float score) {
     }
 
 }

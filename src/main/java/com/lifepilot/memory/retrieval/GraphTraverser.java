@@ -23,6 +23,8 @@ import java.util.List;
 public class GraphTraverser {
 
     private static final Logger log = LoggerFactory.getLogger(GraphTraverser.class);
+    private static final int MAX_START_ENTITIES = 3;
+    private static final int MAX_DEPTH = 2;
 
     private final JdbcTemplate jdbcTemplate;
     private Boolean overlayTableAvailable;
@@ -60,45 +62,19 @@ public class GraphTraverser {
             return List.of();
         }
 
-        // 取第一个匹配的起始实体
-        String startEntityId = startEntities.getFirst();
+        startEntities = startEntities.stream()
+                .limit(MAX_START_ENTITIES)
+                .toList();
 
         try {
             return jdbcTemplate.query(
-                    """
-                    WITH RECURSIVE graph(entity_id, depth) AS (
-                        SELECT CASE
-                            WHEN source_entity_id = ? THEN target_entity_id
-                            ELSE source_entity_id
-                        END, 1
-                        FROM temporal_relations
-                        WHERE (source_entity_id = ? OR target_entity_id = ?)
-                          AND valid_to IS NULL
-                        UNION
-                        SELECT CASE
-                            WHEN tr.source_entity_id = g.entity_id THEN tr.target_entity_id
-                            ELSE tr.source_entity_id
-                        END, g.depth + 1
-                        FROM temporal_relations tr
-                        JOIN graph g ON (tr.source_entity_id = g.entity_id OR tr.target_entity_id = g.entity_id)
-                        WHERE tr.valid_to IS NULL AND g.depth < 2
-                    )
-                    SELECT te.id, te.type, te.name, te.description,
-                           MIN(g.depth) AS min_depth,
-                           te.last_accessed_at, te.importance_score, te.updated_at
-                    FROM graph g
-                    JOIN temporal_entities te ON te.id = g.entity_id
-                    WHERE te.is_current = 1 AND te.id != ?
-                      AND te.lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')
-                    GROUP BY te.id
-                    ORDER BY min_depth ASC
-                    LIMIT ?
-                    """,
+                    buildGraphSql(startEntities.size()),
                     (rs, rowNum) -> {
                         int depth = rs.getInt("min_depth");
                         // depth=1 得分 1.0，depth=2 得分 0.5
                         float score = depth == 1 ? 1.0f : 0.5f;
                         String lastAccessedStr = rs.getString("last_accessed_at");
+                        String validToStr = rs.getString("valid_to");
                         String updatedAtStr = rs.getString("updated_at");
                         return new RankedItem(
                                 rs.getString("id"),
@@ -108,14 +84,66 @@ public class GraphTraverser {
                                 score,
                                 lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
                                 rs.getFloat("importance_score"),
-                                null,
+                                validToStr != null ? Instant.parse(validToStr) : null,
                                 updatedAtStr != null ? Instant.parse(updatedAtStr) : null);
                     },
-                    startEntityId, startEntityId, startEntityId, startEntityId, topK);
+                    buildGraphParams(startEntities, topK).toArray());
         } catch (Exception e) {
-            log.warn("图遍历: 查询失败, startEntityId={}, error={}", startEntityId, e.getMessage());
+            log.warn("图遍历: 查询失败, startEntityIds={}, error={}", startEntities, e.getMessage());
             return List.of();
         }
+    }
+
+    private String buildGraphSql(int startEntityCount) {
+        String seedValues = String.join(",", Collections.nCopies(startEntityCount, "(?)"));
+        String startPlaceholders = buildPlaceholders(startEntityCount);
+        return """
+                WITH RECURSIVE
+                start(entity_id) AS (VALUES %s),
+                graph(entity_id, depth) AS (
+                    SELECT CASE
+                        WHEN tr.source_entity_id = s.entity_id THEN tr.target_entity_id
+                        ELSE tr.source_entity_id
+                    END, 1
+                    FROM temporal_relations tr
+                    JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
+                    JOIN start s ON (tr.source_entity_id = s.entity_id OR tr.target_entity_id = s.entity_id)
+                    WHERE tr.valid_to IS NULL
+                    UNION
+                    SELECT CASE
+                        WHEN tr.source_entity_id = g.entity_id THEN tr.target_entity_id
+                        ELSE tr.source_entity_id
+                    END, g.depth + 1
+                    FROM temporal_relations tr
+                    JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
+                    JOIN graph g ON (tr.source_entity_id = g.entity_id OR tr.target_entity_id = g.entity_id)
+                    WHERE tr.valid_to IS NULL AND g.depth < %d
+                )
+                SELECT te.id, te.type, te.name, te.description,
+                       MIN(g.depth) AS min_depth,
+                       te.last_accessed_at, te.importance_score, te.valid_to, te.updated_at
+                FROM graph g
+                JOIN temporal_entities te ON te.id = g.entity_id
+                WHERE te.is_current = 1
+                  AND te.id NOT IN (%s)
+                  AND te.lifecycle_state IN ('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')
+                  AND (te.valid_to IS NULL OR te.valid_to > ?)
+                  AND (te.expires_at IS NULL OR te.expires_at > ?)
+                GROUP BY te.id
+                ORDER BY min_depth ASC, te.importance_score DESC, te.updated_at DESC
+                LIMIT ?
+                """.formatted(seedValues, MAX_DEPTH, startPlaceholders);
+    }
+
+    private List<Object> buildGraphParams(List<String> startEntities, int topK) {
+        List<Object> params = new ArrayList<>();
+        params.addAll(startEntities);
+        params.addAll(startEntities);
+        String now = Instant.now().toString();
+        params.add(now);
+        params.add(now);
+        params.add(topK);
+        return params;
     }
 
     /** 从查询文本中识别起始实体（名称精确匹配 temporal_entities）。 */

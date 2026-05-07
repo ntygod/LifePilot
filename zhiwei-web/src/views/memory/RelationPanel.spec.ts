@@ -85,6 +85,7 @@ describe('RelationPanel 记忆归属展示', () => {
     expect(mocks.listRelations).toHaveBeenCalledWith({ page: 0, size: 20 })
     expect(wrapper.text()).toContain('领域记忆')
     expect(wrapper.text()).toContain('虚构')
+    expect(wrapper.text()).toContain('KB 图谱冷召回')
     expect(wrapper.text()).toContain('domain:knowledge-base:novel-workspace')
     expect(wrapper.text()).toContain('林夜')
     expect(wrapper.text()).toContain('青牛宗')

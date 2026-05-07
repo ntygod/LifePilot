@@ -125,13 +125,7 @@ public class KnowledgeExtractionPipeline {
     private ExtractionResult extractBatch(Document doc,
                                           List<DocumentChunk> batch,
                                           MemoryWriteContext writeContext) {
-        // 拼接批次内容
-        var contentBuilder = new StringBuilder();
-        for (var chunk : batch) {
-            contentBuilder.append(chunk.content()).append("\n\n");
-        }
-
-        var prompt = buildExtractionPrompt(contentBuilder.toString());
+        var prompt = buildExtractionPrompt(batch);
 
         // 使用结构化输出提取
         var response = generationRouter.callEntity(
@@ -156,7 +150,10 @@ public class KnowledgeExtractionPipeline {
                         log.debug("知识提取: 跳过知识库文档中的用户属性实体, name={}, type={}", entity.name(), entity.type());
                         continue;
                     }
-                    var persisted = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, doc.id(), writeContext));
+                    var entityWriteContext = withChunkEvidence(doc, writeContext,
+                            resolveSourceChunkId(entityInfo.sourceChunkId(), batch));
+                    var persisted = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(
+                            entity, doc.id(), entityWriteContext));
                     entityNameToId.put(entityInfo.name(), persisted.id());
                     entityCount++;
                 } catch (Exception e) {
@@ -177,7 +174,9 @@ public class KnowledgeExtractionPipeline {
                         continue;
                     }
                     var relation = toTemporalRelation(relationInfo, sourceId, targetId, doc.id());
-                    SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
+                    var relationWriteContext = withChunkEvidence(doc, writeContext,
+                            resolveSourceChunkId(relationInfo.sourceChunkId(), batch));
+                    SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, relationWriteContext));
                     relationCount++;
                 } catch (Exception e) {
                     log.warn("关系写入失败: type={}, error={}", relationInfo.relationType(), e.getMessage());
@@ -188,9 +187,17 @@ public class KnowledgeExtractionPipeline {
         return new ExtractionResult(entityCount, relationCount, List.of());
     }
 
-    private String buildExtractionPrompt(String content) {
+    private String buildExtractionPrompt(List<DocumentChunk> batch) {
+        var contentBuilder = new StringBuilder();
+        for (var chunk : batch) {
+            contentBuilder.append("<chunk id=\"")
+                    .append(chunk.id())
+                    .append("\">\n")
+                    .append(chunk.content())
+                    .append("\n</chunk>\n\n");
+        }
         return promptRegistry.render("knowledge/entity-extraction", Map.of(
-                "content", content));
+                "content", contentBuilder.toString().strip()));
     }
 
     private TemporalEntity toTemporalEntity(ExtractionResponse.EntityInfo info) {
@@ -212,6 +219,44 @@ public class KnowledgeExtractionPipeline {
                 info.relationType(),
                 Math.max(0.0f, Math.min(1.0f, info.strength())),
                 null, now, null, documentId, now);
+    }
+
+    @Nullable
+    private String resolveSourceChunkId(@Nullable String rawChunkId, List<DocumentChunk> batch) {
+        if (batch == null || batch.isEmpty()) {
+            return null;
+        }
+        if (rawChunkId != null && !rawChunkId.isBlank()) {
+            String normalized = rawChunkId.trim();
+            for (var chunk : batch) {
+                if (chunk.id().equals(normalized)) {
+                    return normalized;
+                }
+            }
+            log.debug("知识提取: LLM 返回未知 sourceChunkId={}, 批次大小={}", rawChunkId, batch.size());
+        }
+        return batch.size() == 1 ? batch.getFirst().id() : null;
+    }
+
+    private MemoryWriteContext withChunkEvidence(Document doc,
+                                                 MemoryWriteContext base,
+                                                 @Nullable String chunkId) {
+        if (chunkId == null || chunkId.isBlank()) {
+            return base;
+        }
+        return new MemoryWriteContext(
+                base.spaceId(),
+                base.memoryScope(),
+                base.originType(),
+                base.realityType(),
+                doc.id() + "#" + chunkId,
+                doc.id(),
+                base.sourceSessionId(),
+                base.sourceTurnId(),
+                chunkId,
+                doc.id(),
+                doc.knowledgeBaseId()
+        );
     }
 
     /**
@@ -282,8 +327,22 @@ public class KnowledgeExtractionPipeline {
             List<EntityInfo> entities,
             List<RelationInfo> relations
     ) {
-        public record EntityInfo(String name, String type, String description) {}
+        public record EntityInfo(String name,
+                                 String type,
+                                 String description,
+                                 @Nullable String sourceChunkId) {
+            public EntityInfo(String name, String type, String description) {
+                this(name, type, description, null);
+            }
+        }
+
         public record RelationInfo(String sourceEntity, String targetEntity,
-                                   String relationType, float strength) {}
+                                   String relationType, float strength,
+                                   @Nullable String sourceChunkId) {
+            public RelationInfo(String sourceEntity, String targetEntity,
+                                String relationType, float strength) {
+                this(sourceEntity, targetEntity, relationType, strength, null);
+            }
+        }
     }
 }

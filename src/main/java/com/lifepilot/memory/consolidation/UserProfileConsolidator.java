@@ -24,9 +24,15 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,6 +65,18 @@ public class UserProfileConsolidator {
     /** 用于收集偏好规则的类别列表。 */
     private static final List<String> PREFERENCE_CATEGORIES = List.of(
             "proactive-domain", "user-preference");
+
+    /** 画像源签名属性键：用于判断 L3/L4/L2 输入是否真的发生变化。 */
+    static final String PROFILE_SOURCE_SIGNATURE_KEY = "profileSourceSignature";
+
+    /** 画像源签名版本：签名字段调整时递增，避免误用旧算法结果。 */
+    private static final String PROFILE_SOURCE_SIGNATURE_VERSION = "v1";
+
+    /** 画像源数量属性键，便于 UI/调试观察画像由多少条碎片派生。 */
+    private static final String PROFILE_SOURCE_COUNT_KEY = "profileSourceCount";
+
+    /** 最近一次画像巩固时间属性键。 */
+    private static final String PROFILE_CONSOLIDATED_AT_KEY = "profileConsolidatedAt";
 
     /** LLM 调用超时。 */
     private static final Duration LLM_TIMEOUT = Duration.ofSeconds(60);
@@ -99,25 +117,27 @@ public class UserProfileConsolidator {
      * 任何异常静默捕获，不影响其他巩固步骤。</p>
      */
     public void consolidate() {
+        consolidate(false);
+    }
+
+    /**
+     * 执行用户画像巩固。
+     *
+     * @param force 是否绕过最小间隔防抖；手动触发使用 true，定时/空闲触发使用 false
+     */
+    public void consolidate(boolean force) {
         if (semanticMemory == null || generationRouter == null || promptRegistry == null) {
             log.debug("用户画像巩固: 核心依赖缺失，已跳过");
             return;
         }
-        // 防抖：距上次巩固不到 MIN_INTERVAL 则跳过
-        if (Duration.between(lastConsolidatedAt, Instant.now()).compareTo(MIN_INTERVAL) < 0) {
-            log.debug("用户画像巩固: 距上次不到{}小时，已跳过", MIN_INTERVAL.toHours());
-            return;
-        }
-
         try {
-            doConsolidate();
-            lastConsolidatedAt = Instant.now();
+            doConsolidate(force);
         } catch (Exception e) {
             log.warn("用户画像巩固: 执行失败, error={}", e.getMessage(), e);
         }
     }
 
-    private void doConsolidate() {
+    private void doConsolidate(boolean force) {
         // Plan 1 设计：后台巩固任务语义为"主账户画像"—— 项目空间不参与巩固，
         // 项目实体维持在各自 space 内，避免跨项目画像串味。后续若需要项目级巩固
         // 应新开一个 per-project consolidator，而非在此处接 ProjectContext。
@@ -132,6 +152,7 @@ public class UserProfileConsolidator {
         var allFragments = Stream.of(preferences, habits, goals, skills)
                 .flatMap(List::stream)
                 .filter(MemoryQualityPolicy::isPromptConsumable)
+                .sorted(Comparator.comparing(TemporalEntity::id))
                 .toList();
 
         if (allFragments.isEmpty()) {
@@ -151,6 +172,17 @@ public class UserProfileConsolidator {
         // 4. 查找已有巩固画像
         var existingProfile = semanticMemory.findCurrentByNameAndType(
                 PROFILE_ENTITY_NAME, EntityType.CUSTOM, filter);
+        String sourceSignature = buildSourceSignature(allFragments, recentConversations, recentFeedback);
+        if (isSourceUnchanged(existingProfile, sourceSignature)) {
+            log.debug("用户画像巩固: 源签名未变化，跳过 LLM, sourceCount={}", allFragments.size());
+            return;
+        }
+        // 防抖：只有源确实变化后才应用间隔限制，避免纯时间触发反复打 LLM。
+        Instant effectiveLastConsolidatedAt = resolveLastConsolidatedAt(existingProfile);
+        if (!force && Duration.between(effectiveLastConsolidatedAt, Instant.now()).compareTo(MIN_INTERVAL) < 0) {
+            log.debug("用户画像巩固: 源已变化但距上次不到{}小时，已延后", MIN_INTERVAL.toHours());
+            return;
+        }
         String currentPortrait = existingProfile
                 .filter(MemoryQualityPolicy::isPromptConsumable)
                 .map(TemporalEntity::description)
@@ -167,7 +199,9 @@ public class UserProfileConsolidator {
         }
 
         // 6. 构建活跃目标列表
-        String activeIntents = goals.stream()
+        String activeIntents = allFragments.stream()
+                .filter(e -> e.type() == EntityType.GOAL)
+                .sorted(Comparator.comparing(TemporalEntity::id))
                 .map(g -> "- " + g.name() +
                         (g.description() != null ? ": " + g.description() : ""))
                 .collect(Collectors.joining("\n"));
@@ -225,12 +259,14 @@ public class UserProfileConsolidator {
         if (existingProfile.isPresent()) {
             // UPDATE: 用 upsertWithConflictDetection 更新已有画像
             var existing = existingProfile.get();
+            Map<String, Object> updatedProperties = withProfileMetadata(
+                    existing.properties(), sourceSignature, allFragments.size(), now);
             var updated = new TemporalEntity(
                     existing.id(),
                     EntityType.CUSTOM,
                     PROFILE_ENTITY_NAME,
                     portraitText,
-                    existing.properties(),
+                    updatedProperties,
                     existing.version(),
                     true,
                     existing.validFrom(),
@@ -257,12 +293,14 @@ public class UserProfileConsolidator {
                     existing.id(), portraitText.length(), derivationSources.size());
         } else {
             // ADD: 创建新实体
+            Map<String, Object> profileProperties = withProfileMetadata(
+                    Map.of(), sourceSignature, allFragments.size(), now);
             var newEntity = new TemporalEntity(
                     UUID.randomUUID().toString(),
                     EntityType.CUSTOM,
                     PROFILE_ENTITY_NAME,
                     portraitText,
-                    Map.of(),
+                    profileProperties,
                     1,
                     true,
                     now,
@@ -283,6 +321,7 @@ public class UserProfileConsolidator {
             log.info("用户画像巩固: 已创建画像, entityId={}, chars={}, sources={}",
                     newEntity.id(), portraitText.length(), derivationSources.size());
         }
+        lastConsolidatedAt = now;
     }
 
     /**
@@ -330,6 +369,10 @@ public class UserProfileConsolidator {
                 return "无偏好反馈";
             }
             return allRules.stream()
+                    .sorted(Comparator
+                            .comparing(PreferenceRule::category)
+                            .thenComparing(PreferenceRule::key)
+                            .thenComparing(r -> r.sourceEntityId() != null ? r.sourceEntityId() : ""))
                     .map(r -> "- " + r.key() +
                             (r.value() != null && !r.value().isBlank() ? ": " + r.value() : ""))
                     .collect(Collectors.joining("\n"));
@@ -337,5 +380,81 @@ public class UserProfileConsolidator {
             log.debug("用户画像巩固: 读取偏好规则失败, error={}", e.getMessage());
             return "无偏好反馈";
         }
+    }
+
+    private boolean isSourceUnchanged(java.util.Optional<TemporalEntity> existingProfile,
+                                      String sourceSignature) {
+        return existingProfile
+                .filter(MemoryQualityPolicy::isPromptConsumable)
+                .map(TemporalEntity::properties)
+                .map(props -> props.get(PROFILE_SOURCE_SIGNATURE_KEY))
+                .map(String::valueOf)
+                .filter(sourceSignature::equals)
+                .isPresent();
+    }
+
+    private Instant resolveLastConsolidatedAt(java.util.Optional<TemporalEntity> existingProfile) {
+        Instant persisted = existingProfile
+                .map(TemporalEntity::properties)
+                .map(props -> props.get(PROFILE_CONSOLIDATED_AT_KEY))
+                .map(String::valueOf)
+                .flatMap(this::parseInstant)
+                .orElse(Instant.EPOCH);
+        return persisted.isAfter(lastConsolidatedAt) ? persisted : lastConsolidatedAt;
+    }
+
+    private java.util.Optional<Instant> parseInstant(String raw) {
+        try {
+            return java.util.Optional.of(Instant.parse(raw));
+        } catch (Exception e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private Map<String, Object> withProfileMetadata(Map<String, Object> properties,
+                                                    String sourceSignature,
+                                                    int sourceCount,
+                                                    Instant consolidatedAt) {
+        var updated = new LinkedHashMap<String, Object>(properties);
+        updated.put(PROFILE_SOURCE_SIGNATURE_KEY, sourceSignature);
+        updated.put(PROFILE_SOURCE_COUNT_KEY, sourceCount);
+        updated.put(PROFILE_CONSOLIDATED_AT_KEY, consolidatedAt.toString());
+        return updated;
+    }
+
+    private String buildSourceSignature(List<TemporalEntity> fragments,
+                                        String recentConversations,
+                                        String recentFeedback) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateSignaturePart(digest, PROFILE_SOURCE_SIGNATURE_VERSION);
+            for (TemporalEntity fragment : fragments) {
+                updateSignaturePart(digest, "fragment");
+                updateSignaturePart(digest, fragment.id());
+                updateSignaturePart(digest, fragment.type().name());
+                updateSignaturePart(digest, fragment.name());
+                updateSignaturePart(digest, fragment.description());
+                updateSignaturePart(digest, String.valueOf(fragment.version()));
+                updateSignaturePart(digest, fragment.lifecycleState().name());
+                updateSignaturePart(digest, fragment.evidenceKind().name());
+                updateSignaturePart(digest, fragment.trustLevel().name());
+                updateSignaturePart(digest, String.format(java.util.Locale.ROOT, "%.3f", fragment.trustScore()));
+            }
+            updateSignaturePart(digest, "recentConversations");
+            updateSignaturePart(digest, recentConversations);
+            updateSignaturePart(digest, "recentFeedback");
+            updateSignaturePart(digest, recentFeedback);
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 摘要算法不可用", e);
+        }
+    }
+
+    private void updateSignaturePart(MessageDigest digest, @Nullable String value) {
+        String safe = value != null ? value : "<null>";
+        digest.update(Integer.toString(safe.length()).getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) ':');
+        digest.update(safe.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) '\n');
     }
 }

@@ -13,6 +13,7 @@ import com.lifepilot.knowledge.repository.*;
 import com.lifepilot.knowledge.retrieve.*;
 import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.rerank.router.RerankRouter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -95,8 +96,9 @@ public class KnowledgeRuntimeAutoConfiguration {
     @ConditionalOnMissingBean
     public GraphKnowledgeSearcher graphKnowledgeSearcher(@Nullable SemanticMemory semanticMemory,
                                                           DocumentChunkRepository chunkRepository,
-                                                          DocumentRepository docRepository) {
-        return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, docRepository);
+                                                          DocumentRepository docRepository,
+                                                          @Nullable MemorySpaceRepository memorySpaceRepository) {
+        return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, docRepository, memorySpaceRepository);
     }
 
     @Bean
@@ -193,13 +195,15 @@ public class KnowledgeRuntimeAutoConfiguration {
     public KnowledgeBaseManager knowledgeBaseManager(KnowledgeBaseRepository kbRepository,
                                                      DocumentRepository documentRepository,
                                                      DocumentChunkRepository chunkRepository,
-                                                     @Nullable VectorIndexer vectorIndexer) {
+                                                     @Nullable VectorIndexer vectorIndexer,
+                                                     ApplicationEventPublisher eventPublisher) {
         log.info("知识库模块初始化完成");
         return new KnowledgeBaseManager(
                 kbRepository,
                 documentRepository,
                 chunkRepository,
-                vectorIndexer
+                vectorIndexer,
+                eventPublisher
         );
     }
 }

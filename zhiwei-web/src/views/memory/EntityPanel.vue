@@ -8,6 +8,7 @@ import {
   Archive,
   RotateCcw,
   ArrowUpRight,
+  SlidersHorizontal,
 } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
 import { logger } from '@/utils/logger'
@@ -84,6 +85,47 @@ const ORIGIN_TYPE_OPTIONS = [
   { value: 'CONSOLIDATION', label: '记忆巩固' },
 ] as const
 
+const LIFECYCLE_STATE_LABELS: Record<string, string> = {
+  ACTIVE: '可召回',
+  COMPLETED: '已完成',
+  REGENERATION_NEEDED: '需重建',
+  EXPIRED: '已过期',
+  ARCHIVED: '已归档',
+  CANCELLED: '已取消',
+  SUPERSEDED: '已替代',
+}
+
+const TEMPORALITY_LABELS: Record<string, string> = {
+  PERMANENT: '长期',
+  TEMPORARY: '临时',
+  TIMELINE: '时间线',
+  UNKNOWN: '未标注',
+}
+
+const TRUST_LEVEL_LABELS: Record<string, string> = {
+  VERIFIED: '已验证',
+  EXPLICIT: '用户明确',
+  DERIVED: '派生',
+  INFERRED: '推断',
+  UNVERIFIED: '未验证',
+}
+
+const EVIDENCE_KIND_LABELS: Record<string, string> = {
+  DOCUMENT_GROUNDED: '文档证据',
+  USER_EXPLICIT: '用户明示',
+  USER_CONFIRMED: '用户确认',
+  TOOL_VERIFIED: '工具验证',
+  CHAT_INFERRED: '对话推断',
+  BEHAVIOR_INFERRED: '行为推断',
+  LLM_SUMMARIZED_EXPERIENCE: '经验总结',
+  DERIVED: '派生',
+  UNKNOWN: '未知',
+}
+
+const HOT_DIGEST_SCOPES = new Set(['USER_PROFILE', 'USER_FACT', 'AGENT_EXPERIENCE'])
+const PROMPT_CONSUMABLE_TRUST_LEVELS = new Set(['VERIFIED', 'EXPLICIT', 'DERIVED'])
+const RETRIEVABLE_LIFECYCLE_STATES = new Set(['ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED'])
+
 // ── 筛选状态 ──
 const filterQ = ref('')
 const filterType = ref<string>('')
@@ -98,6 +140,7 @@ const filterTimeTo = ref('')
 const filterSortBy = ref('createdAt')
 const filterOrder = ref('desc')
 const syncingRouteFilters = ref(false)
+const advancedFiltersOpen = ref(false)
 
 // ── 列表状态 ──
 const PAGE_SIZE = 20
@@ -189,8 +232,12 @@ const store = useMemoryStore()
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUiStore()
-const activeListSourceFilters = computed(() => [
-  filterOriginType.value ? `来源类型: ${formatOriginType(filterOriginType.value)}` : null,
+const activeAdvancedFilters = computed(() => [
+  filterType.value ? `类型: ${ENTITY_TYPES.find(type => type.value === filterType.value)?.label || filterType.value}` : null,
+  filterSpaceId.value.trim() ? `空间: ${filterSpaceId.value.trim()}` : null,
+  filterTimeFrom.value ? `开始: ${filterTimeFrom.value}` : null,
+  filterTimeTo.value ? `结束: ${filterTimeTo.value}` : null,
+  filterOriginType.value ? `来源: ${formatOriginType(filterOriginType.value)}` : null,
   filterSourceKnowledgeBaseId.value.trim() ? `知识库: ${filterSourceKnowledgeBaseId.value.trim()}` : null,
   filterSourceDocumentId.value.trim() ? `文档: ${filterSourceDocumentId.value.trim()}` : null,
 ].filter((item): item is string => Boolean(item)))
@@ -492,6 +539,93 @@ function formatSpaceId(spaceId?: string | null) {
   return spaceId
 }
 
+function abbreviateSpaceId(spaceId?: string | null) {
+  if (!spaceId) return '默认空间'
+  if (spaceId.length <= 18) return spaceId
+  return `${spaceId.slice(0, 8)}...${spaceId.slice(-4)}`
+}
+
+function formatListSpaceLabel(item: { memoryScope?: string | null; spaceId?: string | null }) {
+  if (!item.spaceId) return '默认空间'
+  if (isKnowledgeBaseMemory(item)) return 'KB 图谱空间'
+  if (item.memoryScope === 'AGENT_EXPERIENCE') return '经验记忆空间'
+  if (item.memoryScope === 'USER_PROFILE' || item.memoryScope === 'USER_FACT') return '个人记忆空间'
+  return abbreviateSpaceId(item.spaceId)
+}
+
+function shouldShowRealityType(realityType?: string | null) {
+  return Boolean(realityType && realityType !== 'UNKNOWN')
+}
+
+function formatLifecycleState(state?: string | null) {
+  if (!state) return '未知状态'
+  return LIFECYCLE_STATE_LABELS[state] || state
+}
+
+function formatTemporality(temporality?: string | null) {
+  if (!temporality) return '未标注'
+  return TEMPORALITY_LABELS[temporality] || temporality
+}
+
+function formatTrustLevel(trustLevel?: string | null) {
+  if (!trustLevel) return '未验证'
+  return TRUST_LEVEL_LABELS[trustLevel] || trustLevel
+}
+
+function formatEvidenceKind(evidenceKind?: string | null) {
+  if (!evidenceKind) return '未知'
+  return EVIDENCE_KIND_LABELS[evidenceKind] || evidenceKind
+}
+
+function formatPercentScore(score?: number | null) {
+  if (typeof score !== 'number' || Number.isNaN(score)) return '-'
+  return `${(Math.max(0, Math.min(1, score)) * 100).toFixed(0)}%`
+}
+
+function formatOptionalDate(iso?: string | null) {
+  return iso ? formatDate(iso) : '-'
+}
+
+function formatBoolean(value?: boolean | null) {
+  return value ? '是' : '否'
+}
+
+function formatDerivationSources(sources?: string[] | null) {
+  if (!sources || sources.length === 0) return '无'
+  return sources.join(', ')
+}
+
+function isKnowledgeBaseMemory(item: { memoryScope?: string | null; spaceId?: string | null }) {
+  return item.memoryScope === 'DOMAIN_MEMORY' || item.spaceId?.startsWith('domain:knowledge-base:')
+}
+
+function isHotDigestCandidate(item: {
+  memoryScope?: string | null
+  lifecycleState?: string | null
+  trustLevel?: string | null
+}) {
+  return Boolean(
+    item.memoryScope
+    && HOT_DIGEST_SCOPES.has(item.memoryScope)
+    && item.lifecycleState
+    && RETRIEVABLE_LIFECYCLE_STATES.has(item.lifecycleState)
+    && item.trustLevel
+    && PROMPT_CONSUMABLE_TRUST_LEVELS.has(item.trustLevel)
+  )
+}
+
+function formatConsumptionBoundary(item: {
+  memoryScope?: string | null
+  spaceId?: string | null
+  lifecycleState?: string | null
+  trustLevel?: string | null
+}) {
+  if (isKnowledgeBaseMemory(item)) return 'KB 图谱冷召回'
+  if (isHotDigestCandidate(item)) return '热摘要候选'
+  if (item.memoryScope && HOT_DIGEST_SCOPES.has(item.memoryScope)) return '长期记忆冷召回'
+  return '冷召回'
+}
+
 function buildProvenanceParams(): EntityProvenanceParams {
   const params: EntityProvenanceParams = {}
   if (provenanceOriginType.value) params.originType = provenanceOriginType.value
@@ -527,6 +661,15 @@ function buildNamedReference(name?: string | null, id?: string | null) {
   return normalizedName || normalizedId || null
 }
 
+function isKnowledgeBaseProvenance(item: EntityProvenance) {
+  return item.originType === 'KNOWLEDGE_BASE_DOCUMENT'
+    || Boolean(item.sourceKnowledgeBaseId || item.sourceDocumentId)
+}
+
+function formatSourceEntryLabel(item: EntityProvenance) {
+  return isKnowledgeBaseProvenance(item) ? 'Chunk ID' : '消息 ID'
+}
+
 function buildProvenanceDetails(item: EntityProvenance) {
   const details: Array<{ label: string; value: string | null }> = [
     {
@@ -538,7 +681,7 @@ function buildProvenanceDetails(item: EntityProvenance) {
     { label: '对话 ID', value: item.sourceConversationId },
     { label: '会话 ID', value: item.sourceSessionId },
     { label: 'Turn ID', value: item.sourceTurnId },
-    { label: '消息 ID', value: item.sourceEntryId },
+    { label: formatSourceEntryLabel(item), value: item.sourceEntryId },
     { label: '知识库', value: buildNamedReference(item.sourceKnowledgeBaseName, item.sourceKnowledgeBaseId) },
     { label: '文档', value: buildNamedReference(item.sourceDocumentName, item.sourceDocumentId) },
   ]
@@ -577,11 +720,11 @@ function openDocument(item: EntityProvenance) {
 <template>
   <div class="space-y-4">
     <!-- 筛选栏 -->
-    <div class="detail-card p-4">
-      <div class="space-y-4">
-        <div class="flex flex-wrap items-end gap-3">
+    <div class="detail-card p-3">
+      <div class="space-y-3">
+        <div class="grid items-end gap-3 xl:grid-cols-[minmax(18rem,1fr)_9rem_9rem_9rem_7rem_auto]">
           <!-- 关键词搜索 -->
-          <div class="flex-1 min-w-[200px]">
+          <div>
             <label class="text-xs text-muted-foreground mb-1 block">关键词搜索</label>
             <div class="relative">
               <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -594,36 +737,8 @@ function openDocument(item: EntityProvenance) {
             </div>
           </div>
 
-          <!-- 空间标识 -->
-          <div class="min-w-[220px] flex-1">
-            <label class="text-xs text-muted-foreground mb-1 block">空间标识</label>
-            <Input
-              v-model="filterSpaceId"
-              @keydown.enter="handleSearch"
-            />
-          </div>
-
-          <!-- 实体类型 -->
-          <div class="w-36">
-            <label class="text-xs text-muted-foreground mb-1 block">实体类型</label>
-            <Select
-              :model-value="filterType || '__all__'"
-              @update:model-value="(value) => filterType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="全部类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">全部类型</SelectItem>
-                <SelectItem v-for="t in ENTITY_TYPES" :key="t.value" :value="t.value">
-                  {{ t.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           <!-- 记忆范围 -->
-          <div class="w-36">
+          <div>
             <label class="text-xs text-muted-foreground mb-1 block">记忆范围</label>
             <Select
               :model-value="filterMemoryScope || '__all__'"
@@ -642,7 +757,7 @@ function openDocument(item: EntityProvenance) {
           </div>
 
           <!-- 现实性 -->
-          <div class="w-36">
+          <div>
             <label class="text-xs text-muted-foreground mb-1 block">现实性</label>
             <Select
               :model-value="filterRealityType || '__all__'"
@@ -660,18 +775,8 @@ function openDocument(item: EntityProvenance) {
             </Select>
           </div>
 
-          <!-- 时间范围 -->
-          <div class="w-36">
-            <label class="text-xs text-muted-foreground mb-1 block">开始时间</label>
-            <DatePicker v-model="filterTimeFrom" placeholder="开始日期" class="w-full" />
-          </div>
-          <div class="w-36">
-            <label class="text-xs text-muted-foreground mb-1 block">结束时间</label>
-            <DatePicker v-model="filterTimeTo" placeholder="结束日期" class="w-full" />
-          </div>
-
           <!-- 排序 -->
-          <div class="w-36">
+          <div>
             <label class="text-xs text-muted-foreground mb-1 block">排序字段</label>
             <Select v-model="filterSortBy">
               <SelectTrigger>
@@ -684,7 +789,7 @@ function openDocument(item: EntityProvenance) {
               </SelectContent>
             </Select>
           </div>
-          <div class="w-28">
+          <div>
             <label class="text-xs text-muted-foreground mb-1 block">排序方向</label>
             <Select v-model="filterOrder">
               <SelectTrigger>
@@ -698,9 +803,19 @@ function openDocument(item: EntityProvenance) {
             </Select>
           </div>
 
-          <!-- 搜索 + 新建按钮 -->
           <div class="flex items-end gap-2">
             <Button @click="handleSearch">搜索</Button>
+            <Button
+              variant="outline"
+              :aria-expanded="advancedFiltersOpen"
+              @click="advancedFiltersOpen = !advancedFiltersOpen"
+            >
+              <SlidersHorizontal class="mr-1.5 size-4" />
+              高级筛选
+              <span v-if="activeAdvancedFilters.length > 0" class="ml-1 text-xs">
+                {{ activeAdvancedFilters.length }}
+              </span>
+            </Button>
             <Button variant="outline" @click="openCreate">
               <Plus class="mr-1.5 size-4" />
               新建实体
@@ -708,24 +823,53 @@ function openDocument(item: EntityProvenance) {
           </div>
         </div>
 
-        <div class="rounded-md border border-border/60 p-3">
-          <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div class="text-xs font-medium text-foreground">来源筛选</div>
-            </div>
-            <div v-if="activeListSourceFilters.length > 0" class="flex flex-wrap gap-2">
-              <Badge
-                v-for="item in activeListSourceFilters"
-                :key="item"
-                variant="outline"
-                class="text-[0.72rem]"
-              >
-                {{ item }}
-              </Badge>
-            </div>
-          </div>
+        <div v-if="activeAdvancedFilters.length > 0" class="flex flex-wrap gap-2">
+          <Badge
+            v-for="item in activeAdvancedFilters"
+            :key="item"
+            variant="outline"
+            class="max-w-[18rem] truncate text-[0.72rem]"
+          >
+            {{ item }}
+          </Badge>
+        </div>
 
-          <div class="grid gap-3 xl:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)]">
+        <div v-if="advancedFiltersOpen" class="rounded-md border border-border/60 p-3">
+          <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-[12rem_minmax(0,1fr)_9rem_9rem_12rem_minmax(0,1fr)_minmax(0,1fr)]">
+            <!-- 实体类型 -->
+            <div>
+              <label class="text-xs text-muted-foreground mb-1 block">实体类型</label>
+              <Select
+                :model-value="filterType || '__all__'"
+                @update:model-value="(value) => filterType = String(value ?? '') === '__all__' ? '' : String(value ?? '')"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="全部类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">全部类型</SelectItem>
+                  <SelectItem v-for="t in ENTITY_TYPES" :key="t.value" :value="t.value">
+                    {{ t.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label class="text-xs text-muted-foreground mb-1 block">空间标识</label>
+              <Input
+                v-model="filterSpaceId"
+                placeholder="完整 spaceId"
+                @keydown.enter="handleSearch"
+              />
+            </div>
+            <div>
+              <label class="text-xs text-muted-foreground mb-1 block">开始时间</label>
+              <DatePicker v-model="filterTimeFrom" placeholder="开始日期" class="w-full" />
+            </div>
+            <div>
+              <label class="text-xs text-muted-foreground mb-1 block">结束时间</label>
+              <DatePicker v-model="filterTimeTo" placeholder="结束日期" class="w-full" />
+            </div>
             <div>
               <label class="mb-1 block text-xs text-muted-foreground">来源类型</label>
               <Select
@@ -794,6 +938,7 @@ function openDocument(item: EntityProvenance) {
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">名称</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">类型</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">归属</th>
+            <th class="px-4 py-3 text-left font-medium text-muted-foreground">治理状态</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">重要性</th>
             <th class="px-4 py-3 text-right font-medium text-muted-foreground">版本</th>
             <th class="px-4 py-3 text-left font-medium text-muted-foreground">创建时间</th>
@@ -815,10 +960,25 @@ function openDocument(item: EntityProvenance) {
             <td class="px-4 py-3">
               <div class="flex flex-wrap items-center gap-1.5">
                 <Badge variant="outline">{{ formatMemoryScope(entity.memoryScope) }}</Badge>
-                <Badge variant="secondary">{{ formatRealityType(entity.realityType) }}</Badge>
+                <Badge variant="outline">{{ formatConsumptionBoundary(entity) }}</Badge>
+                <Badge v-if="shouldShowRealityType(entity.realityType)" variant="secondary">
+                  {{ formatRealityType(entity.realityType) }}
+                </Badge>
               </div>
               <p class="mt-1 text-xs text-muted-foreground" :title="formatSpaceId(entity.spaceId)">
-                {{ formatSpaceId(entity.spaceId) }}
+                {{ formatListSpaceLabel(entity) }}
+              </p>
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline">{{ formatLifecycleState(entity.lifecycleState) }}</Badge>
+                <Badge variant="secondary">{{ formatTrustLevel(entity.trustLevel) }}</Badge>
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ formatEvidenceKind(entity.evidenceKind) }} · 可信度 {{ formatPercentScore(entity.trustScore) }} · {{ entity.evidenceCount }} 份证据
+              </p>
+              <p v-if="entity.expiresAt" class="mt-0.5 text-xs text-muted-foreground">
+                过期 {{ formatOptionalDate(entity.expiresAt) }}
               </p>
             </td>
             <td class="px-4 py-3 text-right tabular-nums">{{ entity.importanceScore.toFixed(2) }}</td>
@@ -843,7 +1003,7 @@ function openDocument(item: EntityProvenance) {
 
     <!-- 详情 Sheet -->
     <Sheet v-model:open="detailOpen">
-      <SheetContent class="w-full max-w-xl overflow-y-auto p-6">
+      <SheetContent class="w-full max-w-2xl overflow-y-auto p-6">
         <SheetHeader>
           <SheetTitle>{{ detailEntity?.name || '实体详情' }}</SheetTitle>
           <SheetDescription>
@@ -878,6 +1038,15 @@ function openDocument(item: EntityProvenance) {
             </Button>
           </div>
 
+          <div class="flex flex-wrap items-center gap-1.5">
+            <Badge variant="outline">{{ formatMemoryScope(detailEntity.memoryScope) }}</Badge>
+            <Badge variant="secondary">{{ formatRealityType(detailEntity.realityType) }}</Badge>
+            <Badge variant="outline">{{ formatConsumptionBoundary(detailEntity) }}</Badge>
+            <Badge variant="outline">{{ formatLifecycleState(detailEntity.lifecycleState) }}</Badge>
+            <Badge variant="secondary">{{ formatTrustLevel(detailEntity.trustLevel) }}</Badge>
+            <Badge variant="outline">{{ formatEvidenceKind(detailEntity.evidenceKind) }}</Badge>
+          </div>
+
           <!-- Tab 切换：基本信息 / 版本历史 / 关联实体 -->
           <Tabs :model-value="detailTab" @update:model-value="handleDetailTabChange">
             <TabsList class="w-full justify-start">
@@ -907,6 +1076,10 @@ function openDocument(item: EntityProvenance) {
                   <p class="font-medium break-all">{{ formatSpaceId(detailEntity.spaceId) }}</p>
                 </div>
                 <div>
+                  <span class="text-muted-foreground">消费边界</span>
+                  <p class="font-medium">{{ formatConsumptionBoundary(detailEntity) }}</p>
+                </div>
+                <div>
                   <span class="text-muted-foreground">重要性分数</span>
                   <p class="font-medium">{{ detailEntity.importanceScore.toFixed(2) }}</p>
                 </div>
@@ -915,12 +1088,72 @@ function openDocument(item: EntityProvenance) {
                   <p class="font-medium">{{ detailEntity.accessCount }}</p>
                 </div>
                 <div>
+                  <span class="text-muted-foreground">生命周期</span>
+                  <p class="font-medium">{{ formatLifecycleState(detailEntity.lifecycleState) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">时效性</span>
+                  <p class="font-medium">{{ formatTemporality(detailEntity.temporality) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">过期时间</span>
+                  <p class="font-medium">{{ formatOptionalDate(detailEntity.expiresAt) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">生命周期原因</span>
+                  <p class="font-medium">{{ detailEntity.lifecycleReason || '-' }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">信任等级</span>
+                  <p class="font-medium">{{ formatTrustLevel(detailEntity.trustLevel) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">可信分数</span>
+                  <p class="font-medium">{{ formatPercentScore(detailEntity.trustScore) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">证据类型</span>
+                  <p class="font-medium">{{ formatEvidenceKind(detailEntity.evidenceKind) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">证据数量</span>
+                  <p class="font-medium">{{ detailEntity.evidenceCount }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">最近验证</span>
+                  <p class="font-medium">{{ formatOptionalDate(detailEntity.lastVerifiedAt) }}</p>
+                </div>
+                <div>
                   <span class="text-muted-foreground">提取置信度</span>
-                  <p class="font-medium">{{ (detailEntity.extractionConfidence * 100).toFixed(0) }}%</p>
+                  <p class="font-medium">{{ formatPercentScore(detailEntity.extractionConfidence) }}</p>
                 </div>
                 <div>
                   <span class="text-muted-foreground">来源对话 ID</span>
                   <p class="font-medium truncate">{{ detailEntity.sourceConversationId || '-' }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">当前版本</span>
+                  <p class="font-medium">{{ formatBoolean(detailEntity.isCurrent) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">有效开始</span>
+                  <p class="font-medium">{{ formatDate(detailEntity.validFrom) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">有效结束</span>
+                  <p class="font-medium">{{ formatOptionalDate(detailEntity.validTo) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">派生实体</span>
+                  <p class="font-medium">{{ formatBoolean(detailEntity.isDerived) }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">替代实体</span>
+                  <p class="font-medium truncate">{{ detailEntity.succeededBy || '-' }}</p>
+                </div>
+                <div>
+                  <span class="text-muted-foreground">最近访问</span>
+                  <p class="font-medium">{{ formatOptionalDate(detailEntity.lastAccessedAt) }}</p>
                 </div>
                 <div>
                   <span class="text-muted-foreground">版本</span>
@@ -933,6 +1166,10 @@ function openDocument(item: EntityProvenance) {
                 <div>
                   <span class="text-muted-foreground">更新时间</span>
                   <p class="font-medium">{{ formatDate(detailEntity.updatedAt) }}</p>
+                </div>
+                <div class="col-span-2">
+                  <span class="text-muted-foreground">派生来源</span>
+                  <p class="font-medium break-all">{{ formatDerivationSources(detailEntity.derivationSources) }}</p>
                 </div>
               </div>
 
@@ -1011,8 +1248,10 @@ function openDocument(item: EntityProvenance) {
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex flex-wrap items-center gap-2">
                       <Badge variant="outline">{{ formatOriginType(item.originType) }}</Badge>
+                      <Badge variant="secondary">{{ formatTrustLevel(item.trustLevel) }}</Badge>
+                      <Badge variant="outline">{{ formatEvidenceKind(item.evidenceKind) }}</Badge>
                       <span class="text-xs text-muted-foreground">
-                        置信度 {{ (item.confidence * 100).toFixed(0) }}%
+                        可信 {{ formatPercentScore(item.trustScore) }} · 置信度 {{ formatPercentScore(item.confidence) }}
                       </span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
@@ -1050,6 +1289,10 @@ function openDocument(item: EntityProvenance) {
                       <span class="text-muted-foreground">{{ entry.label }}</span>
                       <span class="break-all font-medium">{{ entry.value }}</span>
                     </div>
+                  </div>
+                  <div v-if="item.evidenceExcerpt" class="mt-3 rounded-md bg-muted/50 p-2 text-sm">
+                    <span class="text-muted-foreground">证据片段</span>
+                    <p class="mt-1 text-foreground">{{ item.evidenceExcerpt }}</p>
                   </div>
                 </div>
               </div>
@@ -1092,11 +1335,18 @@ function openDocument(item: EntityProvenance) {
                   :key="r.id"
                   class="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"
                 >
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium">{{ r.name }}</span>
-                    <span class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                      {{ r.typeLabel }}
-                    </span>
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-medium">{{ r.name }}</span>
+                      <span class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        {{ r.typeLabel }}
+                      </span>
+                    </div>
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                      <Badge variant="outline">{{ formatConsumptionBoundary(r) }}</Badge>
+                      <Badge variant="outline">{{ formatLifecycleState(r.lifecycleState) }}</Badge>
+                      <Badge variant="secondary">{{ formatTrustLevel(r.trustLevel) }}</Badge>
+                    </div>
                   </div>
                   <span class="text-xs text-muted-foreground tabular-nums">
                     重要性 {{ r.importanceScore.toFixed(2) }}

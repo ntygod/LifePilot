@@ -3,7 +3,7 @@ package com.lifepilot.project.service;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
-import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.project.exception.ProjectNotFoundException;
@@ -17,8 +17,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -51,7 +49,7 @@ public class ProjectService {
     @Nullable
     private final KnowledgeBaseManager knowledgeBaseManager;
     @Nullable
-    private final VectorSearcher vectorSearcher;
+    private final MemoryProjectionService projectionService;
 
     public ProjectService(ProjectRepository projectRepository,
                           MemorySpaceRepository memorySpaceRepository,
@@ -68,13 +66,13 @@ public class ProjectService {
                           SessionStoreRepository sessionStoreRepository,
                           JdbcTemplate jdbcTemplate,
                           @Nullable KnowledgeBaseManager knowledgeBaseManager,
-                          @Nullable VectorSearcher vectorSearcher) {
+                          @Nullable MemoryProjectionService projectionService) {
         this.projectRepository = projectRepository;
         this.memorySpaceRepository = memorySpaceRepository;
         this.sessionStoreRepository = sessionStoreRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.knowledgeBaseManager = knowledgeBaseManager;
-        this.vectorSearcher = vectorSearcher;
+        this.projectionService = projectionService;
     }
 
     /**
@@ -259,9 +257,10 @@ public class ProjectService {
         if (!sessionIds.isEmpty()) {
             sessionStoreRepository.batchDelete(sessionIds);
         }
-        // 2) 主库删除前先收集实体 ID，提交后清理派生向量索引
+        // 2) 主库删除前先收集实体 ID，并在同一事务中登记派生投影删除任务
         List<String> entityIds = jdbcTemplate.queryForList(
                 "SELECT id FROM memory_entities WHERE space_id = ?", String.class, spaceId);
+        enqueueVectorDeleteTasks(entityIds);
         // 3) 先删 memory_relations（它们 FK 到 memory_entities 无 CASCADE，必须先清）
         int relationsDeleted = jdbcTemplate.update(
                 "DELETE FROM memory_relations WHERE space_id = ?", spaceId);
@@ -272,30 +271,20 @@ public class ProjectService {
         projectRepository.deleteById(id);
         // 6) 再删 memory_space（带走 memory_space_knowledge_bases）
         memorySpaceRepository.deleteById(spaceId);
-        cleanupVectorsAfterCommit(entityIds);
 
         log.info("删除项目级联完成: id={}, spaceId={}, sessions={}, entities={}, relations={}, kbs={}",
                 id, spaceId, sessionIds.size(), entitiesDeleted, relationsDeleted, kbDeletedCount);
     }
 
-    private void cleanupVectorsAfterCommit(List<String> entityIds) {
-        if (vectorSearcher == null || entityIds == null || entityIds.isEmpty()) {
+    private void enqueueVectorDeleteTasks(@Nullable List<String> entityIds) {
+        if (entityIds == null || entityIds.isEmpty()) {
             return;
         }
-        Runnable cleanup = () -> {
-            for (String entityId : entityIds) {
-                vectorSearcher.deleteEntityVector(entityId);
-            }
-        };
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    cleanup.run();
-                }
-            });
-            return;
+        if (projectionService == null) {
+            throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 清理项目向量");
         }
-        cleanup.run();
+        for (String entityId : entityIds) {
+            projectionService.enqueueVectorDeleteAfterCommit(entityId);
+        }
     }
 }

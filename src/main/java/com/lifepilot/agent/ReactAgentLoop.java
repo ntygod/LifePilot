@@ -3,6 +3,7 @@ package com.lifepilot.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
+import com.lifepilot.agent.callback.LlmCallPurpose;
 import com.lifepilot.agent.callback.NonStreamingCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
@@ -416,9 +417,13 @@ public class ReactAgentLoop implements CallbackHelper {
                 cachedToolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
             }
             var toolCallbacks = cachedToolCallbacks;
+            var callPurpose = resolveLlmCallPurpose(state);
+            var llmToolCallbacks = state.taskMode() == AgentTaskMode.ANSWER
+                    ? List.<ToolCallback>of()
+                    : toolCallbacks;
 
-            log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
-                    state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
+            log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}, purpose={}",
+                    state.traceId(), iteration, state.stepCount(), toolCallbacks.size(), callPurpose);
 
             // 5. 调用 LLM（不自动执行 tool call）
             // 推送思考中 Thought 步骤
@@ -432,7 +437,8 @@ public class ReactAgentLoop implements CallbackHelper {
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
             try {
-                chatResponse = callback.callLlm(effectiveRequest, messages, toolCallbacks, traceContext);
+                chatResponse = callback.callLlm(
+                        effectiveRequest, messages, llmToolCallbacks, traceContext, callPurpose);
             } catch (Exception e) {
                 log.error("LLM 调用异常: traceId={}, iteration={}, error={}",
                         state.traceId(), iteration, e.getMessage());
@@ -574,7 +580,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 var textResult = handleTextResponse(
                         state, assistantMessage.getText(), truncated, finishReason,
                         responseTokens, consecutiveFailures, maxConsecutiveFailures,
-                        iteration, request, loopContext);
+                        iteration, request, loopContext, callback);
                 state = textResult.state();
                 consecutiveFailures = textResult.consecutiveFailures();
                 if (textResult.shouldInvalidateCachedContext()) {
@@ -836,6 +842,20 @@ public class ReactAgentLoop implements CallbackHelper {
     ) {}
 
     /**
+     * 判定本轮 LLM 调用的流式可见性。
+     *
+     * <p>AUTO / EXECUTION 都是常规 ReAct 轮：保留主答案流式能力，同时由流式回调
+     * 在真正检测到工具调用时隔离伴随文本。只有显式 ANSWER 模式才关闭工具并进入
+     * 最终答案流。</p>
+     */
+    private LlmCallPurpose resolveLlmCallPurpose(ReactAgentState state) {
+        if (state.taskMode() == AgentTaskMode.ANSWER) {
+            return LlmCallPurpose.FINAL_ANSWER;
+        }
+        return LlmCallPurpose.AGENT_STEP;
+    }
+
+    /**
      * 处理 LLM 纯文本响应（非工具调用）。
      *
      * <p>根据 {@link ExecutionCompletionPolicy} 的评估结果分流到四种处置：
@@ -858,7 +878,8 @@ public class ReactAgentLoop implements CallbackHelper {
             int maxConsecutiveFailures,
             int iteration,
             AgentRequest request,
-            AgentLoopContext loopContext) {
+            AgentLoopContext loopContext,
+            IterationCallback callback) {
 
         // 有内容但非截断 → 走完成策略评估
         if (content != null && !content.isBlank()) {
@@ -878,6 +899,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     String visibleContent = completionEvaluation.userVisibleContent() != null
                             ? completionEvaluation.userVisibleContent() : content;
                     CompletionReason completionReason = completionEvaluation.completionReason();
+                    callback.publishVisibleContent(visibleContent);
                     state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
                     state = state.toBuilder()
                             .done(true)
@@ -939,6 +961,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     // DIRECT_ANSWER — 无特殊协议的纯文本答案
                     String visibleContent = completionEvaluation.userVisibleContent() != null
                             ? completionEvaluation.userVisibleContent() : content;
+                    callback.publishVisibleContent(visibleContent);
                     state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
                     state = state.toBuilder()
                             .done(true)

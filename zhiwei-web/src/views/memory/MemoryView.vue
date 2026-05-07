@@ -35,6 +35,8 @@ const REALITY_TYPE_LABELS: Record<string, string> = {
   UNKNOWN: '未标注',
 }
 
+const LONG_MEMORY_SCOPES = new Set(['USER_PROFILE', 'USER_FACT', 'AGENT_EXPERIENCE'])
+
 const store = useMemoryStore()
 const route = useRoute()
 const VALID_TABS = new Set(['entities', 'relations', 'conversations', 'templates', 'preferences', 'forgetting-logs'])
@@ -107,6 +109,21 @@ function formatSpaceId(spaceId?: string | null) {
   if (!spaceId) return '默认空间'
   return spaceId
 }
+
+function isDomainSearchResult(item: MemorySearchResult) {
+  return item.memoryScope === 'DOMAIN_MEMORY' || item.spaceId?.startsWith('domain:knowledge-base:')
+}
+
+function formatSearchBoundary(item: MemorySearchResult) {
+  if (isDomainSearchResult(item)) return 'KB/领域冷召回'
+  if (item.memoryScope && LONG_MEMORY_SCOPES.has(item.memoryScope)) return '长期记忆冷召回'
+  return '冷召回'
+}
+
+function formatRelevanceScore(score?: number | null) {
+  if (typeof score !== 'number' || Number.isNaN(score)) return '-'
+  return `${(Math.max(0, Math.min(1, score)) * 100).toFixed(0)}%`
+}
 </script>
 
 <template>
@@ -149,7 +166,7 @@ function formatSpaceId(spaceId?: string | null) {
                   <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     v-model="searchQuery"
-                    placeholder="跨层搜索记忆数据..."
+                    placeholder="搜索长期记忆与领域图谱..."
                     class="pl-9"
                     @keydown.enter="handleSearch"
                   />
@@ -192,6 +209,7 @@ function formatSpaceId(spaceId?: string | null) {
                     <div class="mt-2 flex flex-wrap items-center gap-1.5">
                       <Badge variant="outline">{{ formatMemoryScope(item.memoryScope) }}</Badge>
                       <Badge variant="secondary">{{ formatRealityType(item.realityType) }}</Badge>
+                      <Badge variant="outline">{{ formatSearchBoundary(item) }}</Badge>
                       <span class="text-xs text-muted-foreground break-all">
                         {{ formatSpaceId(item.spaceId) }}
                       </span>
@@ -201,7 +219,7 @@ function formatSpaceId(spaceId?: string | null) {
                     </p>
                   </div>
                   <div class="shrink-0 text-xs text-muted-foreground">
-                    相关性 {{ (item.relevanceScore * 100).toFixed(0) }}%
+                    相关性 {{ formatRelevanceScore(item.relevanceScore) }}
                   </div>
                 </div>
               </div>

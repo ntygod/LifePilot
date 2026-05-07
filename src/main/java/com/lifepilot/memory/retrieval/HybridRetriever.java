@@ -44,6 +44,7 @@ import java.util.stream.Collectors;
 public class HybridRetriever {
 
     private static final Logger log = LoggerFactory.getLogger(HybridRetriever.class);
+    private static final float EXACT_LEXICAL_MATCH_THRESHOLD = 4.0f;
 
     private final VectorSearcher vectorSearcher;
     private final FtsSearcher ftsSearcher;
@@ -242,6 +243,10 @@ public class HybridRetriever {
             float trustScore = trustScoreMap.getOrDefault(acc.entityId, 0.0f);
             float trustBoost = memoryProperties.getRetrieval().getTrustScoreBoostWeight() * trustScore;
 
+            float lexicalBoost = acc.ftsScore >= EXACT_LEXICAL_MATCH_THRESHOLD
+                    ? acc.ftsScore * adaptedWeights.ftsWeight()
+                    : 0.0f;
+
             // 生命周期调整：REGENERATION_NEEDED 明确降权；COMPLETED 轻微降权（仍可召回）。
             LifecycleState lifecycleState = lifecycleStateMap.get(acc.entityId);
             float lifecycleAdjustment = 0.0f;
@@ -251,7 +256,7 @@ public class HybridRetriever {
                 lifecycleAdjustment -= memoryProperties.getRetrieval().getHistoricalLifecyclePenalty();
             }
 
-            float fusedScore = rrfScore + recencyBoost + impBoost + trustBoost + lifecycleAdjustment;
+            float fusedScore = rrfScore + recencyBoost + impBoost + trustBoost + lifecycleAdjustment + lexicalBoost;
 
             // 时间衰减: 基于 updatedAt 与当前时间的天数差，线性衰减
             float timeDecayFactor = 1.0f;
@@ -265,7 +270,7 @@ public class HybridRetriever {
 
             var breakdown = new RetrievalResult.ScoreBreakdown(
                     acc.vectorScore, acc.vectorScore * adaptedWeights.vectorWeight(),
-                    acc.ftsScore, acc.ftsScore * adaptedWeights.ftsWeight(),
+                    acc.ftsScore, lexicalBoost,
                     acc.graphScore, acc.graphScore * adaptedWeights.graphWeight(),
                     recencyBoost, impBoost,
                     trustBoost, lifecycleAdjustment);

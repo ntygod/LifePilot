@@ -137,6 +137,7 @@ describe('MemoryView 搜索结果展示', () => {
     expect(mocks.search).toHaveBeenCalledWith('林夜')
     expect(wrapper.text()).toContain('领域记忆')
     expect(wrapper.text()).toContain('虚构')
+    expect(wrapper.text()).toContain('KB/领域冷召回')
     expect(wrapper.text()).toContain('domain:knowledge-base:novel-workspace')
 
     const resultCard = wrapper.find('.list-card')

@@ -29,13 +29,12 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.document.MemoryDocumentRepository;
 import com.lifepilot.memory.experience.*;
 import com.lifepilot.memory.governance.MemoryAccessPolicy;
+import com.lifepilot.memory.hot.HotMemoryDigestService;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.semantic.RealtimeExtractor;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -95,10 +94,8 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(
-            SemanticMemory.class)
     public ToolTipResolver toolTipResolver(
-            SemanticMemory semanticMemory,
+            @Autowired(required = false) SemanticMemory semanticMemory,
             @Autowired(required = false) ProjectContextResolver projectContextResolver,
             @Autowired(required = false) ChatSessionRepository chatSessionRepository,
             @Autowired(required = false) MemoryAccessPolicy memoryAccessPolicy) {
@@ -190,8 +187,6 @@ public class AgentAutoConfiguration {
             PromptRegistry promptRegistry,
             @Autowired(required = false) DataRedactor dataRedactor,
             @Autowired(required = false) SemanticMemory semanticMemory,
-            @Autowired(required = false) MemoryProperties memoryProperties,
-            @Autowired(required = false) ProceduralMemory proceduralMemory,
             @Autowired(required = false) EffectivenessTracker effectivenessTracker,
             @Autowired(required = false) SkillRegistry skillRegistry,
             @Autowired(required = false) GenerationRouter generationRouter,
@@ -200,24 +195,22 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
             @Autowired(required = false) DynamicToolRegistry toolRegistry,
             @Autowired(required = false) McpConfigProperties mcpConfig,
-            @Autowired(required = false) HybridRetriever hybridRetriever,
             @Autowired(required = false) WeatherService weatherService,
             @Autowired(required = false) SkillInstallationRepository skillInstallationRepository,
             @Autowired(required = false) SkillRequirementGate skillRequirementGate,
             @Autowired(required = false) ProjectContextResolver projectContextResolver,
-            @Autowired(required = false) ChatSessionRepository chatSessionRepository) {
-        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，L4={}，projectContext={}",
+            @Autowired(required = false) ChatSessionRepository chatSessionRepository,
+            @Autowired(required = false) HotMemoryDigestService hotMemoryDigestService) {
+        log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，hotDigest={}，projectContext={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
-                proceduralMemory != null ? "enabled" : "disabled",
+                hotMemoryDigestService != null ? "enabled" : "disabled",
                 (projectContextResolver != null && chatSessionRepository != null) ? "enabled" : "disabled");
         var assembler = new ContextAssembler(
                 config,
                 promptRegistry,
                 dataRedactor,
                 semanticMemory,
-                memoryProperties,
-                proceduralMemory,
                 effectivenessTracker,
                 skillRegistry,
                 generationRouter,
@@ -225,13 +218,13 @@ public class AgentAutoConfiguration {
                 sessionKnowledgeBaseRepository,
                 knowledgeBaseRepository,
                 toolRegistry,
-                mcpConfig,
-                hybridRetriever);
+                mcpConfig);
         assembler.setWeatherService(weatherService);
         assembler.setSkillInstallationRepository(skillInstallationRepository);
         assembler.setSkillRequirementGate(skillRequirementGate);
         assembler.setProjectContextResolver(projectContextResolver);
         assembler.setChatSessionRepository(chatSessionRepository);
+        assembler.setHotMemoryDigestService(hotMemoryDigestService);
         return assembler;
     }
 
@@ -296,7 +289,7 @@ public class AgentAutoConfiguration {
             ObjectMapper objectMapper,
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-            @Autowired(required = false) com.lifepilot.interaction.web.repository.AttachmentRepository attachmentRepository) {
+            @Autowired(required = false) AttachmentRepository attachmentRepository) {
         return new StreamingEventHandler(
                 objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository, attachmentRepository);
     }

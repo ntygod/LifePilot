@@ -5,6 +5,7 @@ import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.project.exception.ProjectNotFoundException;
@@ -58,6 +59,7 @@ class ProjectDeletion_级联集成测试 {
     private SessionStoreRepository sessionStoreRepository;
     private MemorySpaceRepository memorySpaceRepository;
     private ProjectRepository projectRepository;
+    private MemoryProjectionService projectionService;
 
     @BeforeEach
     void setUp() {
@@ -71,9 +73,10 @@ class ProjectDeletion_级联集成测试 {
         memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, new ObjectMapper());
         projectRepository = new ProjectRepository(jdbcTemplate);
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, new ObjectMapper(), null);
+        projectionService = mock(MemoryProjectionService.class);
         // KnowledgeBaseManager = null：本测试集中于删除级联，不覆盖 KB 自动创建路径
         service = new ProjectService(projectRepository, memorySpaceRepository,
-                sessionStoreRepository, jdbcTemplate, null);
+                sessionStoreRepository, jdbcTemplate, null, projectionService);
     }
 
     @AfterEach
@@ -392,6 +395,8 @@ class ProjectDeletion_级联集成测试 {
         // 项目和 space 本身也删了
         assertThat(数行("SELECT COUNT(*) FROM projects WHERE id = ?", project.id())).isZero();
         assertThat(数行("SELECT COUNT(*) FROM memory_spaces WHERE id = ?", spaceId)).isZero();
+        verify(projectionService).enqueueVectorDeleteAfterCommit(e1);
+        verify(projectionService).enqueueVectorDeleteAfterCommit(e2);
     }
 
     @Test
@@ -486,7 +491,7 @@ class ProjectDeletion_级联集成测试 {
         KnowledgeBaseManager kbManager = mock(KnowledgeBaseManager.class);
         ProjectService serviceWithKb = new ProjectService(
                 projectRepository, memorySpaceRepository, sessionStoreRepository,
-                jdbcTemplate, kbManager);
+                jdbcTemplate, kbManager, projectionService);
 
         Project project = 创建一个项目("挂两个KB的项目");
         String spaceId = project.memorySpaceId();
@@ -537,7 +542,7 @@ class ProjectDeletion_级联集成测试 {
         KnowledgeBaseManager kbManager = mock(KnowledgeBaseManager.class);
         ProjectService serviceWithKb = new ProjectService(
                 projectRepository, memorySpaceRepository, sessionStoreRepository,
-                jdbcTemplate, kbManager);
+                jdbcTemplate, kbManager, projectionService);
 
         Project project = 创建一个项目("KB已被先删的项目");
         String spaceId = project.memorySpaceId();

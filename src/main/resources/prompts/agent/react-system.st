@@ -17,7 +17,8 @@
 5. 实在找不到专用工具 → 先 `tool_search(query="shell command")` 或 `tool_search(query="execute code")`，发现 `shell.exec` / `code` 后再兜底
 
 ## 历史结果优先于重跑
-- 当前任务需要前面对话/工具的某次完整结果时，先查记忆而非重跑：`memory(callId="...")` 取完整原文
+- 当前任务需要某次工具完整结果时，先按 callId/entryId 读取 L0 transcript 原文，而不是重跑工具；这是工具结果回放，不是 L3 长期记忆
+- 当前任务需要过去对话片段时，用 `memory(action="recall", query="...")`；需要长期事实时用 `memory(action="search", query="...")`
 
 ## 禁止的反模式
 - 在主工作目录跑破坏性命令而不先备份 / 隔离

@@ -34,6 +34,8 @@ const REALITY_TYPE_LABELS: Record<string, string> = {
   UNKNOWN: '未标注',
 }
 
+const LONG_MEMORY_SCOPES = new Set(['USER_PROFILE', 'USER_FACT', 'AGENT_EXPERIENCE'])
+
 // ── 筛选状态 ──
 const filterEntityId = ref('')
 const filterRelationType = ref<string>('')
@@ -128,6 +130,12 @@ function formatRealityType(realityType?: string | null) {
 function formatSpaceId(spaceId?: string | null) {
   if (!spaceId) return '默认空间'
   return spaceId
+}
+
+function formatEndpointBoundary(scope?: string | null, spaceId?: string | null) {
+  if (scope === 'DOMAIN_MEMORY' || spaceId?.startsWith('domain:knowledge-base:')) return 'KB 图谱冷召回'
+  if (scope && LONG_MEMORY_SCOPES.has(scope)) return '长期记忆'
+  return '记忆图谱'
 }
 </script>
 
@@ -226,6 +234,9 @@ function formatSpaceId(spaceId?: string | null) {
                 <div class="flex flex-wrap items-center gap-1.5">
                   <Badge variant="outline">{{ formatMemoryScope(relation.sourceEntityMemoryScope) }}</Badge>
                   <Badge variant="secondary">{{ formatRealityType(relation.sourceEntityRealityType) }}</Badge>
+                  <Badge variant="outline">
+                    {{ formatEndpointBoundary(relation.sourceEntityMemoryScope, relation.sourceEntitySpaceId) }}
+                  </Badge>
                 </div>
                 <p class="text-xs text-muted-foreground break-all">
                   {{ formatSpaceId(relation.sourceEntitySpaceId) }}
@@ -255,6 +266,9 @@ function formatSpaceId(spaceId?: string | null) {
                 <div class="flex flex-wrap items-center gap-1.5">
                   <Badge variant="outline">{{ formatMemoryScope(relation.targetEntityMemoryScope) }}</Badge>
                   <Badge variant="secondary">{{ formatRealityType(relation.targetEntityRealityType) }}</Badge>
+                  <Badge variant="outline">
+                    {{ formatEndpointBoundary(relation.targetEntityMemoryScope, relation.targetEntitySpaceId) }}
+                  </Badge>
                 </div>
                 <p class="text-xs text-muted-foreground break-all">
                   {{ formatSpaceId(relation.targetEntitySpaceId) }}

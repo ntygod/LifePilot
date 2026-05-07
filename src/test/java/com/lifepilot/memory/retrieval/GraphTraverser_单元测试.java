@@ -254,7 +254,7 @@ class GraphTraverser_单元测试 {
     class 起始实体选择 {
 
         @Test
-        void 多个匹配实体时使用第一个() {
+        void 多个匹配实体时共同作为起点() {
             // given
             mockFindStartEntities(List.of("entity-longest-name", "entity-short"));
             mockCteQuery(List.of());
@@ -263,7 +263,16 @@ class GraphTraverser_单元测试 {
             traverser.traverse("包含实体名的查询", 10);
 
             // then
-            verifyCteQueryCalledWithEntityId("entity-longest-name");
+            Object[] params = captureCteQueryParams();
+            assertEquals("entity-longest-name", params[0]);
+            assertEquals("entity-short", params[1]);
+            assertEquals("entity-longest-name", params[2]);
+            assertEquals("entity-short", params[3]);
+            assertEquals(10, params[params.length - 1]);
+            verify(jdbcTemplate).query(
+                    contains("start(entity_id) AS (VALUES (?),(?))"),
+                    any(RowMapper.class),
+                    any(Object[].class));
         }
     }
 
@@ -281,7 +290,7 @@ class GraphTraverser_单元测试 {
             when(jdbcTemplate.query(
                     contains("WITH RECURSIVE"),
                     any(RowMapper.class),
-                    any(), any(), any(), any(), any()))
+                    any(Object[].class)))
                     .thenThrow(new RuntimeException("SQLite 查询超时"));
 
             // when
@@ -333,25 +342,25 @@ class GraphTraverser_单元测试 {
         when(jdbcTemplate.query(
                 contains("WITH RECURSIVE"),
                 any(RowMapper.class),
-                any(), any(), any(), any(), any()))
+                any(Object[].class)))
                 .thenReturn(items);
     }
 
     @SuppressWarnings("unchecked")
     private void verifyCteQueryCalledWithTopK(int expectedTopK) {
-        verify(jdbcTemplate).query(
-                contains("WITH RECURSIVE"),
-                any(RowMapper.class),
-                any(), any(), any(), any(), eq(expectedTopK));
+        Object[] params = captureCteQueryParams();
+        assertEquals(expectedTopK, params[params.length - 1]);
     }
 
     @SuppressWarnings("unchecked")
-    private void verifyCteQueryCalledWithEntityId(String expectedEntityId) {
+    private Object[] captureCteQueryParams() {
+        org.mockito.ArgumentCaptor<Object[]> paramsCaptor =
+                org.mockito.ArgumentCaptor.forClass(Object[].class);
         verify(jdbcTemplate).query(
                 contains("WITH RECURSIVE"),
                 any(RowMapper.class),
-                eq(expectedEntityId), eq(expectedEntityId),
-                eq(expectedEntityId), eq(expectedEntityId), anyInt());
+                paramsCaptor.capture());
+        return paramsCaptor.getValue();
     }
 
     private RankedItem rankedItem(String entityId, String type, String name, float score) {
