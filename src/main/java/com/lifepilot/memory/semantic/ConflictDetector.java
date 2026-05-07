@@ -66,6 +66,11 @@ public class ConflictDetector {
     }
 
     public Optional<TemporalEntity> detectConflict(TemporalEntity newEntity, @Nullable String spaceId) {
+        if (spaceId == null || spaceId.isBlank()) {
+            log.debug("冲突检测: 缺少写入空间，跳过冲突检测以避免跨空间合并, name={}, type={}",
+                    newEntity.name(), newEntity.type());
+            return Optional.empty();
+        }
         // 第一级：精确匹配（name + type）
         var exactMatch = findExactMatch(newEntity.name(), newEntity.type(), spaceId);
         if (exactMatch.isPresent()) {
@@ -114,10 +119,10 @@ public class ConflictDetector {
                 """
                 SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities
                 WHERE name = ? AND type = ? AND is_current = 1
-                  AND (? IS NULL OR space_id = ?)
+                  AND space_id = ?
                 """,
                 (rs, rowNum) -> mapRowToEntity(rs),
-                name, type.name(), spaceId, spaceId);
+                name, type.name(), spaceId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
@@ -127,10 +132,10 @@ public class ConflictDetector {
                 """
                 SELECT id, type, name, description, properties_json, version, is_current, valid_from, valid_to, source_conversation_id, extraction_confidence, importance_score, access_count, last_accessed_at, created_at, updated_at FROM temporal_entities
                 WHERE id = ? AND is_current = 1
-                  AND (? IS NULL OR space_id = ?)
+                  AND space_id = ?
                 """,
                 (rs, rowNum) -> mapRowToEntity(rs),
-                entityId, spaceId, spaceId);
+                entityId, spaceId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 

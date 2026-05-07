@@ -67,6 +67,7 @@ class FtsIndexer集成测试 {
     private FtsIndexer ftsIndexer;
 
     private String knowledgeBaseId;
+    private String otherKnowledgeBaseId;
     private String documentId;
 
     @BeforeEach
@@ -104,16 +105,19 @@ class FtsIndexer集成测试 {
                 now,
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
                 "FILE:test-architecture",
-                "ds-dev",
-                null,
-                Map.of("datastoreId", "ds-dev")
+                Map.of()
         );
         documentRepository.save(doc);
         documentId = doc.id();
+
+        var otherKb = KnowledgeBase.create("隔离测试知识库", "描述", "model",
+                null, null, null, null);
+        kbRepository.save(otherKb);
+        otherKnowledgeBaseId = otherKb.id();
     }
 
     @Test
-    void searchByScopes_领域过滤下可正常命中分块() {
+    void searchByScopes_知识库过滤下可正常命中分块() {
         var targetChunk = new DocumentChunk(
                 UUID.randomUUID().toString(),
                 documentId,
@@ -129,8 +133,6 @@ class FtsIndexer集成测试 {
                 1,
                 Map.of("section", "storage"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
-                "ds-dev",
-                null,
                 Optional.empty(),
                 0
         );
@@ -149,8 +151,6 @@ class FtsIndexer集成测试 {
                 1,
                 Map.of("section", "deploy"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
-                "ds-other",
-                null,
                 Optional.empty(),
                 0
         );
@@ -158,17 +158,17 @@ class FtsIndexer集成测试 {
 
         List<DocumentSearchResult> results = ftsIndexer.searchByScopes(
                 "数据存储架构",
-                List.of(new KnowledgeSearchScope(knowledgeBaseId, "ds-dev")),
+                List.of(new KnowledgeSearchScope(knowledgeBaseId)),
                 5
         );
 
         assertThat(results).isNotEmpty();
         assertThat(results).extracting(DocumentSearchResult::chunkId).contains(targetChunk.id());
-        assertThat(results).allMatch(result -> result.sourceDatastoreId().orElse("").equals("ds-dev"));
+        assertThat(results).allMatch(result -> result.knowledgeBaseId().equals(knowledgeBaseId));
     }
 
     @Test
-    void searchByScopes_冲突样本下应隔离不同Datastore结果() {
+    void searchByScopes_冲突样本下应隔离不同知识库结果() {
         String docAId = UUID.randomUUID().toString();
         String docBId = UUID.randomUUID().toString();
         var now = Instant.now();
@@ -191,13 +191,11 @@ class FtsIndexer集成测试 {
                 now,
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
                 "FILE:setting-a",
-                "ds-a",
-                null,
-                Map.of("datastoreId", "ds-a")
+                Map.of()
         ));
         documentRepository.save(new Document(
                 docBId,
-                knowledgeBaseId,
+                otherKnowledgeBaseId,
                 "设定-B.md",
                 "/tmp/setting-b.md",
                 512L,
@@ -213,9 +211,7 @@ class FtsIndexer集成测试 {
                 now,
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
                 "FILE:setting-b",
-                "ds-b",
-                null,
-                Map.of("datastoreId", "ds-b")
+                Map.of()
         ));
 
         var chunkA = new DocumentChunk(
@@ -233,15 +229,13 @@ class FtsIndexer集成测试 {
                 1,
                 Map.of("topic", "power"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
-                "ds-a",
-                null,
                 Optional.empty(),
                 0
         );
         var chunkB = new DocumentChunk(
                 UUID.randomUUID().toString(),
                 docBId,
-                knowledgeBaseId,
+                otherKnowledgeBaseId,
                 "主角金手指设定：情绪感知，能够读取附近人物的情绪波动。",
                 Optional.empty(),
                 0,
@@ -253,8 +247,6 @@ class FtsIndexer集成测试 {
                 1,
                 Map.of("topic", "power"),
                 com.lifepilot.knowledge.model.DocumentSourceType.FILE,
-                "ds-b",
-                null,
                 Optional.empty(),
                 0
         );
@@ -262,14 +254,14 @@ class FtsIndexer集成测试 {
 
         List<DocumentSearchResult> results = ftsIndexer.searchByScopes(
                 "主角金手指设定",
-                List.of(new KnowledgeSearchScope(knowledgeBaseId, "ds-a")),
+                List.of(new KnowledgeSearchScope(knowledgeBaseId)),
                 10
         );
 
         assertThat(results).isNotEmpty();
         assertThat(results)
-                .extracting(result -> result.sourceDatastoreId().orElse(null))
-                .containsOnly("ds-a");
+                .extracting(DocumentSearchResult::knowledgeBaseId)
+                .containsOnly(knowledgeBaseId);
         assertThat(results)
                 .extracting(DocumentSearchResult::content)
                 .allMatch(content -> content.contains("时间回溯"));

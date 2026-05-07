@@ -207,7 +207,7 @@ public class MemoryQueryApi {
      * @return provenance 明细列表
      */
     public List<EntityProvenanceDto> findProvenancesByEntityId(String entityId) {
-        return provenanceRepository.findEntityProvenances(entityId, null, null, null, null);
+        return provenanceRepository.findEntityProvenances(entityId, null, null, null);
     }
 
     // ========== L4 查询（占位） ==========

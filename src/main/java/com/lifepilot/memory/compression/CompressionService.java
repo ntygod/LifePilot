@@ -10,6 +10,7 @@ import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Async;
 
 import java.util.ArrayList;
@@ -35,12 +36,13 @@ public class CompressionService {
 
     private static final Logger log = LoggerFactory.getLogger(CompressionService.class);
 
+    @Nullable
     private final GenerationRouter generationRouter;
     private final EpisodicMemory episodicMemory;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties properties;
 
-    public CompressionService(GenerationRouter generationRouter,
+    public CompressionService(@Nullable GenerationRouter generationRouter,
                               EpisodicMemory episodicMemory,
                               PromptRegistry promptRegistry,
                               MemoryProperties properties) {
@@ -82,6 +84,10 @@ public class CompressionService {
                                            CompressionLevel targetLevel) {
         if (messages == null || messages.isEmpty()) {
             log.debug("滑动窗口压缩: 无消息可压缩, conversationId={}", conversationId);
+            return;
+        }
+        if (generationRouter == null) {
+            log.debug("滑动窗口压缩: GenerationRouter 不可用，跳过压缩, conversationId={}", conversationId);
             return;
         }
 
@@ -223,6 +229,10 @@ public class CompressionService {
         try {
             if (messages == null || messages.isEmpty()) {
                 log.debug("对话压缩: 无消息可压缩, conversationId={}", conversationId);
+                return;
+            }
+            if (generationRouter == null) {
+                log.debug("对话压缩: GenerationRouter 不可用，跳过压缩, conversationId={}", conversationId);
                 return;
             }
 

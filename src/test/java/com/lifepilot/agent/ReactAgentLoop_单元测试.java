@@ -2,6 +2,7 @@ package com.lifepilot.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.IterationCallback;
+import com.lifepilot.agent.callback.LlmCallPurpose;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.context.AssembledContext;
@@ -21,6 +22,7 @@ import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.TranscriptStore;
+import com.lifepilot.observability.trace.TraceContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,7 @@ import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -43,6 +46,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -129,6 +133,49 @@ class ReactAgentLoop_单元测试 {
             assertThat(result.completionMode()).isEqualTo(CompletionMode.NORMAL);
             assertThat(result.completionReason()).isEqualTo(CompletionReason.DIRECT_ANSWER);
             assertThat(result.finalOutput()).isEqualTo("你好！有什么可以帮你的吗？");
+        }
+
+        @Test
+        void Auto模式有工具时仍应以常规Agent轮携带工具调用LLM() {
+            when(contextAssembler.assemble(any())).thenReturn(基础上下文("你有哪些能力"));
+            var tool = 创建工具回调("memory.search", "记忆搜索", "{\"items\":[]}");
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(tool));
+
+            var budget = 基础预算();
+            var request = 简单请求("你有哪些能力", "session-auto-tools-stream", budget);
+            var initialState = ReactAgentState.init(request, budget);
+            var capturedPurpose = new AtomicReference<LlmCallPurpose>();
+            var capturedToolCount = new AtomicInteger(-1);
+
+            IterationCallback callback = new IterationCallback() {
+                @Override
+                public ChatResponse callLlm(AgentRequest agentRequest,
+                                            List<Message> messages,
+                                            List<ToolCallback> toolCallbacks,
+                                            @Nullable TraceContext traceContext) {
+                    return new ChatResponse(List.of(new Generation(new AssistantMessage("我可以回答问题并协作使用工具。"))));
+                }
+
+                @Override
+                public ChatResponse callLlm(AgentRequest agentRequest,
+                                            List<Message> messages,
+                                            List<ToolCallback> toolCallbacks,
+                                            @Nullable TraceContext traceContext,
+                                            LlmCallPurpose purpose) {
+                    capturedPurpose.set(purpose);
+                    capturedToolCount.set(toolCallbacks.size());
+                    return callLlm(agentRequest, messages, toolCallbacks, traceContext);
+                }
+            };
+
+            var result = reactAgentLoop.coreLoop(
+                    initialState, request, null, Instant.now(),
+                    callback, new CancellationToken(), new AgentLoopContext()
+            );
+
+            assertThat(result.isDone()).isTrue();
+            assertThat(capturedPurpose.get()).isEqualTo(LlmCallPurpose.AGENT_STEP);
+            assertThat(capturedToolCount.get()).isEqualTo(1);
         }
 
         @Test

@@ -1,6 +1,6 @@
 -- ============================================================
 -- V1: 知微（ZhiWei）统一初始化脚本
--- 合并 V1–V25 全部迁移，保留每张表的最终结构。
+-- 合并历史迁移脚本为单一初始化基线，保留当前新库最终结构。
 -- ============================================================
 
 -- ============================================================
@@ -31,7 +31,8 @@ CREATE TABLE session_store (
     total_tokens             INTEGER NOT NULL DEFAULT 0,
     compaction_count         INTEGER NOT NULL DEFAULT 0,
     memory_flush_at          TEXT,
-    active_branch_id         TEXT NOT NULL DEFAULT 'main'
+    active_branch_id         TEXT NOT NULL DEFAULT 'main',
+    project_id               TEXT
 );
 
 CREATE INDEX idx_session_store_channel
@@ -40,6 +41,9 @@ CREATE INDEX idx_session_store_last_activity_at
     ON session_store(last_activity_at DESC);
 CREATE INDEX idx_session_store_updated_at
     ON session_store(updated_at DESC);
+CREATE INDEX idx_session_store_project_id
+    ON session_store(project_id)
+    WHERE project_id IS NOT NULL;
 
 CREATE TABLE session_transcript_entries (
     id                TEXT PRIMARY KEY,
@@ -74,6 +78,50 @@ CREATE VIRTUAL TABLE session_transcript_entries_fts USING fts5(
     content,
     tokenize='unicode61 remove_diacritics 2'
 );
+
+CREATE TRIGGER trg_session_transcript_entries_fts_ai
+AFTER INSERT ON session_transcript_entries
+BEGIN
+    INSERT INTO session_transcript_entries_fts(rowid, entry_id, session_id, role, content)
+    SELECT new.rowid,
+           new.id,
+           new.session_id,
+           COALESCE(new.role, ''),
+           json_extract(new.payload_json, '$.content')
+    WHERE new.entry_type IN ('user_message', 'assistant_message')
+      AND new.visible_to_user = 1
+      AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
+END;
+
+CREATE TRIGGER trg_session_transcript_entries_fts_ad
+AFTER DELETE ON session_transcript_entries
+BEGIN
+    DELETE FROM session_transcript_entries_fts
+    WHERE rowid = old.rowid
+      AND old.entry_type IN ('user_message', 'assistant_message')
+      AND old.visible_to_user = 1
+      AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
+END;
+
+CREATE TRIGGER trg_session_transcript_entries_fts_au
+AFTER UPDATE ON session_transcript_entries
+BEGIN
+    DELETE FROM session_transcript_entries_fts
+    WHERE rowid = old.rowid
+      AND old.entry_type IN ('user_message', 'assistant_message')
+      AND old.visible_to_user = 1
+      AND trim(COALESCE(json_extract(old.payload_json, '$.content'), '')) <> '';
+
+    INSERT INTO session_transcript_entries_fts(rowid, entry_id, session_id, role, content)
+    SELECT new.rowid,
+           new.id,
+           new.session_id,
+           COALESCE(new.role, ''),
+           json_extract(new.payload_json, '$.content')
+    WHERE new.entry_type IN ('user_message', 'assistant_message')
+      AND new.visible_to_user = 1
+      AND trim(COALESCE(json_extract(new.payload_json, '$.content'), '')) <> '';
+END;
 
 CREATE TABLE session_transcript_compressions (
     entry_id            TEXT PRIMARY KEY,
@@ -254,6 +302,45 @@ CREATE INDEX idx_workspace_task
     ON session_workspace_items(session_id, task_id)
     WHERE task_id IS NOT NULL;
 
+CREATE TABLE session_documents (
+    id             TEXT PRIMARY KEY,
+    session_id     TEXT NOT NULL,
+    entry_id       TEXT,
+    file_name      TEXT NOT NULL,
+    file_path      TEXT NOT NULL,
+    file_size      INTEGER NOT NULL,
+    mime_type      TEXT NOT NULL,
+    origin         TEXT NOT NULL,
+    source_path    TEXT,
+    latest_version INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_session_documents_session_id ON session_documents(session_id);
+CREATE INDEX idx_session_documents_entry_id ON session_documents(entry_id);
+CREATE INDEX idx_session_documents_origin ON session_documents(origin);
+CREATE INDEX idx_session_documents_source_path ON session_documents(source_path);
+CREATE UNIQUE INDEX uk_session_documents_source_path
+    ON session_documents(session_id, source_path)
+    WHERE source_path IS NOT NULL;
+
+CREATE TABLE document_versions (
+    id            TEXT PRIMARY KEY,
+    document_id   TEXT NOT NULL,
+    version_no    INTEGER NOT NULL,
+    file_path     TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    patch_summary TEXT,
+    diff_json     TEXT,
+    created_at    TEXT NOT NULL,
+    FOREIGN KEY (document_id) REFERENCES session_documents(id) ON DELETE CASCADE,
+    UNIQUE (document_id, version_no)
+);
+
+CREATE INDEX idx_document_versions_document_id ON document_versions(document_id);
+CREATE INDEX idx_document_versions_source ON document_versions(source);
+
 -- ============================================================
 -- 二、记忆系统（4 层记忆 + 记忆空间 + 实体/关系图谱）
 -- ============================================================
@@ -275,6 +362,22 @@ CREATE TABLE memory_spaces (
 CREATE INDEX idx_memory_spaces_type ON memory_spaces(space_type);
 CREATE INDEX idx_memory_spaces_owner ON memory_spaces(owner_type, owner_id);
 
+CREATE TABLE projects (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    instructions    TEXT NOT NULL DEFAULT '',
+    isolation       TEXT NOT NULL DEFAULT 'ISOLATED'
+                    CHECK (isolation IN ('ISOLATED', 'SHARED')),
+    memory_space_id TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(name),
+    FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_projects_created_at ON projects(created_at DESC);
+CREATE INDEX idx_projects_memory_space ON projects(memory_space_id);
+
 CREATE TABLE memory_space_knowledge_bases (
     memory_space_id   TEXT NOT NULL,
     knowledge_base_id TEXT NOT NULL,
@@ -284,24 +387,15 @@ CREATE TABLE memory_space_knowledge_bases (
     FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
 );
 
-CREATE TABLE memory_space_datastores (
-    memory_space_id TEXT NOT NULL,
-    datastore_id    TEXT NOT NULL,
-    created_at      TEXT NOT NULL,
-    PRIMARY KEY (memory_space_id, datastore_id),
-    FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
 CREATE TABLE chat_turn_memory_snapshots (
     turn_id                          TEXT PRIMARY KEY,
     session_id                       TEXT NOT NULL,
     personal_space_id                TEXT,
     experience_space_id              TEXT,
     domain_write_space_id            TEXT,
+    project_space_id                 TEXT,
     read_space_ids_json              TEXT NOT NULL DEFAULT '[]',
     effective_knowledge_base_ids_json TEXT NOT NULL DEFAULT '[]',
-    effective_datastore_ids_json     TEXT NOT NULL DEFAULT '[]',
     personal_learning_enabled        INTEGER NOT NULL DEFAULT 1,
     domain_learning_enabled          INTEGER NOT NULL DEFAULT 0,
     experience_learning_enabled      INTEGER NOT NULL DEFAULT 1,
@@ -334,12 +428,28 @@ CREATE TABLE memory_entities (
     last_seen_at     TEXT NOT NULL,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL,
+    lifecycle_state  TEXT NOT NULL DEFAULT 'ACTIVE',
+    lifecycle_reason TEXT,
+    expires_at       TEXT,
+    temporality      TEXT NOT NULL DEFAULT 'PERSISTENT',
+    succeeded_by     TEXT,
+    is_derived       INTEGER NOT NULL DEFAULT 0,
+    derivation_sources TEXT,
+    evidence_kind    TEXT NOT NULL DEFAULT 'UNKNOWN',
+    trust_level      TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    trust_score      REAL NOT NULL DEFAULT 0.0,
+    evidence_count   INTEGER NOT NULL DEFAULT 0,
+    last_verified_at TEXT,
     FOREIGN KEY (space_id) REFERENCES memory_spaces(id)
 );
 
 CREATE INDEX idx_memory_entities_scope ON memory_entities(space_id, memory_scope, entity_type);
 CREATE INDEX idx_memory_entities_name ON memory_entities(normalized_name, entity_type);
 CREATE INDEX idx_memory_entities_status ON memory_entities(status);
+CREATE INDEX idx_memory_entities_lifecycle ON memory_entities(lifecycle_state, expires_at);
+CREATE INDEX idx_memory_entities_derived ON memory_entities(is_derived, lifecycle_state);
+CREATE INDEX idx_memory_entities_trust ON memory_entities(trust_level, trust_score);
+CREATE INDEX idx_memory_entities_evidence ON memory_entities(evidence_kind, updated_at);
 
 CREATE TABLE memory_entity_versions (
     id                    TEXT PRIMARY KEY,
@@ -376,12 +486,15 @@ CREATE TABLE memory_entity_provenances (
     source_entry_id          TEXT,
     source_document_id       TEXT,
     source_knowledge_base_id TEXT,
-    source_datastore_id      TEXT,
-    source_collection_id     TEXT,
     evidence_excerpt         TEXT,
     evidence_hash            TEXT,
     confidence               REAL NOT NULL DEFAULT 0.0,
     created_at               TEXT NOT NULL,
+    status                   TEXT NOT NULL DEFAULT 'VALID',
+    invalidated_at           TEXT,
+    evidence_kind            TEXT NOT NULL DEFAULT 'UNKNOWN',
+    trust_score              REAL NOT NULL DEFAULT 0.0,
+    trust_level              TEXT NOT NULL DEFAULT 'UNVERIFIED',
     FOREIGN KEY (entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
     FOREIGN KEY (version_id) REFERENCES memory_entity_versions(id) ON DELETE CASCADE
 );
@@ -439,8 +552,6 @@ CREATE TABLE memory_relation_provenances (
     source_turn_id           TEXT,
     source_document_id       TEXT,
     source_knowledge_base_id TEXT,
-    source_datastore_id      TEXT,
-    source_collection_id     TEXT,
     confidence               REAL NOT NULL DEFAULT 0.0,
     created_at               TEXT NOT NULL,
     FOREIGN KEY (relation_id) REFERENCES memory_relations(id) ON DELETE CASCADE,
@@ -493,7 +604,19 @@ SELECT
     me.access_count AS access_count,
     me.last_accessed_at AS last_accessed_at,
     me.created_at AS created_at,
-    mev.updated_at AS updated_at
+    mev.updated_at AS updated_at,
+    me.lifecycle_state AS lifecycle_state,
+    me.lifecycle_reason AS lifecycle_reason,
+    me.expires_at AS expires_at,
+    me.temporality AS temporality,
+    me.succeeded_by AS succeeded_by,
+    me.is_derived AS is_derived,
+    me.derivation_sources AS derivation_sources,
+    me.evidence_kind AS evidence_kind,
+    me.trust_level AS trust_level,
+    me.trust_score AS trust_score,
+    me.evidence_count AS evidence_count,
+    me.last_verified_at AS last_verified_at
 FROM memory_entities me
 JOIN memory_entity_versions mev ON mev.entity_id = me.id
 LEFT JOIN latest_entity_provenance lep ON lep.version_id = mev.id
@@ -529,6 +652,133 @@ FROM memory_relations mr
 JOIN memory_relation_versions mrv ON mrv.relation_id = mr.id
 LEFT JOIN latest_relation_provenance lrp ON lrp.version_id = mrv.id
 WHERE mr.status <> 'DELETED';
+
+CREATE TABLE memory_feedback_ledger (
+    id               TEXT PRIMARY KEY,
+    entity_id        TEXT NOT NULL,
+    source           TEXT NOT NULL
+                     CHECK (source IN ('USER_FEEDBACK', 'EFFECTIVENESS', 'QUALITY_REJECT')),
+    delta            REAL NOT NULL,
+    cumulative_score REAL NOT NULL,
+    created_at       TEXT NOT NULL,
+    FOREIGN KEY (entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_feedback_ledger_entity ON memory_feedback_ledger(entity_id, created_at);
+
+CREATE TABLE memory_revalidation_queue (
+    id          TEXT PRIMARY KEY,
+    entity_id   TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id   TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (status IN ('PENDING', 'PROMPTED', 'RESOLVED')),
+    FOREIGN KEY (entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_revalidation_pending ON memory_revalidation_queue(status, created_at);
+
+CREATE TABLE conflict_resolution_queue (
+    id                   TEXT PRIMARY KEY,
+    new_entity_id        TEXT NOT NULL,
+    candidate_entity_ids TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'PENDING'
+                         CHECK (status IN ('PENDING', 'RESOLVED', 'FAILED')),
+    verdict              TEXT,
+    rationale            TEXT,
+    attempt_count        INTEGER NOT NULL DEFAULT 0,
+    created_at           TEXT NOT NULL,
+    resolved_at          TEXT,
+    FOREIGN KEY (new_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_conflict_queue_status ON conflict_resolution_queue(status, created_at);
+
+CREATE TABLE derivation_regeneration_queue (
+    id                       TEXT PRIMARY KEY,
+    derived_entity_id        TEXT NOT NULL,
+    trigger_source_entity_id TEXT NOT NULL,
+    status                   TEXT NOT NULL DEFAULT 'PENDING'
+                             CHECK (status IN ('PENDING', 'PROCESSING', 'DONE', 'FAILED')),
+    created_at               TEXT NOT NULL,
+    processed_at             TEXT,
+    FOREIGN KEY (derived_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
+    FOREIGN KEY (trigger_source_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_regeneration_pending ON derivation_regeneration_queue(status, created_at);
+
+CREATE TABLE memory_entity_overlays (
+    overlay_entity_id TEXT PRIMARY KEY,
+    base_entity_id    TEXT NOT NULL,
+    overlay_space_id  TEXT NOT NULL,
+    origin_space_id   TEXT,
+    overlay_kind      TEXT NOT NULL DEFAULT 'UPDATE',
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    FOREIGN KEY (overlay_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
+    FOREIGN KEY (base_entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE,
+    FOREIGN KEY (overlay_space_id) REFERENCES memory_spaces(id),
+    FOREIGN KEY (origin_space_id) REFERENCES memory_spaces(id)
+);
+
+CREATE INDEX idx_memory_entity_overlays_base
+    ON memory_entity_overlays(base_entity_id, overlay_space_id);
+CREATE INDEX idx_memory_entity_overlays_space
+    ON memory_entity_overlays(overlay_space_id, overlay_kind);
+
+CREATE TABLE memory_extraction_candidates (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    turn_id             TEXT,
+    source_entry_id     TEXT,
+    target_space_id     TEXT,
+    operation           TEXT NOT NULL,
+    entity_name         TEXT NOT NULL,
+    entity_type         TEXT NOT NULL,
+    decision_json       TEXT NOT NULL,
+    candidate_status    TEXT NOT NULL DEFAULT 'VALIDATED',
+    validation_status   TEXT NOT NULL DEFAULT 'VALIDATED',
+    rejection_reason    TEXT,
+    persisted_entity_id TEXT,
+    base_entity_id      TEXT,
+    error_message       TEXT,
+    evidence_kind       TEXT NOT NULL DEFAULT 'UNKNOWN',
+    trust_level         TEXT NOT NULL DEFAULT 'UNVERIFIED',
+    trust_score         REAL NOT NULL DEFAULT 0.0,
+    evidence_excerpt    TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX idx_memory_extraction_candidates_turn
+    ON memory_extraction_candidates(turn_id, created_at);
+CREATE INDEX idx_memory_extraction_candidates_status
+    ON memory_extraction_candidates(candidate_status, updated_at);
+CREATE INDEX idx_memory_extraction_candidates_entity
+    ON memory_extraction_candidates(target_space_id, entity_type, entity_name);
+
+CREATE TABLE memory_projection_outbox (
+    id              TEXT PRIMARY KEY,
+    aggregate_type  TEXT NOT NULL,
+    aggregate_id    TEXT NOT NULL,
+    projection_type TEXT NOT NULL,
+    operation       TEXT NOT NULL,
+    payload_json    TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'PENDING',
+    attempt_count   INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error      TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    processed_at    TEXT
+);
+
+CREATE INDEX idx_memory_projection_outbox_status
+    ON memory_projection_outbox(status, next_attempt_at, created_at);
+CREATE INDEX idx_memory_projection_outbox_aggregate
+    ON memory_projection_outbox(aggregate_type, aggregate_id);
 
 -- --- 其他记忆辅助表 ---
 
@@ -615,6 +865,9 @@ CREATE INDEX idx_memory_document_chunks_document_id
 CREATE TABLE extraction_event_log (
     id                      TEXT PRIMARY KEY,
     session_id              TEXT NOT NULL,
+    turn_id                 TEXT,
+    space_id                TEXT,
+    source_entry_id         TEXT,
     operation               TEXT NOT NULL,
     entity_name             TEXT NOT NULL,
     entity_type             TEXT NOT NULL,
@@ -627,6 +880,8 @@ CREATE TABLE extraction_event_log (
 
 CREATE INDEX idx_extraction_event_log_session ON extraction_event_log(session_id);
 CREATE INDEX idx_extraction_event_log_time ON extraction_event_log(created_at);
+CREATE INDEX idx_extraction_event_log_turn ON extraction_event_log(turn_id);
+CREATE INDEX idx_extraction_event_log_space ON extraction_event_log(space_id, created_at);
 
 CREATE TABLE forgetting_log (
     id                  TEXT PRIMARY KEY,
@@ -651,6 +906,8 @@ CREATE TABLE preference_rules (
     confidence        REAL NOT NULL DEFAULT 0.3,
     learned_from_json TEXT NOT NULL DEFAULT '[]',
     observation_count INTEGER NOT NULL DEFAULT 1,
+    source_entity_id  TEXT,
+    deactivated_reason TEXT,
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(category, key)
@@ -676,6 +933,8 @@ CREATE TABLE procedure_templates (
     use_count             INTEGER NOT NULL DEFAULT 0,
     last_used_at          TEXT,
     source_trace_ids_json TEXT NOT NULL DEFAULT '[]',
+    source_entity_id      TEXT,
+    deactivated_reason    TEXT,
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -733,9 +992,6 @@ CREATE TABLE knowledge_bases (
     document_count       INTEGER NOT NULL DEFAULT 0,
     total_chunks         INTEGER NOT NULL DEFAULT 0,
     tags                 TEXT DEFAULT '[]',
-    -- V6: Datastore First 工作区
-    system_managed       INTEGER NOT NULL DEFAULT 0,
-    owner_datastore_id   TEXT,
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
 );
@@ -743,11 +999,6 @@ CREATE TABLE knowledge_bases (
 CREATE INDEX idx_knowledge_bases_created_at ON knowledge_bases(created_at DESC);
 CREATE INDEX idx_knowledge_bases_name ON knowledge_bases(name);
 CREATE INDEX idx_knowledge_bases_tags ON knowledge_bases(tags);
-CREATE INDEX idx_knowledge_bases_owner_datastore
-    ON knowledge_bases(owner_datastore_id)
-    WHERE owner_datastore_id IS NOT NULL;
-CREATE INDEX idx_knowledge_bases_system_managed
-    ON knowledge_bases(system_managed);
 
 CREATE TABLE session_knowledge_bases (
     session_id        TEXT NOT NULL,
@@ -776,8 +1027,6 @@ CREATE TABLE documents (
     -- V3: 来源感知文档
     source_type          TEXT NOT NULL DEFAULT 'FILE',
     source_key           TEXT NOT NULL DEFAULT '',
-    source_datastore_id  TEXT,
-    source_collection_id TEXT,
     source_ref_json      TEXT NOT NULL DEFAULT '{}',
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL,
@@ -788,7 +1037,6 @@ CREATE INDEX idx_documents_kb_id ON documents(knowledge_base_id);
 CREATE INDEX idx_documents_content_hash ON documents(knowledge_base_id, content_hash);
 CREATE INDEX idx_documents_status ON documents(status);
 CREATE INDEX idx_documents_kb_source_key ON documents(knowledge_base_id, source_key);
-CREATE INDEX idx_documents_kb_source_datastore ON documents(knowledge_base_id, source_datastore_id);
 CREATE INDEX idx_documents_source_type ON documents(source_type);
 
 CREATE TABLE document_chunks (
@@ -807,8 +1055,6 @@ CREATE TABLE document_chunks (
     metadata_json          TEXT NOT NULL DEFAULT '{}',
     -- V3: 来源感知分块
     source_type            TEXT NOT NULL DEFAULT 'FILE',
-    source_datastore_id    TEXT,
-    source_collection_id   TEXT,
     -- V23: Parent-Child 分块
     parent_chunk_id        TEXT,
     chunk_level            INTEGER NOT NULL DEFAULT 0,
@@ -820,7 +1066,6 @@ CREATE TABLE document_chunks (
 CREATE INDEX idx_document_chunks_doc_id ON document_chunks(document_id);
 CREATE INDEX idx_document_chunks_hash ON document_chunks(content_hash);
 CREATE INDEX idx_document_chunks_kb_id ON document_chunks(knowledge_base_id);
-CREATE INDEX idx_document_chunks_source_datastore ON document_chunks(source_datastore_id);
 CREATE INDEX idx_document_chunks_source_type ON document_chunks(source_type);
 CREATE INDEX idx_document_chunks_parent ON document_chunks(parent_chunk_id);
 CREATE INDEX idx_document_chunks_level ON document_chunks(chunk_level);
@@ -846,41 +1091,6 @@ CREATE TRIGGER document_chunks_ad AFTER DELETE ON document_chunks BEGIN
     VALUES ('delete', old.rowid, old.content, old.knowledge_base_id, old.document_id, old.id);
 END;
 
-CREATE TABLE knowledge_base_datastores (
-    knowledge_base_id TEXT NOT NULL,
-    datastore_id      TEXT NOT NULL,
-    created_at        TEXT NOT NULL,
-    PRIMARY KEY (knowledge_base_id, datastore_id),
-    FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_kb_datastores_datastore
-    ON knowledge_base_datastores(datastore_id);
-
-CREATE TABLE knowledge_sync_jobs (
-    id                TEXT PRIMARY KEY,
-    job_type          TEXT NOT NULL,
-    knowledge_base_id TEXT NOT NULL,
-    datastore_id      TEXT NOT NULL,
-    source_key        TEXT,
-    source_version    TEXT,
-    payload_json      TEXT NOT NULL DEFAULT '{}',
-    status            TEXT NOT NULL DEFAULT 'PENDING',
-    attempt_count     INTEGER NOT NULL DEFAULT 0,
-    last_error        TEXT,
-    available_at      TEXT NOT NULL,
-    created_at        TEXT NOT NULL,
-    updated_at        TEXT NOT NULL,
-    FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_knowledge_sync_jobs_available
-    ON knowledge_sync_jobs(status, available_at, created_at);
-CREATE INDEX idx_knowledge_sync_jobs_kb_datastore
-    ON knowledge_sync_jobs(knowledge_base_id, datastore_id);
-
 CREATE TABLE retrieval_event_log (
     id              TEXT PRIMARY KEY,
     query           TEXT NOT NULL,
@@ -897,72 +1107,31 @@ CREATE TABLE retrieval_event_log (
 
 CREATE INDEX idx_retrieval_event_log_time ON retrieval_event_log(created_at);
 
--- ============================================================
--- 四、Datastore（结构化数据存储）
--- ============================================================
-
-CREATE TABLE ds_collections (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL UNIQUE,
-    description     TEXT,
-    type            TEXT NOT NULL DEFAULT 'DOCUMENT',
-    properties_json TEXT,
-    metadata_json   TEXT,
-    created_by      TEXT,
-    -- V3: 投影配置
-    projection_config_json TEXT NOT NULL DEFAULT '{}',
-    -- V6: 默认知识库指针
-    default_knowledge_base_id TEXT,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+CREATE VIRTUAL TABLE tool_search_index USING fts5(
+    tool_id UNINDEXED,
+    description,
+    tags,
+    actions,
+    category,
+    tokenize = 'trigram'
 );
-
-CREATE TABLE ds_documents (
-    id                    TEXT PRIMARY KEY,
-    collection_id         TEXT NOT NULL REFERENCES ds_collections(id) ON DELETE CASCADE,
-    data_json             TEXT NOT NULL DEFAULT '{}',
-    recorded_at           TEXT,
-    -- V24: 文件元数据支持
-    source_type           TEXT NOT NULL DEFAULT 'DATA',
-    knowledge_document_id TEXT,
-    created_at            TEXT NOT NULL,
-    updated_at            TEXT NOT NULL
-);
-
-CREATE INDEX idx_ds_documents_collection ON ds_documents(collection_id);
-CREATE INDEX idx_ds_documents_recorded_at ON ds_documents(collection_id, recorded_at);
-CREATE INDEX idx_ds_documents_source_type ON ds_documents(source_type);
-
-CREATE VIRTUAL TABLE ds_documents_fts USING fts5(
-    document_id, content,
-    tokenize='unicode61'
-);
-
-CREATE TABLE session_datastores (
-    session_id    TEXT NOT NULL,
-    datastore_id  TEXT NOT NULL,
-    PRIMARY KEY (session_id, datastore_id),
-    FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE,
-    FOREIGN KEY (datastore_id) REFERENCES ds_collections(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_session_datastores_session ON session_datastores(session_id);
-CREATE INDEX idx_session_datastores_datastore ON session_datastores(datastore_id);
 
 -- ============================================================
--- 五、模型服务与路由
+-- 四、模型服务与路由
 -- ============================================================
 
 CREATE TABLE model_services (
     id                            TEXT PRIMARY KEY,
     kind                          TEXT NOT NULL CHECK (kind IN ('GENERATION', 'EMBEDDING', 'RERANK')),
-    provider_type                 TEXT NOT NULL,
+    profile_id                    TEXT NOT NULL,
     api_url                       TEXT NOT NULL,
     api_key                       TEXT,
     model_name                    TEXT NOT NULL,
     timeout_seconds               INTEGER NOT NULL DEFAULT 30,
     priority                      INTEGER NOT NULL DEFAULT 0,
     enabled                       INTEGER NOT NULL DEFAULT 1,
+    is_reasoning                  INTEGER NOT NULL DEFAULT 0,
+    thinking_mode                 TEXT NOT NULL DEFAULT 'AUTO',
     supported_scenes_json         TEXT NOT NULL DEFAULT '[]',
     generation_capabilities_json  TEXT NOT NULL DEFAULT '[]',
     metadata_json                 TEXT NOT NULL DEFAULT '{}',
@@ -972,9 +1141,8 @@ CREATE TABLE model_services (
     updated_at                    TEXT NOT NULL
 );
 
-CREATE INDEX idx_model_services_kind_enabled
-    ON model_services(kind, enabled, priority);
-CREATE INDEX idx_model_services_model_name ON model_services(model_name);
+CREATE INDEX idx_model_services_kind ON model_services(kind, enabled);
+CREATE INDEX idx_model_services_profile ON model_services(profile_id);
 
 CREATE TABLE generation_settings (
     id                           TEXT PRIMARY KEY,
@@ -1407,11 +1575,16 @@ CREATE TABLE cron_tasks (
     schedule    TEXT NOT NULL,
     instruction TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'active',
+    skill_ids   TEXT,
+    project_id  TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
 
 CREATE INDEX idx_cron_tasks_status ON cron_tasks(status);
+CREATE INDEX idx_cron_tasks_project_id
+    ON cron_tasks(project_id)
+    WHERE project_id IS NOT NULL;
 
 CREATE TABLE cron_task_logs (
     id          TEXT PRIMARY KEY,
@@ -1421,6 +1594,7 @@ CREATE TABLE cron_task_logs (
     duration_ms INTEGER NOT NULL,
     tokens_used INTEGER NOT NULL DEFAULT 0,
     summary     TEXT,
+    trigger_source TEXT NOT NULL DEFAULT 'cron',
     created_at  TEXT NOT NULL
 );
 
@@ -1561,6 +1735,56 @@ CREATE INDEX idx_notification_history_user_id ON notification_history(user_id);
 -- 十、主动提醒系统（V12–V21）
 -- ============================================================
 
+CREATE TABLE proactive_queued_actions (
+    id         TEXT NOT NULL PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    behavior   TEXT NOT NULL,
+    topic_key  TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    score      REAL NOT NULL,
+    metadata   TEXT,
+    shown      INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    shown_at   TEXT
+);
+
+CREATE INDEX idx_proactive_queued_actions_user_shown_score
+    ON proactive_queued_actions(user_id, shown, score DESC, created_at DESC);
+
+CREATE TABLE proactive_behavior_autonomy (
+    user_id              TEXT NOT NULL,
+    behavior_name        TEXT NOT NULL,
+    autonomy_level       TEXT NOT NULL DEFAULT 'A',
+    consecutive_positive INTEGER NOT NULL DEFAULT 0,
+    consecutive_negative INTEGER NOT NULL DEFAULT 0,
+    upgrade_suggested    INTEGER NOT NULL DEFAULT 0,
+    cooldown_until       TEXT,
+    updated_at           TEXT NOT NULL,
+    PRIMARY KEY (user_id, behavior_name)
+);
+
+CREATE INDEX idx_proactive_behavior_autonomy_user
+    ON proactive_behavior_autonomy(user_id, updated_at DESC);
+
+CREATE TABLE proactive_goal_tracking (
+    entity_id      TEXT NOT NULL PRIMARY KEY,
+    check_count    INTEGER NOT NULL DEFAULT 0,
+    last_follow_up TEXT,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE proactive_task_insight_links (
+    task_id    TEXT NOT NULL,
+    entity_id  TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (task_id, entity_id),
+    FOREIGN KEY (entity_id) REFERENCES memory_entities(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_proactive_task_insight_task ON proactive_task_insight_links(task_id);
+CREATE INDEX idx_proactive_task_insight_entity ON proactive_task_insight_links(entity_id);
+
 CREATE TABLE proactive_reminder_runs (
     id                     TEXT PRIMARY KEY,
     user_id                TEXT NOT NULL,
@@ -1660,6 +1884,7 @@ CREATE TABLE proactive_reminder_feedback (
     topic_key       TEXT NOT NULL,
     feedback_type   TEXT NOT NULL,
     comment         TEXT,
+    insight_entity_id TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
     FOREIGN KEY (notification_id) REFERENCES notification_history(id) ON DELETE CASCADE
@@ -1669,6 +1894,8 @@ CREATE INDEX idx_proactive_reminder_feedback_user_topic
     ON proactive_reminder_feedback(user_id, topic_key, updated_at DESC);
 CREATE INDEX idx_proactive_reminder_feedback_type
     ON proactive_reminder_feedback(feedback_type, updated_at DESC);
+CREATE INDEX idx_proactive_reminder_feedback_insight
+    ON proactive_reminder_feedback(insight_entity_id);
 
 CREATE TABLE proactive_reminder_topic_preferences (
     user_id    TEXT NOT NULL,
@@ -1832,6 +2059,14 @@ CREATE INDEX idx_channel_instances_plugin_id ON channel_instances(plugin_id);
 CREATE INDEX idx_channel_instances_platform ON channel_instances(platform);
 CREATE INDEX idx_channel_instances_status ON channel_instances(status);
 
+CREATE TABLE channel_user_mappings (
+    instance_id         TEXT NOT NULL,
+    platform_user_id    TEXT NOT NULL,
+    platform_session_id TEXT,
+    last_seen_at        TEXT NOT NULL,
+    PRIMARY KEY (instance_id)
+);
+
 CREATE TABLE channel_instance_secrets (
     instance_id TEXT PRIMARY KEY,
     secret_json TEXT NOT NULL,
@@ -1857,21 +2092,22 @@ CREATE INDEX idx_channel_instance_events_created_at ON channel_instance_events(c
 -- ============================================================
 
 CREATE TABLE skills (
-    id                   TEXT PRIMARY KEY,
-    name                 TEXT NOT NULL,
-    description          TEXT,
-    version              TEXT,
-    source_type          TEXT NOT NULL,
-    source_json          TEXT,
-    instructions         TEXT NOT NULL,
-    suggested_tools_json TEXT,
-    metadata_json        TEXT,
-    created_at           TEXT NOT NULL,
-    updated_at           TEXT NOT NULL
+    name              TEXT PRIMARY KEY,
+    source_type       TEXT NOT NULL,
+    source_uri        TEXT,
+    file_path         TEXT NOT NULL,
+    version           TEXT NOT NULL,
+    enabled           INTEGER NOT NULL DEFAULT 1,
+    marketplace_id    TEXT,
+    checksum          TEXT,
+    installed_at      TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    last_activated_at TEXT,
+    CHECK (source_type IN ('BUILTIN', 'USER_IMPORTED', 'MARKETPLACE', 'AUTO_GENERATED')),
+    CHECK (enabled IN (0, 1))
 );
 
-CREATE INDEX idx_skills_name ON skills(name);
-CREATE INDEX idx_skills_source_type ON skills(source_type);
+CREATE INDEX idx_skills_source_enabled ON skills(source_type, enabled);
 
 CREATE TABLE skill_audit_logs (
     id                TEXT PRIMARY KEY,
@@ -1921,6 +2157,20 @@ CREATE TABLE marketplace_index_cache (
     fetched_at  TEXT NOT NULL,
     created_at  TEXT NOT NULL
 );
+
+CREATE TABLE runtime_install_history (
+    id           TEXT PRIMARY KEY,
+    runtime_kind TEXT NOT NULL,
+    version      TEXT NOT NULL,
+    action       TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    error_msg    TEXT,
+    duration_ms  INTEGER,
+    created_at   TEXT NOT NULL
+);
+
+CREATE INDEX idx_runtime_install_history_created_at ON runtime_install_history(created_at);
+CREATE INDEX idx_runtime_install_history_kind_action ON runtime_install_history(runtime_kind, action);
 
 -- ============================================================
 -- 十三、网关与监控
@@ -2025,53 +2275,6 @@ CREATE INDEX idx_user_behavior_incidents ON user_behavior(security_incidents);
 -- 十四、评估与分析
 -- ============================================================
 
-CREATE TABLE eval_runs (
-    eval_run_id     TEXT PRIMARY KEY,
-    metadata_json   TEXT,
-    is_baseline     INTEGER DEFAULT 0,
-    created_at      TEXT NOT NULL
-);
-
-CREATE INDEX idx_eval_runs_baseline ON eval_runs(is_baseline);
-
-CREATE TABLE eval_results (
-    eval_id                 TEXT PRIMARY KEY,
-    trace_id                TEXT,
-    scenario_id             TEXT NOT NULL,
-    dimension_scores_json   TEXT NOT NULL,
-    overall_score           REAL NOT NULL,
-    violations_json         TEXT NOT NULL,
-    suggestions_json        TEXT NOT NULL,
-    llm_judge_score         REAL,
-    llm_judge_justification TEXT,
-    llm_judge_tokens_used   INTEGER DEFAULT 0,
-    git_commit_hash         TEXT,
-    git_branch              TEXT,
-    eval_run_id             TEXT NOT NULL,
-    evaluated_at            TEXT NOT NULL,
-    created_at              TEXT NOT NULL,
-    diagnostic_json         TEXT,
-    run_metadata_json       TEXT
-);
-
-CREATE INDEX idx_eval_results_eval_run_id ON eval_results(eval_run_id);
-CREATE INDEX idx_eval_results_evaluated_at ON eval_results(evaluated_at);
-CREATE INDEX idx_eval_results_scenario_id ON eval_results(scenario_id);
-
-CREATE TABLE eval_feedback (
-    feedback_id     TEXT PRIMARY KEY,
-    eval_id         TEXT NOT NULL,
-    scenario_id     TEXT NOT NULL,
-    feedback_type   TEXT NOT NULL,
-    comment         TEXT,
-    golden_answer   TEXT,
-    created_by      TEXT,
-    created_at      TEXT NOT NULL
-);
-
-CREATE INDEX idx_eval_feedback_eval_id ON eval_feedback(eval_id);
-CREATE INDEX idx_eval_feedback_scenario ON eval_feedback(scenario_id);
-
 CREATE TABLE evaluation_results (
     trace_id                    TEXT PRIMARY KEY,
     evaluated_at                TEXT NOT NULL,
@@ -2106,6 +2309,8 @@ CREATE TABLE user_settings (
     knowledge_config_json   TEXT DEFAULT '{}',
     channel_config_json     TEXT NOT NULL DEFAULT '{}',
     search_config_json      TEXT NOT NULL DEFAULT '{}',
+    default_workspace       TEXT DEFAULT NULL,
+    external_cli_bash_path  TEXT DEFAULT NULL,
     created_at              TEXT NOT NULL,
     updated_at              TEXT NOT NULL
 );

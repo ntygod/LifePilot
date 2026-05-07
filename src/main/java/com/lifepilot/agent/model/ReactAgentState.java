@@ -50,10 +50,8 @@ public record ReactAgentState(
         @Nullable String reasoningSummary,
         CompletionMode completionMode,
         @Nullable List<String> allowedToolIds,
-        /** 当前会话动态激活的工具 ID 集合 — 来源于本会话已加载 Skill 的
-         * {@code suggestedTools} 并集；用于 ContextAssembler 注入完整工具 schema，
-         * 以及让 {@code tool.search} 排除已暴露给 LLM 的工具避免重复推荐。 */
-        @Nullable Set<String> activatedToolIds,
+        /** 当前会话通过 {@code tool.search} 发现并已暴露给 LLM 的工具 ID 集合。 */
+        @Nullable Set<String> discoveredToolIds,
         /** 已加载的 Skill 指南内容 — 注入系统提示词供 LLM 遵循。 */
         @Nullable String loadedSkillContent,
         @Nullable List<MediaContent> pendingMedia,
@@ -69,7 +67,7 @@ public record ReactAgentState(
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
-        activatedToolIds = activatedToolIds != null ? Set.copyOf(activatedToolIds) : null;
+        discoveredToolIds = discoveredToolIds != null ? Set.copyOf(discoveredToolIds) : null;
         pendingMedia = pendingMedia != null ? List.copyOf(pendingMedia) : null;
     }
 
@@ -104,7 +102,7 @@ public record ReactAgentState(
                 .completionReason(null)
                 .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
-                .activatedToolIds(null)
+                .discoveredToolIds(null)
                 .pendingMedia(null)
                 .earlyStopRejectCount(0)
                 .suspended(false)
@@ -200,22 +198,22 @@ public record ReactAgentState(
     }
 
     /**
-     * 合并新激活的工具 ID 到已有集合，返回新状态。
+     * 合并新发现的工具 ID 到已有集合，返回新状态。
      *
-     * @param newToolIds 新激活的工具 ID
-     * @return 包含合并后激活工具集的新状态
+     * @param newToolIds 新发现的工具 ID
+     * @return 包含合并后发现工具集的新状态
      */
-    public ReactAgentState withActivatedToolIds(Set<String> newToolIds) {
+    public ReactAgentState withDiscoveredToolIds(Set<String> newToolIds) {
         if (newToolIds == null || newToolIds.isEmpty()) {
             return this;
         }
         var merged = new LinkedHashSet<String>();
-        if (activatedToolIds != null) {
-            merged.addAll(activatedToolIds);
+        if (discoveredToolIds != null) {
+            merged.addAll(discoveredToolIds);
         }
         merged.addAll(newToolIds);
         return this.toBuilder()
-                .activatedToolIds(merged)
+                .discoveredToolIds(merged)
                 .build();
     }
 

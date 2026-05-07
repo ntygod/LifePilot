@@ -55,14 +55,14 @@ public class TaskAutoConfiguration {
     public CronScheduler cronScheduler(SharedScheduler sharedScheduler,
                                        CronTaskRepository cronTaskRepository,
                                        AgentOrchestrator agentOrchestrator,
-                                       NotificationService notificationService,
-                                       NotificationProperties notificationProperties) {
+                                       @Autowired(required = false) NotificationService notificationService,
+                                       @Autowired(required = false) NotificationProperties notificationProperties) {
         return new CronScheduler(
                 sharedScheduler.heartbeat(),
                 cronTaskRepository,
                 agentOrchestrator,
                 notificationService,
-                notificationProperties
+                notificationProperties != null ? notificationProperties : new NotificationProperties()
         );
     }
 
@@ -71,11 +71,11 @@ public class TaskAutoConfiguration {
     @ConditionalOnProperty(prefix = "lifepilot.agent.task", name = "heartbeat-enabled",
             havingValue = "true", matchIfMissing = true)
     public HeartbeatRunner heartbeatRunner(SharedScheduler sharedScheduler,
-                                           AgentConfigProperties config,
+                                           @Autowired(required = false) AgentConfigProperties config,
                                            @Autowired(required = false) ProactiveEngine proactiveEngine) {
         return new HeartbeatRunner(
                 sharedScheduler.heartbeat(),
-                config,
+                config != null ? config : new AgentConfigProperties(),
                 proactiveEngine
         );
     }

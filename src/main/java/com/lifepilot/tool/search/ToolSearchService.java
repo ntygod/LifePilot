@@ -19,7 +19,7 @@ import org.springframework.lang.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -101,33 +101,23 @@ public class ToolSearchService {
                 config.getMaxLimit());
 
         String traceId = state == null ? null : state.traceId();
+        SearchScope searchScope = buildSearchScope(state);
+        String scopeKey = searchScope.cacheKey();
 
         // Layer C / B 缓存
         if (traceId != null) {
-            var layerC = sessionMemo.get(traceId, rawQuery, category, limit);
+            var layerC = sessionMemo.get(traceId, rawQuery, category, limit, scopeKey);
             if (layerC.isPresent()) { cacheHitC.increment(); return layerC.get(); }
         }
-        var layerB = searchResultCache.get(rawQuery, category, limit);
+        var layerB = searchResultCache.get(rawQuery, category, limit, scopeKey);
         if (layerB.isPresent()) {
             cacheHitB.increment();
-            if (traceId != null) sessionMemo.put(traceId, rawQuery, category, limit, layerB.get());
+            if (traceId != null) sessionMemo.put(traceId, rawQuery, category, limit, scopeKey, layerB.get());
             return layerB.get();
         }
 
         String matchExpr = sanitizer.sanitize(rawQuery);
         if (matchExpr.isEmpty()) { emptyResultsCounter.increment(); return ToolSearchResult.empty(); }
-
-        Set<String> excluded = new HashSet<>();
-        excluded.addAll(tier1Service.getCurrentTier1Ids());
-        Set<String> activated = state != null && state.activatedToolIds() != null
-                ? state.activatedToolIds() : Set.of();
-        excluded.addAll(activated);
-        excluded.addAll(META_TOOL_IDS);
-
-        Set<String> allowedScope = null;
-        if (state != null && state.allowedToolIds() != null && !state.allowedToolIds().isEmpty()) {
-            allowedScope = Set.copyOf(state.allowedToolIds());
-        }
 
         // BM25
         List<FtsRow> bm25Rows = executeFts(matchExpr, category, limit * 3);
@@ -138,10 +128,12 @@ public class ToolSearchService {
                 : List.of();
 
         // RRF 融合
-        final Set<String> finalAllowedScope = allowedScope;
+        final Set<String> finalAllowedScope = searchScope.allowedScope();
+        final Set<String> excluded = searchScope.excluded();
         List<String> mergedIds = fuseRrf(bm25Rows, semanticRows, 60, Math.max(limit * 3, 10));
 
         List<ToolSearchHit> hits = mergedIds.stream()
+                .filter(this::isDiscoverableTool)
                 .filter(id -> !excluded.contains(id))
                 .filter(id -> finalAllowedScope == null || finalAllowedScope.contains(id))
                 .map(this::toHitById)
@@ -161,9 +153,35 @@ public class ToolSearchService {
 
         int totalMatched = bm25Rows.size() + semanticRows.size();
         ToolSearchResult result = new ToolSearchResult(hits, totalMatched, confidence, hint);
-        searchResultCache.put(rawQuery, category, limit, result);
-        if (traceId != null) sessionMemo.put(traceId, rawQuery, category, limit, result);
+        searchResultCache.put(rawQuery, category, limit, scopeKey, result);
+        if (traceId != null) sessionMemo.put(traceId, rawQuery, category, limit, scopeKey, result);
         return result;
+    }
+
+    private SearchScope buildSearchScope(@Nullable ReactAgentState state) {
+        var excluded = new LinkedHashSet<String>();
+        excluded.addAll(tier1Service.getCurrentTier1Ids());
+        excluded.addAll(META_TOOL_IDS);
+        if (state != null && state.discoveredToolIds() != null) {
+            excluded.addAll(state.discoveredToolIds());
+        }
+
+        Set<String> allowedScope = null;
+        if (state != null && state.allowedToolIds() != null && !state.allowedToolIds().isEmpty()) {
+            allowedScope = Set.copyOf(state.allowedToolIds());
+        }
+
+        String cacheKey = "excluded="
+                + excluded.stream().sorted().collect(java.util.stream.Collectors.joining(","))
+                + "|allowed="
+                + (allowedScope == null
+                ? "*"
+                : allowedScope.stream().sorted().collect(java.util.stream.Collectors.joining(",")));
+        return new SearchScope(Set.copyOf(excluded), allowedScope, cacheKey);
+    }
+
+    private boolean isDiscoverableTool(String toolId) {
+        return registry.resolve(toolId).isPresent();
     }
 
     private List<FtsRow> executeFts(String matchExpr, @Nullable String category, int limit) {
@@ -221,4 +239,6 @@ public class ToolSearchService {
     }
 
     private record FtsRow(String toolId, double score) {}
+
+    private record SearchScope(Set<String> excluded, @Nullable Set<String> allowedScope, String cacheKey) {}
 }

@@ -2,13 +2,13 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.tool`
-> **最后更新**：2026-05-03
+> **最后更新**：2026-05-04
 
 ## 1. 功能概述
 
 工具系统为 Agent 提供与外部世界交互的能力，支持两种工具来源：Java 内置工具（BuiltinTool）和 MCP 外部工具（McpTool）。统一的工具契约确保所有工具具有一致的输入输出规范、风险等级声明和执行保障。
 
-工具对 LLM 的暴露采用全量常驻模式——全部 15 个内置工具（含 `tool.search` 内省工具）始终随 system prompt 注入，无需延迟发现。MCP 外部工具通过 `tool.search` 发现。
+工具对 LLM 的暴露采用核心常驻 + 按需发现模式：`memory` / `file.read` / `status` / `skill.load` / `tool.search` 直接注入；其他 Java 内置工具和 MCP 外部工具通过 `tool.search` 发现后再注入。
 
 > **重要变更**：
 > - 原三层架构中的 `SkillTool`（SKILL_DECLARATIVE 层）已移除。Skill 系统 v2（2026-04-24）把激活入口归一到 `skill.load(names=[...])` BuiltinTool，废弃了 `file.read(skill=...)` 捷径、`SkillDisclosureTool` 空壳以及 `generate_skill` 独立工具；Skill 自生成由 `SkillSynthesizer` 后台服务在判定能力缺口时触发，不再通过 Agent 侧工具暴露。
@@ -65,7 +65,7 @@ LLM 通过工具描述和 Schema 理解工具用途。
 
 `DynamicToolRegistry` 支持运行时动态注册和注销工具：
 
-- Skill 激活时自动注册关联工具
+- Java 内置工具在启动期注册
 - MCP 服务器连接时自动注册远程工具
 
 ### 2.6 层次优先级
@@ -76,16 +76,15 @@ LLM 通过工具描述和 Schema 理解工具用途。
 
 确保内置工具行为不被外部工具意外替换。
 
-### 2.7 全量常驻
+### 2.7 核心常驻 + 按需发现
 
-- **Tier 1（全量常驻）**：`lifepilot.tool.tier1.pinned` 配置列表中的全部 15 个内置工具，完整 schema 常驻 prompt，LLM 可直接调用
-- **MCP 外部工具**：通过 `tool.search` 发现，由 `ToolSearchIndexMaintainer` 维护到 FTS5 索引
-
-Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`，合并进当前可见集。
+- **核心 pinned 工具**：`lifepilot.tool.tier1.pinned` 配置列表中的少量核心工具，完整 schema 常驻 prompt，LLM 可直接调用
+- **非核心 Java / MCP 工具**：通过 `tool.search` 发现，由 `ToolSearchIndexMaintainer` 维护到 FTS5 索引；发现结果写入 `ReactAgentState.discoveredToolIds`，下一轮注入 schema
+- **Skill**：`skill.load` 只注入 Skill 指南内容，`suggested_tools` 不再自动改变工具可见集
 
 ### 2.8 工具搜索（FTS5 trigram + BM25）
 
-- `ToolSearchService` 走"sanitize → 三层缓存 → FTS5 MATCH + BM25 排序 → 排除 Tier1/activated/meta/权限外"链路；`bm25-confidence-threshold` 决定返回的 confidence 标签
+- `ToolSearchService` 走"sanitize → 缓存 → FTS5 MATCH + BM25 排序 + 语义 RRF → 排除核心 pinned / 已发现 / meta / 权限外"链路；`bm25-confidence-threshold` 决定返回的 confidence 标签
 - FTS5 表用 `tokenize = 'trigram'`（V30 迁移），3 字符滑窗双向 substring 匹配，对中文短语命中友好；query 走 `ToolSearchQuerySanitizer` 切 3-gram phrase 用 `OR` 连接
 - 工具 description / tags 中英混排，并主动写入"删除文件""复制目录"等高频用户短语，让 trigram 直接命中
 - Tier 1 名单完全由 `pinned` 配置静态维护，无后台晋升 / 降级 Job
@@ -108,7 +107,7 @@ Skill 激活会把场景化工具临时注入 `ReactAgentState.activatedToolIds`
 | `ToolExecutor` | 工具执行器 |
 | `ToolExecutionPipeline` | 执行管道 |
 | `DynamicToolRegistry` | 动态注册表 |
-| `ToolBridgeAgentToolProvider` | Tier 1 ∪ activated ∪ meta 统一过滤，生成 Spring AI ToolCallback |
+| `ToolBridgeAgentToolProvider` | core pinned ∪ discovered 过滤，生成 Spring AI ToolCallback |
 | `Tier1Service` | 只读 `pinned` 配置，提供 Tier 1 工具 ID 集合 |
 | `ToolSearchService` | 搜索链路服务 |
 | `BuiltinToolSearchProvider` | 注册 `tool.search` meta BuiltinTool |
@@ -131,20 +130,10 @@ lifepilot:
     tier1:
       pinned:
         - memory
-        - browser
-        - code
-        - shell.exec
-        - shell.process
         - file.read
-        - file.write
-        - file.manage
-        - web.search
-        - web.fetch
-        - cron
-        - notify
         - status
-        - ui.render
         - skill.load
+        - tool.search
     search:
       default-limit: 5
       max-limit: 20
@@ -158,7 +147,7 @@ lifepilot:
 | `lifepilot.tool.enabled` | `true` | 工具系统总开关 |
 | `lifepilot.tool.pipeline.default-timeout-seconds` | `30` | 默认执行超时 |
 | `lifepilot.tool.pipeline.default-max-retries` | `2` | 默认最大重试次数 |
-| `lifepilot.tool.tier1.pinned` | 15 项（全量常驻） | 人工固定的 Tier 1 工具 ID |
+| `lifepilot.tool.tier1.pinned` | 5 项核心工具 | 人工固定的核心工具 ID |
 | `lifepilot.tool.search.default-limit` | `5` | `tool.search` 默认 limit |
 | `lifepilot.tool.search.max-limit` | `20` | `tool.search` 单次上限 |
 | `lifepilot.tool.search.bm25-confidence-threshold` | `1.0` | BM25 高置信度阈值 |

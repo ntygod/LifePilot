@@ -58,6 +58,7 @@ class ConflictDetector_单元测试 {
 
     /** 语义匹配阈值 */
     private static final float SEMANTIC_THRESHOLD = 0.85f;
+    private static final String TEST_SPACE_ID = "space-test";
 
     private ConflictDetector detector;
 
@@ -97,11 +98,11 @@ class ConflictDetector_单元测试 {
             var newEntity = buildEntity("new-1", "张三", EntityType.PERSON, "产品经理");
             var existingEntity = buildEntity("existing-1", "张三", EntityType.PERSON, "产品经理");
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("张三"), eq("PERSON"), isNull(), isNull()))
+                    eq("张三"), eq("PERSON"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(existingEntity));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isPresent();
@@ -116,7 +117,7 @@ class ConflictDetector_单元测试 {
             var newEntity = buildEntity("new-1", "项目Alpha", EntityType.PROJECT, "内部项目");
             var existingEntity = buildEntity("existing-1", "项目Alpha", EntityType.PROJECT, "内部项目");
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("项目Alpha"), eq("PROJECT"), eq("space-1"), eq("space-1")))
+                    eq("项目Alpha"), eq("PROJECT"), eq("space-1")))
                     .thenReturn(List.of(existingEntity));
 
             // when
@@ -133,13 +134,13 @@ class ConflictDetector_单元测试 {
             // given
             var newEntity = buildEntity("new-1", "张三", EntityType.PERSON, "产品经理");
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("张三"), eq("PERSON"), isNull(), isNull()))
+                    eq("张三"), eq("PERSON"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of());
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of());
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isEmpty();
@@ -147,21 +148,17 @@ class ConflictDetector_单元测试 {
         }
 
         @Test
-        void 无参数重载委托给带_spaceId_的方法_传入_null() {
+        void 无参数重载_缺少spaceId_直接跳过冲突检测() {
             // given
             var newEntity = buildEntity("new-1", "张三", EntityType.PERSON, "产品经理");
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("张三"), eq("PERSON"), isNull(), isNull()))
-                    .thenReturn(List.of());
-            when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
-                    .thenReturn(List.of());
 
             // when
             var result = detector.detectConflict(newEntity);
 
-            // then — 验证精确匹配查询时 spaceId 参数为 null
-            verify(jdbcTemplate).query(anyString(), any(RowMapper.class),
-                    eq("张三"), eq("PERSON"), isNull(), isNull());
+            // then — 缺少写入空间时 fail-closed，避免跨空间合并
+            assertThat(result).isEmpty();
+            verifyNoInteractions(jdbcTemplate);
+            verifyNoInteractions(vectorSearcher);
         }
     }
 
@@ -179,7 +176,7 @@ class ConflictDetector_单元测试 {
                     jdbcTemplate, vectorSearcher, generationRouter, SEMANTIC_THRESHOLD, promptRegistry);
             // 精确匹配一律未命中
             lenient().when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any(), any()))
+                    anyString(), anyString(), any()))
                     .thenReturn(List.of());
         }
 
@@ -193,7 +190,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.92f)));
             // findEntityById 查询
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidateEntity));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断这两个实体是否为同一实体");
@@ -203,7 +200,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("{\"isSame\": true, \"confidence\": 0.85}"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isPresent();
@@ -219,7 +216,7 @@ class ConflictDetector_单元测试 {
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.88f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidateEntity));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断这两个实体是否为同一实体");
@@ -229,7 +226,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("{\"isSame\": false, \"confidence\": 0.9}"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isEmpty();
@@ -243,7 +240,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(List.of());
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isEmpty();
@@ -258,11 +255,11 @@ class ConflictDetector_单元测试 {
                     .thenReturn(List.of(new VectorSearchResult("ghost-id", 0.95f)));
             // findEntityById 返回空 — 该向量索引指向的实体已被删除
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("ghost-id"), isNull(), isNull()))
+                    eq("ghost-id"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of());
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isEmpty();
@@ -281,10 +278,10 @@ class ConflictDetector_单元测试 {
                             new VectorSearchResult("c1", 0.93f),
                             new VectorSearchResult("c2", 0.90f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("c1"), isNull(), isNull()))
+                    eq("c1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate1));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("c2"), isNull(), isNull()))
+                    eq("c2"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate2));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断这两个实体是否为同一实体");
@@ -296,7 +293,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("{\"isSame\": true, \"confidence\": 0.8}"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isPresent();
@@ -318,7 +315,7 @@ class ConflictDetector_单元测试 {
                     jdbcTemplate, vectorSearcher, generationRouter, SEMANTIC_THRESHOLD, promptRegistry);
             // 精确匹配未命中
             lenient().when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any(), any()))
+                    anyString(), anyString(), any()))
                     .thenReturn(List.of());
         }
 
@@ -331,7 +328,7 @@ class ConflictDetector_单元测试 {
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.87f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断prompt");
@@ -341,7 +338,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("{\"isSame\": true, \"confidence\": 0.5}"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then — confidence < 0.6 所以不算冲突
             assertThat(result).isEmpty();
@@ -356,7 +353,7 @@ class ConflictDetector_单元测试 {
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.90f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断prompt");
@@ -366,7 +363,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("{\"isSame\": true, \"confidence\": 0.6}"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then — confidence == 0.6，恰好达标
             assertThat(result).isPresent();
@@ -382,7 +379,7 @@ class ConflictDetector_单元测试 {
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.90f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断prompt");
@@ -392,7 +389,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("Yes, they are the same. Result: TRUE"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then — 文本包含 "true"（大小写不敏感），视为冲突
             assertThat(result).isPresent();
@@ -407,7 +404,7 @@ class ConflictDetector_单元测试 {
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.88f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断prompt");
@@ -417,7 +414,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("No, these are different people."));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isEmpty();
@@ -432,7 +429,7 @@ class ConflictDetector_单元测试 {
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.91f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断prompt");
@@ -442,7 +439,7 @@ class ConflictDetector_单元测试 {
                     .thenReturn(buildLlmResponse("{\"confidence\": 0.8}"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then — isSame 缺失默认 false
             assertThat(result).isEmpty();
@@ -466,16 +463,16 @@ class ConflictDetector_单元测试 {
             var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "前端开发");
 
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any(), any()))
+                    anyString(), anyString(), any()))
                     .thenReturn(List.of());
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.92f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isPresent();
@@ -491,13 +488,13 @@ class ConflictDetector_单元测试 {
             var newEntity = buildEntity("new-1", "张三", EntityType.PERSON, "测试");
 
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any(), any()))
+                    anyString(), anyString(), any()))
                     .thenReturn(List.of());
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenThrow(new RuntimeException("Embedding 服务不可用"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then — 降级后返回空
             assertThat(result).isEmpty();
@@ -512,12 +509,12 @@ class ConflictDetector_单元测试 {
             var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "程序员");
 
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any(), any()))
+                    anyString(), anyString(), any()))
                     .thenReturn(List.of());
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.90f)));
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), isNull(), isNull()))
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(candidate));
             when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
                     .thenReturn("判断prompt");
@@ -527,7 +524,7 @@ class ConflictDetector_单元测试 {
                     .thenThrow(new RuntimeException("LLM 服务超时"));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then — LLM 异常降级返回空
             assertThat(result).isEmpty();
@@ -554,13 +551,13 @@ class ConflictDetector_单元测试 {
             var newEntity = buildEntity("new-1", "全新概念", EntityType.CUSTOM, "从未出现过的实体");
 
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any(), any()))
+                    anyString(), anyString(), any()))
                     .thenReturn(List.of());
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of());
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isEmpty();
@@ -574,11 +571,11 @@ class ConflictDetector_单元测试 {
             var existingEntity = buildEntity("existing-1", "Python", EntityType.SKILL, "编程语言技能");
 
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("Python"), eq("SKILL"), isNull(), isNull()))
+                    eq("Python"), eq("SKILL"), eq(TEST_SPACE_ID)))
                     .thenReturn(List.of(existingEntity));
 
             // when
-            var result = detector.detectConflict(newEntity);
+            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then
             assertThat(result).isPresent();
@@ -592,13 +589,13 @@ class ConflictDetector_单元测试 {
             var expectedText = newEntity.textRepresentation();
 
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any(), any()))
+                    anyString(), anyString(), any()))
                     .thenReturn(List.of());
             when(vectorSearcher.searchEntities(eq(expectedText), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of());
 
             // when
-            detector.detectConflict(newEntity);
+            detector.detectConflict(newEntity, TEST_SPACE_ID);
 
             // then — 验证传给 vectorSearcher 的文本是 textRepresentation()
             verify(vectorSearcher).searchEntities(eq(expectedText), eq(10), eq(SEMANTIC_THRESHOLD));
@@ -614,13 +611,13 @@ class ConflictDetector_单元测试 {
 
             // 精确匹配未命中
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("小张"), eq("PERSON"), eq("space-A"), eq("space-A")))
+                    eq("小张"), eq("PERSON"), eq("space-A")))
                     .thenReturn(List.of());
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenReturn(List.of(new VectorSearchResult("existing-1", 0.92f)));
             // findEntityById 带 spaceId
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), eq("space-A"), eq("space-A")))
+                    eq("existing-1"), eq("space-A")))
                     .thenReturn(List.of(candidate));
 
             // when
@@ -630,7 +627,7 @@ class ConflictDetector_单元测试 {
             assertThat(result).isPresent();
             // 验证 findEntityById 调用时传递了 spaceId
             verify(jdbcTemplate).query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), eq("space-A"), eq("space-A"));
+                    eq("existing-1"), eq("space-A"));
         }
     }
 }

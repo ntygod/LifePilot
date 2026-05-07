@@ -17,11 +17,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 注册 tool.search / tool.search 两个 Meta BuiltinTool。
+ * 注册 {@code tool.search} Meta BuiltinTool。
  *
- * <p>这两个工具常驻 prompt（在 Tier 1 pinned 列表）。LLM 通过 search 发现工具、
- * describe 拿完整 schema；不需要 list 浏览全部（react-system.st 已禁该反模式）。
- * Executor 从 ToolInput 的 context 拿当前 ReactAgentState，传给服务层。</p>
+ * <p>工具发现面向所有未直接注入 Agent 的工具，包括 Java 原生工具和 MCP 外部工具。
+ * Executor 从 ToolInput 的 context 拿当前 {@link ReactAgentState}，传给服务层。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -31,13 +30,10 @@ public class BuiltinToolSearchProvider {
     private static final Logger log = LoggerFactory.getLogger(BuiltinToolSearchProvider.class);
 
     private final ToolSearchService searchService;
-    private final ToolDescribeService describeService;
 
     public BuiltinToolSearchProvider(
-            ToolSearchService searchService,
-            ToolDescribeService describeService) {
+            ToolSearchService searchService) {
         this.searchService = searchService;
-        this.describeService = describeService;
     }
 
     /** 构建 tool.search 内置工具定义。 */
@@ -45,7 +41,7 @@ public class BuiltinToolSearchProvider {
         return BuiltinTool.builder()
                 .id("tool.search")
                 .name("搜索工具")
-                .description("用关键词在工具注册表中按 BM25 排序找匹配。需要未常驻的工具时优先调用本工具发现。")
+                .description("用关键词在工具注册表中搜索未直接暴露的 Java/MCP 工具，返回可在下一轮调用的工具 ID 和输入 Schema。")
                 .tags(List.of("搜索", "工具", "发现", "查找", "tools", "search"))
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)
@@ -75,8 +71,19 @@ public class BuiltinToolSearchProvider {
         ReactAgentState state = extractState(input);
 
         ToolSearchResult result = searchService.search(state, query, category, limit);
+        List<Map<String, Object>> hits = result.results().stream()
+                .map(hit -> Map.<String, Object>of(
+                        "id", hit.id(),
+                        "description", hit.description(),
+                        "category", hit.category(),
+                        "score", hit.score(),
+                        "actions", hit.actions(),
+                        "inputSchema", hit.inputSchema()
+                ))
+                .toList();
         return ToolResult.success(Map.of(
-                "results", result.results(),
+                "results", hits,
+                "discovered_tool_ids", result.results().stream().map(ToolSearchHit::id).toList(),
                 "total_matched", result.totalMatched(),
                 "confidence", result.confidence().name(),
                 "hint", result.hint() == null ? "" : result.hint()
@@ -96,7 +103,7 @@ public class BuiltinToolSearchProvider {
             return rs;
         }
         // 退化：没有 state，log 一下，search 会按无 state 处理
-        log.debug("tool.search/describe/list 执行时未注入 CALLER_STATE，按 null state 处理");
+        log.debug("tool.search 执行时未注入 CALLER_STATE，按 null state 处理");
         return null;
     }
 }

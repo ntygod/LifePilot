@@ -38,7 +38,7 @@ class ChunkContextEnricherTest {
     private PromptRegistry promptRegistry;
 
     @Test
-    void enrich_增强上下文后保留Datastore来源元数据() {
+    void enrich_增强上下文后保留文档来源元数据() {
         when(promptRegistry.render(eq("knowledge/chunk-context-single"), any(Map.class)))
                 .thenReturn("prompt");
         when(generationRouter.call(
@@ -72,9 +72,7 @@ class ChunkContextEnricherTest {
                 List.of("春季旅游"),
                 1,
                 Map.of("category", "travel"),
-                DocumentSourceType.DATASTORE_DOCUMENT,
-                "ds-1",
-                "collection-1",
+                DocumentSourceType.FILE,
                 Optional.empty(),
                 0
         );
@@ -83,8 +81,7 @@ class ChunkContextEnricherTest {
 
         assertThat(enriched).hasSize(1);
         assertThat(enriched.getFirst().contextPrefix()).hasValue("旅行攻略摘要");
-        assertThat(enriched.getFirst().sourceType()).isEqualTo(DocumentSourceType.DATASTORE_DOCUMENT);
-        assertThat(enriched.getFirst().sourceDatastoreId()).isEqualTo("ds-1");
-        assertThat(enriched.getFirst().sourceCollectionId()).isEqualTo("collection-1");
+        assertThat(enriched.getFirst().sourceType()).isEqualTo(DocumentSourceType.FILE);
+        assertThat(enriched.getFirst().metadata()).containsEntry("category", "travel");
     }
 }

@@ -3,6 +3,7 @@ package com.lifepilot.project.service;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.project.exception.ProjectNotFoundException;
@@ -11,6 +12,7 @@ import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -46,17 +48,31 @@ public class ProjectService {
      */
     @Nullable
     private final KnowledgeBaseManager knowledgeBaseManager;
+    @Nullable
+    private final MemoryProjectionService projectionService;
 
     public ProjectService(ProjectRepository projectRepository,
                           MemorySpaceRepository memorySpaceRepository,
                           SessionStoreRepository sessionStoreRepository,
                           JdbcTemplate jdbcTemplate,
                           @Nullable KnowledgeBaseManager knowledgeBaseManager) {
+        this(projectRepository, memorySpaceRepository, sessionStoreRepository,
+                jdbcTemplate, knowledgeBaseManager, null);
+    }
+
+    @Autowired
+    public ProjectService(ProjectRepository projectRepository,
+                          MemorySpaceRepository memorySpaceRepository,
+                          SessionStoreRepository sessionStoreRepository,
+                          JdbcTemplate jdbcTemplate,
+                          @Nullable KnowledgeBaseManager knowledgeBaseManager,
+                          @Nullable MemoryProjectionService projectionService) {
         this.projectRepository = projectRepository;
         this.memorySpaceRepository = memorySpaceRepository;
         this.sessionStoreRepository = sessionStoreRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.knowledgeBaseManager = knowledgeBaseManager;
+        this.projectionService = projectionService;
     }
 
     /**
@@ -114,8 +130,7 @@ public class ProjectService {
                     null,
                     null,
                     Map.of(),
-                    List.of("project"),
-                    null
+                    List.of("project")
             );
             memorySpaceRepository.attachKnowledgeBase(space.id(), kb.id());
             log.info("项目默认知识库创建并绑定: projectId={}, kbId={}, spaceId={}",
@@ -200,8 +215,7 @@ public class ProjectService {
      *       memory_entity_versions / memory_entity_provenances；</li>
      *   <li>删 projects 行 —— V15 的 FK 对 memory_spaces 是 RESTRICT，必须先
      *       删 project 再删 space；</li>
-     *   <li>删 memory_spaces 行 —— memory_space_knowledge_bases /
-     *       memory_space_datastores 通过 FK CASCADE 自动清理。</li>
+     *   <li>删 memory_spaces 行 —— memory_space_knowledge_bases 通过 FK CASCADE 自动清理。</li>
      * </ol>
      *
      * <p>注意 memory_entities / memory_relations 两张表 FK 到 memory_spaces
@@ -243,18 +257,34 @@ public class ProjectService {
         if (!sessionIds.isEmpty()) {
             sessionStoreRepository.batchDelete(sessionIds);
         }
-        // 2) 先删 memory_relations（它们 FK 到 memory_entities 无 CASCADE，必须先清）
+        // 2) 主库删除前先收集实体 ID，并在同一事务中登记派生投影删除任务
+        List<String> entityIds = jdbcTemplate.queryForList(
+                "SELECT id FROM memory_entities WHERE space_id = ?", String.class, spaceId);
+        enqueueVectorDeleteTasks(entityIds);
+        // 3) 先删 memory_relations（它们 FK 到 memory_entities 无 CASCADE，必须先清）
         int relationsDeleted = jdbcTemplate.update(
                 "DELETE FROM memory_relations WHERE space_id = ?", spaceId);
-        // 3) 再删 memory_entities（FK CASCADE 连带清 entity_versions / entity_provenances）
+        // 4) 再删 memory_entities（FK CASCADE 连带清 entity_versions / entity_provenances）
         int entitiesDeleted = jdbcTemplate.update(
                 "DELETE FROM memory_entities WHERE space_id = ?", spaceId);
-        // 4) 先删 project（V15 FK 到 memory_spaces 是 RESTRICT，顺序不能反）
+        // 5) 先删 project（V15 FK 到 memory_spaces 是 RESTRICT，顺序不能反）
         projectRepository.deleteById(id);
-        // 5) 再删 memory_space（带走 memory_space_knowledge_bases / _datastores）
+        // 6) 再删 memory_space（带走 memory_space_knowledge_bases）
         memorySpaceRepository.deleteById(spaceId);
 
         log.info("删除项目级联完成: id={}, spaceId={}, sessions={}, entities={}, relations={}, kbs={}",
                 id, spaceId, sessionIds.size(), entitiesDeleted, relationsDeleted, kbDeletedCount);
+    }
+
+    private void enqueueVectorDeleteTasks(@Nullable List<String> entityIds) {
+        if (entityIds == null || entityIds.isEmpty()) {
+            return;
+        }
+        if (projectionService == null) {
+            throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 清理项目向量");
+        }
+        for (String entityId : entityIds) {
+            projectionService.enqueueVectorDeleteAfterCommit(entityId);
+        }
     }
 }

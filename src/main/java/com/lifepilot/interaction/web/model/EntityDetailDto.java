@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.model;
 
 import jakarta.annotation.Nullable;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -25,6 +26,18 @@ public record EntityDetailDto(
         Instant validFrom,
         @Nullable Instant validTo,
         @Nullable String sourceConversationId,
+        String lifecycleState,
+        @Nullable String lifecycleReason,
+        @Nullable Instant expiresAt,
+        String temporality,
+        @Nullable String succeededBy,
+        boolean isDerived,
+        List<String> derivationSources,
+        String evidenceKind,
+        String trustLevel,
+        float trustScore,
+        int evidenceCount,
+        @Nullable Instant lastVerifiedAt,
         float extractionConfidence,
         float importanceScore,
         int accessCount,

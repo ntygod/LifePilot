@@ -112,7 +112,7 @@ public class FtsIndexer {
             return List.of();
         }
         return searchByScopes(query, kbIds.stream()
-                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .map(KnowledgeSearchScope::new)
                 .toList(), topK);
     }
 
@@ -124,12 +124,11 @@ public class FtsIndexer {
             return List.of();
         }
 
-        KnowledgeQueryUtils.ScopeSql scopeSql = KnowledgeQueryUtils.buildScopeSql("dc.knowledge_base_id", "dc.source_datastore_id", scopes);
+        KnowledgeQueryUtils.ScopeSql scopeSql = KnowledgeQueryUtils.buildScopeSql("dc.knowledge_base_id", scopes);
         var sql = """
                 SELECT dc.id AS chunk_id, dc.document_id, dc.knowledge_base_id, dc.content,
                        dc.context_prefix, dc.heading_hierarchy_json, dc.metadata_json,
-                       dc.source_type, dc.source_datastore_id, dc.source_collection_id,
-                       rank AS score
+                       dc.source_type, rank AS score
                 FROM document_chunks_fts fts
                 JOIN document_chunks dc ON fts.rowid = dc.rowid
                 WHERE document_chunks_fts MATCH ?
@@ -158,9 +157,7 @@ public class FtsIndexer {
                     Map.of(),
                     Optional.empty(),
                     Optional.empty(),
-                    KnowledgeQueryUtils.parseSourceType(rs.getString("source_type")),
-                    Optional.ofNullable(rs.getString("source_datastore_id")),
-                    Optional.ofNullable(rs.getString("source_collection_id"))
+                    KnowledgeQueryUtils.parseSourceType(rs.getString("source_type"))
             );
         }, params.toArray());
     }

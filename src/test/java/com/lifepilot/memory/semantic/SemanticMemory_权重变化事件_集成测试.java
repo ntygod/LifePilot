@@ -5,6 +5,7 @@ import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.lifecycle.events.EntityWeightChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,6 +79,7 @@ class SemanticMemory_权重变化事件_集成测试 {
 
         var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 
         captured = new ArrayList<>();
         // 手动装配 ApplicationEventPublisher — 捕获所有事件用于断言

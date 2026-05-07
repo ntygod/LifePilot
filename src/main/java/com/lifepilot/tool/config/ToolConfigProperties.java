@@ -25,15 +25,11 @@ public class ToolConfigProperties {
     private Yaml yaml = new Yaml();
     private TrustedWorkspace trustedWorkspace = new TrustedWorkspace();
 
-    /** Tier 1 分层注入配置 — 高频工具常驻 prompt schema，其余进 BM25 搜索池。 */
+    /** 核心工具注入配置 — 只有 pinned 工具默认进入 Agent 可见列表，其余通过 tool.search 发现。 */
     private Tier1 tier1 = new Tier1();
 
     /** 搜索服务配置 — tool.search / FTS5 / 三层缓存。 */
     private Search search = new Search();
-
-    /** describe 服务配置 — tool.search 批量上限。 */
-    private Describe describe = new Describe();
-
 
     /** 信任工作区配置 — 在信任目录下降低 shell/code 执行的风险等级。 */
     @Setter
@@ -67,11 +63,11 @@ public class ToolConfigProperties {
 
     }
 
-    /** Tier 1 分层注入配置 —— 只保留人工 pinned 列表，无自动晋升 / 降级。 */
+    /** 核心工具配置 —— 只保留人工 pinned 列表，无自动晋升 / 降级。 */
     @Setter
     @Getter
     public static class Tier1 {
-        /** 人工固定的 Tier 1 工具 ID 列表，由 application.yml 维护。 */
+        /** 人工固定的核心工具 ID 列表，由 application.yml 维护。 */
         private List<String> pinned = List.of();
     }
 
@@ -100,12 +96,5 @@ public class ToolConfigProperties {
         public static class Fallback {
             private boolean vectorEnabled = false;
         }
-    }
-
-    /** describe 服务配置。 */
-    @Setter
-    @Getter
-    public static class Describe {
-        private int maxBatchSize = 10;
     }
 }

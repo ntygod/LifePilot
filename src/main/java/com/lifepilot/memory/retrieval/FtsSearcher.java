@@ -1,10 +1,12 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.memory.support.MemoryQuerySignals;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -103,23 +105,46 @@ public class FtsSearcher {
     /** 通过实体名称/描述子串匹配检索（补充 FTS 无法覆盖的无 source_conversation_id 实体）。 */
     private List<RankedItem> searchEntityText(String query, int topK) {
         try {
-            String likePattern = "%" + query.trim() + "%";
-            return jdbcTemplate.query(
-                    """
+            List<String> lookupTerms = MemoryQuerySignals.lookupTerms(query);
+            if (lookupTerms.isEmpty()) {
+                return List.of();
+            }
+            String nameClause = MemoryQuerySignals.likeWhereClause("te.name", lookupTerms.size());
+            String descriptionClause = MemoryQuerySignals.likeWhereClause("COALESCE(te.description, '')", lookupTerms.size());
+            String sql = """
                     SELECT te.id, te.type, te.name, te.description,
-                           0.5 AS score,
+                           0.0 AS score,
                            te.last_accessed_at, te.importance_score, te.valid_to,
                            te.updated_at
                     FROM temporal_entities te
                     WHERE te.is_current = 1
                       AND (te.valid_to IS NULL OR te.valid_to > datetime('now'))
                       AND te.lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')
-                      AND (te.name LIKE ? OR COALESCE(te.description, '') LIKE ?)
-                    ORDER BY te.importance_score DESC, te.updated_at DESC
+                      AND (%s OR %s)
+                    ORDER BY te.updated_at DESC, te.importance_score DESC
                     LIMIT ?
-                    """,
-                    (rs, rowNum) -> mapRankedItem(rs),
-                    likePattern, likePattern, topK);
+                    """.formatted(nameClause, descriptionClause);
+            List<Object> args = new ArrayList<>();
+            for (String term : lookupTerms) {
+                args.add(MemoryQuerySignals.likePattern(term));
+            }
+            for (String term : lookupTerms) {
+                args.add(MemoryQuerySignals.likePattern(term));
+            }
+            args.add(Math.max(topK * 4, topK));
+
+            return jdbcTemplate.query(sql, (rs, rowNum) -> mapRankedItem(rs), args.toArray()).stream()
+                    .map(item -> new RankedItem(
+                            item.entityId(), item.entityType(), item.name(), item.description(),
+                            MemoryQuerySignals.textMatchScore(query, item.name(), item.description()),
+                            item.lastAccessedAt(), item.importanceScore(), item.validTo(), item.updatedAt()))
+                    .filter(item -> item.score() > 0.0f)
+                    .sorted(Comparator
+                            .comparingDouble(RankedItem::score).reversed()
+                            .thenComparing(RankedItem::importanceScore, Comparator.reverseOrder())
+                            .thenComparing(RankedItem::updatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                    .limit(topK)
+                    .toList();
         } catch (Exception e) {
             log.warn("全文搜索: 实体文本搜索失败, query={}, error={}", query, e.getMessage());
             return List.of();

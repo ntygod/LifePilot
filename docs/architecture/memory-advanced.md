@@ -2,7 +2,8 @@
 
 > **文档性质**：架构设计文档
 > **模块归属**：`com.lifepilot.memory`（进阶子系统：procedural / consolidation / forgetting）
-> **最后更新**：2026-04-16
+> **最后更新**：2026-05-05（对齐 L0/L2/L3 分层与 projection outbox 终态）
+> **上位契约**：整体分层与治理以 [memory-system.md](./memory-system.md) 和 [memory-data-flow.md](./memory-data-flow.md) 为准；本文只描述 L4 / 巩固 / 遗忘等进阶子系统。
 
 ## 1. 模块概述
 
@@ -93,7 +94,7 @@ graph TB
 
 - 职责：将用户输入与 L4 操作模板进行意图匹配
 - 通过 VectorSearcher 进行向量相似度匹配，返回最佳匹配的 ProcedureTemplate
-- 匹配结果包含模板信息、匹配分数、成功率，供 HybridRetriever 作为 ReasoningSlot 返回
+- 匹配结果包含模板信息、匹配分数、成功率，供 `HybridRetriever` 冷检索链路参考；不进入 `ContextAssembler` 默认自动注入
 - 匹配失败时静默返回空，不影响主检索流程
 - 在 `ToolExecutionCoordinator` 中以 `Thread.startVirtualThread` 异步调用，不阻塞主 Agent 循环
 
@@ -130,7 +131,7 @@ graph TB
 - 防抖机制：两次巩固间隔最少 2 小时（`MIN_INTERVAL`），避免频繁调用 LLM
 - 触发方式：由 `ConversationCompletionHook` 在对话完成后异步触发（虚拟线程），而非定时触发
 - 所有依赖均可为 null，缺失时 `consolidate()` 直接跳过
-- 消费方：`ContextAssembler` 和 `ProactiveMemoryBridge` 都优先读取巩固后的画像，降级为零散实体拼接
+- 消费方：`HotMemoryDigestService` 优先读取巩固后的画像，并把高置信 L4 偏好并入 `USER_PROFILE`；`ProactiveMemoryBridge` 可按主动任务需要读取画像或偏好
 
 ### 3.7 ForgettingEngine（MaRS 遗忘引擎）
 
@@ -144,7 +145,7 @@ graph TB
 - 遗忘动作决策：中等重要度 + LLM 可用 → 压缩后归档；其他 → 直接归档
 - LLM 压缩失败时降级为直接归档
 - 压缩调用走 `generationRouter.call(..., skipCache=true)` 8 参数重载：每个实体的压缩 prompt 仅在 name/description 上有差异，若不跳过语义缓存，首条摘要会被按相似度张冠李戴返回给后续所有实体（典型症状是不同实体被归档成同一句摘要）
-- 归档动作统一走 `SemanticMemory.archive()`：事务内 `is_current=0` + 关系收尾，`afterCommit` 钩子级联调 `VectorSearcher.deleteEntityVector()` 清理向量索引，保证归档实体不会再被向量路径召回
+- 归档动作统一走 `SemanticMemory.archive()`：事务内更新主库生命周期并登记 `memory_projection_outbox` DELETE 投影任务，由投影 processor 清理向量索引，保证归档实体不会再被向量路径召回
 
 ### 3.8 ForgettingPolicy（遗忘策略体系）
 
@@ -236,7 +237,7 @@ sequenceDiagram
             FE->>SM: archive(entity)
             Note over FE: 动作=ARCHIVED
         end
-        Note over SM: archive 内置事务提交后级联<br/>VectorSearcher.deleteEntityVector
+        Note over SM: archive 登记 projection outbox<br/>processor 幂等删除向量
         FE->>FE: logForgetting(entity, strategy, action, priority)
     end
 ```
@@ -252,7 +253,7 @@ sequenceDiagram
 | 受保护实体机制 | 类型保护 + 重要度保护 + 高频访问保护 + 近期访问保护 | 四维保护：核心偏好按类型保护、关键知识按重要度保护、高频使用实体和近期活跃实体不应被遗忘 |
 | 遗忘动作分级 | 压缩归档 vs 直接归档 | 中等重要度实体值得保留核心信息，低重要度直接归档节省资源 |
 | 压缩跳过语义缓存 | `skipCache=true` | 实体压缩 prompt 仅 `name/description` 差异，开启缓存会张冠李戴把首条摘要复用给后续实体 |
-| 归档级联清理向量 | `SemanticMemory.archive()` 内置 `afterCommit` 钩子删向量 | 只改主库 `is_current=0` 不够，向量索引仍会召回"活着的"历史副本 |
+| 归档级联清理向量 | `SemanticMemory.archive()` 登记 `memory_projection_outbox` DELETE 投影任务 | 只改主库生命周期不够，向量索引仍会召回历史副本；直删向量缺少失败补偿 |
 | 触发模式预留 | Cron + 手动调用接口 | 当前使用 Cron 定时触发，为未来 Idle-Driven 模式预留 consolidate() 入口 |
 
 ## 6. 集成点
@@ -260,7 +261,7 @@ sequenceDiagram
 | 依赖模块 | 交互方式 | 说明 |
 |---------|---------|------|
 | EpisodicMemory (L2) | 构造函数注入 | 巩固管线读取近期对话数据 |
-| SemanticMemory (L3) | 构造函数注入 | 巩固写入实体、遗忘归档实体；`archive()` 事务提交后级联清理向量索引 |
+| SemanticMemory (L3) | 构造函数注入 | 巩固写入实体、遗忘归档实体；向量清理由 `memory_projection_outbox` 投影任务负责 |
 | VectorSearcher | 构造函数注入 | IntentMatcher 和 ProceduralMemory 的向量匹配 |
 | GenerationRouter | 构造函数注入（@Nullable） | ReflectionSummaryPolicy 摘要压缩、EpisodicToProcedural 模式识别 |
 | EmbeddingRouter | 构造函数注入（@Nullable） | EpisodicToProcedural 轨迹向量化与模板去重 |

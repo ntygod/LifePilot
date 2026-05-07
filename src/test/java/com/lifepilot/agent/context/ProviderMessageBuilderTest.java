@@ -490,7 +490,7 @@ class ProviderMessageBuilderTest {
     @Test
     void Observation呈现层_ToolTipResolver非空时应前置拼接tips保留原始output() {
         var resolver = mock(ToolTipResolver.class);
-        when(resolver.tipsFor("file.read"))
+        when(resolver.tipsFor("file.read", "session-call-tip-1"))
                 .thenReturn("[历史经验提示] 注意 path 参数不能为空。");
         var builder = new ProviderMessageBuilder(
                 new TranscriptHygieneEngine(new AgentConfigProperties()),
@@ -513,7 +513,7 @@ class ProviderMessageBuilderTest {
     @Test
     void Observation呈现层_ToolTipResolver返回空时内容保持原始output() {
         var resolver = mock(ToolTipResolver.class);
-        when(resolver.tipsFor("file.read")).thenReturn("");
+        when(resolver.tipsFor("file.read", "session-call-tip-2")).thenReturn("");
         var builder = new ProviderMessageBuilder(
                 new TranscriptHygieneEngine(new AgentConfigProperties()),
                 new SessionPruningEngine(new AgentConfigProperties(), new ObjectMapper()),
@@ -531,7 +531,7 @@ class ProviderMessageBuilderTest {
     @Test
     void Observation呈现层_output为null时呈现为空串不拼出字面量null() {
         var resolver = mock(ToolTipResolver.class);
-        when(resolver.tipsFor("file.read")).thenReturn("[历史经验提示] 注意边界。");
+        when(resolver.tipsFor("file.read", "session-call-null")).thenReturn("[历史经验提示] 注意边界。");
         var builder = new ProviderMessageBuilder(
                 new TranscriptHygieneEngine(new AgentConfigProperties()),
                 new SessionPruningEngine(new AgentConfigProperties(), new ObjectMapper()),

@@ -18,8 +18,7 @@ import java.util.Map;
  * 提供 {@code skill.load} BuiltinTool 元数据，委托 {@link SkillLoadToolExecutor} 执行。
  *
  * <p>{@code skill.load} 是 Skill 系统对 Agent 暴露的统一激活入口：
- * 单次调用可激活 1-3 个 Skill，返回替换占位符后的 SKILL.md 正文，
- * 同时合并各 Skill 声明的 {@code suggested_tools} 供后续轮次工具可见性提升。</p>
+ * 单次调用可激活 1-3 个 Skill，返回替换占位符后的 SKILL.md 正文。</p>
  *
  * <p>归类为 {@link ToolCategory#EXTENSION}（获取新能力），风险低、幂等、可并行。</p>
  *
@@ -41,7 +40,7 @@ public class SkillLoadTool {
         return BuiltinTool.builder()
                 .id("skill.load")
                 .name("激活技能")
-                .description("按名字激活 1-3 个技能，返回完整指南并把 suggested_tools 并入后续可见工具集。")
+                .description("按名字激活 1-3 个技能，返回完整指南；需要指南提到的非核心工具时再调用 tool.search 发现。")
                 .tags(List.of("技能", "激活", "加载", "指南", "skill", "load", "extension"))
                 .category(ToolCategory.EXTENSION)
                 .riskLevel(RiskLevel.LOW)

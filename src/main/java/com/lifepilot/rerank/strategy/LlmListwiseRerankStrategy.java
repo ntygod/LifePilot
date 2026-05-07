@@ -65,7 +65,7 @@ public class LlmListwiseRerankStrategy {
                         candidate.id(), candidate.id(), null, candidate.content(),
                         java.util.Optional.empty(), List.of(), candidate.score(), "generic", Map.of(),
                         java.util.Optional.empty(), java.util.Optional.empty(),
-                        null, java.util.Optional.empty(), java.util.Optional.empty()))
+                        null))
                 .toList();
         return rerankDocuments(query, docs, topK, modelName, serviceId).stream()
                 .map(doc -> new RerankCandidate(doc.chunkId(), doc.content(), doc.score()))
@@ -102,7 +102,7 @@ public class LlmListwiseRerankStrategy {
                 original.content(), original.contextPrefix(), original.headingHierarchy(),
                 rerankerScore, "reranked", original.metadata(),
                 java.util.Optional.of(breakdown), original.expandedContent(),
-                original.sourceType(), original.sourceDatastoreId(), original.sourceCollectionId());
+                original.sourceType());
     }
 
     private String truncate(String text, int maxChars) {

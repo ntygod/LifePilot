@@ -21,9 +21,7 @@ public record ChunkResult(
         String content,
         Double score,
         Map<String, String> metadata,
-        String sourceType,
-        String sourceDatastoreId,
-        String sourceCollectionId
+        String sourceType
 ) {
 
     public ChunkResult(
@@ -34,6 +32,6 @@ public record ChunkResult(
             Double score,
             Map<String, String> metadata
     ) {
-        this(chunkId, documentId, documentName, content, score, metadata, null, null, null);
+        this(chunkId, documentId, documentName, content, score, metadata, null);
     }
 }

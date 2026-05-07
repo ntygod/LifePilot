@@ -28,14 +28,14 @@
 
 | 字段 | 类型 | 用途 |
 |---|---|---|
-| `suggested_tools` | `List<string>` | 激活后合并进 activatedToolIds（软引导，说明意图） |
+| `suggested_tools` | `List<string>` | UI 展示、检索和人工参考元数据；不会在 `skill.load` 后自动注入工具 |
 | `tags` | `List<string>` | 辅助检索 |
 | `requires.bins` | `List<string>` | 运行依赖的二进制（如 `git`, `gh`, `sqlite3`） |
 | `requires.env` | `List<string>` | 必需环境变量（名称，不含值） |
 | `requires.os` | `List<string>` | OS 白名单 `windows` / `darwin` / `linux` |
 | `requires.tools` | `List<string>` | 必需的已注册工具 id |
 
-> **2026-05 变更**：`category` 和 `priority` 字段已删除。`suggested_tools` 字段保留作为意图声明，具体处理逻辑参考运行时实现。
+> **2026-05 变更**：`category` 和 `priority` 字段已删除。`suggested_tools` 字段保留作为意图声明，不参与运行时工具注入。
 
 ### 2.3 Body（Markdown）
 

@@ -40,13 +40,14 @@ public class CronScheduler {
     private final ScheduledExecutorService scheduler;
     private final CronTaskRepository repository;
     private final AgentOrchestrator agentOrchestrator;
+    @Nullable
     private final NotificationService notificationService;
     private final NotificationProperties notificationProperties;
 
     public CronScheduler(ScheduledExecutorService scheduler,
                          CronTaskRepository repository,
                          AgentOrchestrator agentOrchestrator,
-                         NotificationService notificationService,
+                         @Nullable NotificationService notificationService,
                          NotificationProperties notificationProperties) {
         this.scheduler = scheduler;
         this.repository = repository;
@@ -176,7 +177,8 @@ public class CronScheduler {
             boolean silent = isSilentResponse(response.content(), "TASK_SILENT");
 
             // 通知用户
-            if (!silent && response.content() != null && !response.content().isBlank()
+            if (notificationService != null
+                    && !silent && response.content() != null && !response.content().isBlank()
                     && response.terminationReason() == null) {
                 notificationService.send(new NotificationRequest(
                         notificationProperties.getDefaultUserId(),

@@ -70,10 +70,9 @@ public class SkillAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SkillDefinitionValidator skillDefinitionValidator(DynamicToolRegistry toolRegistry,
-                                                             SkillConfigProperties skillConfig) {
+    public SkillDefinitionValidator skillDefinitionValidator(SkillConfigProperties skillConfig) {
         log.info("Skill 系统: 注册 SkillDefinitionValidator");
-        return new SkillDefinitionValidator(toolRegistry, skillConfig);
+        return new SkillDefinitionValidator(skillConfig);
     }
 
     @Bean
@@ -142,7 +141,7 @@ public class SkillAutoConfiguration {
     /**
      * 将 {@code skill.load} 暴露为 {@link BuiltinTool} Bean —— 由
      * {@link com.lifepilot.tool.registry.BuiltinToolRegistrar} 在 ApplicationReady 时
-     * 自动校验并注册到 {@link DynamicToolRegistry}，进入 Tier 1 pinned 白名单后常驻 prompt。
+     * 自动校验并注册到 {@link DynamicToolRegistry}，是否直接注入由核心 pinned 配置决定。
      */
     @Bean
     public BuiltinTool skillLoadBuiltin(SkillLoadTool skillLoadTool) {
@@ -212,7 +211,7 @@ public class SkillAutoConfiguration {
      *
      * <p>使用 {@code @Order(Ordered.LOWEST_PRECEDENCE - 1)} 确保在各 AutoConfiguration
      * 的 registerTools()（HIGHEST_PRECEDENCE）之后执行，
-     * 保证工具已注册到 DynamicToolRegistry，用户 Skill 的 suggestedTools 校验才能通过。</p>
+     * 保证 requires.tools / suggestedTools 引用的工具能被解析。</p>
      *
      * @param event 应用就绪事件
      */
@@ -248,7 +247,6 @@ public class SkillAutoConfiguration {
         try {
             var validator = ctx.getBean(com.lifepilot.skill.registry.SkillDefinitionValidator.class);
             var registry = ctx.getBean(com.lifepilot.skill.registry.SkillRegistry.class);
-            validator.markStartupComplete();
             int definitionErrors = 0;
             for (var def : registry.listAll()) {
                 var result = validator.validate(def);

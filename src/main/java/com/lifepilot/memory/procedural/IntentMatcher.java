@@ -126,6 +126,7 @@ public class IntentMatcher {
                     FROM procedure_templates_fts
                     JOIN procedure_templates pt ON procedure_templates_fts.rowid = pt.rowid
                     WHERE procedure_templates_fts MATCH ?
+                      AND pt.deactivated_reason IS NULL
                     ORDER BY score DESC
                     LIMIT ?
                     """,

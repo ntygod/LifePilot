@@ -2,17 +2,16 @@ package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.Temporality;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryTrustLevel;
 import jakarta.annotation.Nullable;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 时序实体 — 知识图谱节点，版本化 + 时间维度 + 来源追踪。
- *
- * <p>V15 起额外承载生命周期闭环相关字段（{@code lifecycleState / lifecycleReason /
- * expiresAt / temporality / succeededBy / isDerived / derivationSources}），持久化
- * 到 {@code memory_entities} 基表上的 V15 新列。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -40,23 +39,26 @@ public record TemporalEntity(
         Temporality temporality,
         @Nullable String succeededBy,
         boolean isDerived,
-        List<String> derivationSources
+        List<String> derivationSources,
+        MemoryEvidenceKind evidenceKind,
+        MemoryTrustLevel trustLevel,
+        float trustScore,
+        int evidenceCount,
+        @Nullable Instant lastVerifiedAt
 ) {
-    /** compact constructor：确保集合字段不可变并为生命周期字段补默认值。 */
+    /** compact constructor：确保集合字段不可变，并补齐生命周期与质量默认值。 */
     public TemporalEntity {
         properties = properties != null ? Map.copyOf(properties) : Map.of();
         lifecycleState = lifecycleState == null ? LifecycleState.ACTIVE : lifecycleState;
         temporality = temporality == null ? Temporality.PERSISTENT : temporality;
         derivationSources = derivationSources == null ? List.of() : List.copyOf(derivationSources);
+        evidenceKind = evidenceKind == null ? MemoryEvidenceKind.UNKNOWN : evidenceKind;
+        trustLevel = trustLevel == null ? MemoryTrustLevel.UNVERIFIED : trustLevel;
+        trustScore = Math.max(0.0f, Math.min(1.0f, trustScore));
+        evidenceCount = Math.max(0, evidenceCount);
     }
 
-    /**
-     * 兼容老调用点的 16 参构造器 — 生命周期字段全部取默认值
-     * （{@code ACTIVE} / {@code PERSISTENT} / 非派生 / 空 derivationSources）。
-     *
-     * <p>新代码建议直接使用 23 参 canonical constructor 或通过 {@link #withLifecycleState}
-     * / {@link #withDescription} 变更副本。</p>
-     */
+    /** 基础构造器 — 生命周期与质量字段取默认值。 */
     public TemporalEntity(
             String id,
             EntityType type,
@@ -80,7 +82,45 @@ public record TemporalEntity(
                 extractionConfidence, importanceScore, accessCount, lastAccessedAt,
                 createdAt, updatedAt,
                 LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
-                null, false, List.of());
+                null, false, List.of(),
+                MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED,
+                0.0f, 0, null);
+    }
+
+    /** 生命周期构造器 — 质量字段取默认值，由 SemanticMemory 统一补全。 */
+    public TemporalEntity(
+            String id,
+            EntityType type,
+            String name,
+            @Nullable String description,
+            Map<String, Object> properties,
+            int version,
+            boolean isCurrent,
+            Instant validFrom,
+            @Nullable Instant validTo,
+            @Nullable String sourceConversationId,
+            float extractionConfidence,
+            float importanceScore,
+            int accessCount,
+            @Nullable Instant lastAccessedAt,
+            Instant createdAt,
+            Instant updatedAt,
+            LifecycleState lifecycleState,
+            @Nullable String lifecycleReason,
+            @Nullable Instant expiresAt,
+            Temporality temporality,
+            @Nullable String succeededBy,
+            boolean isDerived,
+            List<String> derivationSources
+    ) {
+        this(id, type, name, description, properties, version, isCurrent,
+                validFrom, validTo, sourceConversationId,
+                extractionConfidence, importanceScore, accessCount, lastAccessedAt,
+                createdAt, updatedAt,
+                lifecycleState, lifecycleReason, expiresAt, temporality,
+                succeededBy, isDerived, derivationSources,
+                MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED,
+                0.0f, 0, null);
     }
 
     /** 拼接类型标签 + name + description + properties 为自然语言文本，用于向量化。 */
@@ -108,12 +148,6 @@ public record TemporalEntity(
         return validTo != null && validTo.isBefore(Instant.now());
     }
 
-    /**
-     * 构造仅修改描述的新版本实体 — 便于 Task 10 走版本化路径调整描述字段。
-     *
-     * @param newDescription 新描述
-     * @return 仅 description 变更的新实例
-     */
     public TemporalEntity withDescription(@Nullable String newDescription) {
         return new TemporalEntity(
                 id, type, name, newDescription, properties, version, isCurrent,
@@ -121,17 +155,11 @@ public record TemporalEntity(
                 extractionConfidence, importanceScore, accessCount, lastAccessedAt,
                 createdAt, updatedAt,
                 lifecycleState, lifecycleReason, expiresAt, temporality,
-                succeededBy, isDerived, derivationSources
+                succeededBy, isDerived, derivationSources,
+                evidenceKind, trustLevel, trustScore, evidenceCount, lastVerifiedAt
         );
     }
 
-    /**
-     * 构造仅修改生命周期状态 + 原因的新实例 — 便于 Task 12 事件总线内存视图更新。
-     *
-     * @param newState  新的生命周期状态
-     * @param newReason 变更原因（可为 null）
-     * @return 仅生命周期字段变更的新实例
-     */
     public TemporalEntity withLifecycleState(LifecycleState newState, @Nullable String newReason) {
         return new TemporalEntity(
                 id, type, name, description, properties, version, isCurrent,
@@ -139,7 +167,24 @@ public record TemporalEntity(
                 extractionConfidence, importanceScore, accessCount, lastAccessedAt,
                 createdAt, updatedAt,
                 newState, newReason, expiresAt, temporality,
-                succeededBy, isDerived, derivationSources
+                succeededBy, isDerived, derivationSources,
+                evidenceKind, trustLevel, trustScore, evidenceCount, lastVerifiedAt
+        );
+    }
+
+    public TemporalEntity withQuality(MemoryEvidenceKind newEvidenceKind,
+                                      MemoryTrustLevel newTrustLevel,
+                                      float newTrustScore,
+                                      int newEvidenceCount,
+                                      @Nullable Instant newLastVerifiedAt) {
+        return new TemporalEntity(
+                id, type, name, description, properties, version, isCurrent,
+                validFrom, validTo, sourceConversationId,
+                extractionConfidence, importanceScore, accessCount, lastAccessedAt,
+                createdAt, updatedAt,
+                lifecycleState, lifecycleReason, expiresAt, temporality,
+                succeededBy, isDerived, derivationSources,
+                newEvidenceKind, newTrustLevel, newTrustScore, newEvidenceCount, newLastVerifiedAt
         );
     }
 }

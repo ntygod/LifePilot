@@ -52,7 +52,6 @@ export const sidebarNavGroups: NavGroup[] = [
     label: '资料库',
     items: [
       { label: '知识库', path: '/knowledge-bases', icon: BookOpen, matchPrefixes: ['/knowledge-bases'] },
-      // 资料仓库（/datastores）已于 Plan 3 Task B2 下架，侧栏不再暴露入口。
       { label: '记忆', path: '/memories', icon: Brain, matchPrefixes: ['/memories'] },
     ],
   },

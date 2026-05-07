@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.consolidation.PreferenceConsolidator;
 import com.lifepilot.memory.consolidation.PreferenceSyncStats;
 import com.lifepilot.memory.lifecycle.ChangeSource;
@@ -16,7 +15,10 @@ import com.lifepilot.memory.lifecycle.query.MemoryQueryApi;
 import com.lifepilot.memory.procedural.PreferenceRuleRepository;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.procedural.ProceduralMemoryRepository;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
@@ -119,9 +121,10 @@ class L3归档时L4规则同步失效_场景测试 {
 
         var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
 
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, vectorSearcher, new MemoryProperties());
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
         ruleRepo = new PreferenceRuleRepository(jdbcTemplate);
         procedureRepo = new ProceduralMemoryRepository(jdbcTemplate);
         preferenceConsolidator = new PreferenceConsolidator(semanticMemory, proceduralMemory);
@@ -241,6 +244,7 @@ class L3归档时L4规则同步失效_场景测试 {
                 null, EntityType.PREFERENCE, name, "偏好值=" + value,
                 Map.of("value", value), 1, true, now, null,
                 "scenario-session-s6",
-                0.9f, 0.5f, 0, null, now, now);
+                0.9f, 0.5f, 0, null, now, now)
+                .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f, 1, now);
     }
 }

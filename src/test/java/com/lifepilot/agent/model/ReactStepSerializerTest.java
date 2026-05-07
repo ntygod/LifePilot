@@ -287,10 +287,10 @@ class ReactStepSerializerTest {
 
     @Test
     void extractOutputDetail_失败_完整错误信息() {
-        String detail = ReactStepSerializer.extractOutputDetail("datastore",
-                "{\"error\":\"创建集合失败: 非法字段名\"}", false);
+        String detail = ReactStepSerializer.extractOutputDetail("knowledge.search",
+                "{\"error\":\"检索知识库失败: 非法查询条件\"}", false);
         assertNotNull(detail);
-        assertTrue(detail.contains("非法字段名"));
+        assertTrue(detail.contains("非法查询条件"));
     }
 
     @Test

@@ -356,7 +356,7 @@ public class AgentPersistenceHandler {
                         mediaItem.fieldName(), e.getMessage());
             }
         }
-        // Phase 2A：回填本会话内由 Tool 生成的孤儿附件（如 document.create_docx 产物）
+        // 回填本会话内由工具生成的孤儿附件（如 code / shell.exec 生成后 file.attach 的产物）
         // 这些附件在 Tool 执行时 entry_id=null 入库，assistant entry 建成后挂到当前 entry
         if (sessionId != null) {
             int backfilled = attachmentRepository.backfillOrphanEntryIds(sessionId, assistantEntryId);
@@ -411,10 +411,15 @@ public class AgentPersistenceHandler {
             var extractionFuture = CompletableFuture.runAsync(() -> {
                 try {
                     if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                        String userMessageForExtraction = normalizeUserMessageForExtraction(finalState.goal());
+                        if (userMessageForExtraction == null || userMessageForExtraction.isBlank()) {
+                            log.debug("实时记忆抽取跳过：无可治理用户文本, sessionId={}", finalState.sessionId());
+                            return;
+                        }
                         realtimeExtractor.extractAsync(
                                 finalState.sessionId(),
                                 finalState.turnId(),
-                                finalState.goal(),
+                                userMessageForExtraction,
                                 finalState.finalOutput());
                     }
                 } catch (Exception e) {
@@ -575,5 +580,17 @@ public class AgentPersistenceHandler {
             case SuspendReason.BrowserTakeover browserTakeover ->
                     "浏览器人工接管等待：" + browserTakeover.reason();
         };
+    }
+
+    @Nullable
+    private String normalizeUserMessageForExtraction(@Nullable String goal) {
+        String resumeInput = extractResumeUserInput(goal);
+        if (resumeInput != null && !resumeInput.isBlank()) {
+            return stripDocumentParseHint(resumeInput);
+        }
+        if (isA2uiSignalMessage(goal)) {
+            return null;
+        }
+        return stripDocumentParseHint(goal);
     }
 }

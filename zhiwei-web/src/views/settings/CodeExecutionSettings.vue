@@ -113,7 +113,7 @@ const PRELOADED_LIBS = [
 /**
  * 二次确认弹窗状态 — 卸载 / 重装共用单一 ConfirmDialog 实例，按 pendingAction 派发。
  *
- * <p>项目其它设置页（如 SettingsGeneralView / DatastoreView）都用 ConfirmDialog（基于 Reka UI AlertDialog），
+ * <p>项目其它设置页（如 SettingsGeneralView）都用 ConfirmDialog（基于 Reka UI AlertDialog），
  * 与项目主题一致且 Tauri 桌面端体验更佳，避免 window.confirm 的原生弹窗外观割裂。</p>
  */
 const pendingAction = ref<'uninstall' | 'reinstall' | null>(null)

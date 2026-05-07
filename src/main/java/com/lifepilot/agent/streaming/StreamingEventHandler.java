@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
+import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
@@ -37,14 +38,17 @@ public class StreamingEventHandler {
     private final ObjectMapper objectMapper;
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
+    @Nullable private final AttachmentRepository attachmentRepository;
 
     public StreamingEventHandler(
             ObjectMapper objectMapper,
             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-            @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
+            @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+            @Nullable AttachmentRepository attachmentRepository) {
         this.objectMapper = objectMapper;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
+        this.attachmentRepository = attachmentRepository;
     }
 
     // ===== SSE 事件发送 =====
@@ -159,7 +163,37 @@ public class StreamingEventHandler {
             contents.add(textContent);
         }
         doneData.put("contents", contents);
+        var attachments = buildAttachmentPayloads(assistantEntryId);
+        if (!attachments.isEmpty()) {
+            doneData.put("attachments", attachments);
+        }
         return doneData;
+    }
+
+    private List<Map<String, Object>> buildAttachmentPayloads(@Nullable String assistantEntryId) {
+        if (assistantEntryId == null || assistantEntryId.isBlank() || attachmentRepository == null) {
+            return List.of();
+        }
+        try {
+            return attachmentRepository.findByEntryId(assistantEntryId).stream()
+                    .map(record -> {
+                        String mimeType = record.mimeType() != null && !record.mimeType().isBlank()
+                                ? record.mimeType()
+                                : "application/octet-stream";
+                        Map<String, Object> attachment = new HashMap<>();
+                        attachment.put("fileId", record.id());
+                        attachment.put("filename", record.fileName());
+                        attachment.put("size", record.fileSize());
+                        attachment.put("type", mimeType);
+                        attachment.put("url", record.url() != null ? record.url() : "");
+                        attachment.put("isImage", mimeType.startsWith("image/"));
+                        return Map.copyOf(attachment);
+                    })
+                    .toList();
+        } catch (Exception e) {
+            log.debug("构建 DONE 附件失败: entryId={}, error={}", assistantEntryId, e.getMessage());
+            return List.of();
+        }
     }
 
     private OutputContentRole resolveContentRole(ReactAgentState state,

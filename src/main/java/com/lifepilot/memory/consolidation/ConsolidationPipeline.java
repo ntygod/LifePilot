@@ -1,7 +1,6 @@
 package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.procedural.TemplateStep;
@@ -106,6 +105,15 @@ public class ConsolidationPipeline {
      * <p>单个巩固器异常不阻塞另一个，通过 try-catch 隔离。</p>
      */
     public void consolidate() {
+        consolidate(false);
+    }
+
+    /**
+     * 执行巩固管线。
+     *
+     * @param manualTrigger 是否来自用户手动触发；手动触发会让用户画像巩固绕过最小间隔防抖
+     */
+    public void consolidate(boolean manualTrigger) {
         log.info("巩固管线: 开始执行");
 
         // 1. 语义巩固（情景→语义）
@@ -155,7 +163,7 @@ public class ConsolidationPipeline {
         // 5. 用户画像巩固
         if (userProfileConsolidator != null) {
             try {
-                userProfileConsolidator.consolidate();
+                userProfileConsolidator.consolidate(manualTrigger);
                 log.info("巩固管线: 用户画像巩固完成");
             } catch (Exception e) {
                 log.warn("巩固管线: 用户画像巩固失败, error={}", e.getMessage(), e);
@@ -197,8 +205,8 @@ public class ConsolidationPipeline {
                 if (existing.isPresent()) continue;
 
                 var now = Instant.now();
-                // 经验提升为 L4 模板 — sourceEntityId 指向源 L3 EXPERIENCE 实体 id，
-                // 让 L3 该经验失活（CANCELLED/EXPIRED 等）时 L4SyncListener 能级联失活。
+                // 经验提升为 L4 模板 — sourceEntityId 指向源 L3 EXPERIENCE 实体 id。
+                // 源实体保持 ACTIVE：后续真正失活时再由 L4SyncListener 级联模板失活。
                 var template = new ProcedureTemplate(
                         exp.id(),
                         exp.name(),
@@ -216,11 +224,7 @@ public class ConsolidationPipeline {
                         exp.id(),
                         null
                 );
-                // 经验提升为 L4 模板后归档原 L3 实体 — 定时巩固触发，归档来源为 CRON_EXPIRE
-                SqliteBusyRetry.run(() -> {
-                    proceduralMemory.save(template);
-                    semanticMemory.archive(exp, ChangeSource.CRON_EXPIRE);
-                });
+                SqliteBusyRetry.run(() -> proceduralMemory.save(template));
                 promoted++;
                 log.debug("巩固管线: 经验提升为模板, entityId={}, name={}", exp.id(), exp.name());
             }

@@ -4,6 +4,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.lifecycle.Temporality;
+import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.scope.MemoryWriteContext;
 import com.lifepilot.modelservice.model.GenerationCapability;
@@ -19,6 +20,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -53,6 +56,7 @@ class RealtimeExtractor_temporality_集成测试 {
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
     private PromptRegistry promptRegistry;
+    private ChatTurnMemorySnapshotRepository snapshotRepo;
     private RealtimeExtractor extractor;
 
     @BeforeEach
@@ -61,11 +65,13 @@ class RealtimeExtractor_temporality_集成测试 {
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         promptRegistry = mock(PromptRegistry.class);
-        ChatTurnMemorySnapshotRepository snapshotRepo = mock(ChatTurnMemorySnapshotRepository.class);
+        snapshotRepo = mock(ChatTurnMemorySnapshotRepository.class);
 
         when(promptRegistry.render(eq("semantic/entity-extraction"), any()))
                 .thenReturn("stub-prompt");
         when(semanticMemory.findAllCurrent(any())).thenReturn(List.of());
+        when(snapshotRepo.findByTurnId(anyString()))
+                .thenAnswer(inv -> Optional.of(快照(inv.getArgument(0))));
 
         var properties = new MemoryProperties();
         var extractionValidator = new ExtractionValidator(properties);
@@ -100,7 +106,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 ]
                 """);
 
-        extractor.extract("sess-1", "我最近懒得碰 Rust", null);
+        extractor.extract("sess-1", "turn-1", "我最近懒得碰 Rust", null);
 
         var captured = 捕获upsert实体();
         assertThat(captured.temporality()).isEqualTo(Temporality.EPHEMERAL);
@@ -123,7 +129,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 ]
                 """);
 
-        extractor.extract("sess-2", "我这个月在学 Rust", null);
+        extractor.extract("sess-2", "turn-2", "我这个月在学 Rust", null);
 
         var captured = 捕获upsert实体();
         assertThat(captured.temporality()).isEqualTo(Temporality.SHORT_TERM);
@@ -148,7 +154,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 ]
                 """);
 
-        extractor.extract("sess-3", "我不吃牛肉", null);
+        extractor.extract("sess-3", "turn-3", "我不吃牛肉", null);
 
         var captured = 捕获upsert实体();
         assertThat(captured.temporality()).isEqualTo(Temporality.PERSISTENT);
@@ -172,7 +178,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 ]
                 """);
 
-        extractor.extract("sess-4", "我在阿里工作", null);
+        extractor.extract("sess-4", "turn-4", "我在阿里工作", null);
 
         var captured = 捕获upsert实体();
         assertThat(captured.temporality()).isEqualTo(Temporality.PERSISTENT);
@@ -197,7 +203,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 ]
                 """);
 
-        extractor.extract("sess-5", "测试非法值", null);
+        extractor.extract("sess-5", "turn-5", "测试非法值", null);
 
         var captured = 捕获upsert实体();
         assertThat(captured.temporality()).isEqualTo(Temporality.PERSISTENT);
@@ -224,7 +230,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 ]
                 """.formatted(explicit));
 
-        extractor.extract("sess-6", "下个月要出差", null);
+        extractor.extract("sess-6", "turn-6", "下个月要出差", null);
 
         var captured = 捕获upsert实体();
         assertThat(captured.temporality()).isEqualTo(Temporality.SHORT_TERM);
@@ -253,7 +259,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 ]
                 """);
 
-        extractor.extract("sess-7", "测试非法日期", null);
+        extractor.extract("sess-7", "turn-7", "测试非法日期", null);
 
         var captured = 捕获upsert实体();
         assertThat(captured.temporality()).isEqualTo(Temporality.EPHEMERAL);
@@ -281,5 +287,23 @@ class RealtimeExtractor_temporality_集成测试 {
         org.mockito.Mockito.verify(semanticMemory).upsertWithConflictDetection(
                 captor.capture(), anyString(), any(MemoryWriteContext.class));
         return captor.getValue();
+    }
+
+    private ChatTurnMemorySnapshot 快照(String turnId) {
+        return new ChatTurnMemorySnapshot(
+                turnId,
+                "sess-x",
+                "memory-space-personal-default",
+                "memory-space-experience-default",
+                null,
+                null,
+                List.of("memory-space-personal-default", "memory-space-experience-default"),
+                List.of(),
+                true,
+                false,
+                true,
+                Map.of(),
+                FIXED_NOW
+        );
     }
 }

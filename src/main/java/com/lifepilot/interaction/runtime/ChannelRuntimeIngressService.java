@@ -219,7 +219,7 @@ public class ChannelRuntimeIngressService {
         Instant timestamp = request.occurredAt() != null ? request.occurredAt() : Instant.now();
 
         // 附件先落盘 + save repo（若 AttachmentRepository 已装配），拿到 attachmentId；
-        // 再让 text 类型 content 注入文档附件 hint，引导 LLM 用 file.read / document.edit
+        // 再让 text 类型 content 注入文档附件事实 hint，具体处理方式交给 tool / skill description。
         List<GatewayMessage.Attachment> attachments = buildAttachments(sessionId, request.attachments());
         MessageContent content = buildContent(request.content(), request.attachments(), attachments);
 

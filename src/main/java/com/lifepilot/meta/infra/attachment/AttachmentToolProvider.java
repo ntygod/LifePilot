@@ -23,7 +23,7 @@ import java.util.Map;
  * namespace，复用语义同组的现有 namespace。</p>
  *
  * <p>替代 LLM 用 base64 字符串绕路返回图片的反模式：
- * 工具产物（matplotlib 画图、document.create_docx 等）落到 workspace 后，
+ * 工具产物（matplotlib 画图、python-docx 生成文档等）落到 workspace 后，
  * LLM 调 {@code file.attach(path=...)} 拿到 attachmentId，最终回答里
  * reference 该 ID，前端拿到自动渲染图片/下载入口。</p>
  *

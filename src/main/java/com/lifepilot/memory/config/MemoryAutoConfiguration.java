@@ -3,46 +3,35 @@ package com.lifepilot.memory.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
-import com.lifepilot.knowledge.extract.KnowledgeExtractionPipeline;
 import com.lifepilot.memory.compression.CompressionService;
-import com.lifepilot.memory.consolidation.ConsolidationPipeline;
-import com.lifepilot.memory.consolidation.EntityDeduplicator;
-import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
-import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
-import com.lifepilot.memory.consolidation.PreferenceConsolidator;
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
+import com.lifepilot.memory.consolidation.*;
 import com.lifepilot.memory.episodic.EpisodicCleanupJob;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.event.MemoryEventBus;
 import com.lifepilot.memory.event.SpringMemoryEventBus;
-import com.lifepilot.memory.experience.ExperienceSummarizer;
-import com.lifepilot.memory.experience.TrajectoryQualityAssessor;
+import com.lifepilot.memory.experience.*;
 import com.lifepilot.memory.feedback.FeedbackProcessor;
-import com.lifepilot.memory.forgetting.EntityExpirationJob;
 import com.lifepilot.memory.forgetting.ForgettingEngine;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
+import com.lifepilot.memory.hot.HotMemoryDigestService;
 import com.lifepilot.memory.procedural.IntentMatcher;
 import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.retrieval.FtsSearcher;
-import com.lifepilot.memory.retrieval.GraphTraverser;
-import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.retrieval.QueryRefiner;
-import com.lifepilot.memory.retrieval.QueryRewriter;
-import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.projection.MemoryProjectionOutboxProcessor;
+import com.lifepilot.memory.projection.MemoryProjectionOutboxRepository;
+import com.lifepilot.memory.projection.MemoryProjectionService;
+import com.lifepilot.memory.retrieval.*;
 import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
-import com.lifepilot.memory.semantic.ConflictDetector;
-import com.lifepilot.memory.semantic.ConflictResolutionRepository;
-import com.lifepilot.memory.semantic.ConflictResolutionService;
-import com.lifepilot.memory.semantic.ExtractionValidator;
-import com.lifepilot.memory.semantic.RealtimeExtractor;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.semantic.*;
 import com.lifepilot.memory.trace.MemoryEventRecorder;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkspaceCleanupJob;
 import com.lifepilot.memory.workspace.WorkspaceProperties;
+import com.lifepilot.observability.redactor.DataRedactor;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.rerank.router.RerankRouter;
 import jakarta.annotation.Nullable;
@@ -133,13 +122,14 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({GenerationRouter.class, EmbeddingRouter.class})
-    public QueryRewriter queryRewriter(GenerationRouter generationRouter,
-                                       EmbeddingRouter embeddingRouter,
+    public QueryRewriter queryRewriter(@Nullable GenerationRouter generationRouter,
+                                       @Nullable EmbeddingRouter embeddingRouter,
                                        MemoryProperties properties,
                                        PromptRegistry promptRegistry) {
-        log.info("记忆模块: 注册 QueryRewriter, mode={}",
-                properties.getRetrieval().getQueryRewriteMode());
+        log.info("记忆模块: 注册 QueryRewriter, mode={}, generationRouterAvailable={}, embeddingRouterAvailable={}",
+                properties.getRetrieval().getQueryRewriteMode(),
+                generationRouter != null ? "yes" : "no",
+                embeddingRouter != null ? "yes" : "no");
         return new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
     }
 
@@ -173,12 +163,24 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({EpisodicMemory.class, GenerationRouter.class})
+    public HotMemoryDigestService hotMemoryDigestService(SemanticMemory semanticMemory,
+                                                          MemoryProperties properties,
+                                                          @Nullable ProceduralMemory proceduralMemory,
+                                                          @Nullable DataRedactor dataRedactor,
+                                                          Clock clock) {
+        log.info("记忆模块: 注册 HotMemoryDigestService");
+        return new HotMemoryDigestService(semanticMemory, properties, proceduralMemory, dataRedactor, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(EpisodicMemory.class)
     public CompressionService compressionService(EpisodicMemory episodicMemory,
-                                                 GenerationRouter generationRouter,
+                                                 @Nullable GenerationRouter generationRouter,
                                                  PromptRegistry promptRegistry,
                                                  MemoryProperties memoryProperties) {
-        log.info("记忆模块: 注册 CompressionService");
+        log.info("记忆模块: 注册 CompressionService, generationRouterAvailable={}",
+                generationRouter != null ? "yes" : "no");
         return new CompressionService(generationRouter, episodicMemory, promptRegistry, memoryProperties);
     }
 
@@ -276,6 +278,21 @@ public class MemoryAutoConfiguration {
         return new MemoryEventRecorder(jdbcTemplate);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryAccessPolicy memoryAccessPolicy() {
+        log.info("记忆模块: 注册 MemoryAccessPolicy");
+        return new MemoryAccessPolicy();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemorySpaceRepository memorySpaceRepository(JdbcTemplate jdbcTemplate,
+                                                       ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemorySpaceRepository");
+        return new MemorySpaceRepository(jdbcTemplate, objectMapper);
+    }
+
     // L3 语义记忆
 
     @Bean
@@ -289,11 +306,11 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
-            EmbeddingRouter embeddingRouter,
+            @Nullable EmbeddingRouter embeddingRouter,
             MemoryProperties properties) {
         boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
-        log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, dimensions={}",
-                vecLoaded, properties.getEmbeddingDimensions());
+        log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, embeddingRouterAvailable={}, dimensions={}",
+                vecLoaded, embeddingRouter != null ? "yes" : "no", properties.getEmbeddingDimensions());
         return new VectorSearcher(vectorJdbcTemplate, embeddingRouter,
                 vecLoaded, properties.getEmbeddingDimensions());
     }
@@ -315,6 +332,34 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public MemoryProjectionOutboxRepository memoryProjectionOutboxRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryProjectionOutboxRepository");
+        return new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionOutboxProcessor memoryProjectionOutboxProcessor(
+            MemoryProjectionOutboxRepository repository,
+            VectorSearcher vectorSearcher,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryProjectionOutboxProcessor");
+        return new MemoryProjectionOutboxProcessor(repository, vectorSearcher, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionService memoryProjectionService(
+            MemoryProjectionOutboxRepository repository,
+            MemoryProjectionOutboxProcessor processor) {
+        log.info("记忆模块: 注册 MemoryProjectionService");
+        return new MemoryProjectionService(repository, processor);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @ConditionalOnBean({ConflictDetector.class, VectorSearcher.class})
     public SemanticMemory semanticMemory(
             JdbcTemplate jdbcTemplate,
@@ -322,11 +367,13 @@ public class MemoryAutoConfiguration {
             VersionMerger versionMerger,
             VectorSearcher vectorSearcher,
             MemorySpaceRepository memorySpaceRepository,
-            org.springframework.context.ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            @Nullable MemoryProjectionService projectionService) {
         log.info("记忆模块: 注册 SemanticMemory");
         var semanticMemory = new SemanticMemory(
                 jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
         semanticMemory.setEventPublisher(eventPublisher);
+        semanticMemory.setProjectionService(projectionService);
         return semanticMemory;
     }
 
@@ -346,13 +393,15 @@ public class MemoryAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public ConflictResolutionService conflictResolutionService(
-            GenerationRouter generationRouter,
+            @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             VectorSearcher vectorSearcher,
             ConflictResolutionRepository conflictResolutionRepository,
             SemanticMemory semanticMemory) {
-        log.info("记忆模块: 注册 ConflictResolutionService");
+        log.info("记忆模块: 注册 ConflictResolutionService, generationRouterAvailable={}",
+                generationRouter != null ? "yes" : "no");
         var service = new ConflictResolutionService(
                 generationRouter, promptRegistry, vectorSearcher,
                 conflictResolutionRepository, semanticMemory);
@@ -369,19 +418,30 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public MemoryExtractionCandidateRepository memoryExtractionCandidateRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryExtractionCandidateRepository");
+        return new MemoryExtractionCandidateRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public RealtimeExtractor realtimeExtractor(@Nullable GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry,
                                                @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
-                                               Clock clock) {
+                                               Clock clock,
+                                               MemoryAccessPolicy memoryAccessPolicy,
+                                               @Nullable MemoryExtractionCandidateRepository candidateRepository) {
         if (generationRouter == null) {
             log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
         }
         log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, clock);
+                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, candidateRepository);
     }
 
     // 检索
@@ -412,7 +472,7 @@ public class MemoryAutoConfiguration {
             @Nullable IntentMatcher intentMatcher,
             @Nullable RerankRouter rerankRouter,
             JdbcTemplate jdbcTemplate,
-            @Nullable com.lifepilot.interaction.web.repository.MemoryProvenanceRepository provenanceRepository) {
+            @Nullable MemoryProvenanceRepository provenanceRepository) {
         log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}, provenance={}",
                 intentMatcher != null ? "enabled" : "disabled",
                 rerankRouter != null ? "enabled" : "disabled",
@@ -429,13 +489,12 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(VectorSearcher.class)
+    @ConditionalOnBean(MemoryProjectionService.class)
     public ProceduralMemory proceduralMemory(
             JdbcTemplate jdbcTemplate,
-            VectorSearcher vectorSearcher,
-            MemoryProperties properties) {
+            MemoryProjectionService projectionService) {
         log.info("记忆模块: 注册 ProceduralMemory");
-        return new ProceduralMemory(jdbcTemplate, vectorSearcher, properties);
+        return new ProceduralMemory(jdbcTemplate, projectionService);
     }
 
     @Bean
@@ -518,7 +577,7 @@ public class MemoryAutoConfiguration {
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,
             @Nullable ProceduralMemory proceduralMemory,
-            @Nullable com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger,
+            @Nullable ExperienceMerger experienceMerger,
             @Nullable UserProfileConsolidator userProfileConsolidator) {
         log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}, profileConsolidate={}",
                 preferenceConsolidator != null ? "enabled" : "disabled",
@@ -582,13 +641,6 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EntityExpirationJob entityExpirationJob(JdbcTemplate jdbcTemplate) {
-        log.info("记忆模块: 注册 EntityExpirationJob");
-        return new EntityExpirationJob(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     @ConditionalOnBean(EpisodicMemory.class)
     public EpisodicCleanupJob episodicCleanupJob(
             EpisodicMemory episodicMemory,
@@ -611,17 +663,18 @@ public class MemoryAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(SemanticMemory.class)
+    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public ExperienceSummarizer experienceSummarizer(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            GenerationRouter generationRouter,
+            @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties,
             TrajectoryQualityAssessor qualityAssessor,
-            @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
-            @Nullable com.lifepilot.project.context.ProjectContextResolver projectContextResolver) {
-        log.info("记忆模块: 注册 ExperienceSummarizer, projectAware={}",
+            @Nullable ChatSessionRepository chatSessionRepository,
+            @Nullable ProjectContextResolver projectContextResolver) {
+        log.info("记忆模块: 注册 ExperienceSummarizer, generationRouterAvailable={}, projectAware={}",
+                generationRouter != null ? "yes" : "no",
                 projectContextResolver != null && chatSessionRepository != null);
         return new ExperienceSummarizer(semanticMemory, vectorSearcher, generationRouter,
                 promptRegistry, properties, qualityAssessor,
@@ -631,43 +684,45 @@ public class MemoryAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(SemanticMemory.class)
-    public com.lifepilot.memory.experience.EffectivenessTracker effectivenessTracker(
+    public EffectivenessTracker effectivenessTracker(
             SemanticMemory semanticMemory,
             InjectionRecordRepository injectionRecordRepository,
             MemoryProperties properties) {
         log.info("记忆模块: 注册 EffectivenessTracker");
-        return new com.lifepilot.memory.experience.EffectivenessTracker(
+        return new EffectivenessTracker(
                 semanticMemory, injectionRecordRepository, properties);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
-    public com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner(
+    public ContrastiveLearner contrastiveLearner(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            GenerationRouter generationRouter,
+            @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
-        log.info("记忆模块: 注册 ContrastiveLearner");
-        return new com.lifepilot.memory.experience.ContrastiveLearner(
+        log.info("记忆模块: 注册 ContrastiveLearner, generationRouterAvailable={}",
+                generationRouter != null ? "yes" : "no");
+        return new ContrastiveLearner(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
-    public com.lifepilot.memory.experience.SubtaskReflector subtaskReflector(
+    public SubtaskReflector subtaskReflector(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            GenerationRouter generationRouter,
+            @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties,
-            @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
-            @Nullable com.lifepilot.project.context.ProjectContextResolver projectContextResolver) {
-        log.info("记忆模块: 注册 SubtaskReflector, projectAware={}",
+            @Nullable ChatSessionRepository chatSessionRepository,
+            @Nullable ProjectContextResolver projectContextResolver) {
+        log.info("记忆模块: 注册 SubtaskReflector, generationRouterAvailable={}, projectAware={}",
+                generationRouter != null ? "yes" : "no",
                 projectContextResolver != null && chatSessionRepository != null);
-        return new com.lifepilot.memory.experience.SubtaskReflector(
+        return new SubtaskReflector(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties,
                 chatSessionRepository, projectContextResolver);
     }
@@ -675,14 +730,15 @@ public class MemoryAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
-    public com.lifepilot.memory.consolidation.ExperienceMerger experienceMerger(
+    public ExperienceMerger experienceMerger(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            GenerationRouter generationRouter,
+            @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             MemoryProperties properties) {
-        log.info("记忆模块: 注册 ExperienceMerger");
-        return new com.lifepilot.memory.consolidation.ExperienceMerger(
+        log.info("记忆模块: 注册 ExperienceMerger, generationRouterAvailable={}",
+                generationRouter != null ? "yes" : "no");
+        return new ExperienceMerger(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
     }
 

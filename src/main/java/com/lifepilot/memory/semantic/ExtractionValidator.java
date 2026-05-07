@@ -1,8 +1,11 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.quality.MemoryQualityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -48,8 +51,18 @@ public class ExtractionValidator {
      * @return 经过验证和过滤后的有效决策列表
      */
     public List<AudnDecision> validate(List<AudnDecision> decisions) {
+        return validateWithResult(decisions).validDecisions();
+    }
+
+    /**
+     * 验证并返回完整质量门控结果。
+     *
+     * <p>有效决策继续执行；被拒绝决策用于写入候选审计表，避免 LLM 原始输出
+     * 在质量门控阶段静默丢失。</p>
+     */
+    public ValidationResult validateWithResult(List<AudnDecision> decisions) {
         if (decisions == null || decisions.isEmpty()) {
-            return List.of();
+            return new ValidationResult(List.of(), List.of());
         }
 
         // 1. 修正 confidence/importance 字段
@@ -59,17 +72,13 @@ public class ExtractionValidator {
 
         // 2. 逐条验证
         var valid = new ArrayList<AudnDecision>();
+        var rejected = new ArrayList<RejectedDecision>();
         for (var d : normalized) {
-            if (d.operation() == AudnOperation.NOOP) {
+            String rejectionReason = rejectionReason(d);
+            if (rejectionReason != null) {
+                rejected.add(new RejectedDecision(d, rejectionReason));
                 continue;
             }
-            if (d.operation() == AudnOperation.DELETE) {
-                valid.add(d);
-                continue;
-            }
-            if (!validateEntityName(d)) continue;
-            if (!validateDescription(d)) continue;
-            if (!validateConfidence(d)) continue;
             valid.add(d);
         }
 
@@ -80,10 +89,13 @@ public class ExtractionValidator {
             valid.sort(Comparator.comparing(
                     (AudnDecision d) -> d.extractionConfidence() != null
                             ? d.extractionConfidence() : 0f).reversed());
+            valid.subList(maxEntitiesPerExtraction, valid.size()).stream()
+                    .map(d -> new RejectedDecision(d, "MAX_ENTITIES_EXCEEDED"))
+                    .forEach(rejected::add);
             valid = new ArrayList<>(valid.subList(0, maxEntitiesPerExtraction));
         }
 
-        return List.copyOf(valid);
+        return new ValidationResult(List.copyOf(valid), List.copyOf(rejected));
     }
 
     /** 修正 null 或越界的 confidence/importance 为默认值 0.5f。 */
@@ -104,7 +116,7 @@ public class ExtractionValidator {
         if (needsFix) {
             return new AudnDecision(d.operation(), d.entityName(), d.entityType(),
                     d.description(), d.properties(), confidence, importance,
-                    d.temporalityRaw(), d.expiresAtRaw());
+                    d.temporalityRaw(), d.expiresAtRaw(), d.evidenceKindRaw(), d.evidenceExcerpt());
         }
         return d;
     }
@@ -146,4 +158,52 @@ public class ExtractionValidator {
         }
         return true;
     }
+
+    @Nullable
+    private String rejectionReason(AudnDecision d) {
+        if (d.operation() == null) {
+            log.debug("ExtractionValidator: 丢弃缺少 operation 的决策, entityName={}", d.entityName());
+            return "OPERATION_MISSING";
+        }
+        if (d.operation() == AudnOperation.NOOP) {
+            return "NOOP";
+        }
+        if (d.operation() == AudnOperation.DELETE) {
+            return null;
+        }
+        if (d.entityType() == null) {
+            log.debug("ExtractionValidator: 丢弃缺少 entityType 的决策, entityName={}", d.entityName());
+            return "ENTITY_TYPE_MISSING";
+        }
+        if (!validateEntityName(d)) {
+            return "INVALID_ENTITY_NAME";
+        }
+        if (!validateDescription(d)) {
+            return "INVALID_DESCRIPTION";
+        }
+        if (!validateConfidence(d)) {
+            return "LOW_CONFIDENCE";
+        }
+        if (d.evidenceKindRaw() != null && !d.evidenceKindRaw().isBlank()) {
+            MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.parseEvidenceKind(d.evidenceKindRaw());
+            if (evidenceKind == MemoryEvidenceKind.UNKNOWN) {
+                return "UNKNOWN_EVIDENCE";
+            }
+            if (evidenceKind == MemoryEvidenceKind.CHAT_INFERRED
+                    && (d.evidenceExcerpt() == null || d.evidenceExcerpt().isBlank())) {
+                return "INFERRED_WITHOUT_EVIDENCE";
+            }
+        }
+        return null;
+    }
+
+    public record ValidationResult(
+            List<AudnDecision> validDecisions,
+            List<RejectedDecision> rejectedDecisions
+    ) {}
+
+    public record RejectedDecision(
+            AudnDecision decision,
+            String reason
+    ) {}
 }

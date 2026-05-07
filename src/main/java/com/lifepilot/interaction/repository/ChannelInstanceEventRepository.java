@@ -82,7 +82,7 @@ public class ChannelInstanceEventRepository {
                 SELECT id, instance_id, event_type, message, payload_json, created_at
                 FROM channel_instance_events
                 WHERE instance_id = ?
-                ORDER BY created_at DESC, id DESC
+                ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
                 """,
                 rowMapper,

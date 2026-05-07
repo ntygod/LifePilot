@@ -17,6 +17,7 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
@@ -260,10 +261,11 @@ public class MetaAutoConfiguration {
                                           @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
                                           @Nullable MemoryProperties memoryProperties,
                                           @Nullable ProjectContextResolver projectContextResolver,
-                                          @Nullable ChatSessionRepository chatSessionRepository) {
+                                          @Nullable ChatSessionRepository chatSessionRepository,
+                                          @Nullable MemoryAccessPolicy memoryAccessPolicy) {
         return new MemoryToolProvider(hybridRetriever, semanticMemory,
                 episodicMemory, documentRetriever, sessionKbRepo, sessionKnowledgeScopeResolver,
-                memoryProperties, projectContextResolver, chatSessionRepository);
+                memoryProperties, projectContextResolver, chatSessionRepository, memoryAccessPolicy);
     }
 
     // ==================== 启动后工具注册 ====================
@@ -273,7 +275,7 @@ public class MetaAutoConfiguration {
      *
      * <p>使用 {@code @Order(Ordered.HIGHEST_PRECEDENCE)} 确保在
      * SkillAutoConfiguration 的 Markdown Skill 加载之前完成工具注册，
-     * 保证用户 Skill 的 suggestedTools 校验能通过。</p>
+     * 保证 requires.tools / suggestedTools 引用的工具能被解析。</p>
      *
      * @param event 应用就绪事件
      */

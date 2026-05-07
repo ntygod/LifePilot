@@ -1,28 +1,20 @@
 package com.lifepilot.agent.context;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.mcp.config.McpConfigProperties;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.EffectivenessTracker;
-import com.lifepilot.memory.experience.SubtaskReflector;
-import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.retrieval.RetrievalResult;
-import com.lifepilot.memory.retrieval.RetrievalWeights;
-import com.lifepilot.memory.procedural.PreferenceRule;
-import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.hot.HotMemoryDigest;
+import com.lifepilot.memory.hot.HotMemoryDigestService;
+import com.lifepilot.memory.hot.HotMemorySectionKind;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.scope.MemoryScope;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
 import com.lifepilot.memory.workspace.WorkspaceItem;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
@@ -62,8 +54,6 @@ import java.util.stream.Collectors;
 public class ContextAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(ContextAssembler.class);
-    private static final ObjectMapper SHARED_MAPPER =
-            new ObjectMapper();
     private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
@@ -105,6 +95,23 @@ public class ContextAssembler {
     public record MemoryCounts(String profileLine, String experienceLine, String factLine) {
         public static final MemoryCounts EMPTY = new MemoryCounts("", "", "");
     }
+
+    /** 已格式化上下文片段及其实际进入 prompt 的实体 ID。 */
+    record InjectedMemorySection(String text, List<String> entityIds) {
+        InjectedMemorySection {
+            text = text == null ? "" : text;
+            entityIds = entityIds != null ? List.copyOf(entityIds) : List.of();
+        }
+
+        boolean isBlank() {
+            return text.isBlank();
+        }
+
+        static InjectedMemorySection empty() {
+            return new InjectedMemorySection("", List.of());
+        }
+    }
+
     private static final Duration METADATA_CACHE_TTL = Duration.ofMinutes(5);
 
     private final AgentConfigProperties config;
@@ -112,8 +119,6 @@ public class ContextAssembler {
     private final PromptRegistry promptRegistry;
     @Nullable private final DataRedactor dataRedactor;
     @Nullable private final SemanticMemory semanticMemory;
-    @Nullable private final MemoryProperties memoryProperties;
-    @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final EffectivenessTracker effectivenessTracker;
     @Nullable private final SkillRegistry skillRegistry;
     @Nullable private final GenerationRouter generationRouter;
@@ -122,7 +127,7 @@ public class ContextAssembler {
     @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
-    @Nullable private final HybridRetriever hybridRetriever;
+    @Nullable private volatile HotMemoryDigestService hotMemoryDigestService;
     @Nullable private volatile WeatherService weatherService;
     /** Skill 安装事实源 — Phase A.7 新增，driven by {@code skills} 表判断 enabled。 */
     @Nullable private volatile SkillInstallationRepository skillInstallationRepository;
@@ -135,53 +140,45 @@ public class ContextAssembler {
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable MemoryProperties memoryProperties,
-                            @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry) {
         this(config, promptRegistry,
-                dataRedactor, semanticMemory, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry,
-                null, null, null, null, null, null, null);
+                dataRedactor, semanticMemory,
+                effectivenessTracker, skillRegistry,
+                null, null, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable MemoryProperties memoryProperties,
-                            @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
                             @Nullable GenerationRouter generationRouter) {
         this(config, promptRegistry,
-                dataRedactor, semanticMemory, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry,
-                generationRouter, null, null, null, null, null, null);
+                dataRedactor, semanticMemory,
+                effectivenessTracker, skillRegistry,
+                generationRouter, null, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable MemoryProperties memoryProperties,
-                            @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
                             @Nullable GenerationRouter generationRouter,
                             @Nullable ContextEngine contextEngine) {
         this(config, promptRegistry,
-                dataRedactor, semanticMemory, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry,
-                generationRouter, contextEngine, null, null, null, null, null);
+                dataRedactor, semanticMemory,
+                effectivenessTracker, skillRegistry,
+                generationRouter, contextEngine, null, null, null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable MemoryProperties memoryProperties,
-                            @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
                             @Nullable GenerationRouter generationRouter,
@@ -189,19 +186,17 @@ public class ContextAssembler {
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                             @Nullable KnowledgeBaseRepository knowledgeBaseRepository) {
         this(config, promptRegistry,
-                dataRedactor, semanticMemory, memoryProperties,
-                proceduralMemory, effectivenessTracker, skillRegistry,
+                dataRedactor, semanticMemory,
+                effectivenessTracker, skillRegistry,
                 generationRouter, contextEngine,
                 sessionKnowledgeBaseRepository, knowledgeBaseRepository,
-                null, null, null);
+                null, null);
     }
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
                             @Nullable DataRedactor dataRedactor,
                             @Nullable SemanticMemory semanticMemory,
-                            @Nullable MemoryProperties memoryProperties,
-                            @Nullable ProceduralMemory proceduralMemory,
                             @Nullable EffectivenessTracker effectivenessTracker,
                             @Nullable SkillRegistry skillRegistry,
                             @Nullable GenerationRouter generationRouter,
@@ -209,15 +204,12 @@ public class ContextAssembler {
                             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
                             @Nullable DynamicToolRegistry toolRegistry,
-                            @Nullable McpConfigProperties mcpConfig,
-                            @Nullable HybridRetriever hybridRetriever) {
+                            @Nullable McpConfigProperties mcpConfig) {
         this.config = config;
         this.locationResolver = new LocationResolver(config);
         this.promptRegistry = promptRegistry;
         this.dataRedactor = dataRedactor;
         this.semanticMemory = semanticMemory;
-        this.memoryProperties = memoryProperties;
-        this.proceduralMemory = proceduralMemory;
         this.effectivenessTracker = effectivenessTracker;
         this.skillRegistry = skillRegistry;
         this.generationRouter = generationRouter;
@@ -226,7 +218,6 @@ public class ContextAssembler {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.toolRegistry = toolRegistry;
         this.mcpConfig = mcpConfig;
-        this.hybridRetriever = hybridRetriever;
     }
 
     /** 注入天气服务（可选，由 AutoConfiguration 调用）。 */
@@ -264,6 +255,11 @@ public class ContextAssembler {
         this.chatSessionRepository = chatSessionRepository;
     }
 
+    /** 注入热记忆摘要服务（可选）。 */
+    public void setHotMemoryDigestService(@Nullable HotMemoryDigestService hotMemoryDigestService) {
+        this.hotMemoryDigestService = hotMemoryDigestService;
+    }
+
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -272,48 +268,51 @@ public class ContextAssembler {
             int totalContextTokens = Math.max(
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
-            // 入口一次性 resolve ProjectContext，四路并行检索复用同一上下文
+            // 入口一次性 resolve ProjectContext，热摘要与统计复用同一读取视图。
             ProjectContext projectContext = resolveProjectContext(state);
-            MemoryReadFilter experienceFilter = toProjectFilter(projectContext, Set.of(MemoryScope.AGENT_EXPERIENCE));
-            MemoryReadFilter userMemoryFilter = toProjectFilter(projectContext,
-                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
-            MemoryReadFilter userProfileFilter = toProjectFilter(projectContext, Set.of(MemoryScope.USER_PROFILE));
-            // 四路独立检索并行化：contextSnapshot、userProfile、experiences、relevantMemories 互不依赖
+            MemoryReadFilter memoryFilter = toProjectFilter(projectContext,
+                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT, MemoryScope.AGENT_EXPERIENCE));
+            // 默认自动记忆注入只消费 HotMemoryDigest；冷召回由 memory.search / memory.recall 显式触发。
             var contextFuture = CompletableFuture.supplyAsync(
                     () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
-            var profileFuture = mediaPlaceholder
-                    ? CompletableFuture.completedFuture("")
+            var hotDigestFuture = mediaPlaceholder
+                    ? CompletableFuture.completedFuture((HotMemoryDigest) null)
                     : CompletableFuture.supplyAsync(
-                        () -> safeGetUserProfile(state.goal(), userProfileFilter), VIRTUAL_EXECUTOR);
-            // 简单任务跳过：state.steps() 中无任何 ToolCall 时，说明还在第一轮探索阶段，
-            // 经验注入提供不了价值（query 还没具体到工具维度），直接跳过节省 token。
-            Set<String> recentToolIds = collectRecentToolIds(state);
-            boolean skipExperiences = mediaPlaceholder || recentToolIds.isEmpty();
-            var experiencesFuture = skipExperiences
-                    ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
-                    : CompletableFuture.supplyAsync(
-                        () -> safeRetrieveExperiences(state.goal(), experienceFilter, recentToolIds),
-                        VIRTUAL_EXECUTOR);
-            var memoryFuture = mediaPlaceholder
-                    ? CompletableFuture.completedFuture(List.<TemporalEntity>of())
-                    : CompletableFuture.supplyAsync(
-                        () -> safeRetrieveRelevantMemories(state.goal(), userMemoryFilter), VIRTUAL_EXECUTOR);
-            CompletableFuture.allOf(contextFuture, profileFuture, experiencesFuture, memoryFuture).join();
+                        () -> safeBuildHotMemoryDigest(projectContext, memoryFilter), VIRTUAL_EXECUTOR);
+            CompletableFuture.allOf(contextFuture, hotDigestFuture).join();
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
             List<WorkspaceItem> workspaceItems = contextSnapshot.workspaceItems();
-            String userProfile = profileFuture.join();
-            List<TemporalEntity> experiences = experiencesFuture.join();
-            List<TemporalEntity> relevantMemories = memoryFuture.join();
-            List<String> injectedIds = recordExperienceInjection(state, experiences);
-            String profileSection = safeRedact(formatUserProfileSection(userProfile));
+            HotMemoryDigest hotDigest = hotDigestFuture.join();
+            InjectedMemorySection rawProfileSection = formatHotDigestSection(
+                    hotDigest, Set.of(HotMemorySectionKind.USER_PROFILE));
+            InjectedMemorySection rawExperienceSection = formatHotDigestSection(
+                    hotDigest, Set.of(HotMemorySectionKind.EXPERIENCE));
+            InjectedMemorySection rawMemorySection = formatHotDigestSection(
+                    hotDigest, Set.of(HotMemorySectionKind.PROJECT_MEMORY, HotMemorySectionKind.FACTS));
+
+            String profileSection = safeRedact(formatUserProfileSection(rawProfileSection.text()));
             String workspaceSection = safeRedact(formatWorkspaceSection(workspaceItems));
             String artifactSection = safeRedact(contextSnapshot.artifactSection());
-            String experienceSection = safeRedact(formatExperienceSection(experiences));
-            String memorySection = safeRedact(formatMemorySection(relevantMemories));
+            String experienceSection = safeRedact(rawExperienceSection.text());
+            String memorySection = safeRedact(rawMemorySection.text());
+            List<String> profileInjectedIds = profileSection == null || profileSection.isBlank()
+                    ? List.of()
+                    : rawProfileSection.entityIds();
+            List<String> experienceInjectedIds = experienceSection == null || experienceSection.isBlank()
+                    ? List.of()
+                    : rawExperienceSection.entityIds();
+            List<String> memoryInjectedIds = memorySection == null || memorySection.isBlank()
+                    ? List.of()
+                    : rawMemorySection.entityIds();
+            List<String> injectedIds = mergeInjectedEntityIds(
+                    profileInjectedIds, experienceInjectedIds, memoryInjectedIds);
+            recordExperienceInjection(state, experienceInjectedIds);
+            updateInjectedAccessCounts(injectedIds);
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
-            MemoryCounts memoryCounts = buildMemoryCounts(userMemoryFilter);
+            MemoryCounts memoryCounts = buildInjectedMemoryCounts(
+                    rawProfileSection, rawExperienceSection, rawMemorySection);
             List<Message> contextMessages = buildContextMessages(
                     profileSection,
                     workspaceSection,
@@ -406,6 +405,47 @@ public class ContextAssembler {
                 scopes);
     }
 
+    @Nullable
+    private HotMemoryDigest safeBuildHotMemoryDigest(@Nullable ProjectContext projectContext,
+                                                     MemoryReadFilter filter) {
+        if (hotMemoryDigestService == null) {
+            return null;
+        }
+        try {
+            return hotMemoryDigestService.build(filter, hotDigestViewKey(projectContext));
+        } catch (Exception e) {
+            log.warn("热记忆摘要构建失败，本轮跳过默认记忆注入: error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String hotDigestViewKey(@Nullable ProjectContext projectContext) {
+        if (projectContext == null || projectContext.projectId() == null || projectContext.projectId().isBlank()) {
+            return "personal";
+        }
+        return "project:" + projectContext.projectId()
+                + (projectContext.isolated() ? ":isolated" : ":shared");
+    }
+
+    private InjectedMemorySection formatHotDigestSection(@Nullable HotMemoryDigest digest,
+                                                         Set<HotMemorySectionKind> sectionKinds) {
+        if (digest == null || digest.sections().isEmpty() || sectionKinds == null || sectionKinds.isEmpty()) {
+            return InjectedMemorySection.empty();
+        }
+        List<String> parts = new ArrayList<>();
+        List<String> sourceIds = new ArrayList<>();
+        for (HotMemoryDigest.HotMemorySection section : digest.sections()) {
+            if (!sectionKinds.contains(section.kind()) || section.content().isBlank()) {
+                continue;
+            }
+            parts.add(section.content());
+            sourceIds.addAll(section.sourceEntityIds());
+        }
+        return parts.isEmpty()
+                ? InjectedMemorySection.empty()
+                : new InjectedMemorySection(String.join("\n\n", parts), sourceIds);
+    }
+
     private AssembledContext buildFallbackContext(ReactAgentState state) {
         String systemPrompt = buildAugmentedSystemPrompt(state);
         String userPrompt = buildUserPrompt(state);
@@ -431,214 +471,12 @@ public class ContextAssembler {
         );
     }
 
-    /** 提取 state.steps() 中已经使用过的工具 ID 集合，用于经验检索的工具维度加权与门槛判断。 */
-    static Set<String> collectRecentToolIds(@Nullable ReactAgentState state) {
-        if (state == null || state.steps() == null) {
-            return Set.of();
-        }
-        Set<String> ids = new java.util.LinkedHashSet<>();
-        for (var step : state.steps()) {
-            if (step instanceof ReactStep.ToolCall call && call.toolId() != null && !call.toolId().isBlank()) {
-                ids.add(call.toolId());
-            }
-        }
-        return Set.copyOf(ids);
-    }
-
     boolean isMediaPlaceholderQuery(@Nullable String goal) {
         if (goal == null || goal.isBlank()) {
             return true;
         }
         String trimmed = goal.trim();
         return trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length() <= 20;
-    }
-
-    /**
-     * 经验检索 —— 用 {@link HybridRetriever} 按 query 做语义检索（embedding + BM25 + 关键词三路）。
-     *
-     * <p>额外按 {@code recentToolIds} 做"工具维度加权"：
-     * 当前任务 transcript 中已使用过的工具与经验 metadata.toolsUsed 有交集时，
-     * fusedScore 加 0.2 boost，让"用同一工具的经验"优先注入。</p>
-     */
-    List<TemporalEntity> safeRetrieveExperiences(@Nullable String query,
-                                                  MemoryReadFilter filter,
-                                                  Set<String> recentToolIds) {
-        if (semanticMemory == null || memoryProperties == null || hybridRetriever == null) {
-            return List.of();
-        }
-        if (query == null || query.isBlank()) {
-            return List.of();
-        }
-        try {
-            MemoryProperties.Experience experience = memoryProperties.getExperience();
-            if (!experience.isEnabled()) {
-                return List.of();
-            }
-
-            int maxInjection = experience.getMaxInjectionCount();
-            // candidateCount 取较大值（10x）：hybridRetriever 不按 entityType 过滤，
-            // 候选里混合 FACT/PREFERENCE 等其他类型；候选数太小时 EXPERIENCE 可能整体被挤出。
-            int candidateCount = Math.max(maxInjection * 10, 20);
-            List<RetrievalResult> ranked = hybridRetriever.retrieve(
-                    query, candidateCount, RetrievalWeights.DEFAULT, filter);
-            // 仅保留 EXPERIENCE 类型（hybridRetriever 不限定 entityType，需后过滤）
-            ranked = ranked.stream()
-                    .filter(r -> EntityType.EXPERIENCE.name().equals(r.entityType()))
-                    .toList();
-            if (ranked.isEmpty()) {
-                return List.of();
-            }
-
-            Set<String> ids = ranked.stream().map(RetrievalResult::entityId).collect(Collectors.toSet());
-            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, filter);
-            // 保留 ranked 顺序 + 应用 isolation / granularity 过滤 + 工具维度加权
-            return ranked.stream()
-                    .map(r -> {
-                        TemporalEntity entity = entityMap.get(r.entityId());
-                        if (entity == null) return null;
-                        float boostedScore = r.fusedScore() + toolWeightBoost(entity, recentToolIds);
-                        return Map.entry(entity, boostedScore);
-                    })
-                    .filter(Objects::nonNull)
-                    .filter(e -> passesIsolation(e.getKey(), experience))
-                    .filter(e -> notToolLevelGranularity(e.getKey()))
-                    .sorted(Map.Entry.<TemporalEntity, Float>comparingByValue().reversed())
-                    .limit(maxInjection)
-                    .map(Map.Entry::getKey)
-                    .toList();
-        } catch (Exception e) {
-            log.debug("经验检索已跳过: error={}", e.getMessage());
-            return List.of();
-        }
-    }
-
-    /** 经验的 toolsUsed 与当前任务工具集有交集时加 0.2 score；无交集时不加分。 */
-    @SuppressWarnings("unchecked")
-    private float toolWeightBoost(TemporalEntity entity, Set<String> recentToolIds) {
-        if (recentToolIds == null || recentToolIds.isEmpty()) {
-            return 0.0f;
-        }
-        Object toolsUsed = entity.properties().get("toolsUsed");
-        if (!(toolsUsed instanceof List<?> list) || list.isEmpty()) {
-            return 0.0f;
-        }
-        for (Object t : list) {
-            if (t != null && recentToolIds.contains(t.toString())) {
-                return 0.2f;
-            }
-        }
-        return 0.0f;
-    }
-
-    private boolean passesIsolation(TemporalEntity entity, MemoryProperties.Experience experience) {
-        if (experience.getIsolation().isCrossContextRetrieval()) {
-            return true;
-        }
-        Object executionContext = entity.properties().get("executionContext");
-        return executionContext == null || "MAIN_AGENT".equals(executionContext.toString());
-    }
-
-    private boolean notToolLevelGranularity(TemporalEntity entity) {
-        Object granularity = entity.properties().get("granularity");
-        return granularity == null || !SubtaskReflector.TOOL_LEVEL.equals(granularity.toString());
-    }
-
-    String formatExperienceSection(List<TemporalEntity> experiences) {
-        if (experiences == null || experiences.isEmpty() || memoryProperties == null) {
-            return "";
-        }
-
-        int tokenBudget = memoryProperties.getExperience().getInjectionTokenBudget();
-        StringBuilder sb = new StringBuilder("\n相关经验:\n");
-        int usedTokens = 0;
-
-        for (TemporalEntity experience : experiences) {
-            String entry = "- " + experience.name() + ": "
-                    + (experience.description() != null ? experience.description() : "") + "\n";
-            int entryTokens = estimateTokens(entry);
-            if (usedTokens + entryTokens > tokenBudget) {
-                break;
-            }
-            sb.append(entry);
-            usedTokens += entryTokens;
-        }
-
-        return sb.toString();
-    }
-
-    /**
-     * 检索与当前查询相关的记忆实体 — 通过 HybridRetriever 三路混合检索，
-     * 排除已由 userProfile 和 experience 路径覆盖的类型。
-     */
-    List<TemporalEntity> safeRetrieveRelevantMemories(@Nullable String query) {
-        return safeRetrieveRelevantMemories(query, MemoryReadFilter.userMemory());
-    }
-
-    List<TemporalEntity> safeRetrieveRelevantMemories(@Nullable String query, MemoryReadFilter filter) {
-        if (hybridRetriever == null || semanticMemory == null || memoryProperties == null) {
-            return List.of();
-        }
-        var retrieval = memoryProperties.getRetrieval();
-        if (!retrieval.isMemoryContextEnabled()) {
-            return List.of();
-        }
-        try {
-            int maxEntities = retrieval.getMemoryContextMaxEntities();
-            float threshold = retrieval.getMemoryContextScoreThreshold();
-            // 用 HybridRetriever 检索全类型实体（userMemory scope）
-            List<RetrievalResult> results = hybridRetriever.retrieve(
-                    query != null ? query : "", maxEntities * 2,
-                    RetrievalWeights.DEFAULT, filter);
-            // 过滤已由 userProfile 和 experience 路径覆盖的类型（entityType 是 String）
-            Set<String> excludedTypeNames = Set.of(
-                    EntityType.PREFERENCE.name(), EntityType.HABIT.name(),
-                    EntityType.GOAL.name(), EntityType.EXPERIENCE.name());
-            results = results.stream()
-                    .filter(r -> !excludedTypeNames.contains(r.entityType()))
-                    .filter(r -> r.fusedScore() >= threshold)
-                    .limit(maxEntities)
-                    .toList();
-            if (results.isEmpty()) {
-                return List.of();
-            }
-            // 批量加载完整实体
-            Set<String> ids = results.stream().map(RetrievalResult::entityId).collect(Collectors.toSet());
-            Map<String, TemporalEntity> entityMap = semanticMemory.findByIds(ids, filter);
-            return results.stream()
-                    .map(r -> entityMap.get(r.entityId()))
-                    .filter(Objects::nonNull)
-                    .toList();
-        } catch (Exception e) {
-            log.debug("相关记忆检索已跳过: error={}", e.getMessage());
-            return List.of();
-        }
-    }
-
-    /**
-     * 格式化记忆实体为注入段 — 按 token 预算截断，避免超出上下文窗口。
-     */
-    String formatMemorySection(List<TemporalEntity> memories) {
-        if (memories == null || memories.isEmpty() || memoryProperties == null) {
-            return "";
-        }
-        int tokenBudget = memoryProperties.getRetrieval().getMemoryContextTokenBudget();
-        StringBuilder sb = new StringBuilder("\n与当前话题相关的记忆:\n");
-        int usedTokens = 0;
-        for (TemporalEntity entity : memories) {
-            String entry = "- [" + entity.type().label() + "] " + entity.name()
-                    + (entity.description() != null ? ": " + entity.description() : "") + "\n";
-            int entryTokens = estimateTokens(entry);
-            if (usedTokens + entryTokens > tokenBudget) {
-                break;
-            }
-            sb.append(entry);
-            usedTokens += entryTokens;
-        }
-        return sb.toString();
-    }
-
-    String buildReactSystemPrompt() {
-        return buildReactSystemPrompt(null);
     }
 
     String buildReactSystemPrompt(@Nullable ReactAgentState state) {
@@ -749,6 +587,31 @@ public class ContextAssembler {
             log.debug("记忆统计构建失败: {}", e.getMessage());
             return MemoryCounts.EMPTY;
         }
+    }
+
+    private MemoryCounts buildInjectedMemoryCounts(InjectedMemorySection profileSection,
+                                                   InjectedMemorySection experienceSection,
+                                                   InjectedMemorySection memorySection) {
+        int profileCount = countRenderedEntries(profileSection.text());
+        int experienceCount = countRenderedEntries(experienceSection.text());
+        int memoryCount = countRenderedEntries(memorySection.text());
+        return new MemoryCounts(
+                profileCount > 0 ? "共 " + profileCount + " 条热记忆" : "",
+                experienceCount > 0 ? "共 " + experienceCount + " 条执行经验" : "",
+                memoryCount > 0 ? "共 " + memoryCount + " 条常用记忆" : "");
+    }
+
+    private int countRenderedEntries(@Nullable String section) {
+        if (section == null || section.isBlank()) {
+            return 0;
+        }
+        int count = 0;
+        for (String line : section.split("\\R")) {
+            if (line.stripLeading().startsWith("- ")) {
+                count++;
+            }
+        }
+        return count;
     }
 
     String buildAugmentedSystemPrompt(ReactAgentState state) {
@@ -987,142 +850,46 @@ public class ContextAssembler {
         );
     }
 
-    /** 巩固画像实体名 — 与 UserProfileConsolidator 约定。 */
-    private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
-
-    private String safeGetUserProfile(@Nullable String refinedQuery) {
-        return safeGetUserProfile(refinedQuery, MemoryReadFilter.userProfile());
-    }
-
-    private String safeGetUserProfile(@Nullable String refinedQuery, MemoryReadFilter profileFilter) {
-        if (semanticMemory == null) {
-            return "";
+    private void recordExperienceInjection(ReactAgentState state, List<String> experienceIds) {
+        if (experienceIds == null || experienceIds.isEmpty()) {
+            return;
         }
-        try {
-            // 优先读巩固后的连贯画像（由 UserProfileConsolidator 定时生成）
-            var consolidated = semanticMemory.findCurrentByNameAndType(
-                    CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, profileFilter);
-            if (consolidated.isPresent()) {
-                var desc = consolidated.get().description();
-                if (desc != null && !desc.isBlank()) {
-                    // section 标签已由外层 <user_profile_context> 提供, 不再在内容前重复 "用户画像:"
-                    return desc;
-                }
-            }
-
-            // 降级：碎片实体拼接
-            List<TemporalEntity> candidates = new ArrayList<>();
-            for (EntityType type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL)) {
-                candidates.addAll(semanticMemory.findCurrentByType(type, profileFilter));
-            }
-            if (candidates.isEmpty()) {
-                return "";
-            }
-
-            int maxEntities = memoryProperties != null
-                    ? memoryProperties.getRetrieval().getMaxUserProfileEntities()
-                    : 10;
-            int fallbackCount = memoryProperties != null
-                    ? memoryProperties.getRetrieval().getFallbackUserProfileCount()
-                    : 3;
-
-            List<TemporalEntity> matched = List.of();
-            if (refinedQuery != null && !refinedQuery.isBlank()) {
-                List<String> keywords = List.of(refinedQuery.split("\\s+"));
-                matched = candidates.stream()
-                        .filter(entity -> {
-                            String text = entity.textRepresentation().toLowerCase(Locale.ROOT);
-                            return keywords.stream()
-                                    .map(keyword -> keyword.toLowerCase(Locale.ROOT))
-                                    .anyMatch(text::contains);
-                        })
-                        .toList();
-            }
-
-            List<TemporalEntity> selected = !matched.isEmpty()
-                    ? matched.stream()
-                            .sorted(Comparator.comparingDouble(
-                                    (TemporalEntity e) -> computeInjectionScore(e, true)).reversed())
-                            .limit(maxEntities)
-                            .toList()
-                    : candidates.stream()
-                            .sorted(Comparator.comparingDouble(
-                                    (TemporalEntity e) -> computeInjectionScore(e, false)).reversed())
-                            .limit(fallbackCount)
-                            .toList();
-
-            List<PreferenceRule> highConfidencePreferences = List.of();
-            if (proceduralMemory != null) {
-                try {
-                    highConfidencePreferences = proceduralMemory.getPreferences("user-preference").stream()
-                            .filter(PreferenceRule::isHighConfidence)
-                            .toList();
-                } catch (Exception e) {
-                    log.warn("加载 L4 偏好规则失败: error={}", e.getMessage());
-                }
-            }
-
-            if (!highConfidencePreferences.isEmpty()) {
-                Set<String> l4Keys = highConfidencePreferences.stream()
-                        .map(PreferenceRule::key)
-                        .collect(Collectors.toSet());
-                selected = selected.stream()
-                        .filter(entity -> !(entity.type() == EntityType.PREFERENCE
-                                && l4Keys.contains(entity.name())))
-                        .toList();
-            }
-
-            if (selected.isEmpty() && highConfidencePreferences.isEmpty()) {
-                return "";
-            }
-
-            StringBuilder sb = new StringBuilder();
-            if (!selected.isEmpty()) {
-                sb.append("L3 用户画像:\n");
-                for (TemporalEntity entity : selected) {
-                    sb.append("- [")
-                            .append(entity.type().label())
-                            .append("] ")
-                            .append(entity.name());
-                    if (entity.description() != null && !entity.description().isBlank()) {
-                        sb.append(": ").append(entity.description());
-                    }
-                    sb.append('\n');
-                }
-            }
-
-            if (!highConfidencePreferences.isEmpty()) {
-                sb.append("L4 偏好规则:\n");
-                for (PreferenceRule rule : highConfidencePreferences) {
-                    sb.append("- ")
-                            .append(rule.key())
-                            .append(" = ")
-                            .append(rule.value())
-                            .append(" (confidence=")
-                            .append(rule.confidence())
-                            .append(")\n");
-                }
-            }
-            return sb.toString().trim();
-        } catch (Exception e) {
-            log.warn("加载用户画像失败: error={}", e.getMessage());
-            return "";
-        }
-    }
-
-    private List<String> recordExperienceInjection(ReactAgentState state, List<TemporalEntity> experiences) {
-        if (experiences == null || experiences.isEmpty()) {
-            return List.of();
-        }
-        List<String> ids = experiences.stream().map(TemporalEntity::id).toList();
         if (effectivenessTracker != null) {
             try {
-                effectivenessTracker.recordInjection(state.traceId(), ids);
+                effectivenessTracker.recordInjection(state.traceId(), experienceIds);
             } catch (Exception e) {
                 log.warn("记录经验注入失败: error={}", e.getMessage());
             }
         }
-        return ids;
+    }
+
+    @SafeVarargs
+    private List<String> mergeInjectedEntityIds(List<String>... idGroups) {
+        var merged = new LinkedHashSet<String>();
+        if (idGroups != null) {
+            for (List<String> ids : idGroups) {
+                if (ids == null) {
+                    continue;
+                }
+                ids.stream()
+                        .filter(id -> id != null && !id.isBlank())
+                        .forEach(merged::add);
+            }
+        }
+        return List.copyOf(merged);
+    }
+
+    private void updateInjectedAccessCounts(List<String> injectedIds) {
+        if (semanticMemory == null || injectedIds == null || injectedIds.isEmpty()) {
+            return;
+        }
+        for (String id : injectedIds) {
+            try {
+                semanticMemory.incrementAccessCount(id);
+            } catch (Exception e) {
+                log.debug("更新注入记忆访问计数失败: entityId={}, error={}", id, e.getMessage());
+            }
+        }
     }
 
     private TokenBudget buildTokenBudget(int totalTokens,
@@ -1220,31 +987,6 @@ public class ContextAssembler {
                 .count();
         long otherChars = text.length() - cjkChars;
         return Math.max(1, (int) (cjkChars + otherChars / 4));
-    }
-
-    /**
-     * 三因子注入评分 — 融合 relevance（相关度）、importance（重要度）、recency（时近度）。
-     *
-     * <p>权重从 {@code lifepilot.memory.retrieval.injection-weights} 配置读取，
-     * 避免硬编码 0.4 / 0.3 / 0.3。</p>
-     *
-     * @param entity        目标实体
-     * @param relevanceHit  是否命中相关度判定（eval-tag 匹配或关键词匹配）
-     * @return 融合评分 [0.0, 1.0]
-     */
-    private float computeInjectionScore(TemporalEntity entity, boolean relevanceHit) {
-        MemoryProperties.InjectionWeights w = memoryProperties != null
-                ? memoryProperties.getRetrieval().getInjectionWeights()
-                : new MemoryProperties.InjectionWeights();
-        float relevance = relevanceHit ? 1.0f : 0.0f;
-        float importance = entity.importanceScore();
-        // 时近度：30 天内线性衰减到 0
-        float recency = 1.0f;
-        if (entity.updatedAt() != null) {
-            long daysAgo = Duration.between(entity.updatedAt(), Instant.now()).toDays();
-            recency = Math.max(0.0f, 1.0f - daysAgo / 30.0f);
-        }
-        return w.getRelevance() * relevance + w.getImportance() * importance + w.getRecency() * recency;
     }
 
     /**
@@ -1505,10 +1247,6 @@ public class ContextAssembler {
                 .collect(Collectors.joining("；"));
     }
 
-    private String safeReactSystemPrompt() {
-        return safeReactSystemPrompt(null);
-    }
-
     private String safeReactSystemPrompt(@Nullable ReactAgentState state) {
         try {
             return buildReactSystemPrompt(state);
@@ -1544,8 +1282,8 @@ public class ContextAssembler {
         try {
             return dataRedactor.redact(text);
         } catch (Exception e) {
-            log.warn("数据脱敏失败，改为使用原文: error={}", e.getMessage());
-            return text;
+            log.warn("数据脱敏失败，跳过该上下文片段: error={}", e.getMessage());
+            return "";
         }
     }
 }

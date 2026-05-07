@@ -42,6 +42,7 @@ class ReminderRetentionScheduler_单元测试 {
         replayReportRepository = mock(ReminderReplayReportRepository.class);
         topicAliasRepository = mock(ReminderTopicAliasRepository.class);
         config = new AgentConfigProperties();
+        config.getTask().setProactiveReminderEnabled(true);
         config.getTask().setProactiveReminderRetentionDays(90);
         retentionScheduler = new ReminderRetentionScheduler(
                 scheduler,

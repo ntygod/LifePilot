@@ -242,7 +242,7 @@ public class VectorIndexer {
             return List.of();
         }
         return searchByEmbeddingByScopes(embedding, kbIds.stream()
-                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .map(KnowledgeSearchScope::new)
                 .toList(), topK);
     }
 
@@ -279,11 +279,10 @@ public class VectorIndexer {
         }
 
         var chunkPlaceholders = chunkIds.stream().map(id -> "?").collect(Collectors.joining(","));
-        KnowledgeQueryUtils.ScopeSql scopeSql = KnowledgeQueryUtils.buildScopeSql("knowledge_base_id", "source_datastore_id", scopes);
+        KnowledgeQueryUtils.ScopeSql scopeSql = KnowledgeQueryUtils.buildScopeSql("knowledge_base_id", scopes);
         var sql = """
                 SELECT id, document_id, knowledge_base_id, content, context_prefix,
-                       heading_hierarchy_json, metadata_json,
-                       source_type, source_datastore_id, source_collection_id
+                       heading_hierarchy_json, metadata_json, source_type
                 FROM document_chunks
                 WHERE id IN (%s)
                   AND (%s)""".formatted(chunkPlaceholders, scopeSql.sql());
@@ -310,9 +309,7 @@ public class VectorIndexer {
                     Map.of(),
                     Optional.empty(),
                     Optional.empty(),
-                    KnowledgeQueryUtils.parseSourceType(rs.getString("source_type")),
-                    Optional.ofNullable(rs.getString("source_datastore_id")),
-                    Optional.ofNullable(rs.getString("source_collection_id"))
+                    KnowledgeQueryUtils.parseSourceType(rs.getString("source_type"))
             );
         }, params.toArray());
 

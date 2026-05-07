@@ -22,6 +22,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -116,7 +117,7 @@ class MemoryToolProvider_项目写入路径测试 {
         var oldEntity = new TemporalEntity("e-1", EntityType.PREFERENCE, "旧名", "desc",
                 Map.of(), 1, true, Instant.now(), null, "s-upd",
                 1.0f, 0.5f, 0, null, Instant.now(), Instant.now());
-        when(semanticMemory.findById("e-1")).thenReturn(Optional.of(oldEntity));
+        when(semanticMemory.findByIds(any(), any())).thenReturn(Map.of("e-1", oldEntity));
 
         var tool = registry.resolve("memory").orElseThrow();
         tool.execute(new ToolInput(tool.id(),
@@ -134,6 +135,11 @@ class MemoryToolProvider_项目写入路径测试 {
                 .thenReturn(Optional.of(session("s-tag", "proj-tag")));
         when(projectContextResolver.resolve("proj-tag")).thenReturn(
                 new ProjectContext("proj-tag", "space-tag", "space-personal", "space-experience", true));
+        when(semanticMemory.findByIds(any(), any())).thenAnswer(inv -> {
+            List<String> ids = inv.getArgument(0);
+            String id = ids.getFirst();
+            return Map.of(id, entity(id));
+        });
 
         var tool = registry.resolve("memory").orElseThrow();
         tool.execute(new ToolInput(tool.id(),
@@ -191,5 +197,12 @@ class MemoryToolProvider_项目写入路径测试 {
                 e.properties(), e.version(), e.isCurrent(), e.validFrom(), e.validTo(),
                 e.sourceConversationId(), e.extractionConfidence(), e.importanceScore(),
                 e.accessCount(), e.lastAccessedAt(), e.createdAt(), e.updatedAt());
+    }
+
+    private TemporalEntity entity(String id) {
+        var now = Instant.now();
+        return new TemporalEntity(id, EntityType.PREFERENCE, id, "desc",
+                Map.of(), 1, true, now, null, "s-tag",
+                1.0f, 0.5f, 0, null, now, now);
     }
 }

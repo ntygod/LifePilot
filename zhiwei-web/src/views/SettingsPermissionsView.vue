@@ -71,7 +71,6 @@ const actionOptions: Option[] = [
   { value: 'BROWSER_AUTOMATION', label: '浏览器自动化', description: '驱动网页操作、点击、输入和登录流程。' },
   { value: 'HTTP_REQUEST', label: '访问外部网络', description: '向第三方 API 或网站发起请求。' },
   { value: 'WRITE_MEMORY', label: '写入记忆', description: '写入长期记忆、偏好和经验条目。' },
-  { value: 'MODIFY_DATASTORE', label: '修改数据存储', description: '更新集合、文档和结构化数据。' },
   { value: 'CREATE_SCHEDULE', label: '管理定时任务', description: '创建、修改或取消 Cron / 心跳任务。' },
   { value: 'GENERIC_TOOL_OPERATION', label: '任务级高风险操作', description: '适合 Cron、心跳和工作流复用的统一高风险授权。' },
 ]
@@ -140,8 +139,6 @@ const scopePlaceholder = computed(() => {
     case 'BROWSER_AUTOMATION':
     case 'HTTP_REQUEST':
       return '{\n  "origin": "https://github.com"\n}'
-    case 'MODIFY_DATASTORE':
-      return '{\n  "collection": "notes"\n}'
     case 'CREATE_SCHEDULE':
       return '{\n  "taskId": "task-123"\n}'
     default:

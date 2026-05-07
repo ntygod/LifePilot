@@ -179,6 +179,42 @@ class HybridRetriever精排测试 {
         assertEquals(1, entityIds.stream().filter(id -> id.equals(duplicateId)).count());
     }
 
+    @Test
+    void 精确文本命中应压过无关高向量结果() {
+        var exactId = "entity-exact";
+        var vectorId = "entity-vector";
+        var vecResults = List.of(new VectorSearchResult(vectorId, 0.99f));
+        var ftsResults = List.of(new RankedItem(
+                exactId,
+                "PREFERENCE",
+                "MT-CANCEL-0507 不提醒下午5点检查记忆抽取日志",
+                "用户明确要求取消 MT-CANCEL-0507。",
+                4.8f,
+                Instant.now(),
+                0.2f,
+                null,
+                Instant.now()));
+
+        var entities = new HashMap<String, TemporalEntity>();
+        entities.put(exactId, buildEntity(exactId));
+        entities.put(vectorId, buildEntity(vectorId));
+
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat())).thenReturn(vecResults);
+        when(ftsSearcher.search(anyString(), anyInt())).thenReturn(ftsResults);
+        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(List.of());
+        when(semanticMemory.findByIds(anyCollection())).thenReturn(entities);
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                null);
+
+        var results = retriever.retrieve("取消 MT-CANCEL-0507", 10, RetrievalWeights.DEFAULT);
+
+        assertFalse(results.isEmpty());
+        assertEquals(exactId, results.getFirst().entityId());
+    }
+
     private void setupMockResults() {
         var vecResults = List.of(
                 new VectorSearchResult("entity-1", 0.9f),

@@ -26,6 +26,7 @@ public class VectorSearcher {
     private static final Logger log = LoggerFactory.getLogger(VectorSearcher.class);
 
     private final JdbcTemplate vectorJdbcTemplate;
+    @Nullable
     private final EmbeddingRouter embeddingRouter;
     private final boolean vecExtensionLoaded;
     private final int embeddingDimensions;
@@ -34,12 +35,12 @@ public class VectorSearcher {
      * 构造 VectorSearcher。
      *
      * @param vectorJdbcTemplate 向量数据库 JdbcTemplate
-     * @param embeddingRouter    向量路由器
+     * @param embeddingRouter    向量路由器；缺失时向量检索和索引写入自动降级为空操作
      * @param vecExtensionLoaded sqlite-vec 扩展是否已加载
      * @param embeddingDimensions 向量维度
      */
     public VectorSearcher(JdbcTemplate vectorJdbcTemplate,
-                          EmbeddingRouter embeddingRouter,
+                          @Nullable EmbeddingRouter embeddingRouter,
                           boolean vecExtensionLoaded,
                           int embeddingDimensions) {
         this.vectorJdbcTemplate = vectorJdbcTemplate;
@@ -47,6 +48,9 @@ public class VectorSearcher {
         this.vecExtensionLoaded = vecExtensionLoaded;
         this.embeddingDimensions = embeddingDimensions;
 
+        if (embeddingRouter == null) {
+            log.warn("向量检索: EmbeddingRouter 不可用，将禁用向量检索和向量索引写入");
+        }
         // 程序化创建 entity_embeddings vec0 虚拟表
         if (vecExtensionLoaded) {
             initVec0Table();
@@ -78,6 +82,10 @@ public class VectorSearcher {
      * @return 检索结果列表
      */
     public List<VectorSearchResult> searchEntities(String queryText, int topK, float threshold) {
+        if (embeddingRouter == null) {
+            log.debug("向量检索: EmbeddingRouter 不可用，返回空结果");
+            return List.of();
+        }
         // 缓存 embed 结果，避免异常降级时重复调用 LLM
         float[] queryVector;
         try {
@@ -118,6 +126,10 @@ public class VectorSearcher {
     public List<VectorSearchResult> searchEntities(String queryText, int topK, float threshold,
                                                     @Nullable Set<String> eligibleIds) {
         if (eligibleIds != null && eligibleIds.isEmpty()) {
+            return List.of();
+        }
+        if (embeddingRouter == null) {
+            log.debug("向量检索: EmbeddingRouter 不可用，返回空结果");
             return List.of();
         }
         // 有过滤集时，扩大 topK 以弥补过滤损失
@@ -219,6 +231,10 @@ public class VectorSearcher {
     public void upsertEntityVector(String entityId, String text) {
         if (!vecExtensionLoaded) {
             log.debug("向量检索: sqlite-vec 未加载，跳过向量索引更新, entityId={}", entityId);
+            return;
+        }
+        if (embeddingRouter == null) {
+            log.debug("向量检索: EmbeddingRouter 不可用，跳过向量索引更新, entityId={}", entityId);
             return;
         }
         try {

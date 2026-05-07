@@ -16,17 +16,17 @@ fixtures:
   - query: "复制目录"
     expected_top_3: ["file.manage"]
   - query: "创建文档"
-    expected_top_3: ["document.create"]
+    expected_top_3: ["code.execute", "shell.exec"]
   - query: "生成 Excel"
-    expected_top_3: ["document.create"]
+    expected_top_3: ["code.execute", "shell.exec"]
   - query: "生成 PPT"
-    expected_top_3: ["document.create"]
+    expected_top_3: ["code.execute", "shell.exec"]
   - query: "编辑 docx"
-    expected_top_3: ["document.edit"]
+    expected_top_3: ["code.execute", "shell.exec"]
   - query: "回滚文档版本"
-    expected_top_3: ["document.edit"]
+    expected_top_3: ["file.history"]
   - query: "修改文件内容"
-    expected_top_3: ["file.edit", "document.edit"]
+    expected_top_3: ["file.edit", "code.execute"]
   - query: "撤销编辑"
     expected_top_3: ["file.history"]
   - query: "重做编辑"

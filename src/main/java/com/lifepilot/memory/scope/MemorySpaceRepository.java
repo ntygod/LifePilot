@@ -47,17 +47,6 @@ public class MemorySpaceRepository {
                 "SYSTEM", "default", Map.of());
     }
 
-    public MemorySpace ensureDatastoreDomainSpace(String datastoreId) {
-        return ensureSpace(
-                MemorySpaceKeys.datastoreDomain(datastoreId),
-                MemorySpaceType.DOMAIN,
-                "Datastore领域记忆",
-                "DATASTORE",
-                datastoreId,
-                Map.of("datastoreId", datastoreId)
-        );
-    }
-
     public MemorySpace ensureKnowledgeBaseDomainSpace(String knowledgeBaseId) {
         return ensureSpace(
                 MemorySpaceKeys.knowledgeBaseDomain(knowledgeBaseId),
@@ -95,8 +84,7 @@ public class MemorySpaceRepository {
      * 级联语义由调用方负责组织（参见 {@code ProjectService#deleteProject}
      * 的级联顺序说明）。</p>
      *
-     * <p>memory_space_knowledge_bases / memory_space_datastores 通过 FK
-     * CASCADE 自动清理。</p>
+     * <p>memory_space_knowledge_bases 通过 FK CASCADE 自动清理。</p>
      */
     public void deleteById(String spaceId) {
         jdbcTemplate.update("DELETE FROM memory_spaces WHERE id = ?", spaceId);

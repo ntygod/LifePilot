@@ -5,6 +5,7 @@ import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.SourceType;
 import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,6 +81,7 @@ class SemanticMemory_生命周期字段_集成测试 {
 
         var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         provenanceRepository = new MemoryProvenanceRepository(jdbcTemplate);
     }
 
@@ -216,12 +218,12 @@ class SemanticMemory_生命周期字段_集成测试 {
                     id, entity_id, version_id, origin_type, source_reference,
                     source_conversation_id, source_session_id, source_turn_id,
                     source_entry_id, source_document_id, source_knowledge_base_id,
-                    source_datastore_id, source_collection_id, confidence, created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    confidence, created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 provenanceId, entityId, null, "UNKNOWN", null,
                 null, null, null,
                 null, documentId, null,
-                null, null, 0.5d, now);
+                0.5d, now);
     }
 }

@@ -4,6 +4,7 @@ import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
@@ -75,6 +76,7 @@ class ExpirationScanner_集成测试 {
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 
         publishedEvents = new ArrayList<>();
         ApplicationEventPublisher publisher = publishedEvents::add;

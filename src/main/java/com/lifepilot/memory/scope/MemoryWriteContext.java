@@ -19,9 +19,7 @@ public record MemoryWriteContext(
         @Nullable String sourceTurnId,
         @Nullable String sourceEntryId,
         @Nullable String sourceDocumentId,
-        @Nullable String sourceKnowledgeBaseId,
-        @Nullable String sourceDatastoreId,
-        @Nullable String sourceCollectionId
+        @Nullable String sourceKnowledgeBaseId
 ) {
 
     public MemoryWriteContext {
@@ -35,8 +33,6 @@ public record MemoryWriteContext(
                 null,
                 MemoryOriginType.UNKNOWN,
                 MemoryRealityType.UNKNOWN,
-                null,
-                null,
                 null,
                 null,
                 null,

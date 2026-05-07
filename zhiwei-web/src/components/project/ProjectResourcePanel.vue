@@ -10,7 +10,7 @@
  *   没有按 projectId 维度的服务端列表 API，先展示引导文案并指向会话详情的文档工作区
  *
  * 设计说明：
- * - 使用 {@link FormSheetShell} 保持与仓库其他右侧面板（Agents、Datastore 等）一致的
+ * - 使用 {@link FormSheetShell} 保持与仓库其他右侧面板一致的
  *   视觉语言与宽度规范（480px / maxWidth 92vw）
  * - Tabs 使用 Reka UI 组件，样式对齐 {@code components/workflow/ExecutionDetail.vue}
  * - 状态徽标配色对齐 {@code views/KnowledgeBaseDocumentView.vue}

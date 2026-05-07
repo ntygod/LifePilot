@@ -23,6 +23,7 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -81,7 +83,7 @@ class StreamingCallback_单元测试 {
     }
 
     @Test
-    void 纯文本流式分片应合批为更少的Token事件() {
+    void 无工具纯文本流式分片应保持即时Token事件() {
         when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
                 .thenReturn(new StreamingLlmResponse(Flux.just(
                         (LlmStreamEvent) new ContentChunk("你好"),
@@ -115,6 +117,116 @@ class StreamingCallback_单元测试 {
     }
 
     @Test
+    void 常规Agent轮即使有工具也应保持答案Token流() {
+        String answer = "我可以帮你进行对话、记忆、知识库检索和工具协作。";
+        when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
+                .thenReturn(new StreamingLlmResponse(Flux.just(
+                        (LlmStreamEvent) new ContentChunk("我可以帮你进行对话、"),
+                        (LlmStreamEvent) new ContentChunk("记忆、知识库检索和工具协作。")
+                ), "provider-1", "model-1"));
+
+        StreamingCallback callback = new StreamingCallback(
+                config,
+                generationRouter,
+                null,
+                helper,
+                new CancellationToken(),
+                loopContext,
+                sseManager,
+                "stream-1",
+                "session-1",
+                "turn-1",
+                request
+        );
+
+        callback.callLlm(request, basicMessages(), availableTools(), null, LlmCallPurpose.AGENT_STEP);
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(sseManager, atLeastOnce()).sendEvent(
+                eq("stream-1"), eq(SseEventType.TOKEN), payloadCaptor.capture());
+
+        String streamed = payloadCaptor.getAllValues().stream()
+                .map(StreamingCallback_单元测试::tokenContent)
+                .reduce("", String::concat);
+        assertThat(streamed).isEqualTo(answer);
+    }
+
+    @Test
+    void 规划调用纯文本流式分片应等待最终正文确认后再发送Token事件() {
+        when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
+                .thenReturn(new StreamingLlmResponse(Flux.just(
+                        (LlmStreamEvent) new ContentChunk("你好"),
+                        (LlmStreamEvent) new ContentChunk("世界")
+                ), "provider-1", "model-1"));
+
+        StreamingCallback callback = new StreamingCallback(
+                config,
+                generationRouter,
+                null,
+                helper,
+                new CancellationToken(),
+                loopContext,
+                sseManager,
+                "stream-1",
+                "session-1",
+                "turn-1",
+                request
+        );
+
+        callback.callLlm(request, basicMessages(), availableTools(), null, LlmCallPurpose.PLANNING);
+
+        verify(sseManager, never()).sendEvent(eq("stream-1"), eq(SseEventType.TOKEN), any());
+
+        callback.publishVisibleContent(callback.getFinalContent());
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(sseManager, times(1)).sendEvent(eq("stream-1"), eq(SseEventType.TOKEN), payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) payloadCaptor.getValue();
+        assertThat(payload).containsEntry("content", "你好世界");
+    }
+
+    @Test
+    void 流式检测到ToolCall时不应把伴随文本当正文Token() {
+        when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
+                .thenReturn(new StreamingLlmResponse(Flux.just(
+                        (LlmStreamEvent) new ContentChunk("我先查一下资料。"),
+                        (LlmStreamEvent) new ToolCallDelta(0, "call-1", "tool.search", "{\"q\":\"知微\"}")
+                ), "provider-1", "model-1"));
+
+        StreamingCallback callback = new StreamingCallback(
+                config,
+                generationRouter,
+                null,
+                helper,
+                new CancellationToken(),
+                loopContext,
+                sseManager,
+                "stream-1",
+                "session-1",
+                "turn-1",
+                request
+        );
+
+        callback.callLlm(request, basicMessages(), availableTools(), null, LlmCallPurpose.AGENT_STEP);
+
+        verify(sseManager, never()).sendEvent(eq("stream-1"), eq(SseEventType.TOKEN), any());
+        verify(helper, times(1)).sendReasoningEvent(
+                eq(sseManager),
+                eq("stream-1"),
+                eq("session-1"),
+                eq("turn-1"),
+                eq("PROGRESS"),
+                eq("准备调用工具"),
+                contains("tool.search"),
+                eq("tool.search"),
+                anyMap(),
+                isNull()
+        );
+    }
+
+    @Test
     void 流式检测到ToolCall时应先发出准备调用工具事件() {
         when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
                 .thenReturn(new StreamingLlmResponse(Flux.just(
@@ -135,7 +247,7 @@ class StreamingCallback_单元测试 {
                 request
         );
 
-        callback.callLlm(request, basicMessages(), List.of(), null);
+        callback.callLlm(request, basicMessages(), availableTools(), null, LlmCallPurpose.AGENT_STEP);
 
         verify(helper, times(1)).sendReasoningEvent(
                 eq(sseManager),
@@ -151,11 +263,64 @@ class StreamingCallback_单元测试 {
         );
     }
 
+    @Test
+    void 单次流式异常不应污染后续调用() {
+        when(generationRouter.streamWithInfo(anyString(), any(), any(Prompt.class), anyList()))
+                .thenReturn(
+                        new StreamingLlmResponse(
+                                Flux.error(new RuntimeException("连接中断")),
+                                "provider-1",
+                                "model-1"),
+                        new StreamingLlmResponse(
+                                Flux.just((LlmStreamEvent) new ContentChunk("恢复成功")),
+                                "provider-1",
+                                "model-1")
+                );
+
+        StreamingCallback callback = new StreamingCallback(
+                config,
+                generationRouter,
+                null,
+                helper,
+                new CancellationToken(),
+                loopContext,
+                sseManager,
+                "stream-1",
+                "session-1",
+                "turn-1",
+                request
+        );
+
+        assertThatThrownBy(() -> callback.callLlm(request, basicMessages(), List.of(), null))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("连接中断");
+
+        callback.callLlm(request, basicMessages(), List.of(), null);
+
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(sseManager, times(1)).sendEvent(eq("stream-1"), eq(SseEventType.TOKEN), payloadCaptor.capture());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) payloadCaptor.getValue();
+        assertThat(payload).containsEntry("content", "恢复成功");
+        assertThat(callback.getFinalContent()).isEqualTo("恢复成功");
+        assertThat(callback.hasStreamingError()).isFalse();
+    }
+
     private List<Message> basicMessages() {
         return List.of(
                 new SystemMessage("你是一个严谨的助手。"),
                 new UserMessage("请继续回答")
         );
+    }
+
+    private List<ToolCallback> availableTools() {
+        return List.of(mock(ToolCallback.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String tokenContent(Object payload) {
+        return (String) ((Map<String, Object>) payload).get("content");
     }
 
 }

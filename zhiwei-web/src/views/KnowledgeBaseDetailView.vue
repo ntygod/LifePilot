@@ -265,7 +265,6 @@ async function loadData() {
   error.value = null
 
   try {
-    // Plan 3: datastore 已从用户侧下架，不再拉取 datastore 列表
     const [kbResponse, statsResponse, documentsResponse, providerList] = await Promise.all([
       knowledgeBaseApi.get(kbId.value),
       knowledgeBaseApi.getStats(kbId.value),

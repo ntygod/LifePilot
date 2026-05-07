@@ -37,6 +37,7 @@ import java.util.*;
 public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ToolBridgeAgentToolProvider.class);
+    private static final String TOOL_SEARCH_ID = "tool.search";
     private static final Set<String> IDEMPOTENCY_KEY_WHITELIST =
             Set.of("web.search", "web.fetch");
 
@@ -44,7 +45,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private final ToolExecutionPipeline pipeline;
     private final ObjectMapper objectMapper;
     private final int maxToolOutputChars;
-    /** Tier 1 工具服务 — 聚合 pinned + Advisory APPROVED，提供当前 Tier 1 工具 ID 集合。 */
+    /** 核心工具服务 — 提供启动时直接注入 Agent 的最小工具 ID 集合。 */
     private final Tier1Service tier1Service;
     private volatile Map<String, String> toolIdToModelName = Map.of();
     private volatile Map<String, String> modelNameToToolId = Map.of();
@@ -122,15 +123,29 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             tools = all.stream().filter(t -> allowed.contains(t.id())).toList();
             log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", all.size(), tools.size());
         } else {
-            // Tier1 全量常驻 — 所有工具可见
-            tools = all;
-            log.debug("ToolCallback 全量注入: count={}", tools.size());
+            Set<String> visibleToolIds = buildVisibleToolIds(state);
+            tools = all.stream()
+                    .filter(t -> visibleToolIds.contains(t.id()))
+                    .toList();
+            log.debug("ToolCallback 分层注入: total={}, visible={}, discovered={}",
+                    all.size(), tools.size(),
+                    state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0);
         }
 
         refreshToolNameMappings(tools);
         return tools.stream()
                 .map(t -> toToolCallback(t, streamId, state))
                 .toList();
+    }
+
+    private Set<String> buildVisibleToolIds(ReactAgentState state) {
+        var visible = new LinkedHashSet<String>();
+        visible.addAll(tier1Service.getCurrentTier1Ids());
+        visible.add(TOOL_SEARCH_ID);
+        if (state.discoveredToolIds() != null) {
+            visible.addAll(state.discoveredToolIds());
+        }
+        return Set.copyOf(visible);
     }
 
     /**
@@ -171,7 +186,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         context.put(ToolContextKeys.CALLER_TRACE_ID, state.traceId());
         context.put(ToolContextKeys.CALLER_DEPTH, state.depth());
         context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
-        // 把 state 直接放进 context，供 meta 工具（tool.search/describe/list）的 executor 读取
+        // 把 state 直接放进 context，供 meta 工具（tool.search）的 executor 读取
         context.put(ToolContextKeys.CALLER_STATE, state);
 
         ToolDefinition definition = DefaultToolDefinition.builder()

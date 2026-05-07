@@ -3,6 +3,7 @@ package com.lifepilot.agent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
+import com.lifepilot.agent.callback.LlmCallPurpose;
 import com.lifepilot.agent.callback.NonStreamingCallback;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
@@ -71,6 +72,11 @@ public class ReactAgentLoop implements CallbackHelper {
 
     private static final Logger log = LoggerFactory.getLogger(ReactAgentLoop.class);
     private static final String DEFAULT_MODEL_ID = "ZhiWei";
+    private static final int GRACEFUL_SUMMARY_MAX_STEPS = 16;
+    private static final int GRACEFUL_SUMMARY_MAX_DIGEST_CHARS = 16_000;
+    private static final int GRACEFUL_SUMMARY_MAX_OBSERVATION_CHARS = 1_200;
+    private static final int GRACEFUL_SUMMARY_MAX_INPUT_CHARS = 600;
+    private static final int GRACEFUL_FALLBACK_OBSERVATION_CHARS = 260;
 
     /** 停滞检测排除名单 — 这些工具的重复调用（不同参数）是合理的执行模式。 */
     private static final Set<String> STALL_DETECTION_EXCLUDED_TOOLS = Set.of("web.search");
@@ -411,9 +417,13 @@ public class ReactAgentLoop implements CallbackHelper {
                 cachedToolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
             }
             var toolCallbacks = cachedToolCallbacks;
+            var callPurpose = resolveLlmCallPurpose(state);
+            var llmToolCallbacks = state.taskMode() == AgentTaskMode.ANSWER
+                    ? List.<ToolCallback>of()
+                    : toolCallbacks;
 
-            log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}",
-                    state.traceId(), iteration, state.stepCount(), toolCallbacks.size());
+            log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}, purpose={}",
+                    state.traceId(), iteration, state.stepCount(), toolCallbacks.size(), callPurpose);
 
             // 5. 调用 LLM（不自动执行 tool call）
             // 推送思考中 Thought 步骤
@@ -427,7 +437,8 @@ public class ReactAgentLoop implements CallbackHelper {
             var iterationStart = Instant.now();
             ChatResponse chatResponse;
             try {
-                chatResponse = callback.callLlm(effectiveRequest, messages, toolCallbacks, traceContext);
+                chatResponse = callback.callLlm(
+                        effectiveRequest, messages, llmToolCallbacks, traceContext, callPurpose);
             } catch (Exception e) {
                 log.error("LLM 调用异常: traceId={}, iteration={}, error={}",
                         state.traceId(), iteration, e.getMessage());
@@ -498,8 +509,8 @@ public class ReactAgentLoop implements CallbackHelper {
                     pushReactStepEvent(state.steps().getLast(), state.stepCount() - 1, state, loopContext);
                 }
 
-                // 7b. Skill 激活前快照 — 事后检测 ToolExecutionCoordinator 是否合并了 activated_tool_ids / skillContent
-                int preExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
+                // 7b. 工具执行前快照 — 事后检测 ToolExecutionCoordinator 是否发现新工具或合并 Skill 指南
+                int preExecDiscoveredCount = state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0;
                 String preExecSkillContent = state.loadedSkillContent();
 
                 // 7c. 执行工具批量调用
@@ -509,9 +520,9 @@ public class ReactAgentLoop implements CallbackHelper {
                         state, toolCalls, toolCallbacks, traceContext, cancellationToken,
                         loopContext, this::appendAndPublishStep, llmReasoningContent);
 
-                // 7d. Skill 缓存失效 — 工具合并了新的 activated_tool_ids / skillContent 时重建缓存
-                int postExecActivatedCount = state.activatedToolIds() != null ? state.activatedToolIds().size() : 0;
-                if (postExecActivatedCount > preExecActivatedCount) {
+                // 7d. 工具 / Skill 缓存失效 — 新发现工具或 Skill 指南变更时重建缓存
+                int postExecDiscoveredCount = state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0;
+                if (postExecDiscoveredCount > preExecDiscoveredCount) {
                     cachedToolCallbacks = null;
                 }
                 if (!Objects.equals(preExecSkillContent, state.loadedSkillContent())) {
@@ -569,7 +580,7 @@ public class ReactAgentLoop implements CallbackHelper {
                 var textResult = handleTextResponse(
                         state, assistantMessage.getText(), truncated, finishReason,
                         responseTokens, consecutiveFailures, maxConsecutiveFailures,
-                        iteration, request, loopContext);
+                        iteration, request, loopContext, callback);
                 state = textResult.state();
                 consecutiveFailures = textResult.consecutiveFailures();
                 if (textResult.shouldInvalidateCachedContext()) {
@@ -609,7 +620,7 @@ public class ReactAgentLoop implements CallbackHelper {
 
         if (state.isDone() && state.completionMode() == CompletionMode.DEGRADED
                 && hasMeaningfulProgress(state)) {
-            state = buildGracefulSummary(state, request, callback, cachedToolCallbacks, traceContext, loopContext);
+            state = buildGracefulSummary(state, request);
         }
 
         return state;
@@ -617,30 +628,34 @@ public class ReactAgentLoop implements CallbackHelper {
 
     /** 预算降级终止时，用已收集的信息做一次最终总结再返回。 */
     private ReactAgentState buildGracefulSummary(ReactAgentState state,
-                                                  AgentRequest request,
-                                                  IterationCallback callback,
-                                                  @Nullable List<ToolCallback> toolCallbacks,
-                                                  @Nullable TraceContext traceContext,
-                                                  AgentLoopContext loopContext) {
+                                                  AgentRequest request) {
+        String deterministicFallback = buildDeterministicGracefulSummary(state);
         try {
+            String digest = buildGracefulSummaryDigest(state);
+            String reason = state.terminationReason() != null && !state.terminationReason().isBlank()
+                    ? state.terminationReason()
+                    : "预算超限或执行中断";
             String summaryPrompt = """
-                    你的执行时间已用尽，任务提前终止。
-                    请基于当前对话中已获取的所有工具结果，给用户一个结构化的总结：
+                    你正在做一个任务的收尾总结。
 
+                    背景：本轮任务已中断，原因：%s
+                    用户原始请求：%s
+
+                    以下为本轮执行过程中已记录的步骤与工具输出摘要（仅供你总结使用）：
+                    %s
+
+                    请基于以上内容，给用户一个结构化的总结：
                     1. 已完成的工作（列出具体成果）
                     2. 未完成的部分（哪些还没做）
                     3. 建议下一步（用户可以继续做什么）
 
-                    直接输出总结，不要调用工具，不要道歉。""";
+                    约束：
+                    - 直接输出总结，不要调用工具
+                    - 不要编造不存在的工具结果或外部信息
+                    - 若信息不足，请明确写“目前缺少哪些关键信息”
+                    """.formatted(reason, safeUserRequestText(state.goal()), digest);
 
-            var messages = List.<Message>of(
-                    new SystemMessage("你正在做一个任务的收尾总结。"),
-                    new UserMessage(summaryPrompt));
-
-            ChatResponse response = callback.callLlm(request, messages,
-                    toolCallbacks != null ? toolCallbacks : List.of(), traceContext);
-            String summary = response.getResult().getOutput().getText();
-
+            String summary = tryCallNonStreamingForGracefulSummary(request, summaryPrompt);
             if (summary != null && !summary.isBlank()) {
                 log.info("优雅终止总结已生成: traceId={}, summaryLen={}",
                         state.traceId(), summary.length());
@@ -650,16 +665,165 @@ public class ReactAgentLoop implements CallbackHelper {
                         .build();
             }
         } catch (Exception e) {
-            log.warn("优雅终止总结生成失败，使用降级消息: traceId={}, error={}",
+            log.warn("优雅终止总结生成失败，回退确定性摘要: traceId={}, error={}",
                     state.traceId(), e.getMessage());
         }
-        return state;
+        return state.toBuilder()
+                .finalOutput(deterministicFallback)
+                .completionMode(CompletionMode.DEGRADED)
+                .build();
     }
 
     /** 判断是否有足够进展值得做总结（至少有成功的工具调用）。 */
     private static boolean hasMeaningfulProgress(ReactAgentState state) {
         return state.steps().stream().anyMatch(
                 s -> s instanceof ReactStep.Observation obs && obs.success());
+    }
+
+    private @Nullable String tryCallNonStreamingForGracefulSummary(AgentRequest request,
+                                                                   String summaryPrompt) {
+        // 使用独立的非流式调用生成总结，避免复用 StreamingCallback 导致的连接异常/状态污染。
+        if (generationRouter == null) {
+            return null;
+        }
+        try {
+            // 走独立 CHAT 能力，禁用缓存并设置短超时，避免收尾摘要再次拖成长任务。
+            var llm = generationRouter.call(
+                    "graceful_summary",
+                    summaryPrompt,
+                    null,
+                    request.preferredProvider(),
+                    null,
+                    com.lifepilot.modelservice.model.GenerationCapability.CHAT,
+                    Duration.ofSeconds(60),
+                    true
+            );
+            return llm != null ? llm.content() : null;
+        } catch (Exception e) {
+            log.debug("优雅终止总结非流式调用失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String safeUserRequestText(@Nullable String text) {
+        if (text == null) {
+            return "";
+        }
+        String t = text.strip();
+        if (t.length() > GRACEFUL_SUMMARY_MAX_INPUT_CHARS) {
+            return t.substring(0, GRACEFUL_SUMMARY_MAX_INPUT_CHARS) + "…";
+        }
+        return t;
+    }
+
+    private static String buildGracefulSummaryDigest(ReactAgentState state) {
+        var buf = new StringBuilder();
+        buf.append("<steps>\n");
+
+        List<ReactStep> steps = state.steps();
+        int start = Math.max(0, steps.size() - GRACEFUL_SUMMARY_MAX_STEPS);
+        for (int i = start; i < steps.size(); i++) {
+            ReactStep step = steps.get(i);
+            buf.append("- [").append(i).append("] ");
+            switch (step) {
+                case ReactStep.Progress p -> buf.append("Progress: ").append(oneLine(p.content(), 160));
+                case ReactStep.Thought t -> buf.append("Thought: ").append(oneLine(t.content(), 220));
+                case ReactStep.ToolCall tc -> buf.append("ToolCall: ")
+                        .append(tc.toolId())
+                        .append(" input=").append(oneLine(tc.inputJson(), GRACEFUL_SUMMARY_MAX_INPUT_CHARS));
+                case ReactStep.Observation obs -> {
+                    buf.append("Observation: ")
+                            .append(obs.toolId());
+                    if (obs.toolName() != null && !obs.toolName().isBlank()) {
+                        buf.append(" (").append(obs.toolName()).append(")");
+                    }
+                    buf.append(" success=").append(obs.success());
+                    if (obs.output() != null && !obs.output().isBlank()) {
+                        buf.append(" output=").append(oneLine(obs.output(), GRACEFUL_SUMMARY_MAX_OBSERVATION_CHARS));
+                    }
+                }
+                case ReactStep.Answer a -> buf.append("Answer: ").append(oneLine(a.content(), 500));
+                case ReactStep.Suspend s -> buf.append("Suspend: ").append(s.reason());
+                case ReactStep.Resume r -> buf.append("Resume: ").append(r.payload().getClass().getSimpleName());
+                case ReactStep.Reflect r -> buf.append("Reflect: ").append(oneLine(r.content(), 260));
+            }
+            buf.append('\n');
+            if (buf.length() >= GRACEFUL_SUMMARY_MAX_DIGEST_CHARS) {
+                buf.append("...[digest truncated]...\n");
+                break;
+            }
+        }
+        buf.append("</steps>");
+        return buf.toString();
+    }
+
+    private static String buildDeterministicGracefulSummary(ReactAgentState state) {
+        String reason = state.terminationReason() != null && !state.terminationReason().isBlank()
+                ? state.terminationReason()
+                : "执行中断";
+        int successTools = (int) state.steps().stream()
+                .filter(s -> s instanceof ReactStep.Observation obs && obs.success())
+                .count();
+        int failedTools = (int) state.steps().stream()
+                .filter(s -> s instanceof ReactStep.Observation obs && !obs.success() && !"llm".equals(obs.toolId()))
+                .count();
+
+        String tools = summarizeToolOutcomesForFallback(state);
+        return """
+                本轮处理已中断。
+
+                原始任务：%s
+                原因：%s
+                已记录成功工具调用：%d
+                已记录失败工具调用：%d
+
+                已完成的步骤（摘要）：
+                %s
+
+                建议下一步：
+                1. 点击继续执行，系统会尝试沿着当前进度继续。
+                2. 若仍反复中断，请缩小任务范围或降低一次性输出长度，再重试。
+                """.formatted(safeUserRequestText(state.goal()), reason, successTools, failedTools, tools).trim();
+    }
+
+    private static String summarizeToolOutcomesForFallback(ReactAgentState state) {
+        var lines = new ArrayList<String>();
+        for (ReactStep step : state.steps()) {
+            if (!(step instanceof ReactStep.Observation obs)) {
+                continue;
+            }
+            if ("llm".equals(obs.toolId())) {
+                continue;
+            }
+            StringBuilder line = new StringBuilder();
+            line.append("- ").append(obs.toolId());
+            if (obs.toolName() != null && !obs.toolName().isBlank()) {
+                line.append(" (").append(obs.toolName()).append(")");
+            }
+            line.append(" success=").append(obs.success());
+            if (obs.output() != null && !obs.output().isBlank()) {
+                line.append(" output=").append(oneLine(obs.output(), GRACEFUL_FALLBACK_OBSERVATION_CHARS));
+            }
+            lines.add(line.toString());
+            if (lines.size() >= 8) {
+                break;
+            }
+        }
+        if (lines.isEmpty()) {
+            return "- 暂无（本轮未成功执行工具或工具结果未记录）";
+        }
+        return String.join("\n", lines);
+    }
+
+    private static String oneLine(@Nullable String text, int maxChars) {
+        if (text == null) {
+            return "";
+        }
+        String t = text.replace("\r", " ").replace("\n", " ").replaceAll("\\s+", " ").trim();
+        if (t.length() > maxChars) {
+            return t.substring(0, maxChars) + "…";
+        }
+        return t;
     }
 
     /**
@@ -676,6 +840,20 @@ public class ReactAgentLoop implements CallbackHelper {
             boolean shouldBreak,
             boolean shouldInvalidateCachedContext
     ) {}
+
+    /**
+     * 判定本轮 LLM 调用的流式可见性。
+     *
+     * <p>AUTO / EXECUTION 都是常规 ReAct 轮：保留主答案流式能力，同时由流式回调
+     * 在真正检测到工具调用时隔离伴随文本。只有显式 ANSWER 模式才关闭工具并进入
+     * 最终答案流。</p>
+     */
+    private LlmCallPurpose resolveLlmCallPurpose(ReactAgentState state) {
+        if (state.taskMode() == AgentTaskMode.ANSWER) {
+            return LlmCallPurpose.FINAL_ANSWER;
+        }
+        return LlmCallPurpose.AGENT_STEP;
+    }
 
     /**
      * 处理 LLM 纯文本响应（非工具调用）。
@@ -700,7 +878,8 @@ public class ReactAgentLoop implements CallbackHelper {
             int maxConsecutiveFailures,
             int iteration,
             AgentRequest request,
-            AgentLoopContext loopContext) {
+            AgentLoopContext loopContext,
+            IterationCallback callback) {
 
         // 有内容但非截断 → 走完成策略评估
         if (content != null && !content.isBlank()) {
@@ -720,6 +899,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     String visibleContent = completionEvaluation.userVisibleContent() != null
                             ? completionEvaluation.userVisibleContent() : content;
                     CompletionReason completionReason = completionEvaluation.completionReason();
+                    callback.publishVisibleContent(visibleContent);
                     state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
                     state = state.toBuilder()
                             .done(true)
@@ -781,6 +961,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     // DIRECT_ANSWER — 无特殊协议的纯文本答案
                     String visibleContent = completionEvaluation.userVisibleContent() != null
                             ? completionEvaluation.userVisibleContent() : content;
+                    callback.publishVisibleContent(visibleContent);
                     state = appendAndPublishStep(state, new ReactStep.Answer(visibleContent), loopContext);
                     state = state.toBuilder()
                             .done(true)

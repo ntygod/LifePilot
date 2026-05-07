@@ -2,7 +2,6 @@ package com.lifepilot.skill.registry;
 
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillDefinition;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +17,7 @@ import java.util.regex.Pattern;
  *   <li>ID 格式：{@code ^[a-z0-9.-]{1,64}$}（小写字母、数字、连字符和点号）</li>
  *   <li>名称长度 ≤ 配置的 maxNameLength</li>
  *   <li>Instructions 长度 ≤ 配置的 maxInstructionsLength</li>
- *   <li>suggestedTools 中每个工具 ID 在 {@link DynamicToolRegistry} 中存在（允许为空列表）</li>
+ *   <li>suggestedTools 仅作为元数据保留，不参与注册期硬校验</li>
  * </ul>
  *
  * @author zsg
@@ -31,20 +30,10 @@ public class SkillDefinitionValidator {
     /** Skill ID 合法格式：小写字母、数字、连字符和点号，长度 1-64。 */
     private static final Pattern ID_PATTERN = Pattern.compile("^[a-z0-9.-]{1,64}$");
 
-    private final DynamicToolRegistry toolRegistry;
     private final SkillConfigProperties.Validation validationConfig;
-    /** 启动期标志：BuiltinTool 在 ApplicationReadyEvent 注册，早于此的校验把"工具未注册"当 DEBUG，避免启动日志刷屏假警告。 */
-    private volatile boolean startupComplete = false;
 
-    public SkillDefinitionValidator(DynamicToolRegistry toolRegistry,
-                                    SkillConfigProperties skillConfig) {
-        this.toolRegistry = toolRegistry;
+    public SkillDefinitionValidator(SkillConfigProperties skillConfig) {
         this.validationConfig = skillConfig.getValidation();
-    }
-
-    /** 由 SkillAutoConfiguration 在 ApplicationReadyEvent 后调用，切换"工具未注册"提示为 WARN。 */
-    public void markStartupComplete() {
-        this.startupComplete = true;
     }
 
     /**
@@ -71,7 +60,7 @@ public class SkillDefinitionValidator {
             errors.add("Instructions 长度超过限制: " + definition.instructions().length() + " > " + validationConfig.getMaxInstructionsLength());
         }
 
-        // suggested_tools 已不作为运行时工具加载依赖；工具全量常驻，此校验无意义，仅保留字段供 UI 展示。
+        // suggested_tools 已不作为运行时工具加载依赖；仅保留字段供 UI 展示和人工参考。
 
         boolean valid = errors.isEmpty();
         if (!valid) {

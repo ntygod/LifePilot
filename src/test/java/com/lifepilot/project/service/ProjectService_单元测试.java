@@ -3,6 +3,7 @@ package com.lifepilot.project.service;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import com.lifepilot.memory.scope.MemorySpace;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.scope.MemorySpaceType;
@@ -61,6 +62,9 @@ class ProjectService_单元测试 {
     @Mock
     KnowledgeBaseManager knowledgeBaseManager;
 
+    @Mock
+    MemoryProjectionService projectionService;
+
     @InjectMocks
     ProjectService service;
 
@@ -95,10 +99,7 @@ class ProjectService_单元测试 {
                 0,
                 tags,
                 now,
-                now,
-                false,
-                null,
-                List.of()
+                now
         );
     }
 
@@ -106,7 +107,7 @@ class ProjectService_单元测试 {
     void createProject_会自动建关联MemorySpace() {
         when(memorySpaceRepository.ensureProjectSpace(anyString())).thenReturn(mockSpace("ms-1"));
         when(knowledgeBaseManager.createKnowledgeBase(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(mockKb("kb-1", "论文 · 项目知识库"));
         Project created = service.createProject("论文", "严谨", ProjectIsolation.ISOLATED);
         assertEquals("ms-1", created.memorySpaceId());
@@ -118,15 +119,15 @@ class ProjectService_单元测试 {
     void createProject_自动建默认知识库_并绑定到项目空间() {
         when(memorySpaceRepository.ensureProjectSpace(anyString())).thenReturn(mockSpace("ms-1"));
         when(knowledgeBaseManager.createKnowledgeBase(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(mockKb("kb-1", "论文 · 项目知识库"));
 
         service.createProject("论文", "", ProjectIsolation.ISOLATED);
 
         // KB 名称包含项目名，便于后续人工识别
         verify(knowledgeBaseManager).createKnowledgeBase(
-                argThat(name -> name != null && name.contains("论文")),
-                anyString(), any(), any(), any(), any(), any(), any());
+                argThat((String name) -> name != null && name.contains("论文")),
+                anyString(), any(), any(), any(), any(), any());
         // KB 必须绑定到项目的 memory_space（Plan 1 spec §3.2："上传后作为项目知识库的初始资料"）
         verify(memorySpaceRepository).attachKnowledgeBase("ms-1", "kb-1");
     }
@@ -150,7 +151,7 @@ class ProjectService_单元测试 {
     void createProject_KB创建异常时_项目仍保留_不抛异常() {
         when(memorySpaceRepository.ensureProjectSpace(anyString())).thenReturn(mockSpace("ms-1"));
         when(knowledgeBaseManager.createKnowledgeBase(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("向量索引初始化失败"));
 
         Project created = service.createProject("项目", "", ProjectIsolation.ISOLATED);
@@ -193,7 +194,7 @@ class ProjectService_单元测试 {
     void createProject_空instructions_规范化为空字符串() {
         when(memorySpaceRepository.ensureProjectSpace(anyString())).thenReturn(mockSpace("ms-1"));
         when(knowledgeBaseManager.createKnowledgeBase(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(mockKb("kb-1", "项目 · 项目知识库"));
         Project created = service.createProject("项目", null, ProjectIsolation.ISOLATED);
         assertEquals("", created.instructions());
@@ -203,7 +204,7 @@ class ProjectService_单元测试 {
     void createProject_空isolation_用默认ISOLATED() {
         when(memorySpaceRepository.ensureProjectSpace(anyString())).thenReturn(mockSpace("ms-1"));
         when(knowledgeBaseManager.createKnowledgeBase(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any()))
+                anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(mockKb("kb-1", "项目 · 项目知识库"));
         Project created = service.createProject("项目", "", null);
         assertEquals(ProjectIsolation.ISOLATED, created.isolation());
@@ -233,6 +234,26 @@ class ProjectService_单元测试 {
         verify(memorySpaceRepository).deleteById("ms-1");
         // 无 KB 绑定时 Step 0 不调 deleteKnowledgeBase
         verify(knowledgeBaseManager, never()).deleteKnowledgeBase(anyString());
+    }
+
+    @Test
+    void deleteProject_删除主库前登记实体向量删除投影任务() {
+        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
+                Instant.now(), Instant.now());
+        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
+        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
+        when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
+                .thenReturn(List.of());
+        when(jdbcTemplate.queryForList(
+                eq("SELECT id FROM memory_entities WHERE space_id = ?"),
+                eq(String.class),
+                eq("ms-1")))
+                .thenReturn(List.of("e-1", "e-2"));
+
+        service.deleteProject("p-1");
+
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-1");
+        verify(projectionService).enqueueVectorDeleteAfterCommit("e-2");
     }
 
     @Test

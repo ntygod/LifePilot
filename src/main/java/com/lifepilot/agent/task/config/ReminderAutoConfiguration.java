@@ -50,6 +50,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 
 /**
  * 主动提醒引擎 Spring Boot 自动配置。
@@ -117,15 +118,16 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public LocationResolver locationResolver(AgentConfigProperties config) {
-        return new LocationResolver(config);
+    public LocationResolver locationResolver(
+            @Autowired(required = false) AgentConfigProperties config) {
+        return new LocationResolver(safeAgentConfig(config));
     }
 
     @Bean
     @ConditionalOnMissingBean
     public OpenMeteoWeatherService openMeteoWeatherService(LocationResolver locationResolver,
-                                                            AgentConfigProperties config) {
-        return new OpenMeteoWeatherService(locationResolver, config);
+                                                            @Autowired(required = false) AgentConfigProperties config) {
+        return new OpenMeteoWeatherService(locationResolver, safeAgentConfig(config));
     }
 
     @Bean
@@ -135,7 +137,7 @@ public class ReminderAutoConfiguration {
             @Autowired(required = false) ProceduralMemory proceduralMemory,
             @Autowired(required = false) EpisodicMemory episodicMemory,
             @Autowired(required = false) SessionWorkspaceService sessionWorkspaceService,
-            NotificationRepository notificationRepository,
+            @Autowired(required = false) NotificationRepository notificationRepository,
             @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
             @Autowired(required = false) ReminderOutcomeRepository reminderOutcomeRepository,
             @Autowired(required = false) ReminderTopicAliasRepository reminderTopicAliasRepository,
@@ -181,8 +183,9 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public WeatherSignalSource weatherSignalSource(AgentConfigProperties config) {
-        return new WeatherSignalSource(config.getTask().getWeatherApiBaseUrl());
+    public WeatherSignalSource weatherSignalSource(
+            @Autowired(required = false) AgentConfigProperties config) {
+        return new WeatherSignalSource(safeAgentConfig(config).getTask().getWeatherApiBaseUrl());
     }
 
     @Bean
@@ -196,8 +199,8 @@ public class ReminderAutoConfiguration {
     public ReminderMessageGenerator reminderMessageGenerator(
             @Autowired(required = false) GenerationRouter generationRouter,
             @Autowired(required = false) PromptRegistry promptRegistry,
-            AgentConfigProperties config) {
-        return new DefaultReminderMessageGenerator(generationRouter, promptRegistry, config);
+            @Autowired(required = false) AgentConfigProperties config) {
+        return new DefaultReminderMessageGenerator(generationRouter, promptRegistry, safeAgentConfig(config));
     }
 
     @Bean
@@ -208,14 +211,16 @@ public class ReminderAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ReminderActionPolicySelector reminderActionPolicySelector(AgentConfigProperties config) {
-        return new ReminderActionPolicySelector(config);
+    public ReminderActionPolicySelector reminderActionPolicySelector(
+            @Autowired(required = false) AgentConfigProperties config) {
+        return new ReminderActionPolicySelector(safeAgentConfig(config));
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ReminderOpportunityPolicySelector reminderOpportunityPolicySelector(AgentConfigProperties config) {
-        return new ReminderOpportunityPolicySelector(config);
+    public ReminderOpportunityPolicySelector reminderOpportunityPolicySelector(
+            @Autowired(required = false) AgentConfigProperties config) {
+        return new ReminderOpportunityPolicySelector(safeAgentConfig(config));
     }
 
     @Bean
@@ -228,7 +233,7 @@ public class ReminderAutoConfiguration {
             @Autowired(required = false) EpisodicMemory episodicMemory,
             @Autowired(required = false) WorkflowRepository workflowRepository,
             @Autowired(required = false) TraceQuery traceQuery,
-            AgentConfigProperties config) {
+            @Autowired(required = false) AgentConfigProperties config) {
         return new ReminderOutcomeInferenceService(
                 reminderExecutionRepository,
                 reminderOutcomeRepository,
@@ -237,7 +242,7 @@ public class ReminderAutoConfiguration {
                 episodicMemory,
                 workflowRepository,
                 traceQuery,
-                config
+                safeAgentConfig(config)
         );
     }
 
@@ -246,13 +251,13 @@ public class ReminderAutoConfiguration {
     public ReminderReplayService reminderReplayService(ReminderExecutionRepository reminderExecutionRepository,
                                                        ReminderOpportunityPolicySelector reminderOpportunityPolicySelector,
                                                        ReminderActionPolicySelector reminderActionPolicySelector,
-                                                       AgentConfigProperties config) {
+                                                       @Autowired(required = false) AgentConfigProperties config) {
         return new ReminderReplayService(
                 reminderExecutionRepository,
                 reminderOpportunityPolicySelector,
                 reminderActionPolicySelector,
                 null,
-                config
+                safeAgentConfig(config)
         );
     }
 
@@ -275,15 +280,15 @@ public class ReminderAutoConfiguration {
             ReminderExecutionRepository reminderExecutionRepository,
             ReminderReplayReportRepository reminderReplayReportRepository,
             ReminderReplayService reminderReplayService,
-            NotificationProperties notificationProperties,
-            AgentConfigProperties config) {
+            @Autowired(required = false) NotificationProperties notificationProperties,
+            @Autowired(required = false) AgentConfigProperties config) {
         return new ReminderReplayEvaluationScheduler(
                 sharedScheduler.heartbeat(),
                 reminderExecutionRepository,
                 reminderReplayReportRepository,
                 reminderReplayService,
-                notificationProperties,
-                config
+                notificationProperties != null ? notificationProperties : new NotificationProperties(),
+                safeAgentConfig(config)
         );
     }
 
@@ -297,14 +302,18 @@ public class ReminderAutoConfiguration {
             ReminderFeedbackRepository reminderFeedbackRepository,
             ReminderReplayReportRepository reminderReplayReportRepository,
             ReminderTopicAliasRepository reminderTopicAliasRepository,
-            AgentConfigProperties config) {
+            @Autowired(required = false) AgentConfigProperties config) {
         return new ReminderRetentionScheduler(
                 sharedScheduler.cleanup(),
                 reminderExecutionRepository,
                 reminderFeedbackRepository,
                 reminderReplayReportRepository,
                 reminderTopicAliasRepository,
-                config
+                safeAgentConfig(config)
         );
+    }
+
+    private AgentConfigProperties safeAgentConfig(@Nullable AgentConfigProperties config) {
+        return config != null ? config : new AgentConfigProperties();
     }
 }

@@ -22,8 +22,8 @@
 
 **重要：保留工具调用索引**
 压缩工具结果时，必须在摘要文本中以 `[callId=xxx]` 的形式保留每次工具调用的 callId。
-后续对话如需查看完整原文，可通过 `memory(callId="xxx")` 工具按索引取回；
-检索同类历史调用用 `memory(toolId="...")`。
+后续对话如需查看完整原文，应按当前可见工具 schema 用 callId/entryId 读取 L0 transcript；
+检索同类历史调用用 toolId/callId/keyword 条件搜索。不要把工具完整结果写成 L3 长期事实。
 示例：
 - "已用 web_search 搜索『Wuthering Waves Steam』，得到 5 条结果含峰值并发数据 [callId=call_abc123]"
 - "尝试 file_read 读取 trend.png 失败，二进制读取不支持 [callId=call_def456]"

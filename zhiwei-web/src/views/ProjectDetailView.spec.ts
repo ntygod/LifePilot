@@ -36,9 +36,6 @@ vi.mock('@/api/client', () => ({
   knowledgeBaseApi: {
     list: vi.fn().mockResolvedValue([]),
   },
-  datastoreApi: {
-    list: vi.fn().mockResolvedValue([]),
-  },
 }))
 
 import * as projectApi from '@/api/project'

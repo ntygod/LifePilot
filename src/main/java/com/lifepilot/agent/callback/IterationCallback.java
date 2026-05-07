@@ -38,6 +38,27 @@ public interface IterationCallback {
                          List<ToolCallback> toolCallbacks,
                          @Nullable TraceContext traceContext);
 
+    /**
+     * 按调用目的调用 LLM。
+     *
+     * <p>默认实现保持非流式/测试回调的简洁性；流式回调会覆盖此方法，
+     * 用 {@link LlmCallPurpose} 显式决定正文是否进入用户可见 TOKEN 通道。</p>
+     *
+     * @param request       原始请求
+     * @param messages      Spring AI 消息列表
+     * @param toolCallbacks 工具回调列表（用于构建 tool definition，不自动执行）
+     * @param traceContext  追踪上下文
+     * @param purpose       本次 LLM 调用目的
+     * @return LLM 原始响应（可能包含 tool call 请求）
+     */
+    default ChatResponse callLlm(AgentRequest request,
+                                 List<Message> messages,
+                                 List<ToolCallback> toolCallbacks,
+                                 @Nullable TraceContext traceContext,
+                                 LlmCallPurpose purpose) {
+        return callLlm(request, messages, toolCallbacks, traceContext);
+    }
+
     /** 回调是否已在 callLlm 内部记录 LLM Trace 步骤（流式回调返回 true，避免 coreLoop 重复记录）。 */
     default boolean recordsLlmStep() { return false; }
 
@@ -61,4 +82,13 @@ public interface IterationCallback {
      * @return 推理过程原文；非推理路径返回空串
      */
     default String getFinalReasoningContent() { return ""; }
+
+    /**
+     * 发布已经由 ReAct 循环判定为用户可见的正文内容。
+     *
+     * <p>流式实现会把该内容推送到前端正文通道；非流式实现保持空操作。</p>
+     *
+     * @param content 用户可见正文
+     */
+    default void publishVisibleContent(String content) {}
 }

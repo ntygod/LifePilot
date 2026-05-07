@@ -8,6 +8,8 @@ import com.lifepilot.knowledge.repository.DocumentChunkRepository;
 import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.memory.scope.MemoryReadFilter;
 import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.scope.MemorySpaceKeys;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -22,7 +24,8 @@ import java.util.regex.Pattern;
  * 图谱检索服务 -- 通过知识图谱遍历找到与查询相关的文档分块。
  *
  * <p>算法：从查询中提取候选实体名 -> 匹配 SemanticMemory 中的实体 -> 2-hop 图遍历 ->
- * 通过实体的 sourceConversationId 定位文档 -> 返回该文档的 parent 分块（chunkLevel=0）。
+ * 优先通过实体 provenance 的 sourceEntryId 定位 chunk；旧数据缺少 chunk 证据时，
+ * 再通过 sourceConversationId 定位文档级 parent 分块。
  *
  * <p>评分规则：
  * <ul>
@@ -59,6 +62,7 @@ public class GraphKnowledgeSearcher {
     private final SemanticMemory semanticMemory;
     private final DocumentChunkRepository chunkRepository;
     private final DocumentRepository docRepository;
+    private final @Nullable MemorySpaceRepository memorySpaceRepository;
 
     /**
      * 构造图谱检索服务。
@@ -70,9 +74,17 @@ public class GraphKnowledgeSearcher {
     public GraphKnowledgeSearcher(@Nullable SemanticMemory semanticMemory,
                                    DocumentChunkRepository chunkRepository,
                                    DocumentRepository docRepository) {
+        this(semanticMemory, chunkRepository, docRepository, null);
+    }
+
+    public GraphKnowledgeSearcher(@Nullable SemanticMemory semanticMemory,
+                                   DocumentChunkRepository chunkRepository,
+                                   DocumentRepository docRepository,
+                                   @Nullable MemorySpaceRepository memorySpaceRepository) {
         this.semanticMemory = semanticMemory;
         this.chunkRepository = chunkRepository;
         this.docRepository = docRepository;
+        this.memorySpaceRepository = memorySpaceRepository;
         log.info("GraphKnowledgeSearcher 初始化完成, semanticMemory={}", semanticMemory != null ? "可用" : "不可用");
     }
 
@@ -95,8 +107,13 @@ public class GraphKnowledgeSearcher {
             return List.of();
         }
 
-        // 2. 实体名匹配 — 在 DOMAIN_MEMORY 范围内查找
-        var readFilter = MemoryReadFilter.of(List.of(), List.of(MemoryScope.DOMAIN_MEMORY));
+        // 2. 实体名匹配 — 优先收窄到本次检索的知识库 domain space
+        var readFilterOpt = buildReadFilter(scopes);
+        if (readFilterOpt.isEmpty()) {
+            log.debug("图谱检索: 目标知识库没有可用 domain space, scopes={}", scopes);
+            return List.of();
+        }
+        var readFilter = readFilterOpt.get();
         var directEntities = matchEntities(segments, readFilter);
         if (directEntities.isEmpty()) {
             log.debug("图谱检索: 查询无实体命中, query={}", query);
@@ -128,26 +145,37 @@ public class GraphKnowledgeSearcher {
             }
         }
 
-        // 4. 收集 sourceConversationId（= 文档 ID）并按 scope 过滤
+        // 4. 优先从实体 provenance 回到 chunk，避免图命中后粗暴返回整篇文档
         var kbIds = extractKnowledgeBaseIds(scopes);
+        var chunkScores = resolveChunkScores(entityScores);
+        var chunkResults = buildChunkResults(chunkScores, kbIds);
+        if (!chunkResults.isEmpty()) {
+            log.debug("图谱检索: directEntities={}, totalEntities={}, chunks={}",
+                    directEntities.size(), entityScores.size(), chunkResults.size());
+            return limit(chunkResults, topK);
+        }
+
+        // 5. 兼容旧数据：没有 chunk 级 provenance 时，回退到有效 document provenance。
+        // 若实体完全没有 document provenance（更早的旧数据），最后才使用根 sourceConversationId。
         var docScores = new LinkedHashMap<String, Double>(); // docId -> 最高分
+        var validDocumentIds = resolveDocumentIds(entityScores, true);
+        var allDocumentIds = resolveDocumentIds(entityScores, false);
 
         for (var entry : entityScores.entrySet()) {
             var entity = entityMap.get(entry.getKey());
-            if (entity == null || entity.sourceConversationId() == null) {
+            if (entity == null) {
                 continue;
             }
-            String docId = entity.sourceConversationId();
-            // 验证文档存在且属于目标知识库
-            var docOpt = docRepository.findById(docId);
-            if (docOpt.isEmpty()) {
-                continue;
+            var candidateDocIds = validDocumentIds.getOrDefault(entry.getKey(), List.of());
+            if (candidateDocIds.isEmpty() && !allDocumentIds.containsKey(entry.getKey())
+                    && entity.sourceConversationId() != null) {
+                candidateDocIds = List.of(entity.sourceConversationId());
             }
-            var doc = docOpt.get();
-            if (!kbIds.isEmpty() && !kbIds.contains(doc.knowledgeBaseId())) {
-                continue;
+            for (String docId : candidateDocIds) {
+                if (isDocumentInScope(docId, kbIds)) {
+                    docScores.merge(docId, entry.getValue(), Math::max);
+                }
             }
-            docScores.merge(docId, entry.getValue(), Math::max);
         }
 
         if (docScores.isEmpty()) {
@@ -155,7 +183,7 @@ public class GraphKnowledgeSearcher {
             return List.of();
         }
 
-        // 5. 获取每篇文档的 parent 分块（chunkLevel=0），构建结果
+        // 6. 获取每篇文档的 parent 分块（chunkLevel=0），构建结果
         var results = new ArrayList<DocumentSearchResult>();
 
         for (var entry : docScores.entrySet()) {
@@ -174,14 +202,75 @@ public class GraphKnowledgeSearcher {
             }
         }
 
-        // 6. 按分数降序排列，截取 topK
+        // 7. 按分数降序排列，截取 topK
         results.sort(Comparator.comparingDouble(DocumentSearchResult::score).reversed());
-        var finalResults = results.size() > topK ? results.subList(0, topK) : results;
+        var finalResults = limit(results, topK);
 
         log.debug("图谱检索: directEntities={}, totalEntities={}, docs={}, chunks={}",
                 directEntities.size(), entityScores.size(), docScores.size(), finalResults.size());
 
         return List.copyOf(finalResults);
+    }
+
+    private Map<String, Double> resolveChunkScores(Map<String, Double> entityScores) {
+        if (entityScores.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            var sourceEntries = semanticMemory.findSourceEntryIdsByEntityIds(entityScores.keySet());
+            var chunkScores = new LinkedHashMap<String, Double>();
+            for (var entry : entityScores.entrySet()) {
+                var chunkIds = sourceEntries.getOrDefault(entry.getKey(), List.of());
+                for (var chunkId : chunkIds) {
+                    chunkScores.merge(chunkId, entry.getValue(), Math::max);
+                }
+            }
+            return chunkScores;
+        } catch (Exception e) {
+            log.debug("图谱检索: chunk 级 provenance 查询失败，回退文档级定位: error={}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private Map<String, List<String>> resolveDocumentIds(Map<String, Double> entityScores, boolean onlyValid) {
+        if (entityScores.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            return semanticMemory.findSourceDocumentIdsByEntityIds(entityScores.keySet(), onlyValid);
+        } catch (Exception e) {
+            log.debug("图谱检索: document provenance 查询失败，onlyValid={}, error={}", onlyValid, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private List<DocumentSearchResult> buildChunkResults(Map<String, Double> chunkScores, List<String> kbIds) {
+        if (chunkScores.isEmpty()) {
+            return List.of();
+        }
+        var chunks = chunkRepository.findByIds(new ArrayList<>(chunkScores.keySet()));
+        var results = new ArrayList<DocumentSearchResult>();
+        for (var chunk : chunks) {
+            if (!kbIds.isEmpty() && !kbIds.contains(chunk.knowledgeBaseId())) {
+                continue;
+            }
+            double score = chunkScores.getOrDefault(chunk.id(), 0.0);
+            if (score <= 0.0) {
+                continue;
+            }
+            results.add(buildSearchResult(chunk, score));
+        }
+        results.sort(Comparator.comparingDouble(DocumentSearchResult::score).reversed());
+        return results;
+    }
+
+    private boolean isDocumentInScope(String docId, List<String> kbIds) {
+        var docOpt = docRepository.findById(docId);
+        if (docOpt.isEmpty()) {
+            return false;
+        }
+        var doc = docOpt.get();
+        return kbIds.isEmpty() || kbIds.contains(doc.knowledgeBaseId());
     }
 
     /**
@@ -199,6 +288,24 @@ public class GraphKnowledgeSearcher {
             result.addFirst(trimmed);
         }
         return result;
+    }
+
+    private Optional<MemoryReadFilter> buildReadFilter(List<KnowledgeSearchScope> scopes) {
+        var kbIds = extractKnowledgeBaseIds(scopes);
+        if (kbIds.isEmpty() || memorySpaceRepository == null) {
+            return Optional.of(MemoryReadFilter.of(List.of(), List.of(MemoryScope.DOMAIN_MEMORY)));
+        }
+        var spaceIds = kbIds.stream()
+                .map(MemorySpaceKeys::knowledgeBaseDomain)
+                .map(memorySpaceRepository::findBySpaceKey)
+                .flatMap(Optional::stream)
+                .map(space -> space.id())
+                .distinct()
+                .toList();
+        if (spaceIds.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(MemoryReadFilter.of(spaceIds, List.of(MemoryScope.DOMAIN_MEMORY)));
     }
 
     /**
@@ -254,12 +361,17 @@ public class GraphKnowledgeSearcher {
                 score,
                 "graph",
                 chunk.metadata(),
-                Optional.of(new ScoreBreakdown(0.0, 0.0, 0.0, 0.0, Optional.empty())),
+                Optional.of(new ScoreBreakdown(0.0, 0.0, score, 0.0, Optional.empty())),
                 Optional.empty(),
-                chunk.sourceType(),
-                Optional.ofNullable(chunk.sourceDatastoreId()),
-                Optional.ofNullable(chunk.sourceCollectionId())
+                chunk.sourceType()
         );
+    }
+
+    private List<DocumentSearchResult> limit(List<DocumentSearchResult> results, int topK) {
+        if (topK <= 0 || results.size() <= topK) {
+            return List.copyOf(results);
+        }
+        return List.copyOf(results.subList(0, topK));
     }
 
     private List<String> extractKnowledgeBaseIds(List<KnowledgeSearchScope> scopes) {

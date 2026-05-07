@@ -4,20 +4,14 @@ import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillDefinitionValidator.ValidationResult;
-import com.lifepilot.tool.BuiltinTool;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * {@link SkillDefinitionValidator} 单元测试。
@@ -27,20 +21,11 @@ import static org.mockito.Mockito.when;
  */
 class SkillDefinitionValidatorTest {
 
-    private DynamicToolRegistry toolRegistry;
     private SkillDefinitionValidator validator;
 
     @BeforeEach
     void setUp() {
-        toolRegistry = mock(DynamicToolRegistry.class);
-        validator = new SkillDefinitionValidator(toolRegistry, new SkillConfigProperties());
-        // 默认所有工具都存在，返回一个真实的 BuiltinTool 实例
-        var dummyTool = BuiltinTool.builder()
-                .id("dummy").name("dummy").description("dummy")
-                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
-                .executor(input -> null)
-                .build();
-        when(toolRegistry.resolve(anyString())).thenReturn(Optional.of(dummyTool));
+        validator = new SkillDefinitionValidator(new SkillConfigProperties());
     }
 
     /** 构建合法的 SkillDefinition。 */
@@ -153,8 +138,7 @@ class SkillDefinitionValidatorTest {
     // ─────────────────────────────────────────────
 
     @Test
-    void suggestedTools中工具未注册_仅警告不阻断() {
-        when(toolRegistry.resolve("unknown-tool")).thenReturn(Optional.empty());
+    void suggestedTools中工具未注册_不参与注册期硬校验() {
         var def = validDefinition().toBuilder().suggestedTools(List.of("unknown-tool")).build();
         ValidationResult result = validator.validate(def);
         assertThat(result.valid()).isTrue();

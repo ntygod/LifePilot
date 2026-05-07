@@ -5,7 +5,7 @@
 ```
 skills/<name>/
 ├── SKILL.md              # 必需，frontmatter + body
-├── references/           # 可选，详细参考（LLM 用 file_read 按需加载）
+├── references/           # 可选，详细参考（LLM 用 file.read 按需加载）
 │   └── *.md
 ├── scripts/              # 可选，可执行脚本
 └── assets/               # 可选，模板/schema/静态资源
@@ -25,9 +25,9 @@ metadata:
     tags:                            # 辅助 BM25 召回
       - a
       - b
-    suggested_tools:                 # 加载 Skill 时合并进 activatedToolIds
-      - file_read
-      - shell_exec
+    suggested_tools:                 # UI / 检索参考，不会自动注入 Agent
+      - file.read
+      - shell.exec
     requires:                        # 可选硬过滤；不满足则 SkillRequirementGate 剔除
       bins: [git]
       env: [API_KEY]
@@ -87,9 +87,9 @@ body 超 5000 → 拆 references；不要裁信息。
 
 ## suggested_tools
 
-- 只能引用已注册工具 ID（不存在静默丢弃，启动日志 WARN）
-- 用 `status` 工具拿当前注册清单核对
-- 多 action 工具（`memory` / `file_read` / `shell_process` 等）按工具 ID 写一条即可，action 不拆
+- 仅作为 UI 展示、检索和人工参考元数据，不会在 `skill.load` 后自动注入 Agent
+- 建议引用已注册 canonical 工具 ID；用 `status` 或 `tool.search` 拿当前工具清单核对
+- 多 action 工具（`memory` / `file.read` / `shell.process` 等）按工具 ID 写一条即可，action 不拆
 
 ## 落盘与验证
 

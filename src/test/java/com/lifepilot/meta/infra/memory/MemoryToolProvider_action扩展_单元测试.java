@@ -294,6 +294,25 @@ class MemoryToolProvider_action扩展_单元测试 {
         verify(semanticMemory, never()).updateSucceededBy(any(), any());
     }
 
+    @Test
+    void tag应拒绝指向巩固画像实体() {
+        var pref = 构造实体("pref-1", EntityType.PREFERENCE, "简洁回答",
+                LifecycleState.ACTIVE);
+        var profile = 构造实体("profile-1", EntityType.CUSTOM, "__consolidated_profile",
+                LifecycleState.ACTIVE);
+        when(semanticMemory.findById("pref-1")).thenReturn(Optional.of(pref));
+        when(semanticMemory.findById("profile-1")).thenReturn(Optional.of(profile));
+
+        var result = 执行工具("tag", Map.of(
+                "sourceEntityId", "pref-1",
+                "targetEntityId", "profile-1",
+                "relationType", "conflicts_with"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("__consolidated_profile").contains("原子实体");
+        verify(semanticMemory, never()).addRelation(any(), any());
+    }
+
     // ---------------- 共享辅助 ----------------
 
     private com.lifepilot.tool.model.ToolResult 执行工具(String action, Map<String, Object> extra) {

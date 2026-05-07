@@ -111,7 +111,7 @@ public class BrowserIngressService {
         List<GatewayMessage.Attachment> attachments = loadAttachments(normalizedRequest, sessionId);
         var transcription = transcribeAudioAttachments(attachments, normalizedRequest.content(), sessionId);
 
-        // 文档附件提示注入：对 docx/pdf/md/txt 附件注入 sentinel 包裹的系统提示，引导 file.read / document.edit
+        // 文档附件提示注入：对 docx/pdf/md/txt 附件注入 sentinel 包裹的附件事实。
         String contentWithDocHint = DocumentAttachmentHintBuilder.appendHint(transcription.content(), attachments);
         var content = new MessageContent.TextMessage(contentWithDocHint);
 

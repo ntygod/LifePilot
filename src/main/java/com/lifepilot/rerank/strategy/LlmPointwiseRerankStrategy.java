@@ -133,7 +133,7 @@ public class LlmPointwiseRerankStrategy {
                 original.content(), original.contextPrefix(), original.headingHierarchy(),
                 rerankerScore, "reranked", original.metadata(),
                 java.util.Optional.of(breakdown), original.expandedContent(),
-                original.sourceType(), original.sourceDatastoreId(), original.sourceCollectionId());
+                original.sourceType());
     }
 
     private double clampScore(double score) {

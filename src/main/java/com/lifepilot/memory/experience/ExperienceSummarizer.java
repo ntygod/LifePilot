@@ -45,6 +45,7 @@ public class ExperienceSummarizer {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
+    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience config;
@@ -56,7 +57,7 @@ public class ExperienceSummarizer {
 
     public ExperienceSummarizer(SemanticMemory semanticMemory,
                                 VectorSearcher vectorSearcher,
-                                GenerationRouter generationRouter,
+                                @Nullable GenerationRouter generationRouter,
                                 PromptRegistry promptRegistry,
                                 MemoryProperties properties,
                                 TrajectoryQualityAssessor qualityAssessor) {
@@ -66,7 +67,7 @@ public class ExperienceSummarizer {
 
     public ExperienceSummarizer(SemanticMemory semanticMemory,
                                 VectorSearcher vectorSearcher,
-                                GenerationRouter generationRouter,
+                                @Nullable GenerationRouter generationRouter,
                                 PromptRegistry promptRegistry,
                                 MemoryProperties properties,
                                 TrajectoryQualityAssessor qualityAssessor,
@@ -93,6 +94,10 @@ public class ExperienceSummarizer {
         // 1. 配置开关检查
         if (!config.isEnabled()) {
             log.debug("经验提炼: 功能已关闭");
+            return null;
+        }
+        if (generationRouter == null) {
+            log.debug("经验提炼: GenerationRouter 不可用，跳过");
             return null;
         }
 
@@ -331,9 +336,6 @@ public class ExperienceSummarizer {
             MemoryWriteContext writeContext = resolveExperienceWriteContext(sourceId);
             SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(entity, sourceId, writeContext));
 
-            // 更新向量索引
-            vectorSearcher.upsertEntityVector(entity.id(), experienceText);
-
             log.debug("经验提炼: 新经验已写入, entityId={}, name={}", entity.id(), name);
             return entity;
         } catch (Exception e) {
@@ -362,8 +364,6 @@ public class ExperienceSummarizer {
                 sessionId,
                 sessionId,
                 sessionId,
-                null,
-                null,
                 null,
                 null,
                 null,

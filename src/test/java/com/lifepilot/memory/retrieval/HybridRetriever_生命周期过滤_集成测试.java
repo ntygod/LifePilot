@@ -6,6 +6,7 @@ import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -88,6 +89,7 @@ class HybridRetriever_生命周期过滤_集成测试 {
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
+        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 
         ftsSearcher = new FtsSearcher(jdbcTemplate);
         graphTraverser = new GraphTraverser(jdbcTemplate);

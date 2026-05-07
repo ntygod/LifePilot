@@ -121,7 +121,7 @@ public class DocumentRetriever {
             return List.of();
         }
         return retrieveByScopes(query, kbIds.stream()
-                .map(kbId -> new KnowledgeSearchScope(kbId, null))
+                .map(KnowledgeSearchScope::new)
                 .toList(), topK);
     }
 
@@ -286,7 +286,7 @@ public class DocumentRetriever {
                         r.score(), r.sourcePath(),
                         mergeMeta(r.metadata(), "retrieval_confidence", "very_low"),
                         r.scoreBreakdown(), r.expandedContent(),
-                        r.sourceType(), r.sourceDatastoreId(), r.sourceCollectionId()
+                        r.sourceType()
                 )).toList();
             }
         }
@@ -442,9 +442,7 @@ public class DocumentRetriever {
                             original.metadata(),
                             Optional.of(breakdown),
                             Optional.empty(),
-                            original.sourceType(),
-                            original.sourceDatastoreId(),
-                            original.sourceCollectionId()
+                            original.sourceType()
                     );
                 })
                 .toList();
@@ -510,9 +508,7 @@ public class DocumentRetriever {
                         childResult.metadata(),
                         childResult.scoreBreakdown(),
                         Optional.empty(),
-                        childResult.sourceType(),
-                        childResult.sourceDatastoreId(),
-                        childResult.sourceCollectionId()
+                        childResult.sourceType()
                 ));
             }
         }
@@ -570,9 +566,7 @@ public class DocumentRetriever {
                         result.metadata(),
                         result.scoreBreakdown(),
                         Optional.of(sb.toString().trim()),
-                        result.sourceType(),
-                        result.sourceDatastoreId(),
-                        result.sourceCollectionId()
+                        result.sourceType()
                 ));
             } catch (Exception e) {
                 log.warn("上下文窗口扩展失败，返回原始分块: chunkId={}, error={}",

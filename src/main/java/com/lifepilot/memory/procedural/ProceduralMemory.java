@@ -3,8 +3,7 @@ package com.lifepilot.memory.procedural;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.projection.MemoryProjectionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,8 +18,8 @@ import java.util.Optional;
 /**
  * L4 程序记忆服务 — 管理操作模板和偏好规则的 CRUD 和检索。
  *
- * <p>初始化时程序化创建 {@code procedure_intent_vec}
- * sqlite-vec 向量索引虚拟表（与 {@code entity_embeddings} 保持一致的创建方式）。</p>
+ * <p>操作模板的 triggerIntent 向量是 L4 派生投影，写入/删除必须登记
+ * {@code memory_projection_outbox}，由投影 processor 幂等消费。</p>
  *
  * @author zsg
  * @since 2026-03-01
@@ -30,20 +29,14 @@ public class ProceduralMemory {
     private static final Logger log = LoggerFactory.getLogger(ProceduralMemory.class);
 
     private final JdbcTemplate jdbcTemplate;
-    private final VectorSearcher vectorSearcher;
-    private final MemoryProperties properties;
+    private final MemoryProjectionService projectionService;
     private final ObjectMapper objectMapper;
 
     public ProceduralMemory(JdbcTemplate jdbcTemplate,
-                            VectorSearcher vectorSearcher,
-                            MemoryProperties properties) {
+                            MemoryProjectionService projectionService) {
         this.jdbcTemplate = jdbcTemplate;
-        this.vectorSearcher = vectorSearcher;
-        this.properties = properties;
+        this.projectionService = projectionService;
         this.objectMapper = new ObjectMapper();
-
-        // 程序化创建 vec0 向量索引虚拟表
-        initVec0Tables();
     }
 
     // ========== 模板 CRUD ==========
@@ -78,8 +71,8 @@ public class ProceduralMemory {
                     template.createdAt().toString(), template.updatedAt().toString(),
                     template.sourceEntityId(), template.deactivatedReason());
 
-            // 创建 triggerIntent 向量索引
-            upsertIntentVector(template.templateId(), template.triggerIntent());
+            projectionService.enqueueProcedureTemplateVectorUpsertAfterCommit(
+                    template.templateId(), template.triggerIntent());
 
             log.info("程序记忆: 保存模板, id={}, name={}", template.templateId(), template.name());
         } catch (JsonProcessingException e) {
@@ -95,7 +88,7 @@ public class ProceduralMemory {
      */
     public Optional<ProcedureTemplate> findById(String templateId) {
         var results = jdbcTemplate.query(
-                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE template_id = ?",
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE template_id = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> mapRowToTemplate(rs),
                 templateId);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -132,8 +125,8 @@ public class ProceduralMemory {
                     template.sourceEntityId(), template.deactivatedReason(),
                     template.templateId());
 
-            // 刷新 triggerIntent 向量索引
-            upsertIntentVector(template.templateId(), template.triggerIntent());
+            projectionService.enqueueProcedureTemplateVectorUpsertAfterCommit(
+                    template.templateId(), template.triggerIntent());
 
             log.info("程序记忆: 更新模板, id={}, name={}", template.templateId(), template.name());
         } catch (JsonProcessingException e) {
@@ -142,13 +135,13 @@ public class ProceduralMemory {
     }
 
     /**
-     * 删除操作模板 — 同时删除向量索引。
+     * 删除操作模板 — 同时登记向量投影删除任务。
      *
      * @param templateId 模板 ID
      */
     public void delete(String templateId) {
         jdbcTemplate.update("DELETE FROM procedure_templates WHERE template_id = ?", templateId);
-        vectorSearcher.deleteEntityVector(templateId);
+        projectionService.enqueueProcedureTemplateVectorDeleteAfterCommit(templateId);
         log.info("程序记忆: 删除模板, id={}", templateId);
     }
 
@@ -164,7 +157,7 @@ public class ProceduralMemory {
      */
     public void recordExecution(String templateId, boolean success) {
         var results = jdbcTemplate.query(
-                "SELECT success_rate, use_count FROM procedure_templates WHERE template_id = ?",
+                "SELECT success_rate, use_count FROM procedure_templates WHERE template_id = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> new float[]{rs.getFloat("success_rate"), rs.getInt("use_count")},
                 templateId);
 
@@ -227,7 +220,7 @@ public class ProceduralMemory {
      */
     public Optional<PreferenceRule> findPreference(String category, String key) {
         var results = jdbcTemplate.query(
-                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ? AND key = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ? AND key = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category, key);
         return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
@@ -241,7 +234,7 @@ public class ProceduralMemory {
      */
     public List<PreferenceRule> getPreferences(String category) {
         var results = jdbcTemplate.query(
-                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ?",
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE category = ? AND deactivated_reason IS NULL",
                 (rs, rowNum) -> mapRowToPreference(rs),
                 category);
         return List.copyOf(results);
@@ -262,7 +255,7 @@ public class ProceduralMemory {
                 SET observation_count = observation_count + 1,
                     confidence = MIN(1.0, confidence + 0.05),
                     updated_at = ?
-                WHERE rule_id = ?
+                WHERE rule_id = ? AND deactivated_reason IS NULL
                 """,
                 now, ruleId);
 
@@ -312,43 +305,6 @@ public class ProceduralMemory {
     }
 
     // ========== 内部方法 ==========
-
-    /**
-     * 程序化创建 procedure_intent_vec 虚拟表。
-     * 与 VectorSearcher 中 entity_embeddings 的创建方式保持一致。
-     */
-    private void initVec0Tables() {
-        if (!vectorSearcher.isVecExtensionLoaded()) {
-            log.debug("程序记忆: sqlite-vec 未加载，跳过 vec0 表创建");
-            return;
-        }
-        int dimensions = properties.getEmbeddingDimensions();
-        try {
-            jdbcTemplate.execute(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS procedure_intent_vec USING vec0(" +
-                    "entity_id TEXT PRIMARY KEY, " +
-                    "embedding FLOAT[" + dimensions + "]" +
-                    ")");
-            log.info("程序记忆: vec0 向量索引表初始化完成, dimensions={}", dimensions);
-        } catch (Exception e) {
-            log.warn("程序记忆: vec0 表创建失败，向量检索功能将不可用", e);
-        }
-    }
-
-    /**
-     * 插入/更新 triggerIntent 向量索引。
-     *
-     * @param templateId    模板 ID
-     * @param triggerIntent 触发意图文本
-     */
-    private void upsertIntentVector(String templateId, String triggerIntent) {
-        try {
-            vectorSearcher.upsertEntityVector(templateId, triggerIntent);
-        } catch (Exception e) {
-            log.warn("程序记忆: triggerIntent 向量索引更新失败, templateId={}, error={}",
-                    templateId, e.getMessage());
-        }
-    }
 
     /**
      * ResultSet 行映射为 PreferenceRule。

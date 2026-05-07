@@ -34,7 +34,9 @@ import java.util.*;
 /**
  * 流式迭代回调 — runStreaming() 使用。
  *
- * <p>通过 ChatModel.stream(Prompt) 流式调用 LLM，逐 token 发送 SSE TOKEN 事件。
+ * <p>通过 ChatModel.stream(Prompt) 流式调用 LLM，收集模型正文分片。
+ * 常规 ReAct 轮保留用户可见的 TOKEN 流；当同一轮很快进入工具调用时，
+ * 短前置文本会留在过程侧，不进入最终答案区。
  * 当 LLM 返回 tool call 请求时，收集完整响应后构造含 tool call 的 ChatResponse
  * 供 coreLoop 手动执行工具。</p>
  *
@@ -46,6 +48,8 @@ public class StreamingCallback implements IterationCallback {
     private static final Logger log = LoggerFactory.getLogger(StreamingCallback.class);
     private static final Duration TOKEN_BATCH_MAX_DELAY = Duration.ofMillis(24);
     private static final int TOKEN_BATCH_MAX_CHARS = 96;
+    private static final Duration TOOL_AWARE_CANDIDATE_MAX_DELAY = Duration.ofMillis(180);
+    private static final int TOOL_AWARE_CANDIDATE_COMMIT_CHARS = 24;
 
     private final AgentConfigProperties config;
     private final GenerationRouter generationRouter;
@@ -76,6 +80,36 @@ public class StreamingCallback implements IterationCallback {
     private final StringBuilder pendingTokenBatch = new StringBuilder();
     @Nullable private Instant tokenBatchOpenedAt;
     private int nextTokenIndex;
+    private boolean visibleContentPublished;
+
+    /**
+     * 每次调用 {@link #callLlm} 入口必须重置这些状态。
+     *
+     * <p>StreamingCallback 在整个 turn 复用单实例；若不清理，某次流式异常会残留在字段中，
+     * 导致后续重试或收尾总结被同一个旧异常污染，表现为“明明重试了但还是立即失败”。</p>
+     */
+    private void resetPerCallState() {
+        // 单次调用累积内容必须隔离
+        reasoningContentBuilder.setLength(0);
+        finalContent = null;
+        // 关键：流式异常不能跨调用残留，否则会误判“消费完成仍有异常”
+        streamingError = null;
+        // token 合批缓冲同样按调用隔离（避免跨调用把前一轮尾巴刷到下一轮）
+        clearPendingTokenBatch();
+        visibleContentPublished = false;
+        // token index 允许跨调用递增（前端按 index 仅用于顺序，不要求从 0 开始）
+    }
+
+    private void throwAndClearStreamingErrorIfPresent(String stage) {
+        if (this.streamingError == null) {
+            return;
+        }
+        Exception err = this.streamingError;
+        // 先清理再抛出，避免上层 catch 后继续复用 callback 时被旧错误污染
+        this.streamingError = null;
+        log.warn("{}完成但存在未传播的异常，重新抛出: error={}", stage, err.getMessage());
+        throw err instanceof RuntimeException re ? re : new RuntimeException(err);
+    }
 
     public StreamingCallback(AgentConfigProperties config,
                              GenerationRouter generationRouter,
@@ -107,12 +141,20 @@ public class StreamingCallback implements IterationCallback {
                                 List<Message> messages,
                                 List<ToolCallback> toolCallbacks,
                                 @Nullable TraceContext traceContext) {
+        return callLlm(req, messages, toolCallbacks, traceContext, LlmCallPurpose.AGENT_STEP);
+    }
+
+    @Override
+    public ChatResponse callLlm(AgentRequest req,
+                                List<Message> messages,
+                                List<ToolCallback> toolCallbacks,
+                                @Nullable TraceContext traceContext,
+                                LlmCallPurpose purpose) {
         String scene = config.getLoop().getLlmScene();
 
-        // StreamingCallback 在整个 turn 复用单实例（AgentOrchestrator 持有），ReAct 多轮共享
-        // 同一个 reasoningContentBuilder；每次 callLlm 入口必须重置避免跨轮累加导致
-        // ReactStep.ToolCall.reasoningContent 含前 N 轮残留 reasoning 文本。
-        reasoningContentBuilder.setLength(0);
+        // StreamingCallback 在整个 turn 复用单实例（AgentOrchestrator 持有），
+        // 每次 LLM 调用的错误、正文和 reasoning 都必须独立，避免前一轮异常污染重试或收尾总结。
+        resetPerCallState();
 
         // 动态路由：仅当 UserMessage 含真正的多模态媒体（image / audio / video）时走多模态路径。
         // 文档类附件（pdf / docx / md / txt / csv 等）通过 file.read(attachmentId=...) 按需解析，
@@ -125,14 +167,14 @@ public class StreamingCallback implements IterationCallback {
 
         // 多模态流式路由
         if (messagesHaveMultimodalMedia && multimodalRouter != null) {
-            return callMultimodalStreaming(req, messages, toolCallbacks, scene, traceContext);
+            return callMultimodalStreaming(req, messages, toolCallbacks, scene, traceContext, purpose);
         }
 
         if (messagesHaveMultimodalMedia) {
             log.warn("消息包含媒体内容但 MultimodalRouter 不可用，回退到纯文本路由");
         }
 
-        return callTextStreaming(req, messages, toolCallbacks, scene, traceContext);
+        return callTextStreaming(req, messages, toolCallbacks, scene, traceContext, purpose);
     }
 
     /** 判断 Media 是否属于真正的多模态类型（image / audio / video）。 */
@@ -150,7 +192,8 @@ public class StreamingCallback implements IterationCallback {
     /** 多模态流式路由。 */
     private ChatResponse callMultimodalStreaming(AgentRequest req, List<Message> messages,
                                                  List<ToolCallback> toolCallbacks,
-                                                 String scene, @Nullable TraceContext traceContext) {
+                                                 String scene, @Nullable TraceContext traceContext,
+                                                 LlmCallPurpose purpose) {
         // 清空上一次迭代可能残留的 token 缓冲
         clearPendingTokenBatch();
         var mediaContents = req.mediaContents() != null && !req.mediaContents().isEmpty()
@@ -190,7 +233,9 @@ public class StreamingCallback implements IterationCallback {
                                     firstTokenTime[0] = now;
                                 }
                                 markFirstModelToken(now);
-                                pushTokenToSse(c.delta());
+                                if (purpose.streamsVisibleAnswer()) {
+                                    pushTokenToSse(c.delta());
+                                }
                             }
                             case com.lifepilot.llm.stream.ReasoningChunk r -> pushReasoningToSse(r.delta());
                             case com.lifepilot.llm.stream.ToolCallDelta ignored -> { /* 多模态路径不解析 tool call */ }
@@ -219,11 +264,10 @@ public class StreamingCallback implements IterationCallback {
         } else if (sseManager.getEmitter(streamId) == null) {
             log.debug("多模态流式消费因 SSE 连接断开停止: streamId={}", streamId);
         }
-        flushPendingTokenBatch();
-        if (this.streamingError != null) {
-            log.warn("多模态流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
-            throw this.streamingError instanceof RuntimeException re ? re : new RuntimeException(this.streamingError);
+        if (purpose.streamsVisibleAnswer()) {
+            flushPendingTokenBatch();
         }
+        throwAndClearStreamingErrorIfPresent("多模态流式消费");
 
         String collectedContent = contentBuilder.toString();
         this.finalContent = collectedContent;
@@ -249,7 +293,8 @@ public class StreamingCallback implements IterationCallback {
     /** 纯文本流式路由。 */
     private ChatResponse callTextStreaming(AgentRequest req, List<Message> messages,
                                            List<ToolCallback> toolCallbacks, String scene,
-                                           @Nullable TraceContext traceContext) {
+                                           @Nullable TraceContext traceContext,
+                                           LlmCallPurpose purpose) {
         // 清空上一次迭代可能残留的 token 缓冲
         clearPendingTokenBatch();
         String preferredProviderId = request.preferredProvider();
@@ -262,6 +307,9 @@ public class StreamingCallback implements IterationCallback {
                 .findFirst().orElse("");
 
         String streamingSystemPrompt = helper.enhanceSystemPromptForStreaming(systemText);
+        if (purpose == LlmCallPurpose.FINAL_ANSWER) {
+            streamingSystemPrompt = appendVisibleAnswerStreamingInstruction(streamingSystemPrompt);
+        }
 
         // 先尝试用 ChatModel 做一次非流式调用检测 tool call
         var chatModelInfo = generationRouter.getChatModelWithInfo(scene, preferredProviderId, null);
@@ -295,10 +343,15 @@ public class StreamingCallback implements IterationCallback {
         var prompt = new Prompt(enhancedMessages, chatOptions);
 
         // 流式能力检查与分支
+        boolean visibleAnswerStreaming = purpose.streamsVisibleAnswer();
+        boolean toolAwareCandidateStream = visibleAnswerStreaming
+                && purpose.usesToolAwareCandidateStream()
+                && toolCallbacks != null
+                && !toolCallbacks.isEmpty();
         if (!chatModelInfo.supportsStreaming()) {
             log.info("Provider 不支持流式调用，降级为非流式: provider={}, model={}",
                     chatModelInfo.serviceId(), chatModelInfo.modelName());
-            return callLlmNonStreaming(chatModelInfo, prompt, traceContext);
+            return callLlmNonStreaming(chatModelInfo, prompt, traceContext, visibleAnswerStreaming);
         }
 
         // 真正的流式调用路径
@@ -307,9 +360,13 @@ public class StreamingCallback implements IterationCallback {
         String scene2 = config.getLoop().getLlmScene();
 
         var contentBuilder = new StringBuilder();
+        var candidateTokenBuffer = new StringBuilder();
         var toolCallAggregator = new StreamingToolCallAggregator();
         final Instant[] firstTokenTime = {null};
+        final Instant[] candidateBufferOpenedAt = {null};
         final boolean[] toolCallPreviewSent = {false};
+        final boolean[] toolCallSeen = {false};
+        final boolean[] candidateCommitted = {false};
         // 累加流式 chunk 中的 Token 用量（部分 Provider 仅在最后一个 chunk 返回完整 usage）
         final long[] accumulatedPromptTokens = {0};
         final long[] accumulatedCompletionTokens = {0};
@@ -338,7 +395,24 @@ public class StreamingCallback implements IterationCallback {
                                             firstTokenTime[0] = now;
                                         }
                                         markFirstModelToken(now);
-                                        pushTokenToSse(text);
+                                        if (visibleAnswerStreaming && !toolCallSeen[0]) {
+                                            if (toolAwareCandidateStream && !candidateCommitted[0]) {
+                                                if (candidateTokenBuffer.isEmpty()) {
+                                                    candidateBufferOpenedAt[0] = now;
+                                                }
+                                                candidateTokenBuffer.append(text);
+                                                if (shouldCommitToolAwareCandidate(
+                                                        candidateTokenBuffer, candidateBufferOpenedAt[0], now)) {
+                                                    pushTokenToSse(candidateTokenBuffer.toString());
+                                                    flushPendingTokenBatch();
+                                                    candidateTokenBuffer.setLength(0);
+                                                    candidateBufferOpenedAt[0] = null;
+                                                    candidateCommitted[0] = true;
+                                                }
+                                            } else {
+                                                pushTokenToSse(text);
+                                            }
+                                        }
                                     }
                                 }
                                 case com.lifepilot.llm.stream.ReasoningChunk r -> {
@@ -348,6 +422,11 @@ public class StreamingCallback implements IterationCallback {
                                     pushReasoningToSse(r.delta());
                                 }
                                 case com.lifepilot.llm.stream.ToolCallDelta tcd -> {
+                                    toolCallSeen[0] = true;
+                                    if (toolAwareCandidateStream && !candidateCommitted[0]) {
+                                        candidateTokenBuffer.setLength(0);
+                                        candidateBufferOpenedAt[0] = null;
+                                    }
                                     emitToolCallPreviewForDelta(tcd, toolCallPreviewSent);
                                     toolCallAggregator.merge(tcd);
                                 }
@@ -389,13 +468,17 @@ public class StreamingCallback implements IterationCallback {
         } else if (sseManager.getEmitter(streamId) == null) {
             log.debug("流式消费因 SSE 连接断开停止: streamId={}", streamId);
         }
-        flushPendingTokenBatch();
-
-        if (this.streamingError != null) {
-            log.warn("流式消费完成但存在未传播的异常，重新抛出: error={}", this.streamingError.getMessage());
-            throw this.streamingError instanceof RuntimeException re
-                    ? re : new RuntimeException(this.streamingError);
+        if (visibleAnswerStreaming) {
+            if (toolAwareCandidateStream && !toolCallSeen[0]
+                    && !candidateCommitted[0] && !candidateTokenBuffer.isEmpty()) {
+                pushTokenToSse(candidateTokenBuffer.toString());
+                candidateTokenBuffer.setLength(0);
+                candidateBufferOpenedAt[0] = null;
+                candidateCommitted[0] = true;
+            }
+            flushPendingTokenBatch();
         }
+        throwAndClearStreamingErrorIfPresent("流式消费");
 
         Instant callEnd = Instant.now();
         String collectedContent = contentBuilder.toString();
@@ -500,7 +583,8 @@ public class StreamingCallback implements IterationCallback {
      */
     private ChatResponse callLlmNonStreaming(GenerationRouter.ChatModelInfo chatModelInfo,
                                              Prompt prompt,
-                                             @Nullable TraceContext traceContext) {
+                                             @Nullable TraceContext traceContext,
+                                             boolean visibleAnswerStreaming) {
         String scene = config.getLoop().getLlmScene();
 
         ChatResponse chatResponse = chatModelInfo.chatModel().call(prompt);
@@ -534,7 +618,7 @@ public class StreamingCallback implements IterationCallback {
         String content = assistantMsg.getText();
         this.finalContent = content;
 
-        if (content != null && !content.isBlank()) {
+        if (visibleAnswerStreaming && content != null && !content.isBlank()) {
             streamContentToSse(content);
         }
 
@@ -544,8 +628,41 @@ public class StreamingCallback implements IterationCallback {
         return chatResponse;
     }
 
+    private boolean shouldCommitToolAwareCandidate(StringBuilder candidateBuffer,
+                                                   @Nullable Instant openedAt,
+                                                   Instant now) {
+        if (candidateBuffer.length() >= TOOL_AWARE_CANDIDATE_COMMIT_CHARS) {
+            return true;
+        }
+        return openedAt != null
+                && Duration.between(openedAt, now).compareTo(TOOL_AWARE_CANDIDATE_MAX_DELAY) >= 0;
+    }
+
+    private String appendVisibleAnswerStreamingInstruction(@Nullable String systemPrompt) {
+        String basePrompt = systemPrompt != null ? systemPrompt : "";
+        return basePrompt + """
+
+                <visible_answer_streaming>
+                本次调用是用户可见的最终答案流。只输出最终自然语言正文；
+                不要输出工具计划、阶段性说明、<completion_control> 或 <await_user_input> 等控制标签。
+                </visible_answer_streaming>""";
+    }
+
+    /** 将已确认的用户可见正文推送为 SSE TOKEN 事件。 */
+    @Override
+    public void publishVisibleContent(String content) {
+        if (visibleContentPublished) {
+            return;
+        }
+        streamContentToSse(content);
+    }
+
     /** 将文本内容逐段推送为 SSE TOKEN 事件。 */
     private void streamContentToSse(String content) {
+        if (content == null || content.isEmpty()) {
+            return;
+        }
+        visibleContentPublished = true;
         enqueueTokenChunk(content);
         flushPendingTokenBatch();
     }
@@ -556,6 +673,10 @@ public class StreamingCallback implements IterationCallback {
      * @param token LLM 流式输出的单个 token
      */
     private void pushTokenToSse(String token) {
+        if (token == null || token.isEmpty()) {
+            return;
+        }
+        visibleContentPublished = true;
         enqueueTokenChunk(token);
     }
 

@@ -10,6 +10,7 @@ import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.util.List;
@@ -29,13 +30,15 @@ public class QueryRewriter {
     private static final Logger log = LoggerFactory.getLogger(QueryRewriter.class);
     private static final String SCENE = LlmScene.MEMORY_COMPRESSION;
 
+    @Nullable
     private final GenerationRouter generationRouter;
+    @Nullable
     private final EmbeddingRouter embeddingRouter;
     private final MemoryProperties.Retrieval retrievalConfig;
     private final PromptRegistry promptRegistry;
 
-    public QueryRewriter(GenerationRouter generationRouter,
-                         EmbeddingRouter embeddingRouter,
+    public QueryRewriter(@Nullable GenerationRouter generationRouter,
+                         @Nullable EmbeddingRouter embeddingRouter,
                          MemoryProperties properties,
                          PromptRegistry promptRegistry) {
         this.generationRouter = generationRouter;
@@ -71,6 +74,10 @@ public class QueryRewriter {
     }
 
     private RewriteResult rewriteQuery(String refinedQuery) {
+        if (generationRouter == null) {
+            log.debug("查询改写: GenerationRouter 不可用，返回原始查询");
+            return new RewriteResult(refinedQuery, List.of(), Optional.empty());
+        }
         String prompt = promptRegistry.render("memory/query-rewrite", Map.of(
                 "maxRewrites", String.valueOf(retrievalConfig.getMaxRewrites()),
                 "originalQuery", refinedQuery));
@@ -87,6 +94,10 @@ public class QueryRewriter {
     }
 
     private RewriteResult hydeQuery(String refinedQuery) {
+        if (generationRouter == null || embeddingRouter == null) {
+            log.debug("HyDE 改写: GenerationRouter 或 EmbeddingRouter 不可用，返回原始查询");
+            return new RewriteResult(refinedQuery, List.of(), Optional.empty());
+        }
         String prompt = promptRegistry.render("memory/hyde-generation", Map.of(
                 "originalQuery", refinedQuery));
         String hypotheticalDoc = callWithTimeout(prompt);

@@ -89,7 +89,7 @@ public final class DegradedResponseBuilder {
         return "";
     }
 
-    /** 与 {@code ContextAssembler.SHARED_MAPPER} 命名风格一致；类内复用避免跨包依赖。 */
+    /** 类内复用的 JSON 解析器，避免每次降级响应重复创建。 */
     private static final ObjectMapper SHARED_MAPPER = new ObjectMapper();
 
     private static String summarizeSuccessfulTools(List<ReactStep> steps) {

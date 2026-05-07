@@ -12,6 +12,7 @@ import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,13 +63,14 @@ public class ConflictResolutionService {
     private static final java.util.concurrent.ExecutorService VIRTUAL_EXECUTOR =
             java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
+    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final VectorSearcher vectorSearcher;
     private final ConflictResolutionRepository queueRepository;
     private final SemanticMemory semanticMemory;
 
-    public ConflictResolutionService(GenerationRouter generationRouter,
+    public ConflictResolutionService(@Nullable GenerationRouter generationRouter,
                                      PromptRegistry promptRegistry,
                                      VectorSearcher vectorSearcher,
                                      ConflictResolutionRepository queueRepository,
@@ -90,6 +92,11 @@ public class ConflictResolutionService {
      * @param candidates 候选旧实体列表（调用方已预筛选，不含 newEntity 自己）
      */
     public void resolveAsync(TemporalEntity newEntity, List<TemporalEntity> candidates) {
+        if (generationRouter == null) {
+            log.debug("冲突裁决: GenerationRouter 不可用，跳过, newEntityId={}",
+                    newEntity != null ? newEntity.id() : null);
+            return;
+        }
         if (newEntity == null || candidates == null || candidates.isEmpty()) {
             return;
         }
@@ -111,6 +118,11 @@ public class ConflictResolutionService {
      * markResolved / markFailed。
      */
     void resolveSync(TemporalEntity newEntity, List<TemporalEntity> candidates) {
+        if (generationRouter == null) {
+            log.debug("冲突裁决: GenerationRouter 不可用，跳过同步裁决, newEntityId={}",
+                    newEntity != null ? newEntity.id() : null);
+            return;
+        }
         // 1. 高相似度过滤：只有 ≥ 阈值的候选才进入 LLM 裁决
         var highSimilar = filterHighSimilar(newEntity, candidates);
         if (highSimilar.isEmpty()) {

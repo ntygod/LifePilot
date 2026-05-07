@@ -283,7 +283,6 @@ public class ChatSessionService {
                 SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_STEPS),
                 SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS),
                 knowledgeBaseIds,
-                List.of(),
                 session.messageCount(),
                 0L,
                 session.summary(),

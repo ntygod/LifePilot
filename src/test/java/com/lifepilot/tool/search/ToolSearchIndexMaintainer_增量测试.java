@@ -32,6 +32,7 @@ class ToolSearchIndexMaintainer_增量测试 {
     private DynamicToolRegistry registry;
     private SchemaCache schemaCache;
     private SearchResultCache searchCache;
+    private ToolEmbeddingIndex embeddingIndex;
     private ToolSearchIndexMaintainer maintainer;
 
     @BeforeEach
@@ -40,7 +41,8 @@ class ToolSearchIndexMaintainer_增量测试 {
         registry = mock(DynamicToolRegistry.class);
         schemaCache = mock(SchemaCache.class);
         searchCache = mock(SearchResultCache.class);
-        maintainer = new ToolSearchIndexMaintainer(builder, registry, schemaCache, searchCache);
+        embeddingIndex = mock(ToolEmbeddingIndex.class);
+        maintainer = new ToolSearchIndexMaintainer(builder, registry, schemaCache, searchCache, embeddingIndex);
     }
 
     @Test
@@ -57,6 +59,8 @@ class ToolSearchIndexMaintainer_增量测试 {
         verify(builder).upsert(t2);
         verify(schemaCache).invalidate("file.read");
         verify(schemaCache).invalidate("file.write");
+        verify(embeddingIndex).refreshOne("file.read", t1.description());
+        verify(embeddingIndex).refreshOne("file.write", t2.description());
         verify(searchCache).invalidateAll();
     }
 
@@ -81,6 +85,8 @@ class ToolSearchIndexMaintainer_增量测试 {
         verify(builder).delete("c.d");
         verify(schemaCache).invalidate("a.b");
         verify(schemaCache).invalidate("c.d");
+        verify(embeddingIndex).remove("a.b");
+        verify(embeddingIndex).remove("c.d");
         verify(searchCache).invalidateAll();
     }
 

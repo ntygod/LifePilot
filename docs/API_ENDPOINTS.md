@@ -1,7 +1,7 @@
 # 知微 API 端点清单
 
 > **文档性质**：API 参考文档
-> **最后更新**：2026-05-03
+> **最后更新**：2026-05-04
 > **数据来源**：后端 Controller 注解映射，以代码为准
 
 ## 目录
@@ -20,7 +20,6 @@
 - [Skills（技能管理）](#skills技能管理)
 - [MCP Servers（MCP 客户端管理）](#mcp-servers)
 - [Knowledge Bases（知识库）](#knowledge-bases知识库)
-- [Datastores（领域数据集）](#datastores领域数据集)
 - [Scheduled Tasks（定时任务管理）](#scheduled-tasks定时任务管理)
 - [Workflows（工作流）](#workflows工作流)
 - [Traces（轨迹）](#traces轨迹)
@@ -66,7 +65,7 @@
 | GET | `/api/chat/sessions/{id}` | `getSession` | 会话详情（含关联知识库） |
 | GET | `/api/chat/sessions/{id}/messages` | `getSessionMessages` | 会话历史消息 |
 | PATCH | `/api/chat/sessions/{id}` | `updateSession` | 更新会话（标题/置顶等） |
-| PATCH | `/api/chat/sessions/{id}/config` | `updateSessionConfig` | 更新会话配置（knowledgeBaseIds / datastoreIds 绑定） |
+| PATCH | `/api/chat/sessions/{id}/config` | `updateSessionConfig` | 更新会话配置（knowledgeBaseIds 等） |
 | DELETE | `/api/chat/sessions/{id}` | `deleteSession` | 删除会话（204） |
 | POST | `/api/chat/sessions/batch` | `batchUpdateSessions` | 批量操作（pin/archive/delete） |
 | POST | `/api/chat/sessions/{id}/fork` | `forkSession` | 分叉会话（从指定消息复制上下文，新会话继承源会话的 `projectId`） |
@@ -112,7 +111,7 @@
 | GET | `/api/memories/entities/{id}` | `getEntity` | 实体详情（返回 `spaceId/memoryScope/realityType`） |
 | GET | `/api/memories/entities/{id}/history` | `getEntityHistory` | 实体版本历史 |
 | GET | `/api/memories/entities/{id}/related` | `getRelatedEntities` | 关联实体列表 |
-| GET | `/api/memories/entities/{id}/provenances` | `getEntityProvenances` | 实体来源明细（origin/sourceSessionId/sourceDocumentId/sourceDatastoreId 等） |
+| GET | `/api/memories/entities/{id}/provenances` | `getEntityProvenances` | 实体来源明细（origin/sourceSessionId/sourceDocumentId/sourceKnowledgeBaseId 等） |
 | DELETE | `/api/memories/entities/{id}` | `archiveEntity` | 归档实体（软删除，204） |
 | GET | `/api/memories/relations` | `listRelations` | 关系分页列表（entityId/relationType 过滤，附带实体名称） |
 
@@ -280,19 +279,17 @@
 
 来源：`KnowledgeBaseController`，Base Path: `/api/knowledge-bases`
 
-> 列表接口返回包含系统管理的内部知识库（`systemManaged=true`），由系统自动创建。
-> 删除接口对 `systemManaged=true` 的知识库返回 403，对不存在的知识库返回 404。
+> 删除接口对不存在的知识库返回 404。
 
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
-| GET | `/api/knowledge-bases` | `listKnowledgeBases` | 知识库列表（q/tags/timeRange 过滤，包含系统管理的内部知识库） |
+| GET | `/api/knowledge-bases` | `listKnowledgeBases` | 知识库列表（q/tags/timeRange 过滤） |
 | POST | `/api/knowledge-bases` | `createKnowledgeBase` | 创建（201） |
 | GET | `/api/knowledge-bases/{id}` | `getKnowledgeBase` | 详情 |
 | PATCH | `/api/knowledge-bases/{id}` | `updateKnowledgeBase` | 更新配置 |
 | DELETE | `/api/knowledge-bases/{id}` | `deleteKnowledgeBase` | 删除（204；403 系统管理知识库不可删除；404 不存在） |
 | GET | `/api/knowledge-bases/{id}/documents` | `listDocuments` | 文档列表 |
-| POST | `/api/knowledge-bases/{id}/documents` | `uploadDocument` | 上传文档（multipart，可带 `datastoreId`） |
-| PATCH | `/api/knowledge-bases/{id}/documents/{docId}` | `updateDocumentDatastore` | 更新文件文档的 datastore 归属（可设为无归属） |
+| POST | `/api/knowledge-bases/{id}/documents` | `uploadDocument` | 上传文档（multipart） |
 | DELETE | `/api/knowledge-bases/{id}/documents/{docId}` | `removeDocument` | 删除文档（204） |
 | GET | `/api/knowledge-bases/{id}/documents/{docId}/chunks` | `listDocumentChunks` | 文档分块列表（offset/limit 分页，返回 `{chunks, total}`） |
 | GET | `/api/knowledge-bases/{id}/documents/{docId}/logs` | `getDocumentLogs` | 文档处理日志 |
@@ -300,12 +297,6 @@
 | POST | `/api/knowledge-bases/{id}/documents/{docId}/rechunk` | `rechunkDocument` | 重新分块（202） |
 | GET | `/api/knowledge-bases/{id}/stats` | `getStats` | 统计信息 |
 | POST | `/api/knowledge-bases/{id}/test-retrieval` | `testRetrieval` | 测试检索 |
-
----
-
-## Datastores（领域数据集）
-
-> **2026-05 已移除**：`DatastoreController.java` 已删除，所有 REST 端点不再可用。前端 `/datastores` 路由与侧栏入口同步移除。知识库管理请通过 Knowledge Bases 端点操作，Agent 侧数据存储请使用 `memory(action=search, scope=knowledge)` 工具。
 
 ---
 
@@ -476,7 +467,7 @@
 
 来源：`DocumentController`，Base Path: `/api/documents`
 
-> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。服务 Agent 通过 `document.create`（docx / xlsx / pptx）与 `document.edit`（docx / xlsx，锚点增量编辑）工具生成的工作副本，向前端提供元数据、版本链、diff 卡片数据以及 commit / rollback / 丢弃等用户侧动作。pptx 目前只能从零创建，不支持增量 patch。
+> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。当前端点只服务已有 `session_documents` 工作副本，向前端提供元数据、版本链、diff 卡片数据以及 commit / rollback / 丢弃等用户侧动作。`document.create` / `document.edit` Agent 工具已下架；新的文档生成、转换和批处理走 `doc-processor` Skill + `code` / `shell.exec`。
 
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|

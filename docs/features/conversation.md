@@ -2,7 +2,7 @@
 
 > **文档性质**：特性说明文档
 > **模块归属**：`com.lifepilot.conversation`
-> **最后更新**：2026-04-23
+> **最后更新**：2026-05-05（对齐 L0 transcript 真源）
 
 ## 1. 功能概述
 
@@ -27,8 +27,9 @@
 
 ### 2.3 对话真源单一化
 
-- 原始消息统一保存在 `chat_messages`
-- 这让“当前聊了什么”这个问题只需要看会话层，不需要再和 L1/L2 对齐
+- 原始对话统一保存在 `session_store / session_transcript_entries`
+- `session_transcript_entries` 同时保存用户消息、助手消息、工具调用、工具完整结果和 artifact 引用
+- 这让“当前聊了什么”和“某次工具到底返回了什么”只需要看 L0 transcript，不需要再和 L1/L2 对齐
 
 ### 2.4 与记忆分层解耦
 

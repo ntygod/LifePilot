@@ -8,12 +8,13 @@ import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.experience.ExperienceRecord;
 import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.support.SqliteBusyRetry;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
+import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,13 +39,14 @@ public class ExperienceMerger {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
+    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final MemoryProperties.Experience.Merge config;
 
     public ExperienceMerger(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            GenerationRouter generationRouter,
+                            @Nullable GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             MemoryProperties memoryProperties) {
         this.semanticMemory = semanticMemory;
@@ -65,6 +67,10 @@ public class ExperienceMerger {
     public MergeStats merge() {
         if (!config.isEnabled()) {
             log.debug("经验合并: 功能已关闭");
+            return new MergeStats(0, 0, 0);
+        }
+        if (generationRouter == null) {
+            log.debug("经验合并: GenerationRouter 不可用，跳过");
             return new MergeStats(0, 0, 0);
         }
 
@@ -159,7 +165,7 @@ public class ExperienceMerger {
     }
 
     /** 调用 LLM 合并两条经验。 */
-    @jakarta.annotation.Nullable
+    @Nullable
     private ExperienceRecord callLlmMerge(TemporalEntity entityA, TemporalEntity entityB) {
         try {
             var vars = Map.<String, Object>of(
@@ -242,7 +248,6 @@ public class ExperienceMerger {
         // 写入合并后的元经验并归档原始经验 — 经验合并属冲突裁决，事件 source=CONFLICT_RESOLVE
         SqliteBusyRetry.run(() -> {
             semanticMemory.upsertWithConflictDetection(mergedEntity, "experience-merge");
-            vectorSearcher.upsertEntityVector(mergedEntity.id(), mergedEntity.textRepresentation());
             semanticMemory.archive(entityA, ChangeSource.CONFLICT_RESOLVE);
             semanticMemory.archive(entityB, ChangeSource.CONFLICT_RESOLVE);
         });

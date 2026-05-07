@@ -17,7 +17,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * 工具 description 向量索引 — 启动时全量预计算，工具变更时增量刷新。
+ * 工具 description 向量索引 — 工具注册/注销事件触发增量刷新。
  *
  * <p>搜索时只 embed query 一次，然后本地算余弦相似度，避免每次搜索 N 次 embedding API 调用。</p>
  *
@@ -40,7 +40,7 @@ public class ToolEmbeddingIndex {
         this.embeddingRouter = embeddingRouter;
     }
 
-    /** 启动时全量构建索引。 */
+    /** 全量重建索引。主要用于运维修复；正常路径由 ToolSearchIndexMaintainer 增量维护。 */
     public void buildAll() {
         if (embeddingRouter == null) return;
         log.info("开始构建工具 embedding 索引...");

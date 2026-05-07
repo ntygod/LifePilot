@@ -323,7 +323,7 @@ public class GenerationRouter {
                 .filter(service -> service.generationCapabilities().contains(requiredCapability))
                 .ifPresent(ordered::add);
 
-        registry.findGenerationCandidates(scene, requiredCapability).forEach(ordered::add);
+        ordered.addAll(registry.findGenerationCandidates(scene, requiredCapability));
         registry.findEnabledByKind(ModelServiceKind.GENERATION).stream()
                 .filter(service -> service.generationCapabilities().contains(requiredCapability))
                 .forEach(ordered::add);

@@ -1,7 +1,5 @@
 package com.lifepilot.knowledge.config;
 
-import com.lifepilot.datastore.config.DataStoreAutoConfiguration;
-import com.lifepilot.datastore.sync.DatastoreKnowledgeBaseProvisioner;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.knowledge.chunking.*;
 import com.lifepilot.knowledge.detect.DuplicateDetector;
@@ -13,16 +11,14 @@ import com.lifepilot.knowledge.ingest.DocumentIngester;
 import com.lifepilot.knowledge.parser.FormatDetector;
 import com.lifepilot.knowledge.repository.*;
 import com.lifepilot.knowledge.retrieve.*;
-import com.lifepilot.knowledge.sync.DefaultDatastoreKnowledgeBaseProvisioner;
-import com.lifepilot.knowledge.sync.KnowledgeSyncWorker;
 import com.lifepilot.knowledge.util.TokenCounter;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.rerank.router.RerankRouter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
@@ -44,8 +40,7 @@ import java.util.Map;
  */
 @AutoConfiguration(after = {
         KnowledgeAutoConfiguration.class,
-        KnowledgeEnhancementAutoConfiguration.class,
-        DataStoreAutoConfiguration.class
+        KnowledgeEnhancementAutoConfiguration.class
 })
 @ConditionalOnProperty(prefix = "lifepilot.knowledge", name = "enabled",
         havingValue = "true", matchIfMissing = true)
@@ -101,8 +96,9 @@ public class KnowledgeRuntimeAutoConfiguration {
     @ConditionalOnMissingBean
     public GraphKnowledgeSearcher graphKnowledgeSearcher(@Nullable SemanticMemory semanticMemory,
                                                           DocumentChunkRepository chunkRepository,
-                                                          DocumentRepository docRepository) {
-        return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, docRepository);
+                                                          DocumentRepository docRepository,
+                                                          @Nullable MemorySpaceRepository memorySpaceRepository) {
+        return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, docRepository, memorySpaceRepository);
     }
 
     @Bean
@@ -199,50 +195,15 @@ public class KnowledgeRuntimeAutoConfiguration {
     public KnowledgeBaseManager knowledgeBaseManager(KnowledgeBaseRepository kbRepository,
                                                      DocumentRepository documentRepository,
                                                      DocumentChunkRepository chunkRepository,
-                                                     KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
-                                                     @Nullable VectorIndexer vectorIndexer) {
+                                                     @Nullable VectorIndexer vectorIndexer,
+                                                     ApplicationEventPublisher eventPublisher) {
         log.info("知识库模块初始化完成");
         return new KnowledgeBaseManager(
                 kbRepository,
                 documentRepository,
                 chunkRepository,
-                knowledgeBaseDatastoreRepository,
-                vectorIndexer
-        );
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public DatastoreKnowledgeBaseProvisioner datastoreKnowledgeBaseProvisioner(
-            KnowledgeBaseRepository knowledgeBaseRepository,
-            KnowledgeBaseManager knowledgeBaseManager) {
-        return new DefaultDatastoreKnowledgeBaseProvisioner(knowledgeBaseRepository, knowledgeBaseManager);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean({
-            KnowledgeSyncJobRepository.class,
-            KnowledgeBaseDatastoreRepository.class,
-            com.lifepilot.datastore.repository.CollectionRepository.class,
-            DocumentRepository.class,
-            KnowledgeBaseManager.class,
-            DocumentIngester.class
-    })
-    public KnowledgeSyncWorker knowledgeSyncWorker(
-            KnowledgeSyncJobRepository knowledgeSyncJobRepository,
-            KnowledgeBaseDatastoreRepository knowledgeBaseDatastoreRepository,
-            com.lifepilot.datastore.repository.CollectionRepository datastoreCollectionRepository,
-            DocumentRepository knowledgeDocumentRepository,
-            KnowledgeBaseManager knowledgeBaseManager,
-            DocumentIngester documentIngester) {
-        return new KnowledgeSyncWorker(
-                knowledgeSyncJobRepository,
-                knowledgeBaseDatastoreRepository,
-                datastoreCollectionRepository,
-                knowledgeDocumentRepository,
-                knowledgeBaseManager,
-                documentIngester
+                vectorIndexer,
+                eventPublisher
         );
     }
 }

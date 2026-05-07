@@ -32,6 +32,7 @@ class HeartbeatRunner_单元测试 {
         proactiveEngine = mock(ProactiveEngine.class);
         scheduler = Executors.newScheduledThreadPool(1);
         config = new AgentConfigProperties();
+        config.getTask().setProactiveReminderEnabled(true);
     }
 
     @Test

@@ -4,18 +4,12 @@ import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillDefinitionValidator.ValidationResult;
-import com.lifepilot.tool.BuiltinTool;
-import com.lifepilot.tool.registry.DynamicToolRegistry;
 import net.jqwik.api.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * Bug Condition 探索测试 — Skill ID 点号校验失败。
@@ -34,19 +28,8 @@ import static org.mockito.Mockito.when;
  */
 class SkillIdDot_BugCondition_探索测试 {
 
-    private final DynamicToolRegistry toolRegistry = mock(DynamicToolRegistry.class);
     private final SkillDefinitionValidator validator =
-            new SkillDefinitionValidator(toolRegistry, new SkillConfigProperties());
-
-    {
-        // 默认所有工具都存在
-        var dummyTool = BuiltinTool.builder()
-                .id("dummy").name("dummy").description("dummy")
-                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
-                .executor(input -> null)
-                .build();
-        when(toolRegistry.resolve(anyString())).thenReturn(Optional.of(dummyTool));
-    }
+            new SkillDefinitionValidator(new SkillConfigProperties());
 
     // ── Property 1: Bug Condition — 包含点号的合法 ID 应通过校验 ──
 

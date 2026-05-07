@@ -83,6 +83,7 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
     private final EpisodicMemory episodicMemory;
     @Nullable
     private final SessionWorkspaceService workspaceService;
+    @Nullable
     private final NotificationRepository notificationRepository;
     @Nullable
     private final ReminderFeedbackRepository feedbackRepository;
@@ -98,7 +99,7 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
      */
     public DefaultReminderSignalCollector(@Nullable SemanticMemory semanticMemory,
                                           @Nullable ProceduralMemory proceduralMemory,
-                                          NotificationRepository notificationRepository) {
+                                          @Nullable NotificationRepository notificationRepository) {
         this(semanticMemory, proceduralMemory, null, null, notificationRepository, null, null, null, null);
     }
 
@@ -109,7 +110,7 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
                                           @Nullable ProceduralMemory proceduralMemory,
                                           @Nullable EpisodicMemory episodicMemory,
                                           @Nullable SessionWorkspaceService workspaceService,
-                                          NotificationRepository notificationRepository,
+                                          @Nullable NotificationRepository notificationRepository,
                                           @Nullable ReminderFeedbackRepository feedbackRepository,
                                           @Nullable ReminderOutcomeRepository outcomeRepository,
                                           @Nullable ReminderTopicAliasRepository topicAliasRepository,
@@ -555,6 +556,9 @@ public class DefaultReminderSignalCollector implements ReminderSignalCollector {
 
     private Map<String, List<NotificationRecord>> loadHistoryByTopic(String userId,
                                                                      ReminderRuntimeContext context) {
+        if (notificationRepository == null) {
+            return Map.of();
+        }
         Instant since = context.now().minusSeconds(30L * 24 * 3600);
         List<NotificationRecord> records = notificationRepository.findByUserIdAndTypeSince(
                 userId, REMINDER_TYPE, since, 200);

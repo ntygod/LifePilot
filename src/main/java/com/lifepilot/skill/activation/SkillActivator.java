@@ -66,7 +66,7 @@ public class SkillActivator {
      * 激活指定 Skill，返回上下文注入包。
      *
      * @param name Skill 名称（v2 规范：name 取代旧的 id）
-     * @return 激活结果，包含指令和建议工具
+     * @return 激活结果，包含指令和建议工具元数据
      * @throws IllegalArgumentException 当 Skill 在 skills 表中不存在
      * @throws IllegalStateException    当 Skill 已被禁用（{@code enabled=0}），或内存注册表尚未加载
      */
@@ -80,7 +80,7 @@ public class SkillActivator {
             throw new IllegalStateException("skill '" + name + "' 已被禁用");
         }
 
-        // 3. 拿内存 SkillDefinition（含解析后的 body 与 suggestedTools）
+        // 3. 拿内存 SkillDefinition（含解析后的 body 与 suggestedTools 元数据）
         SkillDefinition definition = skillRegistry.find(name)
                 .orElseThrow(() -> new IllegalStateException(
                         "skill '" + name + "' 已登记但未加载到注册表，可能需要触发热加载"));

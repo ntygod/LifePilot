@@ -2,7 +2,6 @@ package com.lifepilot.skill;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.threadpool.SharedScheduler;
-import com.lifepilot.datastore.DataStoreManager;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -78,11 +77,6 @@ public class SkillTestSupport {
     @Bean
     PromptRegistry promptRegistry() {
         return mock(PromptRegistry.class);
-    }
-
-    @Bean
-    DataStoreManager dataStoreManager() {
-        return mock(DataStoreManager.class);
     }
 
     @Bean
