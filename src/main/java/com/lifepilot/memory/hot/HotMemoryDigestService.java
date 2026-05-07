@@ -140,6 +140,18 @@ public class HotMemoryDigestService {
                 .filter(entity -> entity.type() == EntityType.CUSTOM)
                 .filter(entity -> CONSOLIDATED_PROFILE_NAME.equals(entity.name()))
                 .max(Comparator.comparingDouble(this::rank));
+        if (consolidated.isPresent()) {
+            TemporalEntity profile = consolidated.get();
+            Set<String> profileSourceIds = new LinkedHashSet<>(sourceEntityIds(profile));
+            List<HotPreferenceRule> incrementalHotPreferences = hotPreferences.stream()
+                    .filter(preference -> !profileSourceIds.contains(preference.source().id())
+                            || isNewerThanProfile(preference.source(), profile))
+                    .toList();
+            return buildUserProfileSectionFromEntries(
+                    List.of(profile),
+                    incrementalHotPreferences,
+                    config);
+        }
         Set<String> l4PreferenceKeys = hotPreferences.stream()
                 .map(rule -> rule.rule().key())
                 .collect(java.util.stream.Collectors.toSet());
@@ -155,8 +167,14 @@ public class HotMemoryDigestService {
                         && (l4PreferenceKeys.contains(entity.name()) || l4SourceIds.contains(entity.id()))))
                 .sorted(Comparator.comparingDouble(this::rank).reversed())
                 .toList());
-        consolidated.ifPresent(fragments::add);
         return buildUserProfileSectionFromEntries(fragments, hotPreferences, config);
+    }
+
+    private boolean isNewerThanProfile(TemporalEntity source, TemporalEntity profile) {
+        if (source.updatedAt() == null || profile.updatedAt() == null) {
+            return false;
+        }
+        return source.updatedAt().isAfter(profile.updatedAt());
     }
 
     private List<TemporalEntity> selectProjectMemory(List<TemporalEntity> entities) {

@@ -81,11 +81,13 @@ class HotMemoryDigestService_单元测试 {
     }
 
     @Test
-    void 巩固画像不会吞掉显式画像碎片且保留来源链路() {
+    void 巩固画像存在时优先使用巩固画像避免碎片重复() {
         SemanticMemory semanticMemory = mock(SemanticMemory.class);
+        var properties = new MemoryProperties();
+        properties.getHotDigest().setUserProfileMaxEntries(1);
         var service = new HotMemoryDigestService(
                 semanticMemory,
-                new MemoryProperties(),
+                properties,
                 null,
                 null,
                 Clock.fixed(NOW, ZoneOffset.UTC));
@@ -107,8 +109,8 @@ class HotMemoryDigestService_单元测试 {
                 .findFirst()
                 .orElseThrow();
         assertThat(profileSection.content()).contains("用户长期偏好安静务实的回答。");
-        assertThat(profileSection.content()).contains("用户喜欢直接回答");
-        assertThat(profileSection.sourceEntityIds()).containsExactly("pref-1", "profile-1", "habit-1");
+        assertThat(profileSection.content()).doesNotContain("用户喜欢直接回答");
+        assertThat(profileSection.sourceEntityIds()).containsExactly("profile-1", "pref-1", "habit-1");
     }
 
     @Test

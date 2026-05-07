@@ -14,9 +14,7 @@
       "WebFetch(domain:docs.all-hands.dev)",
       "WebFetch(domain:lobehub.com)",
       "WebFetch(domain:docs.openclaw.ai)",
-      "Skill(update-config)",
-      "Bash(curl -s http://localhost:8080/actuator/health)",
-      "Bash(gh pr *)"
+      "Skill(update-config)"
     ]
   },
   "hooks": {
