@@ -427,6 +427,47 @@ public class ChatController {
     }
 
     /**
+     * 清空会话消息。
+     *
+     * <p>物理删除会话的 transcript 条目 + 附件，并重置 message_count / last_message_at / summary；
+     * trace 记录（agent_traces）保留以便观测性回溯。</p>
+     *
+     * @param id 会话 ID
+     * @return 204 No Content
+     */
+    @PostMapping("/sessions/{id}/clear")
+    public ResponseEntity<Void> clearSessionMessages(@PathVariable String id) {
+        log.debug("清空会话消息: sessionId={}", id);
+        try {
+            sessionService.clearSessionMessages(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            log.warn("清空会话消息失败: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("清空会话消息时发生错误: sessionId={}", id, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 真正中断指定会话当前正在进行的 Agent 推理。
+     *
+     * <p>前端"停止生成"按钮必须调用此端点，否则仅断 HTTP 会导致后端仍在进行 LLM 调用 + 工具执行，
+     * 造成 token 浪费。端点会驱动 {@link SseSessionManager#cancelBySessionId(String)} 触发
+     * {@code CancellationToken.cancel()}，ReactAgentLoop 在下一轮循环头感知取消并退出。</p>
+     *
+     * @param sessionId 会话 ID
+     * @return {@code { cancelled: boolean }} 标记是否命中了活跃流
+     */
+    @PostMapping("/sessions/{sessionId}/cancel")
+    public ResponseEntity<Map<String, Object>> cancelSessionTurn(@PathVariable String sessionId) {
+        boolean cancelled = sseManager.cancelBySessionId(sessionId);
+        log.info("收到停止生成请求: sessionId={}, cancelled={}", sessionId, cancelled);
+        return ResponseEntity.ok(Map.of("cancelled", cancelled));
+    }
+
+    /**
      * 批量操作会话。
      *
      * <p>支持批量置顶、取消置顶、归档、取消归档、删除操作。</p>
