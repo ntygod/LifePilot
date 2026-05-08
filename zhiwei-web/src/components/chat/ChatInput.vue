@@ -26,7 +26,7 @@ import { useVoice } from '@/composables/useVoice'
 import { useWhisperDownload } from '@/composables/useWhisperDownload'
 import AudioWaveform from '@/components/chat/AudioWaveform.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import type { ChatAttachment, KnowledgeBase, SessionConfig } from '@/types'
+import type { ChatAttachment, KnowledgeBase, SessionConfig, SessionConfigOverride } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
@@ -42,8 +42,8 @@ const emit = defineEmits<{
     content: string
     attachmentIds?: string[]
     attachments?: ChatAttachment[]
-    sessionConfig?: SessionConfig
-    restoreSessionConfig?: SessionConfig
+    /** 单轮临时覆盖的会话配置：仅影响本轮 Agent 执行，不污染持久化 config */
+    singleTurnOverride?: SessionConfigOverride | null
   }]
 }>()
 
@@ -265,8 +265,7 @@ async function submit() {
     }
   }
 
-  const sessionConfig = buildTemporarySessionConfig()
-  const restoreSessionConfig = sessionConfig ? buildRestoreSessionConfig() : undefined
+  const singleTurnOverride = buildSingleTurnOverride() ?? null
 
   // 发送脉冲动效
   sendPulsing.value = true
@@ -276,8 +275,7 @@ async function submit() {
     content,
     attachmentIds,
     attachments: uploadedAttachments,
-    sessionConfig,
-    restoreSessionConfig,
+    singleTurnOverride,
   })
 
   input.value = ''
@@ -362,36 +360,20 @@ function removeTrailingMention() {
   }
 }
 
-function buildTemporarySessionConfig(): SessionConfig | undefined {
-  if (selectedContexts.value.length === 0 || !props.baseSessionConfig) {
+function buildSingleTurnOverride(): SessionConfigOverride | undefined {
+  // 仅当用户临时勾选了 @ 上下文（当前为知识库）时才构造 override；
+  // 没勾时返回 undefined，让后端走会话持久化配置。
+  if (selectedContexts.value.length === 0) {
     return undefined
   }
 
-  const knowledgeBaseIds = mergeIds(
-    props.baseSessionConfig.knowledgeBaseIds ?? [],
-    selectedContexts.value.filter(option => option.kind === 'knowledge-base').map(option => option.id),
-  )
+  const baseKbIds = props.baseSessionConfig?.knowledgeBaseIds ?? []
+  const extraKbIds = selectedContexts.value
+    .filter(option => option.kind === 'knowledge-base')
+    .map(option => option.id)
 
   return {
-    preferredProviderId: props.baseSessionConfig.preferredProviderId,
-    temperature: props.baseSessionConfig.temperature,
-    maxSteps: props.baseSessionConfig.maxSteps,
-    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-    knowledgeBaseIds,
-  }
-}
-
-function buildRestoreSessionConfig(): SessionConfig | undefined {
-  if (!props.baseSessionConfig) {
-    return undefined
-  }
-
-  return {
-    preferredProviderId: props.baseSessionConfig.preferredProviderId,
-    temperature: props.baseSessionConfig.temperature,
-    maxSteps: props.baseSessionConfig.maxSteps,
-    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-    knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
+    knowledgeBaseIds: mergeIds(baseKbIds, extraKbIds),
   }
 }
 
@@ -446,15 +428,13 @@ watch(audioBlob, async (blob) => {
     const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type })
     const sessionId = chatStore.activeSessionId ?? undefined
     const uploaded = await chatApi.uploadAttachment(file, sessionId)
-    const sessionConfig = buildTemporarySessionConfig()
-    const restoreSessionConfig = sessionConfig ? buildRestoreSessionConfig() : undefined
+    const singleTurnOverride = buildSingleTurnOverride() ?? null
 
     emit('send', {
       content: '[语音消息]',
       attachmentIds: [uploaded.fileId],
       attachments: [uploaded],
-      sessionConfig,
-      restoreSessionConfig,
+      singleTurnOverride,
     })
     resetTemporaryContextSelection()
   } catch (error) {

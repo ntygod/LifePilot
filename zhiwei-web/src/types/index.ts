@@ -218,13 +218,19 @@ export interface SseReasoningTokenEvent {
   delta: string
 }
 
-export interface SseInteractionEvent {
-  interactionId: string
-  type: 'INPUT' | 'CHOOSE' | 'CONFIRM' | 'NOTIFY'
-  sessionId: string
-  streamId?: string | null
-  message: string
-  options?: string[] | null
+/**
+ * 单轮临时覆盖的会话配置。
+ *
+ * <p>对应后端 {@code com.lifepilot.interaction.web.model.SessionConfigOverride}。
+ * 仅影响当前 turn 的 AgentRequest 构造，不写入持久化配置，
+ * 取代旧版"发送前 PATCH 再恢复"双 PATCH race 实现。</p>
+ */
+export interface SessionConfigOverride {
+  preferredProviderId?: string | null
+  temperature?: number | null
+  maxSteps?: number | null
+  maxDurationSeconds?: number | null
+  knowledgeBaseIds?: string[] | null
 }
 
 /** 推理过程事件类型：对应后端 pushReactStepEvent */

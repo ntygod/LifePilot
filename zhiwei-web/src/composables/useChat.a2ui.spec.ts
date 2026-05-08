@@ -13,7 +13,6 @@ vi.mock('@/api/client', () => ({
     sendMessageStream: vi.fn(),
     getSessionMessages: vi.fn(),
     updateSessionConfig: vi.fn(),
-    respondInteraction: vi.fn(),
   },
 }))
 
@@ -98,7 +97,6 @@ describe('useChat A2UI integration', () => {
     vi.useRealTimers()
     vi.mocked(chatApi.getSessionMessages).mockResolvedValue([])
     vi.mocked(chatApi.updateSessionConfig).mockResolvedValue(undefined)
-    vi.mocked(chatApi.respondInteraction).mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -262,6 +260,7 @@ describe('useChat A2UI integration', () => {
       expect.any(String),
       'SEND',
       expect.any(AbortSignal),
+      null,
     )
     expect(chatStore.messages.find(message => message.id === 'assistant-attachment')?.content).toBe('已处理附件')
   })
@@ -398,124 +397,6 @@ describe('useChat A2UI integration', () => {
     expect(user?.status).toBe('success')
   })
 
-  it('stores interaction SSE events locally and submits through the interaction API', async () => {
-    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
-      createSseStream([
-        {
-          type: SSE_EVENT_TYPES.INTERACTION,
-          payload: {
-            interactionId: 'interaction-1',
-            type: 'INPUT',
-            sessionId: 'session-1',
-            streamId: 'stream-1',
-            message: '请输入仓库地址',
-          },
-        },
-      ]),
-    )
-
-    const chatStore = useChatStore()
-    chatStore.activeSessionId = 'session-1'
-    await flushUi()
-
-    const { sendMessage, activeInteraction, interactionError, submitInteraction } = useChat()
-    await sendMessage('继续执行')
-
-    expect(activeInteraction.value).toMatchObject({
-      interactionId: 'interaction-1',
-      type: 'INPUT',
-      message: '请输入仓库地址',
-    })
-
-    await submitInteraction('https://github.com/acme/demo.git')
-
-    expect(vi.mocked(chatApi.respondInteraction)).toHaveBeenCalledWith('interaction-1', {
-      type: 'INPUT',
-      value: 'https://github.com/acme/demo.git',
-      confirmed: true,
-      timedOut: false,
-    })
-    expect(activeInteraction.value).toBeNull()
-    expect(interactionError.value).toBeNull()
-  })
-
-  it('routes the next plain user reply to the pending interaction without opening a new turn', async () => {
-    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
-      createSseStream([
-        {
-          type: SSE_EVENT_TYPES.INTERACTION,
-          payload: {
-            interactionId: 'interaction-inline',
-            type: 'INPUT',
-            sessionId: 'session-1',
-            streamId: 'stream-1',
-            message: '请补充仓库地址，我收到后继续处理',
-          },
-        },
-      ]),
-    )
-
-    const chatStore = useChatStore()
-    chatStore.activeSessionId = 'session-1'
-    await flushUi()
-
-    const { sendMessage, activeInteraction } = useChat()
-    await sendMessage('继续执行')
-
-    expect(activeInteraction.value?.interactionId).toBe('interaction-inline')
-
-    await sendMessage('https://github.com/acme/demo.git')
-
-    expect(vi.mocked(chatApi.sendMessageStream)).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(chatApi.respondInteraction)).toHaveBeenCalledWith('interaction-inline', {
-      type: 'INPUT',
-      value: 'https://github.com/acme/demo.git',
-      confirmed: true,
-      timedOut: false,
-    })
-
-    const userReplies = chatStore.messages.filter(message =>
-      message.role === 'user' && message.content === 'https://github.com/acme/demo.git')
-    expect(userReplies).toHaveLength(1)
-    expect(userReplies[0]?.status).toBe('success')
-  })
-
-  it('allows canceling an interaction dialog and reports timeout to the backend', async () => {
-    vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
-      createSseStream([
-        {
-          type: SSE_EVENT_TYPES.INTERACTION,
-          payload: {
-            interactionId: 'interaction-cancel',
-            type: 'CONFIRM',
-            sessionId: 'session-1',
-            streamId: 'stream-2',
-            message: '是否继续执行？',
-          },
-        },
-      ]),
-    )
-
-    const chatStore = useChatStore()
-    chatStore.activeSessionId = 'session-1'
-    await flushUi()
-
-    const { sendMessage, activeInteraction, cancelInteraction } = useChat()
-    await sendMessage('继续执行')
-
-    expect(activeInteraction.value?.interactionId).toBe('interaction-cancel')
-
-    await cancelInteraction()
-
-    expect(vi.mocked(chatApi.respondInteraction)).toHaveBeenCalledWith('interaction-cancel', {
-      type: 'CONFIRM',
-      value: null,
-      confirmed: false,
-      timedOut: true,
-    })
-    expect(activeInteraction.value).toBeNull()
-  })
-
   it('still shows a suspended assistant message when no streamed text has arrived yet', async () => {
     vi.mocked(chatApi.sendMessageStream).mockResolvedValue(
       createSseStream([
@@ -592,6 +473,7 @@ describe('useChat A2UI integration', () => {
       'turn-suspended',
       'RESUME',
       expect.any(AbortSignal),
+      null,
     )
 
     const resumedUser = chatStore.messages.find(message =>
@@ -658,6 +540,7 @@ describe('useChat A2UI integration', () => {
       'turn-suspended-live',
       'RESUME',
       expect.any(AbortSignal),
+      null,
     )
 
     suspendedStream.close()

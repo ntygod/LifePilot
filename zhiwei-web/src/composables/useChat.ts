@@ -13,10 +13,10 @@ import type {
   ChatTurnStatus,
   ReasoningEvent,
   ReactStepDto,
+  SessionConfigOverride,
   SseAgentSuspendedEvent,
   SseDoneEvent,
   SseErrorEvent,
-  SseInteractionEvent,
   SseMediaEvent,
   SseTokenEvent,
   TokenUsage,
@@ -28,8 +28,8 @@ type ExecuteTurnOptions = {
   content?: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
-  sessionConfig?: SessionConfig
-  restoreSessionConfig?: SessionConfig
+  /** 单轮临时覆盖的会话配置（模型 / KB / 温度 / 预算）。仅影响本轮 Agent 执行，不污染持久化 config。 */
+  singleTurnOverride?: SessionConfigOverride | null
   userMessageId?: string | null
 }
 
@@ -68,9 +68,6 @@ export function useChat() {
   const streamingMedia = ref<SseMediaEvent[]>([])
   const pendingPermissionApprovals = ref<Map<string, PermissionApprovalRequest>>(new Map())
   const pendingPermissionApprovalResolutions = ref<Map<string, 'approved' | 'rejected' | 'expired'>>(new Map())
-  const activeInteraction = ref<SseInteractionEvent | null>(null)
-  const interactionSubmitting = ref(false)
-  const interactionError = ref<string | null>(null)
   /** 浏览器人工接管 modal 状态：非空表示需要展示 HumanTakeoverModal */
   const activeBrowserTakeover = ref<{
     turnId: string
@@ -134,54 +131,15 @@ export function useChat() {
     content: string,
     attachmentIds?: string[],
     attachments?: ChatAttachment[],
-    sessionConfig?: SessionConfig,
-    restoreSessionConfig?: SessionConfig,
+    singleTurnOverride?: SessionConfigOverride | null,
   ) {
-    if (activeInteraction.value) {
-      if ((attachmentIds?.length ?? 0) > 0 || (attachments?.length ?? 0) > 0) {
-        error.value = '当前正在等待一条文本补充，请先直接回复文本内容'
-        return
-      }
-
-      const reply = content.trim()
-      if (!reply) {
-        return
-      }
-
-      const interactionReplyId = crypto.randomUUID()
-      chatStore.addMessage({
-        id: interactionReplyId,
-        turnId: currentTurnId ?? undefined,
-        role: 'user',
-        content: reply,
-        timestamp: Date.now(),
-        status: 'pending',
-      })
-
-      await submitInteraction(reply)
-
-      if (activeInteraction.value === null && !interactionError.value) {
-        chatStore.updateMessage(interactionReplyId, {
-          status: 'success',
-          errorMessage: undefined,
-        })
-      } else {
-        chatStore.updateMessage(interactionReplyId, {
-          status: 'error',
-          errorMessage: interactionError.value ?? '补充信息提交失败',
-        })
-      }
-      return
-    }
-
     const suspendedTurn = findLatestSuspendedTurn()
     if (suspendedTurn?.turnId) {
       await executeTurn(suspendedTurn.turnId, 'RESUME', {
         content,
         attachmentIds,
         attachments,
-        sessionConfig,
-        restoreSessionConfig,
+        singleTurnOverride,
       })
       return
     }
@@ -191,8 +149,7 @@ export function useChat() {
       content,
       attachmentIds,
       attachments,
-      sessionConfig,
-      restoreSessionConfig,
+      singleTurnOverride,
     })
   }
 
@@ -205,7 +162,6 @@ export function useChat() {
     const content = options.content ?? ''
     const hasContent = content.trim().length > 0
     const hasAttachments = (options.attachmentIds?.length ?? 0) > 0
-    const restoreSessionConfig = options.restoreSessionConfig
 
     if (action === 'SEND' && !hasContent && !hasAttachments) {
       return
@@ -225,13 +181,6 @@ export function useChat() {
       }
     }
 
-    if (options.sessionConfig && chatStore.activeSessionId) {
-      try {
-        await chatApi.updateSessionConfig(chatStore.activeSessionId, options.sessionConfig)
-      } catch (e) {
-        logger.warn('更新会话配置失败，将继续发送消息', e)
-      }
-    }
 
     const userMessageId = prepareTurnMessages(turnId, action, content, options.attachments, options.userMessageId)
     currentTurnId = turnId
@@ -248,6 +197,7 @@ export function useChat() {
         turnId,
         action,
         abortController.signal,
+        options.singleTurnOverride ?? null,
       )
       await parseSseStream(stream)
     } catch (e: unknown) {
@@ -264,19 +214,9 @@ export function useChat() {
       }
       clearStreamingTextBuffer()
       markCurrentTurnFailed(e instanceof Error ? e.message : '请求失败')
-      activeInteraction.value = null
-      interactionSubmitting.value = false
-      interactionError.value = null
       chatStore.resetStreaming()
       a2uiStore.clearComponents()
     } finally {
-      if (restoreSessionConfig && chatStore.activeSessionId) {
-        try {
-          await chatApi.updateSessionConfig(chatStore.activeSessionId, restoreSessionConfig)
-        } catch (restoreError) {
-          logger.warn('恢复会话配置失败', restoreError)
-        }
-      }
       if (currentExecutionSeq === executionSeq) {
         isStreaming.value = false
         chatStore.isStreaming = false
@@ -352,9 +292,6 @@ export function useChat() {
     streamingMedia.value = []
     pendingPermissionApprovals.value = new Map()
     pendingPermissionApprovalResolutions.value = new Map()
-    activeInteraction.value = null
-    interactionSubmitting.value = false
-    interactionError.value = null
     a2uiStore.clearComponents()
   }
 
@@ -450,9 +387,6 @@ export function useChat() {
       } else {
         markCurrentTurnFailed(errorMsg)
       }
-      activeInteraction.value = null
-      interactionSubmitting.value = false
-      interactionError.value = null
       chatStore.resetStreaming()
       a2uiStore.clearComponents()
     } finally {
@@ -614,10 +548,6 @@ export function useChat() {
               errorMessage: undefined,
             })
           }
-
-          activeInteraction.value = null
-          interactionSubmitting.value = false
-          interactionError.value = null
           chatStore.resetStreaming()
           a2uiStore.clearComponents()
           break
@@ -658,10 +588,6 @@ export function useChat() {
               }
             }
           }
-
-          activeInteraction.value = null
-          interactionSubmitting.value = false
-          interactionError.value = null
           break
         }
         case SSE_EVENT_TYPES.ERROR: {
@@ -679,15 +605,9 @@ export function useChat() {
             content: buildInterruptedAssistantContent('FAILED', event.message),
           })) {
             markCurrentTurnFailed(event.message, event.traceId, event.turnStatus ?? 'FAILED')
-            activeInteraction.value = null
-            interactionSubmitting.value = false
-            interactionError.value = null
             chatStore.resetStreaming()
             a2uiStore.clearComponents()
           }
-          activeInteraction.value = null
-          interactionSubmitting.value = false
-          interactionError.value = null
           break
         }
         case SSE_EVENT_TYPES.HEARTBEAT:
@@ -695,11 +615,6 @@ export function useChat() {
         case SSE_EVENT_TYPES.PERMISSION_APPROVAL_REQUEST: {
           const payload: PermissionApprovalRequest = JSON.parse(data)
           pendingPermissionApprovals.value.set(payload.requestId, payload)
-          break
-        }
-        case SSE_EVENT_TYPES.INTERACTION: {
-          const payload: SseInteractionEvent = JSON.parse(data)
-          void handleInteractionRequest(payload)
           break
         }
         default:
@@ -713,9 +628,6 @@ export function useChat() {
       ) {
         clearStreamingTextBuffer()
         markCurrentTurnFailed(e instanceof Error ? e.message : '事件解析失败')
-        activeInteraction.value = null
-        interactionSubmitting.value = false
-        interactionError.value = null
         chatStore.resetStreaming()
         a2uiStore.clearComponents()
       }
@@ -752,135 +664,6 @@ export function useChat() {
 
     return ''
   }
-
-  async function handleInteractionRequest(event: SseInteractionEvent) {
-    if (event.type === 'NOTIFY') {
-      return
-    }
-
-    activeInteraction.value = {
-      ...event,
-      options: event.options ?? undefined,
-    }
-    interactionSubmitting.value = false
-    interactionError.value = null
-
-    const promptContent = event.message?.trim()
-    if (!promptContent) {
-      return
-    }
-
-    chatStore.upsertMessage({
-      id: `interaction-${event.interactionId}`,
-      turnId: currentTurnId ?? undefined,
-      role: 'assistant',
-      content: promptContent,
-      timestamp: Date.now(),
-      status: 'success',
-    })
-  }
-
-  async function resolveInteractionResponse(payload: {
-    value?: string | null
-    confirmed: boolean
-    timedOut?: boolean
-  }) {
-    const interaction = activeInteraction.value
-    if (!interaction) {
-      return
-    }
-
-    interactionSubmitting.value = true
-    interactionError.value = null
-
-    try {
-      await chatApi.respondInteraction(interaction.interactionId, {
-        type: interaction.type,
-        value: payload.value ?? null,
-        confirmed: payload.confirmed,
-        timedOut: payload.timedOut ?? false,
-      })
-      activeInteraction.value = null
-    } catch (submitError) {
-      logger.error('回传交互失败:', submitError)
-      interactionError.value = submitError instanceof Error
-        ? submitError.message
-        : '交互回传失败，请重试'
-    } finally {
-      interactionSubmitting.value = false
-    }
-  }
-
-  async function submitInteraction(value?: string) {
-    const interaction = activeInteraction.value
-    if (!interaction || interactionSubmitting.value) {
-      return
-    }
-
-    if (interaction.type === 'CONFIRM') {
-      const normalizedValue = value?.trim() ?? ''
-      const confirmed = resolveConfirmationReply(normalizedValue)
-      if (confirmed === null && normalizedValue) {
-        interactionError.value = '请直接回复“继续”“确认”或“取消”“停止”这类明确态度'
-        return
-      }
-      await resolveInteractionResponse({
-        value: normalizedValue || null,
-        confirmed: confirmed ?? true,
-        timedOut: false,
-      })
-      return
-    }
-
-    const normalizedValue = value?.trim() ?? ''
-    if (!normalizedValue) {
-      interactionError.value = interaction.type === 'CHOOSE'
-        ? '请选择或输入一个可用选项'
-        : '请输入需要补充的内容'
-      return
-    }
-
-    await resolveInteractionResponse({
-      value: normalizedValue,
-      confirmed: true,
-      timedOut: false,
-    })
-  }
-
-  async function cancelInteraction() {
-    if (!activeInteraction.value || interactionSubmitting.value) {
-      return
-    }
-
-    await resolveInteractionResponse({
-      confirmed: false,
-      timedOut: true,
-    })
-  }
-
-  function resolveConfirmationReply(value: string) {
-    if (!value) {
-      return null
-    }
-
-    const normalized = value.trim().toLowerCase()
-    if (!normalized) {
-      return null
-    }
-
-    const positiveMarkers = ['继续', '确认', '同意', '允许', '是', '好的', 'ok', 'yes', 'y']
-    if (positiveMarkers.some(marker => normalized.includes(marker))) {
-      return true
-    }
-
-    const negativeMarkers = ['取消', '停止', '不要', '不同意', '拒绝', '否', '不用', 'no', 'n']
-    if (negativeMarkers.some(marker => normalized.includes(marker))) {
-      return false
-    }
-
-    return null
-  }
-
   function resolveDoneEventText(event: SseDoneEvent) {
     if (event.contents && event.contents.length > 0) {
       const textParts = event.contents
@@ -1259,12 +1042,18 @@ export function useChat() {
   }
 
   function abort() {
+    // 先通知后端真实取消（fire-and-forget），再断 HTTP 连接；
+    // 单独断 HTTP 不够——后端可能在长 LLM 调用或工具执行中，
+    // 必须驱动 CancellationToken.cancel 让 ReactAgentLoop 尽早退出。
+    const sessionId = chatStore.activeSessionId
+    if (sessionId) {
+      void chatApi.cancelTurn(sessionId).catch(err => {
+        logger.warn('通知后端取消当前轮失败，继续断 HTTP 连接:', err)
+      })
+    }
     abortController?.abort()
     // 不在这里 resetStreaming / clearStreamingTextBuffer —
     // 让 parseSseStream 的 catch 块检测到中止后正确收尾（保留部分内容）
-    activeInteraction.value = null
-    interactionSubmitting.value = false
-    interactionError.value = null
     a2uiStore.clearComponents()
   }
 
@@ -1338,11 +1127,6 @@ export function useChat() {
     streamingReactSteps,
     streamingMedia,
     streamingA2uiComponents: a2uiStore.components,
-    activeInteraction,
-    interactionSubmitting,
-    interactionError,
-    submitInteraction,
-    cancelInteraction,
     pendingPermissionApprovals: computed(() => mapToRecord(pendingPermissionApprovals.value)),
     pendingPermissionApprovalResolutions: computed(() => mapToRecord(pendingPermissionApprovalResolutions.value)),
     resolvePermissionApproval,

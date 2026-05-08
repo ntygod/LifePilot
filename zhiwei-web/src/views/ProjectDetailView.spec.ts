@@ -268,8 +268,7 @@ describe('ProjectDetailView', () => {
       content: '你好项目',
       attachmentIds: undefined,
       attachments: undefined,
-      sessionConfig: undefined,
-      restoreSessionConfig: undefined,
+      singleTurnOverride: undefined,
     })
 
     // 跳转到新会话

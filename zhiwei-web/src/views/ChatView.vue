@@ -12,7 +12,7 @@ import {
 } from 'lucide-vue-next'
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
-import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
+import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig, SessionConfigOverride } from '@/types'
 import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
@@ -59,7 +59,6 @@ const {
   reasoningEvents,
   streamingReactSteps,
   streamingA2uiComponents,
-  activeInteraction,
   pendingPermissionApprovals,
   pendingPermissionApprovalResolutions,
   resolvePermissionApproval,
@@ -298,7 +297,7 @@ onMounted(async () => {
   }
 
   // 处理首屏传递的待发送消息
-  // 1) 项目详情页等场景：使用完整结构（含附件 / sessionConfig）
+  // 1) 项目详情页等场景：使用完整结构（含附件 / 单轮 override）
   // 2) 首屏纯文本链路：保留兼容字段
   if (chatStore.pendingFirstSend) {
     const payload = chatStore.pendingFirstSend
@@ -307,8 +306,7 @@ onMounted(async () => {
       payload.content,
       payload.attachmentIds,
       payload.attachments,
-      payload.sessionConfig,
-      payload.restoreSessionConfig,
+      payload.singleTurnOverride,
     )
   } else if (chatStore.pendingFirstMessage) {
     const content = chatStore.pendingFirstMessage
@@ -437,8 +435,7 @@ async function handleSend(payload: {
   content: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
-  sessionConfig?: SessionConfig
-  restoreSessionConfig?: SessionConfig
+  singleTurnOverride?: SessionConfigOverride | null
 }) {
   // 发送后立即滚到底，让用户看到消息弹入
   nextTick(() => {
@@ -448,8 +445,7 @@ async function handleSend(payload: {
     payload.content,
     payload.attachmentIds,
     payload.attachments,
-    payload.sessionConfig,
-    payload.restoreSessionConfig,
+    payload.singleTurnOverride,
   )
 }
 
@@ -808,7 +804,7 @@ function closeTracePanel() {
               </template>
             </StatePanel>
             <ChatInput
-              :disabled="isStreaming && !activeInteraction"
+              :disabled="isStreaming"
               :placeholder="inputPlaceholder"
               :continuation-title="continuationTitle"
               :continuation-detail="continuationDetail"

@@ -75,7 +75,7 @@
   ProactiveConfigUpdate,
   QueuedAction,
   TrustStatus,
-  SseInteractionEvent,
+  SessionConfigOverride,
   // 记忆管理类型
   MemoryStats,
   MemorySearchResult,
@@ -219,12 +219,13 @@ export const chatApi = {
     attachmentIds?: string[],
     turnId?: string,
     action: ChatTurnAction = 'SEND',
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    singleTurnOverride?: SessionConfigOverride | null
   ): Promise<ReadableStream<Uint8Array>> {
     const res = await fetch(`${getBase()}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action }),
+      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action, singleTurnOverride: singleTurnOverride ?? null }),
       signal
     })
     if (!res.ok || !res.body) {
@@ -366,19 +367,15 @@ export const chatApi = {
     })
   },
 
-  /** 用户交互回传 */
-  respondInteraction(
-    interactionId: string,
-    payload: Pick<SseInteractionEvent, 'type'> & { value?: string | null; confirmed: boolean; timedOut?: boolean }
-  ): Promise<void> {
-    return request(`/chat/interactions/${interactionId}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        value: payload.value ?? null,
-        confirmed: payload.confirmed,
-        timedOut: payload.timedOut ?? false,
-      })
-    })
+  /**
+   * 真实中断当前会话正在进行的 Agent 推理。
+   *
+   * <p>前端"停止生成"按钮调用此端点，驱动后端 SseSessionManager.cancelBySessionId
+   * 触发 CancellationToken.cancel，让 ReactAgentLoop 在下一轮循环头退出。单独断
+   * HTTP 连接不够——后端可能仍在长 LLM 调用或工具执行中。</p>
+   */
+  cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
+    return request(`/chat/sessions/${sessionId}/cancel`, { method: 'POST' })
   },
 
   /**
