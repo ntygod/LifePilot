@@ -268,8 +268,9 @@ public class ChatSessionService {
     public SessionDetailInfo getSessionDetail(String id) {
         ChatSession session = requireWebSession(id);
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(id);
-        Map<String, Object> sessionConfig = new java.util.HashMap<>();
+        Map<String, Object> sessionConfig = sessionRepository.getConfig(id);
         SessionCompactionStatusInfo compactionStatus = buildCompactionStatus(id, sessionConfig);
+        long totalTokens = sessionRepository.getTokenUsage(id)[2];
 
         return new SessionDetailInfo(
                 session.id(),
@@ -284,7 +285,7 @@ public class ChatSessionService {
                 SessionConfigKeys.getInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS),
                 knowledgeBaseIds,
                 session.messageCount(),
-                0L,
+                totalTokens,
                 session.summary(),
                 compactionStatus
         );
@@ -496,6 +497,7 @@ public class ChatSessionService {
         }
         attachmentRepository.copyForFork(copiedEntryIds, newSession.id());
         copyKnowledgeBaseBindings(originalSession.id(), newSession.id());
+        copySessionConfig(originalSession.id(), newSession.id());
 
         log.info("\u5206\u53c9\u4f1a\u8bdd(transcript): originalSessionId={}, newSessionId={}, messageCount={}",
                 originalSession.id(), newSession.id(), messagesToCopy.size());
@@ -517,6 +519,18 @@ public class ChatSessionService {
         for (String knowledgeBaseId : knowledgeBaseIds) {
             sessionKnowledgeBaseRepository.addAssociation(targetSessionId, knowledgeBaseId);
         }
+    }
+
+    /**
+     * 把源会话的运行时配置（preferredProvider / temperature / maxSteps / maxDurationSeconds 等）
+     * 复制到 fork 出的新会话，避免重头开始配置。
+     */
+    private void copySessionConfig(String sourceSessionId, String targetSessionId) {
+        Map<String, Object> sourceConfig = sessionRepository.getConfig(sourceSessionId);
+        if (sourceConfig == null || sourceConfig.isEmpty()) {
+            return;
+        }
+        sessionRepository.updateConfig(targetSessionId, sourceConfig);
     }
 
 
