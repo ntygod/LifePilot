@@ -9,7 +9,7 @@
  * @author zsg
  * @since 2026-05-08
  */
-import { CornerDownRight, X } from 'lucide-vue-next'
+import { CornerDownRight, Play, X } from 'lucide-vue-next'
 
 defineProps<{
   title: string
@@ -17,6 +17,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
+  resume: []
   dismiss: []
 }>()
 </script>
@@ -32,6 +33,15 @@ const emit = defineEmits<{
     </div>
     <button
       type="button"
+      class="continuation-hint__resume"
+      title="继续执行上一轮"
+      @click="emit('resume')"
+    >
+      <Play class="size-3.5" />
+      继续
+    </button>
+    <button
+      type="button"
       class="continuation-hint__close"
       title="忽略继续提示"
       @click="emit('dismiss')"
@@ -44,7 +54,7 @@ const emit = defineEmits<{
 <style scoped>
 .continuation-hint {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -56,7 +66,6 @@ const emit = defineEmits<{
 
 .continuation-hint__icon {
   flex: 0 0 auto;
-  margin-top: 2px;
   color: hsl(from var(--primary) h s l / 0.9);
 }
 
@@ -75,6 +84,25 @@ const emit = defineEmits<{
 
 .continuation-hint__detail {
   line-height: 1.5;
+}
+
+.continuation-hint__resume {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: hsl(from var(--primary) h s l / 0.12);
+  color: hsl(from var(--primary) h s l / 0.95);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.continuation-hint__resume:hover {
+  background: hsl(from var(--primary) h s l / 0.18);
 }
 
 .continuation-hint__close {

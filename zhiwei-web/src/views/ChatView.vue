@@ -653,6 +653,13 @@ function dismissContinuationHint() {
 }
 const continuationHintDismissed = ref(false)
 
+/** 点击 ContinuationHint 的"继续"按钮 → 用空 RESUME 触发挂起会话恢复 */
+async function handleContinuationResume() {
+  const target = latestSuspendedAssistant.value
+  if (!target) return
+  await handleResume(target)
+}
+
 watch(() => latestSuspendedAssistant.value?.id, () => {
   continuationHintDismissed.value = false
 })
@@ -766,6 +773,7 @@ const shouldShowContinuationHint = computed(() =>
                 class="chat-composer-wrap__continuation"
                 :title="continuationTitle"
                 :detail="continuationDetail"
+                @resume="handleContinuationResume"
                 @dismiss="dismissContinuationHint"
               />
 
