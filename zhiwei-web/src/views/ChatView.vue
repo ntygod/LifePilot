@@ -15,7 +15,6 @@ import ChatInput from '@/components/chat/ChatInput.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ComposerStopPill from '@/components/chat/ComposerStopPill.vue'
 import ContinuationHint from '@/components/chat/ContinuationHint.vue'
-import DebugDrawer from '@/components/chat/DebugDrawer.vue'
 import DocumentWorkspacePanel from '@/components/chat/DocumentWorkspacePanel.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
 import HumanTakeoverModal from '@/components/chat/HumanTakeoverModal.vue'
@@ -618,12 +617,7 @@ const activeTraceData = computed(() => {
   }
 })
 
-const showTracePanel = computed(() => !!activeTraceMessageId.value && !!activeTraceData.value)
 const processTaskStore = useProcessTaskStore()
-/** 右侧面板显示条件：有轨迹数据、或有任何后台任务（含终态，避免最后一个任务结束瞬间面板消失） */
-const showRightPanel = computed(() =>
-  showTracePanel.value || processTaskStore.tasksOrdered.length > 0
-)
 
 // 流式结束后，把 'streaming' placeholder ID 更新为真实消息 ID
 watch(isStreaming, (streaming) => {
