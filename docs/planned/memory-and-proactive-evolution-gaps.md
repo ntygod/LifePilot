@@ -39,6 +39,7 @@
 ### P0 — 阻塞迭代的根因
 
 #### M-P0-1 离线回归基线缺失（开发期必修，非面向用户）
+> **状态**：已拆为 feature 分支 `feature/memory-eval-harness`，**in_progress**（已完成配置 + Loader + Judge + Probe + Report + Baseline 六大核心组件的离线单元验证；剩余 Spring 集成、Runner 主流程、Maven profile、冒烟测试在后续 session 推进）。
 - **问题**：现在任何一个改动（加一个 listener、换一个质量阈值、调一个遗忘权重）都只能靠个案验证，无法回答"整体召回率 / 误召回率 / staleness / token 成本"是不是真的改善。
 - **现状证据**：
   - `memory-system.md` §7 Phase H 已把"建立真实流式对话回归集"列为统一检索编排的前置
