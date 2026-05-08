@@ -1,0 +1,55 @@
+[
+  {
+    "question_id": "lme-1",
+    "question": "What is the user's favorite drink?",
+    "answer": "oat milk latte",
+    "question_type": "single-session-user",
+    "haystack_session_ids": ["s-1", "s-2"],
+    "haystack_dates": ["2024-05-01 09:00:00", "2024-05-03 14:00:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I started drinking oat milk lattes in the morning."},
+        {"role": "assistant", "content": "That's a nice healthy choice."}
+      ],
+      [
+        {"role": "user", "content": "I made pasta for dinner yesterday."},
+        {"role": "assistant", "content": "Sounds delicious."}
+      ]
+    ],
+    "answer_session_ids": ["s-1"]
+  },
+  {
+    "question_id": "lme-2",
+    "question": "Has the user changed their job recently?",
+    "answer": "Yes, they moved from marketing to product management.",
+    "question_type": "knowledge-update",
+    "haystack_session_ids": ["s-10", "s-11"],
+    "haystack_dates": ["2024-02-01 10:00:00", "2024-06-01 10:00:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I work in marketing at an e-commerce company."},
+        {"role": "assistant", "content": "Got it."}
+      ],
+      [
+        {"role": "user", "content": "I recently moved from marketing to product management."},
+        {"role": "assistant", "content": "Congrats on the switch."}
+      ]
+    ],
+    "answer_session_ids": ["s-11"]
+  },
+  {
+    "question_id": "lme-3",
+    "question": "What question is impossible to answer from this chat?",
+    "answer": "I don't know",
+    "question_type": "abstention",
+    "haystack_session_ids": ["s-20"],
+    "haystack_dates": ["2024-07-01 08:00:00"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "Nice weather today."},
+        {"role": "assistant", "content": "Agreed."}
+      ]
+    ],
+    "answer_session_ids": []
+  }
+]
