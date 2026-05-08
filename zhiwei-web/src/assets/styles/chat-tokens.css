@@ -1,0 +1,59 @@
+/* ============================================================================
+ * Chat Design Tokens — ZhiWei
+ *
+ * 对话页重设计的视觉基线（2026-05）。对标 ChatGPT / Claude.ai / Kimi / 豆包 /
+ * 通义千问 Qwen Chat 的留白、字重、圆角尺度，把"开发者工具"观感拉回到
+ * "通用 AI 助手"观感。
+ *
+ * 所有新对话页组件的颜色 / 字号 / 圆角 / 间距 / 层级必须引用下方变量，
+ * 不再硬编码 340px / 800px / px-6 等魔法值。
+ * ============================================================================ */
+
+:root {
+    /* 主列宽度：对齐 Claude.ai 2026 的阅读密度，从 800px 收窄到 720px */
+    --chat-main-max-w: 720px;
+
+    /* 气泡宽度 */
+    --chat-bubble-max-w: 640px;
+    --chat-bubble-radius: 18px;
+    --chat-bubble-line-height: 1.7;
+
+    /* 气泡配色 */
+    --chat-bubble-user-bg: hsl(from var(--primary) h s l / 0.06);
+    --chat-bubble-assistant-bg: transparent;
+
+    /* 字号层级 */
+    --chat-text-body: 15px;
+    --chat-text-body-sm: 14px;
+    --chat-text-title-lg: 28px;
+    --chat-text-title-md: 18px;
+
+    /* Composer（输入框卡片） */
+    --chat-composer-radius: 24px;
+    --chat-composer-gap-y: 10px;
+
+    /* 页面留白 */
+    --chat-gutter-x-desktop: 24px;
+    --chat-gutter-x-mobile: 16px;
+
+    /* 停止生成浮 Pill 相对 Composer 顶部的偏移（负值 = 浮于上方 8px） */
+    --chat-stop-pill-offset: -40px;
+
+    /* Overlay（Trace / Document / Info / Settings 右侧滑入面板） */
+    --chat-overlay-width: 420px;
+    --chat-overlay-scrim: hsl(from var(--background) h s l / 0.4);
+    --chat-overlay-z: 40;
+
+    /* 消息操作披露 */
+    --chat-action-hover-bg: hsl(from var(--muted) h s l / 0.5);
+    --chat-action-visible-opacity: 0;
+    --chat-action-hover-opacity: 1;
+}
+
+@media (max-width: 640px) {
+    :root {
+        /* 窄屏自动降级：字号 / 留白更紧凑 */
+        --chat-text-body: var(--chat-text-body-sm);
+        --chat-gutter-x-desktop: var(--chat-gutter-x-mobile);
+    }
+}

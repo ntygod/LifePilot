@@ -50,6 +50,7 @@ const emit = defineEmits<{
 const chatStore = useChatStore()
 const route = useRoute()
 const input = ref('')
+const textareaRef = ref<{ $el?: HTMLElement; focus?: () => void } | null>(null)
 const maxLength = 4000
 
 const PLACEHOLDERS = [
@@ -449,6 +450,21 @@ defineExpose({
   input,
   isUploading,
   getFileIcon,
+  /** 把外部文本填入输入框 —— 用于 PromptGallery 点击卡片 → 灌入 prompt */
+  setContent(text: string) {
+    input.value = text
+  },
+  /** 聚焦到输入框 */
+  focus() {
+    const el = (textareaRef.value as { $el?: HTMLElement; focus?: () => void } | null) ?? null
+    if (!el) return
+    if (typeof el.focus === 'function') {
+      el.focus()
+    } else if (el.$el instanceof HTMLElement) {
+      const real = el.$el.tagName === 'TEXTAREA' ? el.$el : el.$el.querySelector('textarea')
+      real?.focus()
+    }
+  },
 })
 </script>
 
@@ -611,6 +627,7 @@ defineExpose({
         <!-- 输入区 -->
         <div class="relative px-4 pb-1 pt-2">
           <Textarea
+            ref="textareaRef"
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"
