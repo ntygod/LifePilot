@@ -596,7 +596,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
       </div>
 
       <template v-if="message.role === 'assistant' && !streaming">
-        <div class="flex items-center gap-0.5 pl-xs">
+        <div class="message-actions-row flex items-center gap-0.5 pl-xs">
           <MessageActions
             :message="message"
             :is-last-assistant="isLastAssistant ?? false"
@@ -615,7 +615,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
       </template>
 
       <!-- 用户消息操作：复制 + 编辑 -->
-      <div v-if="message.role === 'user' && message.status !== 'pending' && !isEditing" class="flex items-center justify-end gap-0.5 pr-xs">
+      <div v-if="message.role === 'user' && message.status !== 'pending' && !isEditing" class="message-actions-row flex items-center justify-end gap-0.5 pr-xs">
         <button
           type="button"
           class="user-act-btn"
@@ -705,6 +705,17 @@ function approvalLogTone(log: PermissionApprovalLog) {
 }
 
 .message-toolbar {}
+
+/* 消息操作栏 hover 披露：默认隐藏，父级 group/message hover 或操作栏内部 focus 时浮现 */
+.message-actions-row {
+  opacity: var(--chat-action-visible-opacity, 0);
+  transition: opacity 160ms ease;
+}
+
+.group\/message:hover .message-actions-row,
+.message-actions-row:focus-within {
+  opacity: var(--chat-action-hover-opacity, 1);
+}
 
 @keyframes streaming-dot-pulse {
   0%,
