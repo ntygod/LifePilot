@@ -46,9 +46,14 @@ public final class ExecutionRequestFactory {
      * 将网关层消息统一转换为 AgentRequest。
      *
      * <p>这里会收口 turn/action、附件、多模态输入、预算和会话偏好，确保后续编排层拿到的是完整请求。
+     *
+     * <p><b>单轮 override 语义</b>：若 {@link ChannelMetadata.WebMetadata#singleTurnOverride()}
+     * 非空，其字段优先于 {@code session_store.config_json}。override 只影响本次 turn 的
+     * AgentRequest 构造，不写入持久化配置，取代旧版"发送前 PATCH 再恢复"双 PATCH race 实现。</p>
      */
     public AgentRequest build(GatewayMessage message) {
         Map<String, Object> sessionConfig = getSessionConfig(message.sessionId());
+        com.lifepilot.interaction.web.model.SessionConfigOverride override = extractSingleTurnOverride(message);
         ChatTurnAction action = resolveTurnAction(message);
         InteractionSource interactionSource = resolveInteractionSource(message);
         return new AgentRequest(
@@ -60,15 +65,24 @@ public final class ExecutionRequestFactory {
                 action,
                 AgentTaskMode.AUTO,
                 null,
-                resolveSessionBudget(sessionConfig),
+                resolveSessionBudget(sessionConfig, override),
                 null,
                 0,
-                resolvePreferredProvider(message, sessionConfig),
+                resolvePreferredProvider(message, sessionConfig, override),
                 null,
                 buildMediaContents(message),
-                resolveTemperature(sessionConfig),
-                action.toResumePolicy()
+                resolveTemperature(sessionConfig, override),
+                action.toResumePolicy(),
+                override != null ? override.knowledgeBaseIds() : null
         );
+    }
+
+    @Nullable
+    private com.lifepilot.interaction.web.model.SessionConfigOverride extractSingleTurnOverride(GatewayMessage message) {
+        if (message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMetadata) {
+            return webMetadata.singleTurnOverride();
+        }
+        return null;
     }
 
     private InteractionSource resolveInteractionSource(GatewayMessage message) {
@@ -180,9 +194,14 @@ public final class ExecutionRequestFactory {
                 || mimeType.startsWith("video/");
     }
 
-    /** 按“请求显式指定优先，会话默认次之”的顺序解析模型服务提供方。 */
+    /** 按"单轮 override → 请求显式指定 → 会话默认"的顺序解析模型服务提供方。 */
     @Nullable
-    private String resolvePreferredProvider(GatewayMessage message, Map<String, Object> sessionConfig) {
+    private String resolvePreferredProvider(GatewayMessage message,
+                                            Map<String, Object> sessionConfig,
+                                            @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride override) {
+        if (override != null && override.preferredProviderId() != null && !override.preferredProviderId().isBlank()) {
+            return override.preferredProviderId();
+        }
         String requestPreferredProvider = extractPreferredProvider(message);
         if (requestPreferredProvider != null) {
             return requestPreferredProvider;
@@ -207,8 +226,12 @@ public final class ExecutionRequestFactory {
         return ChatTurnAction.SEND;
     }
 
-    /** 读取会话级 temperature，未配置时回退到全局默认值。 */
-    private double resolveTemperature(Map<String, Object> sessionConfig) {
+    /** 读取 temperature：单轮 override → 会话级 → 全局默认。 */
+    private double resolveTemperature(Map<String, Object> sessionConfig,
+                                      @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride override) {
+        if (override != null && override.temperature() != null && override.temperature() >= 0) {
+            return override.temperature();
+        }
         Double temperature = SessionConfigKeys.getDouble(sessionConfig, SessionConfigKeys.TEMPERATURE);
         if (temperature != null && temperature >= 0) {
             return temperature;
@@ -217,14 +240,19 @@ public final class ExecutionRequestFactory {
     }
 
     /**
-     * 根据会话配置覆盖默认预算。
+     * 根据单轮 override 与会话配置覆盖默认预算。
      *
-     * <p>仅在会话显式配置了 step 或 duration 上限时生成新预算，否则返回 null，表示沿用系统默认值。
+     * <p>优先级：override.maxSteps / maxDurationSeconds > session config > 系统默认。</p>
      */
     @Nullable
-    private Budget resolveSessionBudget(Map<String, Object> sessionConfig) {
-        Integer maxSteps = positiveInteger(sessionConfig, SessionConfigKeys.MAX_STEPS);
-        Integer maxDurationSeconds = positiveInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS);
+    private Budget resolveSessionBudget(Map<String, Object> sessionConfig,
+                                        @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride override) {
+        Integer maxSteps = override != null && positiveOrNull(override.maxSteps()) != null
+                ? override.maxSteps()
+                : positiveInteger(sessionConfig, SessionConfigKeys.MAX_STEPS);
+        Integer maxDurationSeconds = override != null && positiveOrNull(override.maxDurationSeconds()) != null
+                ? override.maxDurationSeconds()
+                : positiveInteger(sessionConfig, SessionConfigKeys.MAX_DURATION_SECONDS);
         if (maxSteps == null && maxDurationSeconds == null) {
             return null;
         }
@@ -237,6 +265,11 @@ public final class ExecutionRequestFactory {
             builder.maxDuration(Duration.ofSeconds(maxDurationSeconds));
         }
         return builder.build();
+    }
+
+    @Nullable
+    private static Integer positiveOrNull(@Nullable Integer value) {
+        return (value != null && value > 0) ? value : null;
     }
 
     /** 安全读取会话配置；读取失败时回退为空配置。 */

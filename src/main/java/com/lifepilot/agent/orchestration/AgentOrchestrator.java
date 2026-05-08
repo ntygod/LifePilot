@@ -578,7 +578,8 @@ public class AgentOrchestrator {
                     state.allowedToolIds(),
                     null,
                     null,
-                    ResumePolicy.AUTO
+                    ResumePolicy.AUTO,
+                    state.overrideKnowledgeBaseIds()
             );
             var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
                     config, generationRouter, multimodalRouter, request, agentLoop);
@@ -653,7 +654,8 @@ public class AgentOrchestrator {
                     request.allowedToolIds(),
                     processedMedia,
                     request.temperature(),
-                    request.resumePolicy()
+                    request.resumePolicy(),
+                    request.overrideKnowledgeBaseIds()
             );
         } catch (MediaValidationException e) {
             log.warn("媒体内容校验失败：sessionId={}, error={}", request.sessionId(), e.getMessage());

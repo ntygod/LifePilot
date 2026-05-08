@@ -36,13 +36,22 @@ public sealed interface ChannelMetadata permits ChannelMetadata.WebMetadata {
                        @Nullable String sessionToken, boolean acceptsSse,
                        @Nullable String preferredProvider,
                        @Nullable String turnId,
-                       @Nullable ChatTurnAction action)
+                       @Nullable ChatTurnAction action,
+                       @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride)
             implements ChannelMetadata {
 
         public WebMetadata(String userAgent, String remoteAddr,
                            @Nullable String sessionToken, boolean acceptsSse,
                            @Nullable String preferredProvider) {
-            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, null, ChatTurnAction.SEND);
+            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, null, ChatTurnAction.SEND, null);
+        }
+
+        public WebMetadata(String userAgent, String remoteAddr,
+                           @Nullable String sessionToken, boolean acceptsSse,
+                           @Nullable String preferredProvider,
+                           @Nullable String turnId,
+                           @Nullable ChatTurnAction action) {
+            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, turnId, action, null);
         }
 
         @Override

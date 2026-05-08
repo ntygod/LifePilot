@@ -204,7 +204,8 @@ public class ChatTurnService {
         String payloadJson = serializeSnapshot(new TurnRequestSnapshot(
                 request.content(),
                 request.attachmentIds(),
-                request.preferredProvider()
+                request.preferredProvider(),
+                request.singleTurnOverride()
         ));
         chatTurnRepository.create(turnId, sessionId, ChatTurnAction.SEND, ChatTurnStatus.PENDING, payloadJson, now);
         persistTurnMemorySnapshot(sessionId, turnId, now);
@@ -213,7 +214,8 @@ public class ChatTurnService {
                 ChatTurnAction.SEND,
                 request.content(),
                 request.attachmentIds(),
-                request.preferredProvider()
+                request.preferredProvider(),
+                request.singleTurnOverride()
         );
     }
 
@@ -235,12 +237,16 @@ public class ChatTurnService {
         if (action == ChatTurnAction.RESUME && request.hasContent()) {
             resolvedContent = buildResumeContent(snapshot.content(), request.content());
         }
+        // Replay 行为继承原 turn 的单轮 override；若新请求显式带了 override（极少见）以新请求为准
+        com.lifepilot.interaction.web.model.SessionConfigOverride overrideForReplay =
+                request.singleTurnOverride() != null ? request.singleTurnOverride() : snapshot.singleTurnOverride();
         return new ResolvedTurnRequest(
                 turnId,
                 action,
                 resolvedContent,
                 mergeAttachmentIds(snapshot.attachmentIds(), request.attachmentIds()),
-                snapshot.preferredProvider()
+                snapshot.preferredProvider(),
+                overrideForReplay
         );
     }
 
@@ -455,14 +461,30 @@ public class ChatTurnService {
     private record TurnRequestSnapshot(
             String content,
             @Nullable List<String> attachmentIds,
-            @Nullable String preferredProvider
-    ) {}
+            @Nullable String preferredProvider,
+            @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride
+    ) {
+        public TurnRequestSnapshot(String content,
+                                   @Nullable List<String> attachmentIds,
+                                   @Nullable String preferredProvider) {
+            this(content, attachmentIds, preferredProvider, null);
+        }
+    }
 
     public record ResolvedTurnRequest(
             String turnId,
             ChatTurnAction action,
             String content,
             @Nullable List<String> attachmentIds,
-            @Nullable String preferredProvider
-    ) {}
+            @Nullable String preferredProvider,
+            @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride
+    ) {
+        public ResolvedTurnRequest(String turnId,
+                                   ChatTurnAction action,
+                                   String content,
+                                   @Nullable List<String> attachmentIds,
+                                   @Nullable String preferredProvider) {
+            this(turnId, action, content, attachmentIds, preferredProvider, null);
+        }
+    }
 }

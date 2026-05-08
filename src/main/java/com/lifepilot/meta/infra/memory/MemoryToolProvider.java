@@ -351,7 +351,8 @@ public class MemoryToolProvider {
                 return ToolResult.success(Map.of("results", List.of(), "count", 0,
                         "message", "无法获取当前会话 ID"));
             }
-            List<String> kbIds = sessionKbRepo.findKnowledgeBaseIdsBySessionId(sessionId);
+            // 单轮 override 优先：若当前 turn 传入了 overrideKnowledgeBaseIds，使用 override 替代会话持久化绑定
+            List<String> kbIds = resolveEffectiveKnowledgeBaseIds(input, sessionId);
             if (kbIds.isEmpty()) {
                 return ToolResult.success(Map.of("results", List.of(), "count", 0,
                         "message", "当前会话未绑定知识库"));
@@ -366,6 +367,20 @@ public class MemoryToolProvider {
             log.error("检索资料失败: {}", e.getMessage(), e);
             return ToolResult.error("检索资料失败: " + e.getMessage());
         }
+    }
+
+    /** 解析本轮应生效的知识库 ID 列表：单轮 override 优先 → 会话持久化绑定兜底。 */
+    private List<String> resolveEffectiveKnowledgeBaseIds(ToolInput input, String sessionId) {
+        var callerState = input.getContextValue(
+                com.lifepilot.tool.model.ToolContextKeys.CALLER_STATE,
+                com.lifepilot.agent.model.ReactAgentState.class
+        ).orElse(null);
+        if (callerState != null
+                && callerState.overrideKnowledgeBaseIds() != null
+                && !callerState.overrideKnowledgeBaseIds().isEmpty()) {
+            return callerState.overrideKnowledgeBaseIds();
+        }
+        return sessionKbRepo.findKnowledgeBaseIdsBySessionId(sessionId);
     }
 
     ToolResult executeRecall(ToolInput input) {
