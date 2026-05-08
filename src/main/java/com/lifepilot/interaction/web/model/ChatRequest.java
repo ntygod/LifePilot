@@ -44,6 +44,15 @@ public record ChatRequest(
         this(null, ChatTurnAction.SEND, content, sessionId, attachmentIds, preferredProvider, null);
     }
 
+    public ChatRequest(@Nullable String turnId,
+                       @Nullable ChatTurnAction action,
+                       String content,
+                       @Nullable String sessionId,
+                       @Nullable List<String> attachmentIds,
+                       @Nullable String preferredProvider) {
+        this(turnId, action, content, sessionId, attachmentIds, preferredProvider, null);
+    }
+
     public boolean hasContent() {
         return !content.isBlank();
     }

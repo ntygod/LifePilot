@@ -120,6 +120,7 @@ class AgentResumeListener_BrowserTakeover测试 {
                 null,
                 null,
                 null,
+                null,
                 null);
         var state = ReactAgentState.init(request, Budget.fromConfig(config.getBudget()))
                 .toBuilder()

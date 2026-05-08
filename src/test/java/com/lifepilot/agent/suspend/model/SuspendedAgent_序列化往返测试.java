@@ -244,7 +244,7 @@ class SuspendedAgent_序列化往返测试 {
         return new AgentRequest(
                 "测试目标", sessionId, source, "user-1", "turn-1",
                 null, AgentTaskMode.AUTO, null, null, null,
-                0, null, null, null, null, null);
+                0, null, null, null, null, null, null);
     }
 
     /** 构造一个携带指定 SuspendReason 的挂起快照（state 只挂在顶层 reason 字段）。 */
