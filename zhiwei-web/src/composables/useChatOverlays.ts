@@ -9,7 +9,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
  * @author zsg
  * @since 2026-05-08
  */
-export type OverlayId = 'trace' | 'document' | 'settings' | 'info' | null
+export type OverlayId = 'trace' | 'document' | 'settings' | 'info' | 'tasks' | null
 
 export function useChatOverlays() {
   const activeOverlay = ref<OverlayId>(null)
@@ -31,6 +31,10 @@ export function useChatOverlays() {
 
   function openInfo() {
     activeOverlay.value = 'info'
+  }
+
+  function openTasks() {
+    activeOverlay.value = 'tasks'
   }
 
   function close() {
@@ -59,6 +63,7 @@ export function useChatOverlays() {
     openDocument,
     openSettings,
     openInfo,
+    openTasks,
     close,
   }
 }

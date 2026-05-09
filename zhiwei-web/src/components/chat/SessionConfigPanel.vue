@@ -19,8 +19,11 @@ const props = withDefaults(defineProps<{
   providers: ModelService[]
   knowledgeBases: KnowledgeBase[]
   showClose?: boolean
+  /** 嵌入外层容器（如 OverlayHost）时隐藏自身标题栏，避免双层标题 */
+  hideHeader?: boolean
 }>(), {
   showClose: true,
+  hideHeader: false,
 })
 
 const emit = defineEmits<{
@@ -94,8 +97,8 @@ function toggleKb(id: string, checked: boolean | 'indeterminate') {
 
 <template>
   <div class="detail-card space-y-4 p-4 text-sm">
-    <!-- 标题栏 -->
-    <div class="flex items-center justify-between">
+    <!-- 标题栏（嵌入外层时可通过 hideHeader 隐藏，避免双层标题） -->
+    <div v-if="!props.hideHeader" class="flex items-center justify-between">
       <div class="space-y-1">
         <div class="surface-label text-[0.68rem]">配置</div>
         <span class="text-sm font-medium text-foreground">会话配置</span>

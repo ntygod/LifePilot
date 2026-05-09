@@ -39,9 +39,8 @@
     /* 停止生成浮 Pill 相对 Composer 顶部的偏移（负值 = 浮于上方 8px） */
     --chat-stop-pill-offset: -40px;
 
-    /* Overlay（Trace / Document / Info / Settings 右侧滑入面板） */
+    /* Overlay（Trace / Document / Info / Settings 右侧浮窗） */
     --chat-overlay-width: 420px;
-    --chat-overlay-scrim: hsl(from var(--background) h s l / 0.4);
     --chat-overlay-z: 40;
 
     /* 消息操作披露 */

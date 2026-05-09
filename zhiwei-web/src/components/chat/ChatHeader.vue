@@ -2,15 +2,22 @@
 /**
  * 对话页顶部导航条（精简版）。
  *
- * <p>空态下整个 header 不渲染（仅保留一条最小 spacing 占位）；对话态下保留
- * 左侧可编辑标题 + 右侧一个 `...` 菜单（仅"本次会话概览" / "当前会话设置"
- * 两项）。停止生成已迁到 ComposerStopPill，不再出现在头部。</p>
+ * <p>空态下整个 header 不渲染；对话态下保留左侧可编辑标题 + 右侧：
+ * 快捷图标入口（文档 / 后台任务，带角标显示数量） + `...` 菜单
+ * （本次会话概览 / 当前会话设置）。</p>
  *
  * @author zsg
  * @since 2026-05-08
  */
 import { ref, watch } from 'vue'
-import { EllipsisVertical, Info, Pencil, SlidersHorizontal } from 'lucide-vue-next'
+import {
+  Activity,
+  EllipsisVertical,
+  FileText,
+  Info,
+  Pencil,
+  SlidersHorizontal,
+} from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -24,12 +31,20 @@ const props = defineProps<{
   /** 空态 = 不渲染 Header */
   isEmpty: boolean
   title: string
+  /** 文档工作区的文档数量；> 0 时头部快捷按钮显示角标，=0 时按钮保留但隐藏角标 */
+  documentCount?: number
+  /** 后台任务数量；> 0 时头部快捷按钮显示角标 */
+  taskCount?: number
+  /** 是否有活跃（进行中）后台任务，用于做一个脉冲动画提示 */
+  hasActiveTask?: boolean
 }>()
 
 const emit = defineEmits<{
   rename: [nextTitle: string]
   openInfo: []
   openSettings: []
+  openDocument: []
+  openTasks: []
 }>()
 
 const isEditing = ref(false)
@@ -84,29 +99,61 @@ function confirmEdit() {
         </button>
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger as-child>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            class="size-8 rounded-full"
-            aria-label="更多操作"
-          >
-            <EllipsisVertical class="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" class="w-44">
-          <DropdownMenuItem class="gap-2" @click="emit('openInfo')">
-            <Info class="size-4" />
-            本次会话概览
-          </DropdownMenuItem>
-          <DropdownMenuItem class="gap-2" @click="emit('openSettings')">
-            <SlidersHorizontal class="size-4" />
-            当前会话设置
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div class="chat-header__actions">
+        <!-- 文档工作区快捷入口（常驻，角标仅在有文档时显示） -->
+        <button
+          type="button"
+          class="chat-header__quick-btn"
+          title="文档工作区"
+          data-overlay-toggle
+          @click="emit('openDocument')"
+        >
+          <FileText class="size-4" />
+          <span v-if="(props.documentCount ?? 0) > 0" class="chat-header__badge">
+            {{ props.documentCount }}
+          </span>
+        </button>
+
+        <!-- 后台任务快捷入口（常驻，角标 / 脉冲仅在有任务时生效） -->
+        <button
+          type="button"
+          class="chat-header__quick-btn"
+          :class="{ 'chat-header__quick-btn--active': props.hasActiveTask }"
+          title="后台任务"
+          data-overlay-toggle
+          @click="emit('openTasks')"
+        >
+          <Activity class="size-4" />
+          <span v-if="(props.taskCount ?? 0) > 0" class="chat-header__badge">
+            {{ props.taskCount }}
+          </span>
+        </button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="size-8 rounded-full"
+              aria-label="更多操作"
+              data-overlay-toggle
+            >
+              <EllipsisVertical class="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-44" data-overlay-toggle>
+            <DropdownMenuItem class="gap-2" @click="emit('openInfo')">
+              <Info class="size-4" />
+              本次会话概览
+            </DropdownMenuItem>
+            <DropdownMenuItem class="gap-2" @click="emit('openSettings')">
+              <SlidersHorizontal class="size-4" />
+              当前会话设置
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   </header>
 </template>
@@ -170,5 +217,74 @@ function confirmEdit() {
   opacity: 0;
   color: var(--muted-foreground);
   transition: opacity 160ms ease;
+}
+
+.chat-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-header__quick-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.chat-header__quick-btn:hover {
+  color: var(--foreground);
+  background: var(--chat-action-hover-bg);
+}
+
+/* 有活跃任务时图标轻微脉冲 */
+.chat-header__quick-btn--active {
+  color: hsl(from var(--primary) h s l / 0.9);
+}
+
+.chat-header__quick-btn--active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px solid hsl(from var(--primary) h s l / 0.4);
+  animation: quick-btn-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes quick-btn-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scale(1.08);
+  }
+}
+
+.chat-header__badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border: 1.5px solid var(--background);
+  pointer-events: none;
 }
 </style>

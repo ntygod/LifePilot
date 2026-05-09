@@ -10,10 +10,13 @@ interface Props {
   class?: HTMLAttributes['class']
   contentClass?: HTMLAttributes['class']
   showClose?: boolean
+  /** 嵌入外部容器（如 OverlayHost）时隐藏自身 header，避免双层标题 */
+  hideHeader?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showClose: true,
+  hideHeader: false,
 })
 
 const emit = defineEmits<{
@@ -25,7 +28,7 @@ const slots = useSlots()
 
 <template>
   <aside :class="cn('inspector-rail shell-card flex h-full min-h-0 w-full max-w-[320px] shrink-0 flex-col overflow-hidden', props.class)">
-    <div class="border-b border-border/55 px-4 py-4">
+    <div v-if="!props.hideHeader" class="border-b border-border/55 px-4 py-4">
       <div class="flex items-start justify-between gap-3">
         <div class="space-y-1">
           <div class="surface-label text-[0.68rem]">
