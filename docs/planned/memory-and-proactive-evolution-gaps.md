@@ -56,6 +56,7 @@
 - **依赖**：无；是 M-P1-*、M-P1-4 的**前置**
 
 #### M-P0-2 Staleness / Confident-But-Wrong 检测机制缺失
+> **状态**：已拆为 feature 分支 `feature/memory-staleness`，**merged-ready**（12 任务全部完成：LifecycleState.STALE_CANDIDATE 新增 + VectorBasedStaleConflictDetector + StalenessMarker + NeighborRefreshService + StalenessCoordinator + SemanticMemory afterCommit 集成 + HybridRetriever 降权 + ProactiveCacheInvalidator + AutoConfig 装配 + 架构/特性文档。28 单元测试通过）。关联的 M-P1-5 / C-P0-1 也在本 spec 同时落地。
 - **问题**：`trust_score` 只对"新来证据的质量"打分。**一条 2 年前写入的高 trust_score 事实，不会因为时间长而被识别为可能过时**。用户说"我搬家了"，旧"住在北京"实体只在对话中 cancel 时才降权，否则继续被召回、继续进 HotDigest。
 - **现状证据**：
   - `SemanticMemory.updateLifecycleState` / `ForgettingEngine` 都是基于 access/time 的通用衰减，没有"新事实暗示旧事实失效"的路径

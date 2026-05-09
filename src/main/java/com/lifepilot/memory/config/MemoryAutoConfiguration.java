@@ -409,6 +409,59 @@ public class MemoryAutoConfiguration {
         return service;
     }
 
+    // ---------- memory-staleness spec 组件装配 ----------
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({VectorSearcher.class, SemanticMemory.class})
+    public com.lifepilot.memory.lifecycle.staleness.StaleConflictDetector staleConflictDetector(
+            VectorSearcher vectorSearcher,
+            SemanticMemory semanticMemory,
+            MemoryProperties properties) {
+        log.info("记忆模块: 注册 StaleConflictDetector (staleness.enabled={})",
+                properties.getStaleness().isEnabled());
+        return new com.lifepilot.memory.lifecycle.staleness.VectorBasedStaleConflictDetector(
+                vectorSearcher, semanticMemory, properties.getStaleness());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
+    public com.lifepilot.memory.lifecycle.staleness.StalenessMarker stalenessMarker(
+            SemanticMemory semanticMemory) {
+        return new com.lifepilot.memory.lifecycle.staleness.StalenessMarker(semanticMemory);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.memory.lifecycle.staleness.NeighborRefreshService neighborRefreshService(
+            MemoryProperties properties) {
+        return new com.lifepilot.memory.lifecycle.staleness.NeighborRefreshService(
+                properties.getStaleness());
+    }
+
+    /**
+     * StalenessCoordinator 通过 setter 注入到 SemanticMemory。
+     * 装配触发点：SemanticMemory.upsertWithConflictDetection → afterCommit → coordinator.process。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({com.lifepilot.memory.lifecycle.staleness.StaleConflictDetector.class,
+                         com.lifepilot.memory.lifecycle.staleness.StalenessMarker.class,
+                         SemanticMemory.class})
+    public com.lifepilot.memory.lifecycle.staleness.StalenessCoordinator stalenessCoordinator(
+            com.lifepilot.memory.lifecycle.staleness.StaleConflictDetector detector,
+            com.lifepilot.memory.lifecycle.staleness.StalenessMarker marker,
+            com.lifepilot.memory.lifecycle.staleness.NeighborRefreshService refreshService,
+            MemoryProperties properties,
+            SemanticMemory semanticMemory) {
+        var coordinator = new com.lifepilot.memory.lifecycle.staleness.StalenessCoordinator(
+                detector, marker, refreshService, properties.getStaleness());
+        semanticMemory.setStalenessCoordinator(coordinator);
+        log.info("记忆模块: 注册 StalenessCoordinator 并注入到 SemanticMemory");
+        return coordinator;
+    }
+
     @Bean
     @ConditionalOnMissingBean
     public ExtractionValidator extractionValidator(MemoryProperties properties) {

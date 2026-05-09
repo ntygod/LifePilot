@@ -81,6 +81,19 @@ public class ProactiveMemoryBridge {
         this.eventPublisher = eventPublisher;
     }
 
+    /**
+     * memory-staleness spec：L3 实体进入 STALE_CANDIDATE / ARCHIVED 等非活跃态时被调用。
+     *
+     * <p>当前 Bridge 本身无缓存，只做日志记录作为未来扩展 hook：后续若为
+     * getActiveGoals / getPreferences 等热路径加入缓存，可在此方法中清理对应条目。</p>
+     *
+     * @param entityId L3 实体 id
+     */
+    public void invalidateCacheForEntity(String entityId) {
+        if (entityId == null || entityId.isBlank()) return;
+        log.debug("主动引擎桥: 收到 L3 实体生命周期失效信号 entityId={} (hook 暂无缓存)", entityId);
+    }
+
     // ── 目标查询（替代 IntentMemoryService） ──
 
     /** 获取用户活跃目标 — L3 GOAL 实体 + 引擎追踪状态合并。 */
