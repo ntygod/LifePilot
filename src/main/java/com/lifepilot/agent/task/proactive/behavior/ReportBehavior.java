@@ -52,6 +52,9 @@ public class ReportBehavior extends AbstractLlmBehavior {
     public String name() { return "report"; }
 
     @Override
+    public BehaviorLayer layer() { return BehaviorLayer.HABIT_DRIVEN; }
+
+    @Override
     protected String promptKey() { return PROMPT_KEY; }
 
     @Override

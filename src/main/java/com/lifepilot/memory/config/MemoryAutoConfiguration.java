@@ -409,6 +409,59 @@ public class MemoryAutoConfiguration {
         return service;
     }
 
+    // ---------- memory-staleness spec 组件装配 ----------
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({VectorSearcher.class, SemanticMemory.class})
+    public com.lifepilot.memory.lifecycle.staleness.StaleConflictDetector staleConflictDetector(
+            VectorSearcher vectorSearcher,
+            SemanticMemory semanticMemory,
+            MemoryProperties properties) {
+        log.info("记忆模块: 注册 StaleConflictDetector (staleness.enabled={})",
+                properties.getStaleness().isEnabled());
+        return new com.lifepilot.memory.lifecycle.staleness.VectorBasedStaleConflictDetector(
+                vectorSearcher, semanticMemory, properties.getStaleness());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SemanticMemory.class)
+    public com.lifepilot.memory.lifecycle.staleness.StalenessMarker stalenessMarker(
+            SemanticMemory semanticMemory) {
+        return new com.lifepilot.memory.lifecycle.staleness.StalenessMarker(semanticMemory);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.memory.lifecycle.staleness.NeighborRefreshService neighborRefreshService(
+            MemoryProperties properties) {
+        return new com.lifepilot.memory.lifecycle.staleness.NeighborRefreshService(
+                properties.getStaleness());
+    }
+
+    /**
+     * StalenessCoordinator 通过 setter 注入到 SemanticMemory。
+     * 装配触发点：SemanticMemory.upsertWithConflictDetection → afterCommit → coordinator.process。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({com.lifepilot.memory.lifecycle.staleness.StaleConflictDetector.class,
+                         com.lifepilot.memory.lifecycle.staleness.StalenessMarker.class,
+                         SemanticMemory.class})
+    public com.lifepilot.memory.lifecycle.staleness.StalenessCoordinator stalenessCoordinator(
+            com.lifepilot.memory.lifecycle.staleness.StaleConflictDetector detector,
+            com.lifepilot.memory.lifecycle.staleness.StalenessMarker marker,
+            com.lifepilot.memory.lifecycle.staleness.NeighborRefreshService refreshService,
+            MemoryProperties properties,
+            SemanticMemory semanticMemory) {
+        var coordinator = new com.lifepilot.memory.lifecycle.staleness.StalenessCoordinator(
+                detector, marker, refreshService, properties.getStaleness());
+        semanticMemory.setStalenessCoordinator(coordinator);
+        log.info("记忆模块: 注册 StalenessCoordinator 并注入到 SemanticMemory");
+        return coordinator;
+    }
+
     @Bean
     @ConditionalOnMissingBean
     public ExtractionValidator extractionValidator(MemoryProperties properties) {
@@ -578,15 +631,147 @@ public class MemoryAutoConfiguration {
             @Nullable SemanticMemory semanticMemory,
             @Nullable ProceduralMemory proceduralMemory,
             @Nullable ExperienceMerger experienceMerger,
-            @Nullable UserProfileConsolidator userProfileConsolidator) {
-        log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}, profileConsolidate={}",
+            @Nullable UserProfileConsolidator userProfileConsolidator,
+            @Nullable com.lifepilot.memory.consolidation.association.AssociationCandidateGenerator remGenerator,
+            @Nullable com.lifepilot.memory.consolidation.association.AssociationConsolidator remConsolidator) {
+        log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}, profileConsolidate={}, remAssociation={}",
                 preferenceConsolidator != null ? "enabled" : "disabled",
                 semanticMemory != null && proceduralMemory != null ? "enabled" : "disabled",
                 experienceMerger != null ? "enabled" : "disabled",
-                userProfileConsolidator != null ? "enabled" : "disabled");
+                userProfileConsolidator != null ? "enabled" : "disabled",
+                (remGenerator != null && remConsolidator != null) ? "enabled" : "disabled");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
                 properties, preferenceConsolidator, semanticMemory, proceduralMemory,
-                experienceMerger, userProfileConsolidator);
+                experienceMerger, userProfileConsolidator, remGenerator, remConsolidator);
+    }
+
+    // ── REM 联想（memory-rem-consolidation spec） ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.memory.consolidation.association.AssociationCandidateStore associationCandidateStore() {
+        return com.lifepilot.memory.consolidation.association.AssociationCandidateStore.withDefaultCacheDir();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.rem.enabled", havingValue = "true")
+    public com.lifepilot.memory.consolidation.association.AssociationCandidateGenerator associationCandidateGenerator(
+            SemanticMemory semanticMemory,
+            @Nullable com.lifepilot.memory.retrieval.HybridRetriever hybridRetriever,
+            @Nullable com.lifepilot.generation.router.GenerationRouter generationRouter,
+            MemoryProperties properties) {
+        return new com.lifepilot.memory.consolidation.association.AssociationCandidateGenerator(
+                semanticMemory, hybridRetriever, generationRouter, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.rem.enabled", havingValue = "true")
+    public com.lifepilot.memory.consolidation.association.AssociationConsolidator associationConsolidator(
+            MemoryProperties properties,
+            com.lifepilot.memory.consolidation.association.AssociationCandidateStore store) {
+        return new com.lifepilot.memory.consolidation.association.AssociationConsolidator(properties, store);
+    }
+
+    // ── 检索编排层（retrieval-orchestrator spec） ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+    public com.lifepilot.memory.retrieval.orchestrator.HybridRetrievalSource hybridRetrievalSource(
+            @Nullable com.lifepilot.memory.retrieval.HybridRetriever hybridRetriever) {
+        return new com.lifepilot.memory.retrieval.orchestrator.HybridRetrievalSource(hybridRetriever);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+    public com.lifepilot.memory.retrieval.orchestrator.ExperienceRetrievalSource experienceRetrievalSource(
+            @Nullable SemanticMemory semanticMemory) {
+        return new com.lifepilot.memory.retrieval.orchestrator.ExperienceRetrievalSource(semanticMemory);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+    public com.lifepilot.memory.retrieval.orchestrator.KnowledgeBaseSource knowledgeBaseSource() {
+        return new com.lifepilot.memory.retrieval.orchestrator.KnowledgeBaseSource();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+    public com.lifepilot.memory.retrieval.orchestrator.QueryPlanner retrievalQueryPlanner(
+            @Nullable com.lifepilot.memory.retrieval.orchestrator.HybridRetrievalSource hybridSource,
+            @Nullable com.lifepilot.memory.retrieval.orchestrator.ExperienceRetrievalSource experienceSource,
+            @Nullable com.lifepilot.memory.retrieval.orchestrator.KnowledgeBaseSource knowledgeBaseSource) {
+        return new com.lifepilot.memory.retrieval.orchestrator.QueryPlanner(
+                hybridSource, experienceSource, knowledgeBaseSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+    public com.lifepilot.memory.retrieval.orchestrator.RetrievalOrchestrator retrievalOrchestrator(
+            com.lifepilot.memory.retrieval.orchestrator.QueryPlanner planner,
+            MemoryProperties properties) {
+        return new com.lifepilot.memory.retrieval.orchestrator.RetrievalOrchestrator(planner, properties);
+    }
+
+    // ── 记忆注入检测（memory-security-polish spec） ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.memory.security.PromptInjectionPatternScanner promptInjectionPatternScanner() {
+        return new com.lifepilot.memory.security.PromptInjectionPatternScanner();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.memory.security.SpaceTrustDistribution spaceTrustDistribution(MemoryProperties properties) {
+        return new com.lifepilot.memory.security.SpaceTrustDistribution(
+                properties.getSecurity().getSampleWindowSize());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.memory.security.MemoryInjectionDetector memoryInjectionDetector(
+            com.lifepilot.memory.security.PromptInjectionPatternScanner scanner,
+            com.lifepilot.memory.security.SpaceTrustDistribution distribution,
+            MemoryProperties properties) {
+        return new com.lifepilot.memory.security.MemoryInjectionDetector(scanner, distribution, properties);
+    }
+
+    // ── Memory MCP Server（memory-mcp-server spec） ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.mcp-server.enabled", havingValue = "true")
+    public com.lifepilot.memory.mcp.server.MemoryMcpToolRegistry memoryMcpToolRegistry() {
+        return new com.lifepilot.memory.mcp.server.MemoryMcpToolRegistry();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.memory.mcp-server.enabled", havingValue = "true")
+    public com.lifepilot.memory.mcp.server.MemoryMcpHandler memoryMcpHandler(
+            com.lifepilot.memory.mcp.server.MemoryMcpToolRegistry toolRegistry,
+            MemoryProperties properties,
+            @Nullable com.lifepilot.memory.retrieval.HybridRetriever hybridRetriever,
+            @Nullable com.lifepilot.memory.episodic.EpisodicMemory episodicMemory,
+            @Nullable SemanticMemory semanticMemory) {
+        return new com.lifepilot.memory.mcp.server.MemoryMcpHandler(
+                toolRegistry, properties, hybridRetriever, episodicMemory, semanticMemory);
     }
 
     // 遗忘 / 反馈 / 清理

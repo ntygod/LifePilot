@@ -30,6 +30,11 @@ public class InfoSupplementBehavior implements ProactiveBehavior {
     public String name() { return "info-supplement"; }
 
     @Override
+    public com.lifepilot.agent.task.proactive.behavior.BehaviorLayer layer() {
+        return com.lifepilot.agent.task.proactive.behavior.BehaviorLayer.STANDALONE;
+    }
+
+    @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
         // TODO: 对接知识库查询，检查是否有与活跃目标匹配的新增内容
         return List.of();

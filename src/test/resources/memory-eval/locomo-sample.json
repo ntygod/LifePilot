@@ -1,0 +1,48 @@
+[
+  {
+    "sample_id": "conv-test-1",
+    "conversation": {
+      "session_1": [
+        {"speaker": "Alice", "text": "I adopted a golden retriever named Max last week."},
+        {"speaker": "Bob", "text": "Oh nice, is he trained?"},
+        {"speaker": "Alice", "text": "Not yet, but he's learning fast."}
+      ],
+      "session_1_date_time": "2024-03-01 10:00:00",
+      "session_2": [
+        {"speaker": "Alice", "text": "Max just learned the sit command."},
+        {"speaker": "Bob", "text": "That's great progress."}
+      ],
+      "session_2_date_time": "2024-03-08 15:30:00"
+    },
+    "qa": [
+      {
+        "qa_id": "conv-test-1-q1",
+        "question": "What is the name of Alice's dog?",
+        "answer": "Max",
+        "category": 1,
+        "evidence": ["session_1/1"]
+      },
+      {
+        "qa_id": "conv-test-1-q2",
+        "question": "What command did Max learn?",
+        "answer": "sit",
+        "category": 2,
+        "evidence": ["session_2/1"]
+      },
+      {
+        "qa_id": "conv-test-1-q3",
+        "question": "When did Alice adopt Max relative to session 2?",
+        "answer": "About a week earlier",
+        "category": 3,
+        "evidence": ["session_1/1", "session_2/1"]
+      },
+      {
+        "qa_id": "conv-test-1-q4",
+        "question": "Where did Alice first meet Max?",
+        "answer": "Unanswerable",
+        "category": 5,
+        "evidence": []
+      }
+    ]
+  }
+]

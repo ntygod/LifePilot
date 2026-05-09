@@ -267,6 +267,14 @@ graph TB
 | 主题 | 文档 |
 |------|------|
 | 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
+| 记忆老化与邻居回链（STALE_CANDIDATE） | [架构](architecture/memory-staleness.md) · [特性](features/memory-staleness.md) |
+| 记忆 REM 式联想巩固 | [架构](architecture/memory-rem-consolidation.md) · [特性](features/memory-rem-consolidation.md) |
+| 统一检索编排层（Phase H 骨架） | [架构](architecture/retrieval-orchestrator.md) · [特性](features/retrieval-orchestrator.md) |
+| 记忆安全加固（注入检测） | [架构](architecture/memory-security-polish.md) · [特性](features/memory-security-polish.md) |
+| Memory MCP Server（对外暴露） | [架构](architecture/memory-mcp-server.md) · [特性](features/memory-mcp-server.md) |
+| 开发期记忆评估基线 | [架构](architecture/memory-eval-harness.md) · [特性](features/memory-eval-harness.md) |
+| 主动引擎 Boundary/Focus/Training | [架构](architecture/proactive-boundary-training.md) · [特性](features/proactive-boundary-training.md) |
+| 主动引擎 Timing/CoT/分层激活 | [架构](architecture/proactive-timing-cot.md) · [特性](features/proactive-timing-cot.md) |
 | 预置 Skill（种子 Skill） | [架构](architecture/preset-skills.md) · [特性](features/preset-skills.md) |
 | 工具权限与自动执行 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | 自主任务执行 | 见 [架构](architecture/agent-engine.md) 与 [工作流指南](guides/workflow-guide.md) |

@@ -317,6 +317,12 @@
                         <include>**/*TestCase.java</include>
                         <include>**/*测试.java</include>
                     </includes>
+                    <!--
+                        默认构建跳过 memory-eval 标签：记忆评估基准测试涉及真实 SQLite 启动
+                        + 开源数据集（LoCoMo / LongMemEval）重放，单次可达数分钟到小时级。
+                        通过 Maven profile memory-eval-quick / memory-eval-full 激活。
+                    -->
+                    <excludedGroups>memory-eval</excludedGroups>
                 </configuration>
             </plugin>
         </plugins>
@@ -368,6 +374,76 @@
             <properties>
                 <javacpp.platform>macosx-x86_64</javacpp.platform>
             </properties>
+        </profile>
+
+        <!--
+            记忆评估 Harness 快速模式：LongMemEval 前 50 题 + LoCoMo 前 2 对话，
+            约 5 分钟完成。适合本地改动后快速验证。
+        -->
+        <profile>
+            <id>memory-eval-quick</id>
+            <properties>
+                <lifepilot.memory.eval.enabled>true</lifepilot.memory.eval.enabled>
+                <lifepilot.memory.eval.mode>quick</lifepilot.memory.eval.mode>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <includes>
+                                <include>**/Test*.java</include>
+                                <include>**/*Test.java</include>
+                                <include>**/*Tests.java</include>
+                                <include>**/*TestCase.java</include>
+                                <include>**/*测试.java</include>
+                            </includes>
+                            <groups>memory-eval</groups>
+                            <systemPropertyVariables>
+                                <spring.profiles.active>memory-eval</spring.profiles.active>
+                                <lifepilot.memory.eval.enabled>true</lifepilot.memory.eval.enabled>
+                                <lifepilot.memory.eval.mode>quick</lifepilot.memory.eval.mode>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            记忆评估 Harness 完整模式：两个数据集全量，约 60-120 分钟。
+            nightly CI / pre-merge 使用。
+        -->
+        <profile>
+            <id>memory-eval-full</id>
+            <properties>
+                <lifepilot.memory.eval.enabled>true</lifepilot.memory.eval.enabled>
+                <lifepilot.memory.eval.mode>full</lifepilot.memory.eval.mode>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <includes>
+                                <include>**/Test*.java</include>
+                                <include>**/*Test.java</include>
+                                <include>**/*Tests.java</include>
+                                <include>**/*TestCase.java</include>
+                                <include>**/*测试.java</include>
+                            </includes>
+                            <groups>memory-eval</groups>
+                            <systemPropertyVariables>
+                                <spring.profiles.active>memory-eval</spring.profiles.active>
+                                <lifepilot.memory.eval.enabled>true</lifepilot.memory.eval.enabled>
+                                <lifepilot.memory.eval.mode>full</lifepilot.memory.eval.mode>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 

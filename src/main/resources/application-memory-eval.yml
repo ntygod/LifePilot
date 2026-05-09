@@ -1,0 +1,42 @@
+# 记忆评估 Harness Profile 默认值
+#
+# 仅在 Maven profile memory-eval-quick / memory-eval-full
+# 或 -Dspring.profiles.active=memory-eval 时激活。
+#
+# 配置细节见：docs/features/memory-eval-harness.md §4。
+
+lifepilot:
+  memory:
+    eval:
+      enabled: true
+      mode: quick               # Maven profile 会通过 -Dlifepilot.memory.eval.mode 覆盖
+      dataset-cache-dir: ${user.home}/.zhiwei/eval-cache
+      trigger-consolidation: true
+      benchmarks:
+        locomo:
+          enabled: true
+          max-conversations: 10
+          quick-max-conversations: 2
+        long-mem-eval:
+          enabled: true
+          max-questions: 500
+          quick-max-questions: 50
+      judge:
+        llm-enabled: false
+        llm-scene: eval
+        exact-match-enabled: true
+        f1-enabled: true
+      regression:
+        enabled: true
+        baseline-path: docs/memory-eval/baseline.json
+        llm-score-tolerance: 0.03
+        latency-tolerance: 0.20
+        token-tolerance: 0.30
+        update-baseline: false
+      isolation:
+        use-temp-sqlite: true
+        keep-db-on-failure: false
+      reporting:
+        output-dir: target/memory-eval
+        markdown: true
+        json: true

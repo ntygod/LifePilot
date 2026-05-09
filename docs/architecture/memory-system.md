@@ -261,7 +261,7 @@ L3.5 是本轮 Hermes 调研后新增的目标层，解决“记忆模块能力�
 - 起始种子不能只取第一个匹配实体；至少支持多个有界 seed，并按读取 filter / overlay 先过滤。
 - 反向边遍历必须返回相反端点，不能把起点自身作为 related 节点。
 - 只沿当前有效关系边遍历：`memory_relations.status='ACTIVE'` 且当前 relation version `valid_to is null`。
-- 只返回可召回实体：`ACTIVE / COMPLETED / REGENERATION_NEEDED`，并防御性过滤 `valid_to / expires_at`。
+- 只返回可召回实体：`ACTIVE / COMPLETED / REGENERATION_NEEDED / STALE_CANDIDATE`，并防御性过滤 `valid_to / expires_at`（`STALE_CANDIDATE` 由 memory-staleness spec 引入，可召回但显著降权）。
 - 图分数要可解释：depth、relation strength、relation type、seed source 都应能进入 `scoreBreakdown` 或调试日志。
 - 高 fanout 实体必须限流；后续图投影可以物化 entity co-occurrence / semantic links，但仍必须走 outbox。
 
@@ -504,42 +504,66 @@ Prompt 中应明确引导 Agent：当用户提到“上次、之前、我们聊�
 - 用户可以解释“为什么这条记忆进了 Prompt”。
 - 用户可以把错误热记忆降级、隐藏或删除。
 
-### Phase H：统一检索编排（未来演进方向）
+### Phase H：统一检索编排（已落地骨架）
 
-目标：把记忆召回和知识库检索从“多个工具各自触发”升级为“面向最终答案质量的证据编排层”。这不是本轮收尾范围；当前代码先保持 L2/L3/KB 工具分离，后续在测试集和指标稳定后再推进。
+目标：把记忆召回和知识库检索从"多个工具各自触发"升级为"面向最终答案质量的证据编排层"。骨架已在 `retrieval-orchestrator` spec 落地，作为上层可选接口；默认 `enabled=false`，不替换既有 `memory.search / memory.recall / 知识库搜索` 工具链路。
 
-调研结论：
+实现位置与落地范围参考 #[[file:docs/architecture/retrieval-orchestrator.md]]。当前骨架包含：
 
-- LangChain `MultiQueryRetriever`、NVIDIA Query Decomposition 证明 query 改写 / 多查询召回能提升复杂问题覆盖率，但必须受预算和复杂度门控，不能把简单问题都拆成多路检索。
-- LlamaIndex `RouterQueryEngine` / `SubQuestionQueryEngine`、Haystack `ConditionalRouter` 更接近知微需要的形态：先路由数据源，再按需拆解问题，而不是默认全源检索。
-- Microsoft GraphRAG / DRIFT、Hindsight 图记忆说明图检索应提供证据扩展和聚合视角，但应后置于稳定的多源证据编排之后。
-- Letta / Mem0 的工程取向是让 memory search 成为显式工具能力；知微也应保持“热摘要默认注入、冷证据按需召回”的边界。
-
-拟议组件：
-
-| 组件 | 职责 | 首批范围 |
+| 组件 | 职责 | 本期范围 |
 |---|---|---|
-| `RetrievalOrchestrator` | 统一编排 L2、L3、知识库、图谱和 trace 证据源 | 先只服务显式冷召回，不接管默认 Prompt 注入 |
-| `QueryPlanner` | 判断问题需要哪些数据源、是否需要拆解、预算如何分配 | 规则 + 轻量 LLM 判断，优先覆盖“之前聊过 / 项目资料 / 长期事实 / 工具复盘” |
-| `QueryDecomposer` | 将复杂查询改写成少量子查询或关键词 | 只对复杂问题启用；短查询和实体名查询保持直查 |
-| Source Adapter | 把 L2 snippet、L3 entity、KB chunk、KB graph、L0 trace 统一成证据项 | 先适配 L2/L3/KB chunk，图和 trace 后置 |
-| `EvidenceBundle` | 给 Agent 返回结构化证据、来源、可信度、生命周期和分数解释 | 替代散乱工具结果拼接，便于回答和测试断言 |
-| Fusion / Rerank | 多源结果融合排序 | 先用 RRF + trust / lifecycle / recency / provenance 加权；学习型重排后置 |
+| `RetrievalOrchestrator` | 顺序调用各 source、按 score 融合排序、返回 `EvidenceBundle` | 本地单机串行调用，不并行 |
+| `QueryPlanner` | 按 `RetrievalIntent(FACT/EXPERIENCE/GENERAL)` 选 source 集合 | 规则映射（非 LLM），过滤 `isAvailable=false` 的 adapter |
+| `SourceAdapter` sealed interface | 把 L3 混合检索、L3 EXPERIENCE、KB 统一为 `EvidenceItem` | 三子类：HybridRetrievalSource / ExperienceRetrievalSource / KnowledgeBaseSource（KB 为占位，`isAvailable=false`） |
+| `EvidenceBundle` / `EvidenceItem` | 结构化多源证据 + sources + latency + scoreBreakdown | 替代散乱工具结果，便于测试断言 |
 
-推进顺序：
+后续演进（本期未实现）：
 
-1. 建立真实流式对话回归集：覆盖 L2 助手回答命中、L3 语义实体、KB chunk、KB 图关系、L2+L3 混合证据、无结果追问。
-2. 给 `memory.recall` / `memory.search` / 知识库搜索建立共同的评估指标：命中率、证据正确率、工具调用次数、首 token 延迟、总耗时、误召回率。
-3. 先做轻量 query 改写：例如“你还记得之前小明是谁吗？”提取 `小明`，同时保留原问题用于排序解释。
-4. 再做 `RetrievalOrchestrator` 骨架和 source adapter，保持现有工具可独立使用。
-5. 最后引入受控 query decomposition、图扩展和更复杂的重排。
+- QueryDecomposer：把复杂问题改写为子查询（LangChain `MultiQueryRetriever` / NVIDIA Query Decomposition 的思路，受预算门控）
+- 图扩展：Microsoft GraphRAG / DRIFT 模式，作为 EvidenceBundle 之上的扩展层
+- KnowledgeBaseSource 真实实现：对接既有 KB 检索工具
+- Agent 工具化：新增 `memory.retrieve` 作为统一冷召回入口
 
-验收：
+### Phase I：记忆老化与邻居回链（已落地）
 
-- 同一问题能解释“为什么查 L2 / L3 / KB / 图谱”，不能无理由全源检索。
-- 返回结果统一携带 `sourceType / sourceId / excerpt / quality / lifecycle / scoreBreakdown`。
-- 简单事实查询的延迟不因编排层显著上升。
-- 复杂问题的答案质量由测试集证明提升，而不是只因为技术链路更复杂。
+新事实写入时自动识别与之语义冲突的老邻居，将其迁入新的 `STALE_CANDIDATE` 生命周期态；召回时降权但不丢弃，Agent 命中时可自然追问确认。
+
+实现参考 #[[file:docs/architecture/memory-staleness.md]]。核心：
+
+- `LifecycleState` 增 `STALE_CANDIDATE`；可从 `ACTIVE` 进入，可回到 `ACTIVE` 或转 `SUPERSEDED/ARCHIVED`
+- `VectorBasedStaleConflictDetector`：类型白名单（默认 PREFERENCE/HABIT/LOCATION/GOAL）+ 相似度阈值 + UNVERIFIED 过滤
+- `StalenessCoordinator`：虚拟线程 afterCommit 异步调度 Detector → Marker → NeighborRefreshService
+- `HybridRetriever`：`STALE_CANDIDATE` 命中分数乘 0.65（默认 penalty 0.35），`scoreBreakdown.lifecycleAdjustment` 可审
+- `ProactiveCacheInvalidator` 订阅 `EntityLifecycleChanged`，让主动引擎感知 L3 失活
+
+### Phase J：REM 式联想巩固（已落地）
+
+巩固管线增加第 7 步：对 L3 高 importance seed 实体（GOAL/TOPIC/PROJECT）用 HybridRetriever 找邻居，调 LLM 推断未被显式记录的潜在关系，合格候选落 `target/cache/memory-rem-associations/{date}.json` 审计文件。
+
+实现参考 #[[file:docs/architecture/memory-rem-consolidation.md]]。关键设计：
+
+- **候选落文件而非 `memory_extraction_candidates`**：避免与 AudnDecision 语义强绑定
+- **只生产候选不直写 L3 relations**：未来 spec 加"关联应用器"做人工/自动审阅后再落主库
+- 默认 `enabled=false`；`seedLimit=10 × neighborLimit=5 = 50 次检索 + 10 次 LLM`，开启前确认成本可接受
+
+### Phase K：开发期回归基线（已落地）
+
+`memory.eval` 子系统：LoCoMo / LongMemEval 开源数据集 Loader + ExactMatch / F1 / LlmAsJudge 三策略 AnswerJudge + RetrievalProbe/LatencyProbe/TokenProbe + EvalReport + Baseline 退化检测 + BenchmarkRunner 主流程。
+
+实现参考 #[[file:docs/architecture/memory-eval-harness.md]]。触发方式：
+
+```bash
+mvn test -Pmemory-eval-quick     # 冒烟（几条样本）
+mvn test -Pmemory-eval-full      # 完整 eval（全量数据集）
+```
+
+报告输出到 `target/memory-eval-report/`；baseline 按时间戳归档到 `docs/memory-eval/baseline/`，每次迭代前后对比。
+
+### Phase L：记忆暴露为 MCP Server（可选）
+
+通过 `POST /api/mcp/memory` JSON-RPC 2.0 端点把知微记忆暴露给外部 Agent（Claude Desktop / Cursor）。实现最小子集：`initialize` / `tools/list` / `tools/call`，3 个工具 `memory_search / memory_recall / memory_create`。
+
+实现参考 #[[file:docs/architecture/memory-mcp-server.md]]。默认 `enabled=false`，开启后仅建议本地回环使用（未实现认证）。
 
 ---
 

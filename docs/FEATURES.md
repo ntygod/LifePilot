@@ -45,6 +45,12 @@
 |------|------|---------|
 | 四层记忆系统 | L1 工作记忆 → L2 情景记忆 → L3 语义记忆 + 知识图谱 → L4 程序记忆 | [特性](features/memory-system.md) |
 | 记忆进阶能力 | 记忆巩固管线、MaRS 认知遗忘策略、混合检索 | [特性](features/memory-advanced.md) |
+| 记忆老化与邻居回链 | STALE_CANDIDATE 生命周期态 + 新事实写入时触发邻居冲突检测 + 召回降权 | [特性](features/memory-staleness.md) |
+| 记忆 REM 联想巩固 | 巩固管线第 7 步：高 importance seed 邻居 + LLM 推断关系 + 文件审计 | [特性](features/memory-rem-consolidation.md) |
+| 统一检索编排层 | RetrievalOrchestrator + QueryPlanner + SourceAdapter 上层可选入口 | [特性](features/retrieval-orchestrator.md) |
+| 记忆安全加固 | Prompt 注入模式扫描 + 每 space trustScore 分布异常检测 | [特性](features/memory-security-polish.md) |
+| 记忆 MCP Server | 把记忆能力暴露为 MCP 协议 JSON-RPC 端点，供 Claude Desktop / Cursor 等接入 | [特性](features/memory-mcp-server.md) |
+| 开发期记忆评估 | LoCoMo / LongMemEval 开源数据集 + F1 / LLM-as-Judge + 基线退化检测 | [特性](features/memory-eval-harness.md) |
 | 知识库管理 | 多格式文档摄入（PDF/Word/Excel/PowerPoint/Markdown/纯文本）、智能分块、多知识库实例 | [特性](features/knowledge-base.md) |
 | Prompt 管理 | 模板注册与管理，支持动态 Prompt 组装 | [特性](features/prompt-management.md) |
 
@@ -60,6 +66,8 @@
 | 对话管理 | 对话历史存储、最近完整轮次读取、完整时间线展示 | [特性](features/conversation.md) |
 | 项目工作空间 | 用户显式创建的领域级任务容器，每个项目对应一个 PROJECT 类型 MemorySpace；ISOLATED / SHARED 两种记忆隔离模式 | [架构](architecture/project.md) |
 | 自主任务执行 | cron 定时 + 主动智能引擎（三级检测管线 + 8 个行为插件 + 四级投递 + 信任阶梯） + 自主工作流 | [架构](architecture/proactive-reminder-engine.md) |
+| 主动引擎 Boundary/Focus | 任务边界感知（对话/工作流完成触发）+ 专注状态识别（桌面 + 对话节奏） + DecisionGate 动态阈值 | [特性](features/proactive-boundary-training.md) |
+| 主动引擎 Timing/CoT | Goldilocks 时效窗口 + Gate 3 四段 CoT 结构化推理 + 行为插件分层激活 | [特性](features/proactive-timing-cot.md) |
 | 定时任务全局管理 | `cron_tasks.project_id` 按项目归属；`/scheduled-tasks` 全局管理页（列表 + 项目 tag + 暂停/恢复/删除）。创建入口保持在对话中由 LLM 自然语言触发 | [API 端点](API_ENDPOINTS.md#scheduled-tasks定时任务管理) |
 | 通知系统 | 统一通知服务、直接通知、多渠道广播、富媒体支持、通知历史管理 | [特性](features/notification.md) |
 

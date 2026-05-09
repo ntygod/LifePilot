@@ -79,8 +79,23 @@ public class MemoryProperties {
     /** L2 情景记忆自动清理配置。 */
     private EpisodicCleanup episodicCleanup = new EpisodicCleanup();
 
+    /** 记忆老化与邻居回链配置（memory-staleness spec）。 */
+    private Staleness staleness = new Staleness();
+
     /** 经验总结配置。 */
     private Experience experience = new Experience();
+
+    /** REM 式联想巩固配置（memory-rem-consolidation spec）。 */
+    private Rem rem = new Rem();
+
+    /** 检索编排层配置（retrieval-orchestrator spec）。 */
+    private RetrievalOrchestrator retrievalOrchestrator = new RetrievalOrchestrator();
+
+    /** 记忆安全加固配置（memory-security-polish spec）。 */
+    private Security security = new Security();
+
+    /** 记忆 MCP Server 配置（memory-mcp-server spec）。 */
+    private McpServer mcpServer = new McpServer();
 
     /**
      * L4 程序记忆配置 — 控制操作模板的可靠性判断、过时淘汰和意图匹配阈值。
@@ -462,6 +477,39 @@ public class MemoryProperties {
     }
 
     /**
+     * 记忆老化与邻居回链配置。
+     *
+     * <p>控制 {@code StalenessCoordinator} 在新事实写入后自动识别并标记"可能过时"的
+     * 邻居实体，把它们从 ACTIVE 迁入 STALE_CANDIDATE 生命周期态，召回时显著降权。</p>
+     *
+     * @author zsg
+     * @since 2026-05-09
+     */
+    @Setter
+    @Getter
+    public static class Staleness {
+        /** 总开关，默认启用。 */
+        private boolean enabled = true;
+
+        /** 邻居识别的最低语义相似度。 */
+        private float detectionSimilarityThreshold = 0.85f;
+
+        /** 单次检测最多标记的邻居数。 */
+        private int maxNeighborsPerDetection = 3;
+
+        /** 允许触发 staleness 检测的实体类型白名单。 */
+        private Set<String> detectableTypes = Set.of("PREFERENCE", "HABIT", "LOCATION", "GOAL");
+
+        /** 召回时对 STALE_CANDIDATE 应用的分数惩罚比例（0~1）。默认 0.35，得分乘 0.65。 */
+        private float retrievalPenalty = 0.35f;
+
+        /**
+         * 是否启用邻居刷新候选写入（本 spec 首版默认关，等消费侧就绪后再开）。
+         */
+        private boolean neighborRefreshEnabled = false;
+    }
+
+    /**
      * 经验总结配置 — 控制 Agent 经验提炼、存储、检索注入和 Eval 集成的参数。
      *
      * @author zsg
@@ -598,6 +646,85 @@ public class MemoryProperties {
             private int llmTimeoutSeconds = 120;
 
         }
+    }
+
+    /**
+     * REM 式联想巩固配置 — 控制巩固管线中对 L3 高 importance 实体做跨实体联想，
+     * 通过 LLM 推断潜在语义关系并写入文件审计（不直改 L3 relations 主库）。
+     *
+     * @author zsg
+     * @since 2026-05-09
+     */
+    @Setter
+    @Getter
+    public static class Rem {
+        /** 总开关，默认关闭（等稳定后再启用）。 */
+        private boolean enabled = false;
+        /** 选择的 seed 实体数量上限。 */
+        private int seedLimit = 10;
+        /** 每个 seed 的邻居数量上限。 */
+        private int neighborLimit = 5;
+        /** 允许作为 seed 的实体类型。 */
+        private Set<String> seedTypes = Set.of("GOAL", "TOPIC", "PROJECT");
+        /** 最小置信度阈值；低于此值不入库。 */
+        private float minConfidence = 0.65f;
+        /** LLM 调用超时（秒）。 */
+        private int llmTimeoutSeconds = 20;
+        /** 同 (source, target, type) 去重窗口（小时）。 */
+        private int deduplicationWindowHours = 24;
+    }
+
+    /**
+     * 检索编排层配置 — 控制 {@code RetrievalOrchestrator} 的 topK 与开关。
+     *
+     * @author zsg
+     * @since 2026-05-09
+     */
+    @Setter
+    @Getter
+    public static class RetrievalOrchestrator {
+        /** 总开关，默认关闭（作为上层可选接口）。 */
+        private boolean enabled = false;
+        /** 默认单次检索返回的结果上限。 */
+        private int defaultTopK = 10;
+        /** 每个 source 单独调用的 topK。 */
+        private int perSourceTopK = 5;
+    }
+
+    /**
+     * 记忆安全配置 — 控制 prompt injection / trust-outlier 检测。
+     *
+     * @author zsg
+     * @since 2026-05-09
+     */
+    @Setter
+    @Getter
+    public static class Security {
+        /** 注入检测总开关，默认关闭（先集成再打开）。 */
+        private boolean injectionDetectionEnabled = false;
+        /** Mahalanobis 距离异常阈值。 */
+        private float outlierThreshold = 3.0f;
+        /** 每 space 样本窗口大小。 */
+        private int sampleWindowSize = 1000;
+        /** true 时 SUSPICIOUS 也当作 BLOCKED 处理。 */
+        private boolean blockOnSuspicious = false;
+    }
+
+    /**
+     * 记忆 MCP Server 配置 — 把知微记忆暴露为 MCP server 供外部 Agent 调用。
+     *
+     * @author zsg
+     * @since 2026-05-09
+     */
+    @Setter
+    @Getter
+    public static class McpServer {
+        /** 总开关，默认关闭（本地环境可选）。 */
+        private boolean enabled = false;
+        /** Server 名称。 */
+        private String serverName = "zhiwei-memory";
+        /** Server 版本。 */
+        private String serverVersion = "1.0.0";
     }
 
 }

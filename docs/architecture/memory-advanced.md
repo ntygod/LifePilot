@@ -116,9 +116,10 @@ graph TB
 ### 3.5 ConsolidationPipeline（巩固管线编排）
 
 - 职责：编排语义巩固、经验合并和程序巩固的执行顺序
-- 顺序执行六步：语义巩固 → 程序巩固 → 偏好同步（PreferenceConsolidator）→ 经验合并（ExperienceMerger）→ 用户画像巩固（UserProfileConsolidator）→ 经验提升（promoteHighFrequencyExperiences，L3→L4），故障隔离（try-catch 独立包裹）
+- 顺序执行七步：语义巩固 → 程序巩固 → 偏好同步（PreferenceConsolidator）→ 经验合并（ExperienceMerger）→ 用户画像巩固（UserProfileConsolidator）→ 经验提升（promoteHighFrequencyExperiences，L3→L4）→ REM 式联想巩固（memory-rem-consolidation spec），故障隔离（try-catch 独立包裹）
 - 经验合并阶段：通过 ExperienceMerger 将语义相似的 EXPERIENCE 实体合并为泛化的元经验
 - 经验提升阶段（L3→L4）：扫描 EXPERIENCE 实体，将 importanceScore ≥ 0.8 且 accessCount ≥ 3 的高频经验提升为 ProcedureTemplate，提升后原始经验归档
+- REM 式联想巩固（第 7 步，memory-rem-consolidation spec）：对 L3 高 importance seed 实体（默认 GOAL/TOPIC/PROJECT）用 HybridRetriever 找邻居，调 LLM 推断潜在语义关系，合格候选落 `target/cache/memory-rem-associations/{date}.json`。只生产候选不直改主库；详见 #[[file:docs/architecture/memory-rem-consolidation.md]]。默认 `lifepilot.memory.rem.enabled=false`。
 - 通过 `@Scheduled` Cron 表达式定时触发
 - 支持手动调用 `consolidate()` 方法（为 Idle-Driven 触发模式预留）
 - 返回 `ConsolidationStats` 统计信息（分析对话数、提升实体数、创建模板数）

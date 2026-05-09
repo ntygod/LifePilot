@@ -28,3 +28,4 @@ com.lifepilot.observability.config.ObservabilityAutoConfiguration
 com.lifepilot.marketplace.config.MarketplaceAutoConfiguration
 com.lifepilot.meta.config.MetaAutoConfiguration
 com.lifepilot.notification.config.NotificationAutoConfiguration
+com.lifepilot.memory.eval.config.MemoryEvalAutoConfiguration

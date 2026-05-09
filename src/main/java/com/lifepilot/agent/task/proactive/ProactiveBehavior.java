@@ -1,5 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.task.proactive.behavior.BehaviorLayer;
+
 import java.util.List;
 
 /**
@@ -53,4 +55,14 @@ public interface ProactiveBehavior {
      * 投递后回调 — 插件可在此做持久化、训练样本记录等。
      */
     default void onDelivered(ProactiveAction action, DeliveryResult result) {}
+
+    /**
+     * 插件所属的行为分层，供 {@code BehaviorActivationPolicy} 做分组激活判断。
+     *
+     * <p>默认返回 {@link BehaviorLayer#STANDALONE}（独立触发，不依赖任何记忆层）。
+     * 有明确记忆依赖的插件应 override 此方法。</p>
+     */
+    default BehaviorLayer layer() {
+        return BehaviorLayer.STANDALONE;
+    }
 }

@@ -370,5 +370,60 @@ public class AgentConfigProperties {
         /** 剪贴板意图缓冲区最大容量。 */
         private int proactiveEngineClipboardBufferMaxSize = 20;
 
+        // ── 主动引擎 Boundary / Focus / Training 参数（proactive-boundary-training spec） ──
+
+        /** 是否启用边界信号采集（订阅对话/工作流/A2A 完成事件）。 */
+        private boolean boundarySignalEnabled = true;
+        /** 边界窗口分钟数 — 事件发生后多少分钟内视为"处于边界"。 */
+        private int boundaryWindowMinutes = 10;
+
+        /** 是否启用焦点状态检测。 */
+        private boolean focusDetectionEnabled = true;
+        /** 触发 FOCUS_MODE 的最小近期消息数（5 分钟窗口）。 */
+        private int focusMessageDensityThreshold = 5;
+        /** 触发 FOCUS_MODE 的最大平均消息间隔（秒）。 */
+        private int focusMessageIntervalSeconds = 40;
+
+        /** Boundary 内 NOTIFY 阈值偏移（默认 -0.15，更易 NOTIFY）。 */
+        private float proactiveEngineBoundaryNotifyDelta = -0.15f;
+        /** Boundary 内 INTERRUPT 阈值偏移（默认 -0.15）。 */
+        private float proactiveEngineBoundaryInterruptDelta = -0.15f;
+        /** Boundary 外两级阈值偏移（默认 +0.25，更难投递）。 */
+        private float proactiveEngineOutOfBoundaryDelta = 0.25f;
+
+        /** 是否启用主动训练回放（周级生成 few-shot 样例库）。 */
+        private boolean proactiveTrainingEnabled = false;
+        /** 主动训练回放间隔（天）。 */
+        private int proactiveTrainingReplayIntervalDays = 7;
+        /** 正例 reward 阈值（>= 此值视为正例）。 */
+        private float proactiveTrainingPositiveRewardThreshold = 0.6f;
+        /** 负例 reward 阈值（<= 此值视为负例）。 */
+        private float proactiveTrainingNegativeRewardThreshold = 0.2f;
+        /** 正例 top-K 截断。 */
+        private int proactiveTrainingTopKPositive = 10;
+        /** 负例 top-K 截断。 */
+        private int proactiveTrainingTopKNegative = 10;
+
+        // ── Timing / CoT / 分层激活（proactive-timing-cot spec） ──
+
+        /** 是否启用 Goldilocks 时效窗口检查。 */
+        private boolean proactiveTimingWindowEnabled = true;
+        /** 历史样本不足时的默认用户响应延迟（分钟）。 */
+        private int proactiveTimingDefaultResponseLatencyMinutes = 30;
+        /** 估算 p80 延迟所需的最少样本数。 */
+        private int proactiveTimingResponseLatencyMinSamples = 5;
+        /** p80 分位安全系数（0-1，越小越早判定 windowClosed）。 */
+        private float proactiveTimingResponseLatencyP80Percentile = 0.8f;
+
+        /** 是否启用 Gate 3 CoT 结构化推理。 */
+        private boolean proactiveCotEnabled = false;
+        /** 启用 CoT 的最低候选分数。 */
+        private float proactiveCotMinScore = 0.6f;
+        /** CoT prompt 中拼接的 few-shot 样本数。 */
+        private int proactiveCotFewShotCount = 4;
+
+        /** 是否启用行为插件分层激活。 */
+        private boolean proactiveBehaviorLayeredActivationEnabled = false;
+
     }
 }
