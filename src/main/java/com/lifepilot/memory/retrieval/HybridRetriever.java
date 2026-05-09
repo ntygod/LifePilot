@@ -247,11 +247,19 @@ public class HybridRetriever {
                     ? acc.ftsScore * adaptedWeights.ftsWeight()
                     : 0.0f;
 
-            // 生命周期调整：REGENERATION_NEEDED 明确降权；COMPLETED 轻微降权（仍可召回）。
+            // 生命周期调整：REGENERATION_NEEDED / STALE_CANDIDATE 明确降权；COMPLETED 轻微降权。
             LifecycleState lifecycleState = lifecycleStateMap.get(acc.entityId);
             float lifecycleAdjustment = 0.0f;
             if (lifecycleState == LifecycleState.REGENERATION_NEEDED) {
                 lifecycleAdjustment -= memoryProperties.getRetrieval().getStaleLifecyclePenalty();
+            } else if (lifecycleState == LifecycleState.STALE_CANDIDATE) {
+                // memory-staleness spec：旧事实被新证据挑战，显著降权但仍可召回
+                float stalenessPenalty = memoryProperties.getStaleness().getRetrievalPenalty();
+                lifecycleAdjustment -= stalenessPenalty;
+                if (log.isDebugEnabled()) {
+                    log.debug("retrieval: STALE_CANDIDATE 降权 entity={} penalty={}",
+                            acc.entityId, stalenessPenalty);
+                }
             } else if (lifecycleState == LifecycleState.COMPLETED) {
                 lifecycleAdjustment -= memoryProperties.getRetrieval().getHistoricalLifecyclePenalty();
             }

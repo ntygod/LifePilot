@@ -60,6 +60,17 @@ public class ProactiveAutoConfiguration {
         return bridge;
     }
 
+    /**
+     * memory-staleness spec C-P0-1：L3 生命周期事件 → 主动引擎缓存失效。
+     * ProactiveMemoryBridge 通过 ObjectProvider 注入允许其缺失时监听器仍能启动。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.agent.task.proactive.cache.ProactiveCacheInvalidator proactiveCacheInvalidator(
+            org.springframework.beans.factory.ObjectProvider<ProactiveMemoryBridge> bridgeProvider) {
+        return new com.lifepilot.agent.task.proactive.cache.ProactiveCacheInvalidator(bridgeProvider);
+    }
+
     @Bean
     @ConditionalOnMissingBean
     public QueuedActionRepository queuedActionRepository(JdbcTemplate jdbcTemplate) {

@@ -79,6 +79,9 @@ public class MemoryProperties {
     /** L2 情景记忆自动清理配置。 */
     private EpisodicCleanup episodicCleanup = new EpisodicCleanup();
 
+    /** 记忆老化与邻居回链配置（memory-staleness spec）。 */
+    private Staleness staleness = new Staleness();
+
     /** 经验总结配置。 */
     private Experience experience = new Experience();
 
@@ -459,6 +462,39 @@ public class MemoryProperties {
         /** 单次最大清理数量，默认 500。 */
         private int maxCleanupPerRun = 500;
 
+    }
+
+    /**
+     * 记忆老化与邻居回链配置。
+     *
+     * <p>控制 {@code StalenessCoordinator} 在新事实写入后自动识别并标记"可能过时"的
+     * 邻居实体，把它们从 ACTIVE 迁入 STALE_CANDIDATE 生命周期态，召回时显著降权。</p>
+     *
+     * @author zsg
+     * @since 2026-05-09
+     */
+    @Setter
+    @Getter
+    public static class Staleness {
+        /** 总开关，默认启用。 */
+        private boolean enabled = true;
+
+        /** 邻居识别的最低语义相似度。 */
+        private float detectionSimilarityThreshold = 0.85f;
+
+        /** 单次检测最多标记的邻居数。 */
+        private int maxNeighborsPerDetection = 3;
+
+        /** 允许触发 staleness 检测的实体类型白名单。 */
+        private Set<String> detectableTypes = Set.of("PREFERENCE", "HABIT", "LOCATION", "GOAL");
+
+        /** 召回时对 STALE_CANDIDATE 应用的分数惩罚比例（0~1）。默认 0.35，得分乘 0.65。 */
+        private float retrievalPenalty = 0.35f;
+
+        /**
+         * 是否启用邻居刷新候选写入（本 spec 首版默认关，等消费侧就绪后再开）。
+         */
+        private boolean neighborRefreshEnabled = false;
     }
 
     /**
