@@ -72,6 +72,7 @@
 ### P1 — 用户可感知质量提升
 
 #### M-P1-3 L3 语义记忆缺 REM 式联想巩固
+> **状态**：已在 `feature/memory-rem-consolidation` 分支落地，**merged-ready**。`AssociationCandidateGenerator` + `AssociationConsolidator` + `AssociationCandidateStore` 三件套接入 `ConsolidationPipeline` 第 7 步；候选落文件 `target/cache/memory-rem-associations/{date}.json`，不直改 L3 relations 主库。22 单元测试通过。
 - **问题**：MaRS 六策略已覆盖"压缩/归档"这一半（类似 NREM 突触下调 + Hebbian 强化已通过 `EpisodicToSemanticConsolidator` 频次提升间接实现），但完全没做**跨实体联想生成**（REM 语义侧）。表现为 L3 图边偏稀疏，图扩展召回增益小。
 - **现状证据**：
   - `memory-advanced.md` §3.4 描述的是"高频实体提升 importance"，不创造新关系
@@ -86,6 +87,7 @@
 - **依赖**：M-P0-1（有回归才能证明联想质量）
 
 #### M-P1-4 统一检索编排（Phase H 落地）
+> **状态**：已在 `feature/retrieval-orchestrator` 分支落地，**merged-ready**。`RetrievalOrchestrator` + `QueryPlanner` + `SourceAdapter` sealed interface + 3 个 permits 实现（HybridRetrievalSource / ExperienceRetrievalSource / KnowledgeBaseSource 占位）接入 MemoryAutoConfiguration。作为上层可选接口，`enabled=false` 默认关闭，不替换现有 `memory.search/recall` 工具。17 单元测试通过。
 - **问题**：`memory.recall` / `memory.search` / `memory.search-experience` / 知识库工具各自独立，Agent 要判断调哪个。缺 `memory-system.md` §7 Phase H 已规划的统一冷召回层。
 - **现状证据**：`memory-system.md` §7 Phase H + `memory-data-flow.md` §0.14 已有蓝图，但尚未实现
 - **方向**：按已有蓝图落地 `RetrievalOrchestrator + QueryPlanner + SourceAdapter + EvidenceBundle`，**不替换现有冷召回工具**，做为可选上层
@@ -107,6 +109,7 @@
 ### P2 — 长期健壮性与安全
 
 #### M-P2-6 记忆注入防御（本地部署的剩余风险面）
+> **状态**：已在 `feature/memory-security-polish` 分支落地，**merged-ready**。`MemoryInjectionDetector` + `PromptInjectionPatternScanner`（中英 16 条正则）+ `SpaceTrustDistribution`（Mahalanobis 1D 异常检测）作为可用组件装配到 Bean，默认开关关闭；接入 RealtimeExtractor 等写入链路由未来 spec 按节奏推进。27 单元测试通过。
 - **问题**：即使本地部署，Channel 接入（飞书/钉钉/Telegram）转入的用户消息、工具结果中嵌入的文本、KB 文档、MCP 响应仍是注入面。MINJA 框架对生产 Agent 注入成功率 95%，标准 LLM 检测漏检 66%（参考文献：arXiv:2601.05504、arXiv:2603.02240）。
 - **现状证据**：
   - `memory-data-flow.md` §0.7.1 已有 `evidence_kind / trust_level` 字段，但没有基于**分布统计**的异常识别
@@ -119,6 +122,7 @@
 - **依赖**：无；可与 M-P1-* 并行
 
 #### M-P2-7 遗留：记忆治理页面的"为什么"血缘展示
+> **状态**：前端需求清单由 `feature/memory-security-polish` 分支在 `docs/architecture/memory-security-polish.md` §5 落地；后端 `MemoryController.findRelations` / `findProvenance` API 已就绪；前端实现由前端独立迭代，本 gap 保持 open 等前端收尾。
 - **问题**：`zhiwei-web/src/views/memory/` 的 EntityPanel / RelationPanel / TemplatePanel / PreferencePanel / ForgettingLogPanel 已经覆盖浏览、搜索、删除，但**没把"这条记忆为什么会在这"的血缘图完整展示**（evidence_excerpt / provenance chain / 衍生关系 / overlay 关系）。
 - **现状证据**：
   - 后端 `MemoryController` 已支持 detail / related / relations 查询
@@ -128,6 +132,7 @@
 - **依赖**：无；纯前端 polish
 
 #### M-P2-8 记忆层暴露为 MCP Server（可选）
+> **状态**：已在 `feature/memory-mcp-server` 分支落地，**merged-ready**。最小子集实现：POST `/api/mcp/memory` + JSON-RPC 3 方法（initialize / tools/list / tools/call）+ 3 工具（memory_search / memory_recall / memory_create），默认开关关闭。15 单元测试通过。
 - **问题**：目前知微的记忆能力只有自己在用。2026 行业方向是把 memory 作为 MCP server 暴露给其他 Agent（Claude Desktop / Cursor / ChatGPT 桌面版）。
 - **方向**：把现有 `memory.search/recall/create/update` 工具再包一层 MCP server，不改核心逻辑
 - **预估**：S（~3 天）
@@ -140,6 +145,7 @@
 ### P0 — 为什么现在必须默认关闭
 
 #### P-P0-1 Heartbeat 不感知 workflow 边界（根因一）
+> **状态**：已拆为 feature 分支 `feature/proactive-boundary-training`，**merged-ready**（与 P-P0-2 / P-P0-3 协同落地：BoundarySignalCollector 订阅 ConversationCompletedEvent / WorkflowCompletedEvent / A2aTaskCompletedEvent；ContextPacket 扩展 `boundaryState` 字段；DecisionGate.applyBoundaryAndFocus 按阈值偏移调整投递级别。37 单元测试通过，3919 全量测试无回归）。
 - **问题**：`HeartbeatRunner` 纯按固定间隔唤醒 `ProactiveEngine`，不区分**用户正在任务中 vs 刚完成一段任务**。这是当前"打扰质量差"的第一根因。
 - **现状证据**：
   - `HeartbeatRunner` 只看 `active-hours-start/end` 和间隔
@@ -155,6 +161,7 @@
 - **依赖**：无；**ROI 最高的单点改造**
 
 #### P-P0-2 训练数据闭环缺失（根因二）
+> **状态**：与 P-P0-1 在 `proactive-boundary-training` 分支一并落地。ProactiveTrainingReplayService 从 ReminderExecutionRepository 读取历史样本，按 reward 阈值分层采样（正例 ≥0.6 top-10、负例 ≤0.2 top-10），ProactiveFewShotLibrary 本地文件持久化（`target/cache/proactive-few-shot/{uid}.json`）。本 spec 只生产库，Gate 3 消费由下一 spec `proactive-timing-cot` 接入。
 - **问题**：`proactive_reminder_delivery` / `reminder_feedback` / `reminder_policy_snapshot` / `reminder_topic_profile` 四张表已在 V1 建好并持续落数据，但从未系统性回放成训练信号。当前策略调优只能靠改阈值。
 - **现状证据**：
   - `proactive-reminder-engine.md` §7 已规划 `ReminderReplayService` + `ReminderPolicyTuner`，标记"已实现"
@@ -171,6 +178,7 @@
 - **依赖**：无；与 P-P0-1 并行
 
 #### P-P0-3 Focus State 识别缺失（根因三）
+> **状态**：与 P-P0-1 在 `proactive-boundary-training` 分支一并落地。FocusStateDetector 四档信号识别（fullscreen / IDE title / 桌面活跃 / 对话高密度），DecisionGate 在 FOCUS_MODE 下将 NOTIFY 降级为 QUEUE，INTERRUPT 保留。
 - **问题**：`ImplicitSignalCollector` 只被动观察"用户是否 ignore/dismiss"，不能**预先识别"用户正处于专注/会议/全屏"**，只能事后降权。
 - **现状证据**：
   - `ImplicitSignalCollector.java` 覆盖投递忽略 / 对话参与度 / 未命中
@@ -186,6 +194,7 @@
 ### P1 — 显著提升打扰质量
 
 #### P-P1-4 缺 Goldilocks 时效窗口预测
+> **状态**：与 P-P1-5 / P-P1-6 / C-P1-2 在 `proactive-timing-cot` 分支一并落地。`GoldilocksWindowCalculator` 从 `ReminderExecutionRepository` 历史样本估算 p80 响应延迟；`ReminderDecisionEngine.decide` 在硬边界后插入窗口检查，返回 `SKIP(WINDOW_CLOSED)`。
 - **问题**：现在决策粒度是"此刻要不要提"，没有"最晚多晚还有意义"。对 DueSoon / Commitment 类候选，错过窗口后继续提只会拉低信任。
 - **现状证据**：
   - `ReminderScoringModel.calcTimingScore` 只做 boundary/habit 命中判断，不做窗口闭合
@@ -197,6 +206,7 @@
 - **依赖**：P-P0-2（需要足够的反馈数据估 latency 分布）
 
 #### P-P1-5 Gate 3 缺 Think-Before-Action
+> **状态**：与 P-P1-4 / P-P1-6 / C-P1-2 在 `proactive-timing-cot` 分支一并落地。`GateThreeReasoner` 产出四段结构化 prompt（observation/user-state/necessity/action）并消费前置 spec 产出的 few-shot 库；默认开关关闭，等样本积累后运维逐个接入。
 - **问题**：Gate 3 直接让 LLM 输出评分，没有结构化思考。小模型容易被表面信号误导。
 - **现状证据**：
   - 当前 prompt 走 "判断+打分" 单步
@@ -210,6 +220,7 @@
 - **依赖**：P-P0-2（需要高质量回放样本作为 few-shot）
 
 #### P-P1-6 行为插件缺少分层激活（记忆-行为对齐）
+> **状态**：与 P-P1-4 / P-P1-5 / C-P1-2 在 `proactive-timing-cot` 分支一并落地。`BehaviorLayer` 4 档 + 8 个行为插件按归属 override；`BehaviorActivationPolicy` 按 ctx 过滤，默认关闭避免回归。
 - **问题**：8 个行为插件并列执行 detect，每次心跳都要全部跑一遍 Gate 2，成本高且激活无结构。
 - **现状证据**：`ProactiveEngine` 按顺序遍历所有 `ProactiveBehavior.detect()`
 - **方向**：按依赖的记忆层分三组，每组共享激活门：
@@ -253,6 +264,7 @@
 - **预估**：S（~3 天）
 
 ### C-P1-2 L4 PreferenceRule 的 Proactive 专属规则未分类
+> **状态**：与 P-P1-4/5/6 在 `proactive-timing-cot` 分支一并落地。代码实际已经使用 `proactive-*` 前缀；新增 `ProactivePreferenceGuard` 静态工具固化约定，DecisionGate / ProactiveMemoryBridge / ProactiveEngine 的既有 `proactive-*` 过滤器保留。
 - **问题**：L4 `PreferenceRule.category` 目前是自由字符串。主动引擎的"主题偏好 / 频次偏好 / 时段偏好"和记忆模块的"饮食偏好 / 购物偏好"混在一起。
 - **方向**：
   - 区分 `proactive_*` 前缀

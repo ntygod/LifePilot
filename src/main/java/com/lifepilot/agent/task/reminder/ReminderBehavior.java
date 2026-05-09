@@ -52,6 +52,11 @@ public class ReminderBehavior implements ProactiveBehavior {
     }
 
     @Override
+    public com.lifepilot.agent.task.proactive.behavior.BehaviorLayer layer() {
+        return com.lifepilot.agent.task.proactive.behavior.BehaviorLayer.HABIT_DRIVEN;
+    }
+
+    @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
         // 维护：隐式结果推断
         inferOutcomesQuietly(ctx);

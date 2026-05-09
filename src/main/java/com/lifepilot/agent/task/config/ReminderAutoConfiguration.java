@@ -164,9 +164,13 @@ public class ReminderAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ReminderDecisionEngine reminderDecisionEngine(
-            @Autowired(required = false) ReminderTrustGradient reminderTrustGradient) {
+            @Autowired(required = false) ReminderTrustGradient reminderTrustGradient,
+            @Autowired(required = false) com.lifepilot.agent.task.reminder.timing.GoldilocksWindowCalculator goldilocksWindowCalculator,
+            @Autowired(required = false) com.lifepilot.notification.config.NotificationProperties notificationProperties) {
+        java.util.function.Supplier<String> userIdSupplier = notificationProperties != null
+                ? notificationProperties::getDefaultUserId : null;
         return new ReminderDecisionEngine(new com.lifepilot.agent.task.reminder.ReminderCandidateDetector(),
-                reminderTrustGradient);
+                reminderTrustGradient, goldilocksWindowCalculator, userIdSupplier);
     }
 
     @Bean

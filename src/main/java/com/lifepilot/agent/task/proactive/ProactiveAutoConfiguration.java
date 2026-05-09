@@ -3,10 +3,19 @@ package com.lifepilot.agent.task.proactive;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.config.ReminderAutoConfiguration;
 import com.lifepilot.agent.task.proactive.behavior.*;
+import com.lifepilot.agent.task.proactive.boundary.BoundarySignalCollector;
+import com.lifepilot.agent.task.proactive.boundary.FocusStateDetector;
+import com.lifepilot.agent.task.proactive.cot.GateThreeReasoner;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
+import com.lifepilot.agent.task.proactive.training.ProactiveFewShotLibrary;
+import com.lifepilot.agent.task.proactive.training.ProactiveTrainingReplayService;
+import com.lifepilot.agent.task.proactive.training.ProactiveTrainingScheduler;
+import com.lifepilot.agent.task.reminder.ReminderExecutionRepository;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
+import com.lifepilot.agent.task.reminder.timing.GoldilocksWindowCalculator;
+import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
 import com.lifepilot.memory.consolidation.UserProfileConsolidator;
@@ -99,7 +108,16 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DecisionGate proactiveDecisionGate(@Autowired(required = false) TrustUpgradeService trustUpgradeService,
-                                               @Autowired(required = false) ProactiveMemoryBridge memoryBridge) {
+                                               @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
+                                               @Autowired(required = false) AgentConfigProperties config) {
+        if (config != null) {
+            return new DecisionGate(
+                    trustUpgradeService, memoryBridge,
+                    config.getTask().getProactiveEngineBoundaryNotifyDelta(),
+                    config.getTask().getProactiveEngineBoundaryInterruptDelta(),
+                    config.getTask().getProactiveEngineOutOfBoundaryDelta()
+            );
+        }
         return new DecisionGate(trustUpgradeService, memoryBridge);
     }
 
@@ -207,6 +225,97 @@ public class ProactiveAutoConfiguration {
                 memoryBridge, trustUpgradeService);
     }
 
+    // ── Boundary / Focus（proactive-boundary-training spec） ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.agent.task.boundary-signal-enabled", matchIfMissing = true)
+    public BoundarySignalCollector boundarySignalCollector(
+            @Autowired(required = false) AgentConfigProperties config,
+            @Autowired(required = false) com.lifepilot.notification.config.NotificationProperties notificationProperties) {
+        int window = config != null ? config.getTask().getBoundaryWindowMinutes() : 10;
+        return new BoundarySignalCollector(window, notificationProperties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.agent.task.focus-detection-enabled", matchIfMissing = true)
+    public FocusStateDetector focusStateDetector(@Autowired(required = false) AgentConfigProperties config) {
+        int density = config != null ? config.getTask().getFocusMessageDensityThreshold() : 5;
+        int interval = config != null ? config.getTask().getFocusMessageIntervalSeconds() : 40;
+        return new FocusStateDetector(density, interval);
+    }
+
+    // ── 训练回放（proactive-boundary-training spec） ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ProactiveFewShotLibrary proactiveFewShotLibrary() {
+        return ProactiveFewShotLibrary.withDefaultCacheDir();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ProactiveTrainingReplayService proactiveTrainingReplayService(
+            @Autowired(required = false) ReminderExecutionRepository executionRepository,
+            @Autowired(required = false) AgentConfigProperties config) {
+        if (executionRepository == null || config == null) return null;
+        return new ProactiveTrainingReplayService(executionRepository, config.getTask());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "lifepilot.agent.task.proactive-training-enabled", havingValue = "true")
+    public ProactiveTrainingScheduler proactiveTrainingScheduler(
+            @Autowired(required = false) SharedScheduler sharedScheduler,
+            @Autowired(required = false) ProactiveTrainingReplayService replayService,
+            ProactiveFewShotLibrary library,
+            @Autowired(required = false) AgentConfigProperties config,
+            @Autowired(required = false) com.lifepilot.notification.config.NotificationProperties notificationProperties) {
+        if (sharedScheduler == null || replayService == null || config == null) {
+            return null;
+        }
+        var scheduler = new ProactiveTrainingScheduler(
+                sharedScheduler.heartbeat(), replayService, library,
+                config.getTask(), notificationProperties);
+        scheduler.start();
+        return scheduler;
+    }
+
+    // ── Timing / CoT / 分层激活（proactive-timing-cot spec） ──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public BehaviorActivationPolicy behaviorActivationPolicy(
+            @Autowired(required = false) AgentConfigProperties config) {
+        AgentConfigProperties.TaskConfig taskConfig =
+                config != null ? config.getTask() : new AgentConfigProperties().getTask();
+        return new BehaviorActivationPolicy(taskConfig);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public GoldilocksWindowCalculator goldilocksWindowCalculator(
+            @Autowired(required = false) ReminderExecutionRepository executionRepository,
+            @Autowired(required = false) AgentConfigProperties config) {
+        if (executionRepository == null || config == null) return null;
+        return new GoldilocksWindowCalculator(executionRepository, config.getTask());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public GateThreeReasoner gateThreeReasoner(
+            ProactiveFewShotLibrary fewShotLibrary,
+            @Autowired(required = false) AgentConfigProperties config,
+            @Autowired(required = false) com.lifepilot.notification.config.NotificationProperties notificationProperties) {
+        AgentConfigProperties.TaskConfig taskConfig =
+                config != null ? config.getTask() : new AgentConfigProperties().getTask();
+        return new GateThreeReasoner(fewShotLibrary, taskConfig, notificationProperties);
+    }
+
     // ── 引擎 ──
 
     @Bean
@@ -220,9 +329,13 @@ public class ProactiveAutoConfiguration {
                                            @Autowired(required = false) ReminderFocusStateHolder focusStateHolder,
                                            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
                                            @Autowired(required = false) TrustUpgradeService trustUpgradeService,
-                                           @Autowired(required = false) ImplicitSignalCollector implicitSignalCollector) {
+                                           @Autowired(required = false) ImplicitSignalCollector implicitSignalCollector,
+                                           @Autowired(required = false) BoundarySignalCollector boundarySignalCollector,
+                                           @Autowired(required = false) FocusStateDetector focusStateDetector,
+                                           @Autowired(required = false) BehaviorActivationPolicy behaviorActivationPolicy) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
                 notificationProperties, notificationRepository, config, focusStateHolder,
-                memoryBridge, trustUpgradeService, implicitSignalCollector);
+                memoryBridge, trustUpgradeService, implicitSignalCollector,
+                boundarySignalCollector, focusStateDetector, behaviorActivationPolicy);
     }
 }

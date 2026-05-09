@@ -47,6 +47,9 @@ public class ContextPrepBehavior extends AbstractLlmBehavior {
     public String name() { return "context-prep"; }
 
     @Override
+    public BehaviorLayer layer() { return BehaviorLayer.EXPERIENCE_DRIVEN; }
+
+    @Override
     protected String promptKey() { return PROMPT_KEY; }
 
     /**

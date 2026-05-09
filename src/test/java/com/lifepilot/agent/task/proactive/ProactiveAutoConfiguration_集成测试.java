@@ -51,7 +51,7 @@ class ProactiveAutoConfiguration_集成测试 {
         TrustUpgradeService trustUpgradeService = config.trustUpgradeService(autonomyRepository, null, null, null);
         assertThat(trustUpgradeService).isNotNull();
 
-        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, memoryBridge);
+        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, memoryBridge, null);
         assertThat(decisionGate).isNotNull();
 
         DeliveryEngine deliveryEngine = config.proactiveDeliveryEngine(notificationService, queuedActionRepository);
@@ -113,7 +113,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var queuedActionRepo = config.queuedActionRepository(jdbcTemplate);
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
         var trustUpgrade = config.trustUpgradeService(autonomyRepo, null, null, null);
-        var gate = config.proactiveDecisionGate(trustUpgrade, memoryBridge);
+        var gate = config.proactiveDecisionGate(trustUpgrade, memoryBridge, null);
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
         var buffer = config.clipboardIntentBuffer();
         var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgrade);
@@ -130,7 +130,8 @@ class ProactiveAutoConfiguration_集成测试 {
 
         ProactiveEngine engine = config.proactiveEngine(
                 behaviors, gate, delivery, notificationProperties,
-                null, null, null, memoryBridge, trustUpgrade, signalCollector);
+                null, null, null, memoryBridge, trustUpgrade, signalCollector,
+                null, null, null);
 
         assertThat(engine).isNotNull();
     }
@@ -147,7 +148,7 @@ class ProactiveAutoConfiguration_集成测试 {
     @Test
     void DecisionGate_支持无依赖构造() {
         var config = new ProactiveAutoConfiguration();
-        DecisionGate gate = config.proactiveDecisionGate(null, null);
+        DecisionGate gate = config.proactiveDecisionGate(null, null, null);
         assertThat(gate).isNotNull();
     }
 
