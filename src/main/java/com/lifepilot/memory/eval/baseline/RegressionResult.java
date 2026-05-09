@@ -1,5 +1,6 @@
 package com.lifepilot.memory.eval.baseline;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.annotation.Nullable;
 
 import java.time.Instant;
@@ -23,14 +24,17 @@ public record RegressionResult(
         diffs = diffs == null ? List.of() : List.copyOf(diffs);
     }
 
+    @JsonIgnore
     public boolean isFail() {
         return status == Status.FAIL;
     }
 
+    @JsonIgnore
     public boolean isPass() {
         return status == Status.PASS;
     }
 
+    @JsonIgnore
     public boolean isNoBaseline() {
         return status == Status.NO_BASELINE;
     }
