@@ -1028,15 +1028,15 @@ V25 DROP + CREATE 重建视图以纳入 V24 新列（SQLite 不支持 `ALTER VIE
 
 ## 附录：本轮演进落地 spec 对数据流的影响
 
-下表汇总 `feature/memory-evolution` 分支落地的 8 个 spec 对本数据流文档涉及的关键契约的改动点。详细设计参见各 spec 专属文档。
+下表汇总 `feature/memory-evolution` 分支落地的 8 个 spec 对本数据流文档涉及的关键契约的改动点。每个 spec 的详细设计由 `.kiro/specs/{name}/` 下的 requirements / design / tasks 文档承载；整体架构摘要见 [memory-system.md §8](./memory-system.md#8-演进历史与本轮能力)。
 
-| Spec | 数据流契约影响 | 详细文档 |
+| Spec | 数据流契约影响 | Spec 目录 |
 |---|---|---|
-| memory-eval-harness | 不影响运行时数据流；新增 `memory.eval` 子系统做开发期回归，指标包括召回率 / F1 / p95 latency / token | #[[file:docs/architecture/memory-eval-harness.md]] |
-| memory-staleness | `LifecycleState` 加 `STALE_CANDIDATE`；写入链路末尾触发 afterCommit 异步检测邻居；召回链路降权但可见 | #[[file:docs/architecture/memory-staleness.md]] |
-| proactive-boundary-training | 不影响记忆数据流；通过 `ProactiveCacheInvalidator` 订阅 `EntityLifecycleChanged` 让主动引擎感知 L3 失活 | #[[file:docs/architecture/proactive-boundary-training.md]] |
-| proactive-timing-cot | 同上，不直接写记忆；通过 `GoldilocksWindowCalculator` 读 `ReminderExecutionRepository` | #[[file:docs/architecture/proactive-timing-cot.md]] |
-| memory-rem-consolidation | 巩固管线第 7 步产生 `AssociationCandidate`，**落文件不直写主库**（保持候选/审计分离）；不影响主写入链路契约 | #[[file:docs/architecture/memory-rem-consolidation.md]] |
-| retrieval-orchestrator | 新增上层编排接口；不替换既有 `memory.search / recall / search-experience` 工具；默认关闭 | #[[file:docs/architecture/retrieval-orchestrator.md]] |
-| memory-security-polish | 新增 `MemoryInjectionDetector` 可由上层写入链路接入做前置检测；本期只提供组件，不强制注入到 `RealtimeExtractor` | #[[file:docs/architecture/memory-security-polish.md]] |
-| memory-mcp-server | 新增对外 MCP JSON-RPC 端点，复用既有 `HybridRetriever / EpisodicMemory / SemanticMemory`，不引入新的写入链路 | #[[file:docs/architecture/memory-mcp-server.md]] |
+| memory-eval-harness | 不影响运行时数据流；新增 `memory.eval` 子系统做开发期回归，指标包括召回率 / F1 / p95 latency / token | `.kiro/specs/memory-eval-harness/` |
+| memory-staleness | `LifecycleState` 加 `STALE_CANDIDATE`；写入链路末尾触发 afterCommit 异步检测邻居；召回链路降权但可见 | `.kiro/specs/memory-staleness/` |
+| proactive-boundary-training | 不影响记忆数据流；通过 `ProactiveCacheInvalidator` 订阅 `EntityLifecycleChanged` 让主动引擎感知 L3 失活 | `.kiro/specs/proactive-boundary-training/` |
+| proactive-timing-cot | 同上，不直接写记忆；通过 `GoldilocksWindowCalculator` 读 `ReminderExecutionRepository` | `.kiro/specs/proactive-timing-cot/` |
+| memory-rem-consolidation | 巩固管线第 7 步产生 `AssociationCandidate`，**落文件不直写主库**（保持候选/审计分离）；不影响主写入链路契约 | `.kiro/specs/memory-rem-consolidation/` |
+| retrieval-orchestrator | 新增上层编排接口；不替换既有 `memory.search / recall / search-experience` 工具；默认关闭 | `.kiro/specs/retrieval-orchestrator/` |
+| memory-security-polish | 新增 `MemoryInjectionDetector` 可由上层写入链路接入做前置检测；本期只提供组件，不强制注入到 `RealtimeExtractor` | `.kiro/specs/memory-security-polish/` |
+| memory-mcp-server | 新增对外 MCP JSON-RPC 端点，复用既有 `HybridRetriever / EpisodicMemory / SemanticMemory`，不引入新的写入链路 | `.kiro/specs/memory-mcp-server/` |

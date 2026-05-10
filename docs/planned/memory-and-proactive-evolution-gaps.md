@@ -1,8 +1,8 @@
 # 记忆与主动能力演进 —— Gap 清单
 
 > 本文件梳理截至 2026-05 知微**记忆系统 + 主动引擎**两个核心模块的已知 gap，面向后续迭代拆分。
-> 前置阅读：`docs/architecture/memory-system.md` / `docs/architecture/memory-data-flow.md` /
-> `docs/architecture/memory-advanced.md` / `docs/architecture/memory-domain-isolation.md` /
+> 前置阅读：`docs/architecture/memory-system.md`（整体架构 + 本轮 8 spec 摘要） /
+> `docs/architecture/memory-data-flow.md`（数据流契约） /
 > `docs/architecture/proactive-reminder-engine.md`。
 >
 > - **P0** = 阻塞后续迭代（没有它，其他改造无法证明效果，或根因无法收敛）
@@ -16,6 +16,8 @@
 > - 评估与训练数据面向**开发期迭代**，不面向用户。
 > - 用户能感知的只有"更少误打扰 / 更准记住 / 更懂何时该开口"。
 > - 所有优化必须在单机、本地 LLM 可选、token 严格预算前提下成立。
+>
+> **文档引用说明**：本文正文"现状证据"中提到的 `memory-advanced.md` 等旧路径是起草当时的引用，相关内容已整合到 `docs/architecture/memory-system.md`（§6 进阶子系统、§8 演进历史与本轮能力）；`memory-data-flow.md` 原位保留。
 
 ---
 
@@ -122,7 +124,7 @@
 - **依赖**：无；可与 M-P1-* 并行
 
 #### M-P2-7 遗留：记忆治理页面的"为什么"血缘展示
-> **状态**：前端需求清单由 `feature/memory-security-polish` 分支在 `docs/architecture/memory-security-polish.md` §5 落地；后端 `MemoryController.findRelations` / `findProvenance` API 已就绪；前端实现由前端独立迭代，本 gap 保持 open 等前端收尾。
+> **状态**：前端需求清单由 `feature/memory-security-polish` 分支落地（后端 API `MemoryController.findRelations` / `findProvenance` 已就绪，详见 `.kiro/specs/memory-security-polish/` 与 `docs/architecture/memory-system.md` §8.4）；前端实现由前端独立迭代，本 gap 保持 open 等前端收尾。
 - **问题**：`zhiwei-web/src/views/memory/` 的 EntityPanel / RelationPanel / TemplatePanel / PreferencePanel / ForgettingLogPanel 已经覆盖浏览、搜索、删除，但**没把"这条记忆为什么会在这"的血缘图完整展示**（evidence_excerpt / provenance chain / 衍生关系 / overlay 关系）。
 - **现状证据**：
   - 后端 `MemoryController` 已支持 detail / related / relations 查询

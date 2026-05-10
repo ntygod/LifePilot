@@ -599,7 +599,7 @@
 
 来源：`MemoryMcpServerController`，Base Path: `/api/mcp`
 
-> 仅在 `lifepilot.memory.mcp-server.enabled=true` 时启用；详见 [架构文档](architecture/memory-mcp-server.md)。
+> 仅在 `lifepilot.memory.mcp-server.enabled=true` 时启用；详见 [记忆系统架构](architecture/memory-system.md) §8.6。
 
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|

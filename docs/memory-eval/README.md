@@ -25,6 +25,6 @@
 
 ## 相关文档
 
-- 架构设计：`docs/architecture/memory-eval-harness.md`
-- 特性说明：`docs/features/memory-eval-harness.md`
-- 上位 Gap：`docs/planned/memory-and-proactive-evolution-gaps.md` §1 M-P0-1
+- 架构设计：`docs/architecture/memory-system.md` §8.3
+- 特性说明：`docs/features/memory-system.md` §3.4
+- Spec：`.kiro/specs/memory-eval-harness/`
