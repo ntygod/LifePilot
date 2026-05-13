@@ -81,12 +81,6 @@ public class UserProfileConsolidator {
     /** LLM 调用超时。 */
     private static final Duration LLM_TIMEOUT = Duration.ofSeconds(60);
 
-    /** 两次巩固之间的最小间隔 — 防止频繁调用 LLM。 */
-    private static final Duration MIN_INTERVAL = Duration.ofHours(2);
-
-    /** 上次巩固时间（防抖用）。 */
-    private volatile Instant lastConsolidatedAt = Instant.EPOCH;
-
     @Nullable
     private final SemanticMemory semanticMemory;
     @Nullable
@@ -177,12 +171,8 @@ public class UserProfileConsolidator {
             log.debug("用户画像巩固: 源签名未变化，跳过 LLM, sourceCount={}", allFragments.size());
             return;
         }
-        // 防抖：只有源确实变化后才应用间隔限制，避免纯时间触发反复打 LLM。
-        Instant effectiveLastConsolidatedAt = resolveLastConsolidatedAt(existingProfile);
-        if (!force && Duration.between(effectiveLastConsolidatedAt, Instant.now()).compareTo(MIN_INTERVAL) < 0) {
-            log.debug("用户画像巩固: 源已变化但距上次不到{}小时，已延后", MIN_INTERVAL.toHours());
-            return;
-        }
+        // 源签名本身已是天然去重：碎片实体没变 → 签名不变 → 上面已 return。
+        // 走到这里说明源确实变了，直接重算，不再额外防抖。
         String currentPortrait = existingProfile
                 .filter(MemoryQualityPolicy::isPromptConsumable)
                 .map(TemporalEntity::description)
@@ -321,7 +311,6 @@ public class UserProfileConsolidator {
             log.info("用户画像巩固: 已创建画像, entityId={}, chars={}, sources={}",
                     newEntity.id(), portraitText.length(), derivationSources.size());
         }
-        lastConsolidatedAt = now;
     }
 
     /**
@@ -391,24 +380,6 @@ public class UserProfileConsolidator {
                 .map(String::valueOf)
                 .filter(sourceSignature::equals)
                 .isPresent();
-    }
-
-    private Instant resolveLastConsolidatedAt(java.util.Optional<TemporalEntity> existingProfile) {
-        Instant persisted = existingProfile
-                .map(TemporalEntity::properties)
-                .map(props -> props.get(PROFILE_CONSOLIDATED_AT_KEY))
-                .map(String::valueOf)
-                .flatMap(this::parseInstant)
-                .orElse(Instant.EPOCH);
-        return persisted.isAfter(lastConsolidatedAt) ? persisted : lastConsolidatedAt;
-    }
-
-    private java.util.Optional<Instant> parseInstant(String raw) {
-        try {
-            return java.util.Optional.of(Instant.parse(raw));
-        } catch (Exception e) {
-            return java.util.Optional.empty();
-        }
     }
 
     private Map<String, Object> withProfileMetadata(Map<String, Object> properties,
