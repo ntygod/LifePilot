@@ -1,10 +1,12 @@
 package com.lifepilot.memory.mcp.server;
 
 import com.lifepilot.mcp.protocol.JsonRpcMessage;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,10 +49,20 @@ public class MemoryMcpServerController {
     @PostMapping(value = "/memory",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    public JsonRpcMessage handle(@RequestBody JsonRpcMessage request) {
+    public ResponseEntity<JsonRpcMessage> handle(@RequestBody JsonRpcMessage request,
+                                                  HttpServletRequest httpRequest) {
+        if (!isLocalhost(httpRequest)) {
+            log.warn("Memory MCP 拒绝非本地请求: remoteAddr={}", httpRequest.getRemoteAddr());
+            return ResponseEntity.status(403).build();
+        }
         if (log.isDebugEnabled()) {
             log.debug("Memory MCP 请求: method={}, id={}", request.method(), request.id());
         }
-        return handler.handle(request);
+        return ResponseEntity.ok(handler.handle(request));
+    }
+
+    private static boolean isLocalhost(HttpServletRequest request) {
+        String addr = request.getRemoteAddr();
+        return "127.0.0.1".equals(addr) || "0:0:0:0:0:0:0:1".equals(addr) || "::1".equals(addr);
     }
 }

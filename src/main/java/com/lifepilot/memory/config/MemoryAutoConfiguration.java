@@ -488,13 +488,14 @@ public class MemoryAutoConfiguration {
                                                @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
                                                Clock clock,
                                                MemoryAccessPolicy memoryAccessPolicy,
-                                               @Nullable MemoryExtractionCandidateRepository candidateRepository) {
+                                               @Nullable MemoryExtractionCandidateRepository candidateRepository,
+                                               @Nullable com.lifepilot.memory.security.MemoryInjectionDetector injectionDetector) {
         if (generationRouter == null) {
             log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
         }
         log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, candidateRepository);
+                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, candidateRepository, injectionDetector);
     }
 
     // 检索
@@ -700,8 +701,10 @@ public class MemoryAutoConfiguration {
     @ConditionalOnMissingBean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
             name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
-    public com.lifepilot.memory.retrieval.orchestrator.KnowledgeBaseSource knowledgeBaseSource() {
-        return new com.lifepilot.memory.retrieval.orchestrator.KnowledgeBaseSource();
+    public com.lifepilot.memory.retrieval.orchestrator.KnowledgeBaseSource knowledgeBaseSource(
+            @Nullable com.lifepilot.knowledge.retrieve.DocumentRetriever documentRetriever,
+            @Nullable com.lifepilot.knowledge.repository.KnowledgeBaseRepository kbRepository) {
+        return new com.lifepilot.memory.retrieval.orchestrator.KnowledgeBaseSource(documentRetriever, kbRepository);
     }
 
     @Bean
