@@ -255,8 +255,7 @@ class NonStreamingCallback_单元测试 {
 
         @Test
         void 消息含媒体且MultimodalRouter可用_应走多模态路径() {
-            LlmResponse llmResponse = LlmResponse.simple(
-                    "这是一张猫的图片", 100, 50, "vision-provider", "vision-model", 500);
+            LlmResponse llmResponse = new LlmResponse("这是一张猫的图片", null, null, List.of(), Map.of(), 100, 50, null, 0, "vision-provider", "vision-model", 500, false);
             ChatResponse adaptedResponse = 文本响应("这是一张猫的图片");
 
             when(multimodalRouter.call(any(MultimodalRequest.class))).thenReturn(llmResponse);
@@ -282,8 +281,7 @@ class NonStreamingCallback_单元测试 {
 
         @Test
         void 多模态请求_应正确构建MultimodalRequest() {
-            LlmResponse llmResponse = LlmResponse.simple(
-                    "响应", 100, 50, "provider-v", "model-v", 300);
+            LlmResponse llmResponse = new LlmResponse("响应", null, null, List.of(), Map.of(), 100, 50, null, 0, "provider-v", "model-v", 300, false);
             when(multimodalRouter.call(any(MultimodalRequest.class))).thenReturn(llmResponse);
             when(helper.adaptToChatResponse(llmResponse)).thenReturn(文本响应("响应"));
             when(helper.buildConversationContextText(anyList())).thenReturn("上下文文本");
@@ -316,8 +314,7 @@ class NonStreamingCallback_单元测试 {
                     null, null, null, 0, null, null, reqMedia, null, null
             );
 
-            LlmResponse llmResponse = LlmResponse.simple(
-                    "响应", 100, 50, "p1", "m1", 200);
+            LlmResponse llmResponse = new LlmResponse("响应", null, null, List.of(), Map.of(), 100, 50, null, 0, "p1", "m1", 200, false);
             when(multimodalRouter.call(any(MultimodalRequest.class))).thenReturn(llmResponse);
             when(helper.adaptToChatResponse(llmResponse)).thenReturn(文本响应("响应"));
             when(helper.buildConversationContextText(anyList())).thenReturn("文本");
@@ -345,8 +342,7 @@ class NonStreamingCallback_单元测试 {
                     new MediaContent("msg-img", "image/png", new byte[]{1}, "pic.png", 1, Map.of())
             );
 
-            LlmResponse llmResponse = LlmResponse.simple(
-                    "响应", 10, 5, "p1", "m1", 100);
+            LlmResponse llmResponse = new LlmResponse("响应", null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false);
             when(multimodalRouter.call(any(MultimodalRequest.class))).thenReturn(llmResponse);
             when(helper.adaptToChatResponse(llmResponse)).thenReturn(文本响应("响应"));
             when(helper.buildConversationContextText(anyList())).thenReturn("文本");
@@ -368,8 +364,7 @@ class NonStreamingCallback_单元测试 {
                     null, null, null, 0, "preferred-vision", null, null, null, null
             );
 
-            LlmResponse llmResponse = LlmResponse.simple(
-                    "响应", 10, 5, "preferred-vision", "vm1", 100);
+            LlmResponse llmResponse = new LlmResponse("响应", null, null, List.of(), Map.of(), 10, 5, null, 0, "preferred-vision", "vm1", 100, false);
             when(multimodalRouter.call(any(MultimodalRequest.class))).thenReturn(llmResponse);
             when(helper.adaptToChatResponse(llmResponse)).thenReturn(文本响应("响应"));
             when(helper.buildConversationContextText(anyList())).thenReturn("文本");

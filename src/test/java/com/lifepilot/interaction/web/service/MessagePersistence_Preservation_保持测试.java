@@ -88,7 +88,7 @@ class MessagePersistence_Preservation_保持测试 {
 
         var objectMapper = new ObjectMapper();
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper);
-        transcriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
+        transcriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository, null);
         sessionRepository = new ChatSessionRepository(sessionStoreRepository);
         transcriptStore = new JdbcTranscriptStore(sessionStoreRepository, transcriptRepository, sessionRepository);
     }

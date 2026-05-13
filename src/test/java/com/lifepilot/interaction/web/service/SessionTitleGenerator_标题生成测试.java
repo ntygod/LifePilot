@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.List;
 
 /**
  * SessionTitleGenerator 单元测试。
@@ -85,7 +86,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
                     eq(GenerationCapability.CHAT), any(Duration.class)
-            )).thenReturn(LlmResponse.simple(llmOutput, 10, 5, "p1", "m1", 100));
+            )).thenReturn(new LlmResponse(llmOutput, null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             generator.generateIfNeeded(sessionId, userMessage);
 
@@ -167,7 +168,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
                     eq(GenerationCapability.CHAT), any(Duration.class)
-            )).thenReturn(LlmResponse.simple(null, 10, 5, "p1", "m1", 100));
+            )).thenReturn(new LlmResponse(null, null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             generator.generateIfNeeded(sessionId, "你好");
 
@@ -335,7 +336,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
                     eq(GenerationCapability.CHAT), any(Duration.class)
-            )).thenReturn(LlmResponse.simple("英文对话", 10, 5, "p1", "m1", 100));
+            )).thenReturn(new LlmResponse("英文对话", null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             generator.generateIfNeeded(sessionId, "Hello");
 
@@ -360,7 +361,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(generationRouter.call(
                     eq("session-title"), eq("rendered prompt"), eq(null), eq(null), eq(null),
                     eq(GenerationCapability.CHAT), any(Duration.class)
-            )).thenReturn(LlmResponse.simple("天气预报查询", 20, 8, "openai", "gpt-4o-mini", 200));
+            )).thenReturn(new LlmResponse("天气预报查询", null, null, List.of(), Map.of(), 20, 8, null, 0, "openai", "gpt-4o-mini", 200, false));
 
             generator.generateIfNeeded(sessionId, userMessage);
 
@@ -392,7 +393,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
                     eq(GenerationCapability.CHAT), any(Duration.class)
-            )).thenReturn(LlmResponse.simple("长消息讨论", 20, 8, "p1", "m1", 200));
+            )).thenReturn(new LlmResponse("长消息讨论", null, null, List.of(), Map.of(), 20, 8, null, 0, "p1", "m1", 200, false));
 
             generator.generateIfNeeded(sessionId, longMessage);
 
@@ -411,7 +412,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
                     eq(GenerationCapability.CHAT), any(Duration.class)
-            )).thenReturn(LlmResponse.simple("无SSE标题", 10, 5, "p1", "m1", 100));
+            )).thenReturn(new LlmResponse("无SSE标题", null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             gen.generateIfNeeded(sessionId, "你好");
 
@@ -469,7 +470,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
                     eq(GenerationCapability.CHAT), any(Duration.class)
-            )).thenReturn(LlmResponse.simple("正常标题", 10, 5, "p1", "m1", 100));
+            )).thenReturn(new LlmResponse("正常标题", null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
             // SSE 广播时抛异常 — pushTitleUpdate 内部 catch 了，不影响主流程
             // 注意：broadcastByPrefix 异常在 pushTitleUpdate 内被 catch，不会传播到 generateIfNeeded
             // 但如果 broadcastByPrefix 抛出的是 Error 类型，这里测试的是 Exception

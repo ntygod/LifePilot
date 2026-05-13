@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.Map;
 
 /**
  * ExperienceSummarizer 单元测试。
@@ -55,7 +56,7 @@ class ExperienceSummarizerTest {
                 isNull(),
                 eq(GenerationCapability.CHAT),
                 eq(Duration.ofSeconds(120))
-        )).thenReturn(LlmResponse.simple("""
+        )).thenReturn(new LlmResponse("""
                 {
                   "scenario": "测试场景",
                   "strategy": "测试策略",
@@ -69,7 +70,7 @@ class ExperienceSummarizerTest {
                   "positiveOutcomes": 0,
                   "negativeOutcomes": 0
                 }
-                """, 10, 5, "qwen-plus", "qwen3.5-plus", 100));
+                """, null, null, List.of(), Map.of(), 10, 5, null, 0, "qwen-plus", "qwen3.5-plus", 100, false));
 
         var summarizer = new ExperienceSummarizer(
                 semanticMemory,

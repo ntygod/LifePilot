@@ -87,7 +87,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null);
+                null, null);
     }
 
     @Test
@@ -103,13 +103,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 isNull(),
                 eq(GenerationCapability.CHAT),
                 any()))
-                .thenReturn(LlmResponse.simple(
-                        "[\"之前讨论的旅行计划\",\"旅行安排和目的地\"]",
-                        10,
-                        20,
-                        "generation-service",
-                        "rewrite-model",
-                        100));
+                .thenReturn(new LlmResponse("[\"之前讨论的旅行计划\",\"旅行安排和目的地\"]", null, null, List.of(), Map.of(), 10, 20, null, 0, "generation-service", "rewrite-model", 100, false));
 
         var vectorResult = new VectorSearchResult("entity-travel-1", 0.85f);
         when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any()))

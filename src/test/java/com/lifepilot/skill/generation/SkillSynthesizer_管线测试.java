@@ -36,6 +36,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.Map;
 
 /**
  * SkillSynthesizer 自生成管线测试。
@@ -170,7 +171,7 @@ class SkillSynthesizer_管线测试 {
     }
 
     private LlmResponse llmResponse(String content) {
-        return LlmResponse.simple(content, 0, 0, "test", "test-model", 0L);
+        return new LlmResponse(content, null, null, List.of(), Map.of(), 0, 0, null, 0, "test", "test-model", 0L, false);
     }
 
     /** 生成一份最小合规 SKILL.md（不含 suggested_tools，避免触发工具校验）。 */

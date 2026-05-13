@@ -68,7 +68,7 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
                   "extractionConfidence":0.8,"importanceScore":0.5}]
                 """;
         when(generationRouter.call(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
-                .thenReturn(LlmResponse.simple(audnJson, 1, 1, "mock", "mock", 1L));
+                .thenReturn(new LlmResponse(audnJson, null, null, List.of(), Map.of(), 1, 1, null, 0, "mock", "mock", 1L, false));
 
         MemoryProperties props = new MemoryProperties();
         extractor = new RealtimeExtractor(

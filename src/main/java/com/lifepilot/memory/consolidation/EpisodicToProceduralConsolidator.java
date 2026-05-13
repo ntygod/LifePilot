@@ -361,7 +361,8 @@ public class EpisodicToProceduralConsolidator {
                 null,
                 sourceTraceIds,
                 now,
-                now);
+                now,
+                null, null);
 
         proceduralMemory.save(template);
         log.info("程序巩固: 新模板已保存, name={}, steps={}, sources={}",

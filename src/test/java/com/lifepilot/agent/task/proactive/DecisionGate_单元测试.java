@@ -162,7 +162,7 @@ class DecisionGate_单元测试 {
         var now = Instant.parse("2026-04-14T06:00:00Z");
         var lowPreference = new PreferenceRule(
                 "r1", "proactive-timing", "afternoon", "0.1",
-                0.8f, "proactive-engine", 5, now, now);
+                0.8f, "proactive-engine", 5, now, now, null, null);
         when(memoryBridge.getPreferences("proactive-timing"))
                 .thenReturn(List.of(lowPreference));
 

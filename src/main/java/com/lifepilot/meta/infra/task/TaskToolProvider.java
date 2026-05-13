@@ -34,12 +34,6 @@ public class TaskToolProvider {
     private final CronScheduler cronScheduler;
     @Nullable private final ChatSessionRepository chatSessionRepository;
 
-    /** 兼容旧调用点的构造器（无 ChatSessionRepository，新建任务 projectId 始终为 null）。 */
-    public TaskToolProvider(CronTaskRepository cronTaskRepository,
-                            CronScheduler cronScheduler) {
-        this(cronTaskRepository, cronScheduler, null);
-    }
-
     public TaskToolProvider(CronTaskRepository cronTaskRepository,
                             CronScheduler cronScheduler,
                             @Nullable ChatSessionRepository chatSessionRepository) {

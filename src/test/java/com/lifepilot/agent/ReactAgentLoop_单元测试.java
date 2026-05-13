@@ -54,6 +54,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import java.util.Map;
+import com.lifepilot.llm.LlmResponse;
 
 /**
  * ReactAgentLoop 全面单元测试 — 覆盖核心循环、取消令牌、迭代限制、
@@ -760,7 +762,7 @@ class ReactAgentLoop_单元测试 {
 
         @Test
         void adaptToChatResponse_应正确转换LlmResponse() {
-            var llmResponse = com.lifepilot.llm.LlmResponse.simple("这是回答内容", 100, 50, "test-provider", "test-model", 200L);
+            var llmResponse = new LlmResponse("这是回答内容", null, null, List.of(), Map.of(), 100, 50, null, 0, "test-provider", "test-model", 200L, false);
             var chatResponse = reactAgentLoop.adaptToChatResponse(llmResponse);
 
             assertThat(chatResponse).isNotNull();

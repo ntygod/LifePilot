@@ -101,7 +101,7 @@ class MessagePersistence_BugCondition_探索测试 {
 
         var objectMapper = new ObjectMapper();
         var sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper);
-        transcriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
+        transcriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository, null);
         sessionRepository = new ChatSessionRepository(sessionStoreRepository);
         transcriptStore = new JdbcTranscriptStore(sessionStoreRepository, transcriptRepository, sessionRepository);
         feedbackRepository = new MessageFeedbackRepository(jdbcTemplate, objectMapper);

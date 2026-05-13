@@ -112,7 +112,7 @@ class AssociationCandidateGenerator_单元测试 {
                 + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85,\"evidence\":\"书籍是学习资源\"}] 尾部";
         when(router.call(anyString(), anyString(), any(), any(), any(),
                 eq(GenerationCapability.CHAT), any(), anyBoolean()))
-                .thenReturn(LlmResponse.simple(llmJson, 0, 0, "mock", "mock", 0));
+                .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock", 0, false));
 
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
         var result = gen.generate();
@@ -139,7 +139,7 @@ class AssociationCandidateGenerator_单元测试 {
                 .thenReturn(List.of(retrievalResult("n1", "Rust 书籍")));
         when(router.call(anyString(), anyString(), any(), any(), any(),
                 eq(GenerationCapability.CHAT), any(), anyBoolean()))
-                .thenReturn(LlmResponse.simple("没有 JSON 数组", 0, 0, "mock", "mock", 0));
+                .thenReturn(new LlmResponse("没有 JSON 数组", null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock", 0, false));
 
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
         assertThat(gen.generate()).isEmpty();
@@ -183,7 +183,7 @@ class AssociationCandidateGenerator_单元测试 {
                 + "\"relationType\":\"UNKNOWN_TYPE\",\"confidence\":0.8}]";
         when(router.call(anyString(), anyString(), any(), any(), any(),
                 eq(GenerationCapability.CHAT), any(), anyBoolean()))
-                .thenReturn(LlmResponse.simple(llmJson, 0, 0, "mock", "mock", 0));
+                .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock", 0, false));
 
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
         var result = gen.generate();

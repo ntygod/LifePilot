@@ -216,7 +216,7 @@ class MemoryGovernanceContract_集成测试 {
                 "用户倾向早起处理重要任务",
                 Map.of("time", "morning"),
                 0.9f,
-                0.7f);
+                0.7f, null, null, null, null);
         var ctx = writeContext(memorySpaceRepository.ensureDefaultPersonalSpace().id(), MemoryScope.USER_PROFILE);
 
         String candidateId = candidateRepository.recordValidated("session-candidate", ctx, decision);
@@ -245,7 +245,7 @@ class MemoryGovernanceContract_集成测试 {
                 null,
                 Map.of(),
                 0.1f,
-                0.3f);
+                0.3f, null, null, null, null);
         var ctx = writeContext(memorySpaceRepository.ensureDefaultPersonalSpace().id(), MemoryScope.USER_PROFILE);
 
         String candidateId = candidateRepository.recordRejected(

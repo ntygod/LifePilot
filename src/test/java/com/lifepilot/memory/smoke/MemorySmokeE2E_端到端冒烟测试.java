@@ -71,6 +71,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.lifepilot.llm.LlmResponse;
 
 /**
  * 记忆模块端到端冒烟测试。
@@ -425,13 +426,7 @@ class MemorySmokeE2E_端到端冒烟测试 {
             GenerationRouter router = mock(GenerationRouter.class);
             when(router.resolveMaxContextWindow(anyString(), any(), any())).thenReturn(16000);
             when(router.call(anyString(), anyString(), any(), any(), any(), any(GenerationCapability.class), any()))
-                    .thenReturn(com.lifepilot.llm.LlmResponse.simple(
-                            "{}",
-                            0,
-                            0,
-                            "smoke",
-                            "smoke-model",
-                            0));
+                    .thenReturn(new LlmResponse("{}", null, null, List.of(), Map.of(), 0, 0, null, 0, "smoke", "smoke-model", 0, false));
             return router;
         }
 

@@ -44,12 +44,6 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
     private final CronScheduler cronScheduler;
     @Nullable private final ChatSessionRepository chatSessionRepository;
 
-    /** 兼容旧调用点的构造器（无 ChatSessionRepository，projectId 始终为 null）。 */
-    public CronActionDispatchExecutor(CronTaskRepository cronTaskRepository,
-                                      CronScheduler cronScheduler) {
-        this(cronTaskRepository, cronScheduler, null);
-    }
-
     public CronActionDispatchExecutor(CronTaskRepository cronTaskRepository,
                                       CronScheduler cronScheduler,
                                       @Nullable ChatSessionRepository chatSessionRepository) {
@@ -154,7 +148,8 @@ public class CronActionDispatchExecutor extends ActionDispatchExecutor {
 
                         var updated = new CronTaskEntry(
                                 taskId, name, schedule, instruction, status,
-                                old.createdAt(), Instant.now().toString()
+                                old.createdAt(), Instant.now().toString(),
+                                old.skillIds(), old.projectId()
                         );
                         cronTaskRepository.update(updated);
 

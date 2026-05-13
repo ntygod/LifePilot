@@ -47,39 +47,4 @@ public record AudnDecision(
         @Nullable @JsonAlias({"evidence_kind", "evidenceKind"}) String evidenceKindRaw,
         @Nullable @JsonAlias({"evidence_excerpt", "evidenceExcerpt"}) String evidenceExcerpt
 ) {
-
-    /**
-     * 兼容老构造点的 7 参构造器 — temporality/expiresAt 全为 null，
-     * 交给 {@code RealtimeExtractor} 按规则补默认（PERSISTENT，不自动推导过期时间）。
-     */
-    public AudnDecision(
-            AudnOperation operation,
-            String entityName,
-            EntityType entityType,
-            @Nullable String description,
-            @Nullable Map<String, Object> properties,
-            @Nullable Float extractionConfidence,
-            @Nullable Float importanceScore
-    ) {
-        this(operation, entityName, entityType, description, properties,
-                extractionConfidence, importanceScore, null, null, null, null);
-    }
-
-    /**
-     * 生命周期字段构造器 — 质量字段全为 null，由治理层按来源推导。
-     */
-    public AudnDecision(
-            AudnOperation operation,
-            String entityName,
-            EntityType entityType,
-            @Nullable String description,
-            @Nullable Map<String, Object> properties,
-            @Nullable Float extractionConfidence,
-            @Nullable Float importanceScore,
-            @Nullable String temporalityRaw,
-            @Nullable String expiresAtRaw
-    ) {
-        this(operation, entityName, entityType, description, properties,
-                extractionConfidence, importanceScore, temporalityRaw, expiresAtRaw, null, null);
-    }
 }

@@ -120,7 +120,7 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = LlmResponse.simple("{\"answer\":\"ok\"}", 12, 6, "provider-1", "model-x", 18);
+        LlmResponse response = new LlmResponse("{\"answer\":\"ok\"}", null, null, List.of(), Map.of(), 12, 6, null, 0, "provider-1", "model-x", 18, false);
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
                 .thenReturn(response);
@@ -152,7 +152,7 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = LlmResponse.simple("{\"label\":\"cat\"}", 9, 3, "provider-vision", "vision-model", 25);
+        LlmResponse response = new LlmResponse("{\"label\":\"cat\"}", null, null, List.of(), Map.of(), 9, 3, null, 0, "provider-vision", "vision-model", 25, false);
         multimodalResponse = response;
 
         Map<String, Object> result = executor.execute(step, context, expressionEngine);
@@ -186,14 +186,7 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = LlmResponse.simple(
-                "```json\n{\"answer\":\"ok\"}\n```",
-                11,
-                4,
-                "provider-1",
-                "model-1",
-                12
-        );
+        LlmResponse response = new LlmResponse("```json\n{\"answer\":\"ok\"}\n```", null, null, List.of(), Map.of(), 11, 4, null, 0, "provider-1", "model-1", 12, false);
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
                 .thenReturn(response);
@@ -223,14 +216,7 @@ class StepExecutorTest {
                 null
         );
 
-        LlmResponse response = LlmResponse.simple(
-                "1、不是 JSON",
-                11,
-                4,
-                "provider-1",
-                "model-1",
-                12
-        );
+        LlmResponse response = new LlmResponse("1、不是 JSON", null, null, List.of(), Map.of(), 11, 4, null, 0, "provider-1", "model-1", 12, false);
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(), any(), any(Duration.class)))
                 .thenReturn(response);

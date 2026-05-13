@@ -285,7 +285,7 @@ public class StreamingCallback implements IterationCallback {
                 collectedContent.length());
 
         ChatResponse chatResponse = helper.adaptToChatResponse(
-                LlmResponse.simple(collectedContent, 0, 0, this.providerId, this.modelId, 0));
+                new LlmResponse(collectedContent, null, null, List.of(), Map.of(), 0, 0, null, 0, this.providerId, this.modelId, 0, false));
         helper.recordStreamingLlmStep(traceContext, callStart, providerId, modelId, scene, chatResponse, null);
         return chatResponse;
     }

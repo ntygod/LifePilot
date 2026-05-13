@@ -67,24 +67,6 @@ public class HybridRetriever {
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
 
     /**
-     * 兼容构造器 — 旧 8 参签名，新生命周期闭环依赖（provenanceRepository）默认为 null。
-     *
-     * <p>保留给现有 MemoryAutoConfiguration / 精排测试 / 作用域测试等已手工装配的调用点。
-     * 新调用点应走下面 9 参 canonical 构造器，以获得 needsRevalidation 标注能力。</p>
-     */
-    public HybridRetriever(VectorSearcher vectorSearcher,
-                           FtsSearcher ftsSearcher,
-                           GraphTraverser graphTraverser,
-                           SemanticMemory semanticMemory,
-                           @Nullable IntentMatcher intentMatcher,
-                           MemoryProperties memoryProperties,
-                           JdbcTemplate jdbcTemplate,
-                           @Nullable RerankRouter rerankRouter) {
-        this(vectorSearcher, ftsSearcher, graphTraverser, semanticMemory,
-                intentMatcher, memoryProperties, jdbcTemplate, rerankRouter, null);
-    }
-
-    /**
      * V16 Task 30 canonical constructor — 额外接入 {@link MemoryProvenanceRepository}
      * 用于批量判定实体是否存在 STALE provenance。
      */

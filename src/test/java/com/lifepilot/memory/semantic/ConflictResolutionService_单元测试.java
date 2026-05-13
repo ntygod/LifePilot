@@ -93,7 +93,7 @@ class ConflictResolutionService_单元测试 {
 
     /** 构造 LLM 响应并 mock GenerationRouter 返回之。 */
     private void 模拟LLM返回(String content) {
-        var response = LlmResponse.simple(content, 100, 50, "test-provider", "test-model", 200L);
+        var response = new LlmResponse(content, null, null, List.of(), Map.of(), 100, 50, null, 0, "test-provider", "test-model", 200L, false);
         when(generationRouter.call(
                 anyString(), anyString(), any(), any(), any(),
                 any(GenerationCapability.class), any()))

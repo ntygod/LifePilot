@@ -103,7 +103,7 @@ class SkillRegistryTest {
 
         var updated = marketplaceDefinition("todo").toBuilder()
                 .name("新的名称")
-                .source(new SkillSource.UserDefined("/new.yaml"))
+                .source(new SkillSource.UserDefined("/new.yaml", null))
                 .build();
 
         boolean result = registry.register(updated);

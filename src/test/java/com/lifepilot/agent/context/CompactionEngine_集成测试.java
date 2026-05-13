@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.List;
 
 /**
  * CompactionEngine 集成测试。
@@ -130,7 +131,7 @@ class CompactionEngine_集成测试 {
                 """);
 
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper);
-        transcriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
+        transcriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository, null);
         memoryDocumentRepository = new MemoryDocumentRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
     }
 
@@ -183,22 +184,8 @@ class CompactionEngine_集成测试 {
         var generationRouter = mock(GenerationRouter.class);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(
-                        LlmResponse.simple(
-                                "这是压缩摘要，保留关键决策、约束和工具结果。",
-                                120,
-                                30,
-                                "provider-x",
-                                "model-x",
-                                20
-                        ),
-                        LlmResponse.simple(
-                                "- 已完成需求整理\n- 决定保留关键决策\n- 后续需要继续验证测试",
-                                60,
-                                20,
-                                "provider-x",
-                                "model-x",
-                                20
-                        )
+                        new LlmResponse("这是压缩摘要，保留关键决策、约束和工具结果。", null, null, List.of(), Map.of(), 120, 30, null, 0, "provider-x", "model-x", 20, false),
+                        new LlmResponse("- 已完成需求整理\n- 决定保留关键决策\n- 后续需要继续验证测试", null, null, List.of(), Map.of(), 60, 20, null, 0, "provider-x", "model-x", 20, false)
                 );
 
         var engine = new CompactionEngine(

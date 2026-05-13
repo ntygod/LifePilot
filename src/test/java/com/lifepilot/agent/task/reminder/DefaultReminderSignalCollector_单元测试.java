@@ -108,7 +108,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 4,
                 now.minusSeconds(7200),
                 now.minusSeconds(300)
-        );
+        , null, null);
         String metadataJson = new ObjectMapper().writeValueAsString(Map.of("topicKey", "entity:evt-1"));
         NotificationRecord history = new NotificationRecord(
                 "n-1", "default", "proactive_reminder", "{}", "WEB", "READ", "SENT", metadataJson,
@@ -124,7 +124,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 .thenReturn(Map.of("entity:evt-1", feedbackStats));
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 
@@ -186,7 +186,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 .thenReturn(List.of());
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 
@@ -238,7 +238,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 .thenReturn(List.of());
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 
@@ -292,7 +292,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 .thenReturn(List.of());
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 
@@ -319,7 +319,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 5,
                 now.minusSeconds(7200),
                 now.minusSeconds(600)
-        );
+        , null, null);
 
         when(proceduralMemory.listAllPreferences()).thenReturn(List.of(preferenceRule));
         when(notificationRepository.findByUserIdAndTypeSince(eq("default"), eq("proactive_reminder"), any(), eq(200)))
@@ -331,7 +331,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 ));
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 
@@ -359,7 +359,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 3,
                 now.minusSeconds(7200),
                 now.minusSeconds(600)
-        );
+        , null, null);
 
         when(proceduralMemory.listAllPreferences()).thenReturn(List.of(preferenceRule));
         when(notificationRepository.findByUserIdAndTypeSince(eq("default"), eq("proactive_reminder"), any(), eq(200)))
@@ -373,7 +373,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 .thenReturn(Map.of("preference:pref-2", 2));
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 
@@ -408,7 +408,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 .thenReturn(Map.of("conversation:web:conv-alias", "topic:task:alias-fixed"));
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 
@@ -442,7 +442,7 @@ class DefaultReminderSignalCollector_单元测试 {
                 .thenReturn(List.of());
 
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, ZoneId.of("Asia/Shanghai"), LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         List<ReminderTopicSnapshot> topics = collector.collect("default", context);
 

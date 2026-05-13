@@ -85,7 +85,7 @@ class MultimodalRouterTest {
                 null
         );
 
-        LlmResponse expected = LlmResponse.simple("hi", 1, 1, "p1", "m", 10);
+        LlmResponse expected = new LlmResponse("hi", null, null, List.of(), Map.of(), 1, 1, null, 0, "p1", "m", 10, false);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(expected);
 
@@ -108,7 +108,7 @@ class MultimodalRouterTest {
                 outputSchema
         );
 
-        LlmResponse expected = LlmResponse.simple("{}", 1, 1, "p1", "m", 10);
+        LlmResponse expected = new LlmResponse("{}", null, null, List.of(), Map.of(), 1, 1, null, 0, "p1", "m", 10, false);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(expected);
 
@@ -177,7 +177,7 @@ class MultimodalRouterTest {
         var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
 
-        LlmResponse response = LlmResponse.simple("answer", 10, 20, "vision-1", "gpt", 100);
+        LlmResponse response = new LlmResponse("answer", null, null, List.of(), Map.of(), 10, 20, null, 0, "vision-1", "gpt", 100, false);
         when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class))).thenReturn(response);
 
         LlmResponse actual = router.call(request);
@@ -308,7 +308,7 @@ class MultimodalRouterTest {
         var adapter = mock(com.lifepilot.llm.adapter.AbstractProviderAdapter.class);
         when(providerRegistry.getAdapter("vision-1")).thenReturn(adapter);
         when(adapter.callWithMedia(anyString(), anyList(), any(), any(Duration.class)))
-                .thenReturn(LlmResponse.simple("ok", 0, 0, "vision-1", "m", 1));
+                .thenReturn(new LlmResponse("ok", null, null, List.of(), Map.of(), 0, 0, null, 0, "vision-1", "m", 1, false));
 
         router.call(request);
 

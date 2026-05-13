@@ -75,39 +75,6 @@ public class SessionTranscriptRepository {
             @Nullable String reasoningContent,
             @Nullable Long reasoningDurationMs
     ) {
-        /**
-         * 兼容旧测试构造器 — 不携带 reasoning_content / reasoning_duration_ms 时走 null。
-         *
-         * <p>用于现有 ChatSessionService_*测试 和其他 fixture 直接 new 出 row 的场景，
-         * 避免一次给所有调用点改 15→17 字段。新构造点应直接用主构造器。
-         */
-        public TranscriptMessageViewRow(
-                String entryId,
-                String sessionId,
-                String entryType,
-                String role,
-                String content,
-                @Nullable String reasoningSummary,
-                @Nullable String a2uiComponentsJson,
-                @Nullable String reactStepsJson,
-                @Nullable String completionMode,
-                @Nullable String resumedFromTraceId,
-                @Nullable String turnId,
-                @Nullable String traceId,
-                boolean visibleToModel,
-                boolean visibleToUser,
-                Instant createdAt
-        ) {
-            this(entryId, sessionId, entryType, role, content, reasoningSummary,
-                    a2uiComponentsJson, reactStepsJson, completionMode, resumedFromTraceId,
-                    turnId, traceId, visibleToModel, visibleToUser, createdAt, null, null);
-        }
-    }
-
-    public SessionTranscriptRepository(JdbcTemplate jdbcTemplate,
-                                       ObjectMapper objectMapper,
-                                       SessionStoreRepository sessionStoreRepository) {
-        this(jdbcTemplate, objectMapper, sessionStoreRepository, null);
     }
 
     @Autowired

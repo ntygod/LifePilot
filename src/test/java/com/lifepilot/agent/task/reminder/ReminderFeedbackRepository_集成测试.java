@@ -104,7 +104,7 @@ class ReminderFeedbackRepository_集成测试 {
                 "default",
                 "conversation:web:conv-1",
                 ReminderFeedbackType.ACTED,
-                "已经处理",
+                "已经处理", null,
                 now,
                 now
         ));
@@ -156,7 +156,7 @@ class ReminderFeedbackRepository_集成测试 {
                 "default",
                 "topic:old",
                 ReminderFeedbackType.DISMISSED,
-                null,
+                null, null,
                 now.minusSeconds(86400),
                 now.minusSeconds(86400)
         ));
@@ -166,7 +166,7 @@ class ReminderFeedbackRepository_集成测试 {
                 "default",
                 "topic:new",
                 ReminderFeedbackType.ACTED,
-                null,
+                null, null,
                 now,
                 now
         ));

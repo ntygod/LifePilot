@@ -32,27 +32,6 @@ public record PreferenceRule(
 ) {
 
     /**
-     * 兼容老调用点的 9 参构造器 — {@code sourceEntityId} 与 {@code deactivatedReason} 取默认
-     * {@code null}（未关联源/活跃）。
-     *
-     * <p>新代码建议直接使用 11 参 canonical constructor，填入源实体 ID 以便 L3→L4 级联。</p>
-     */
-    public PreferenceRule(
-            String ruleId,
-            String category,
-            String key,
-            String value,
-            float confidence,
-            String learnedFrom,
-            int observationCount,
-            Instant createdAt,
-            Instant updatedAt
-    ) {
-        this(ruleId, category, key, value, confidence, learnedFrom,
-                observationCount, createdAt, updatedAt, null, null);
-    }
-
-    /**
      * 判断偏好规则是否高置信度。
      *
      * @return 当 confidence >= 0.7f 时返回 true
