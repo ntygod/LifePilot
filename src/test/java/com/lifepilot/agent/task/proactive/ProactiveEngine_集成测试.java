@@ -3,6 +3,8 @@ package com.lifepilot.agent.task.proactive;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
 import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
+import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
+import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntentType;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
@@ -117,7 +119,8 @@ class ProactiveEngine_集成测试 {
                                     Instant lastHeartbeatAt, int heartbeatMin,
                                     LocalTime quietStart, LocalTime quietEnd) {
         return new ContextPacket(USER_ID, now, ZONE, quietStart, quietEnd,
-                0, 10, focusState, lastHeartbeatAt, heartbeatMin, null, null);
+                0, 10, focusState, lastHeartbeatAt, heartbeatMin, null, null,
+                BoundaryState.UNKNOWN, FocusMode.NORMAL);
     }
 
     // ── 测试用例 ──
@@ -285,7 +288,8 @@ class ProactiveEngine_集成测试 {
         Instant now = Instant.now();
         // actionsSentToday=10, dailyMaxActions=10 → remainingSlots=0
         var ctx = new ContextPacket(USER_ID, now, ZONE, null, null,
-                10, 10, null, null, 30, null, null);
+                10, 10, null, null, 30, null, null,
+                BoundaryState.UNKNOWN, FocusMode.NORMAL);
         DetectionLevel level = engine.heartbeat(ctx);
 
         assertThat(level).isEqualTo(DetectionLevel.FULL);

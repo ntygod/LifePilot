@@ -181,7 +181,8 @@ class DecisionGate_单元测试 {
 
     private ContextPacket ctx(Instant now, LocalTime qStart, LocalTime qEnd,
                               int sent, int max, ReminderFocusState focus) {
-        return new ContextPacket(USER, now, ZONE, qStart, qEnd, sent, max, focus, null, 30, null, null);
+        return new ContextPacket(USER, now, ZONE, qStart, qEnd, sent, max, focus, null, 30, null, null,
+                BoundaryState.UNKNOWN, FocusMode.NORMAL);
     }
 
     private ContextPacket ctxWithBoundary(Instant now, BoundaryState bs, FocusMode fm) {

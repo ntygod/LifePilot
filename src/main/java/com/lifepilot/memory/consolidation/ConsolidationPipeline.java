@@ -53,22 +53,6 @@ public class ConsolidationPipeline {
     private final AssociationConsolidator remConsolidator;
 
     /**
-     * 构造巩固管线（旧 8 参签名，兼容入口；REM 联想参数取默认 null）。
-     */
-    public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
-                                  @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
-                                  MemoryProperties properties,
-                                  @Nullable PreferenceConsolidator preferenceConsolidator,
-                                  @Nullable SemanticMemory semanticMemory,
-                                  @Nullable ProceduralMemory proceduralMemory,
-                                  @Nullable ExperienceMerger experienceMerger,
-                                  @Nullable UserProfileConsolidator userProfileConsolidator) {
-        this(semanticConsolidator, proceduralConsolidator, properties,
-                preferenceConsolidator, semanticMemory, proceduralMemory,
-                experienceMerger, userProfileConsolidator, null, null);
-    }
-
-    /**
      * 构造巩固管线（含 REM 联想）。
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,

@@ -48,7 +48,7 @@ class ConsolidationPipelineModeTest {
                 new ConsolidationStats("PROCEDURAL", 0, 0, 0, 0, 0, 0, 0L));
 
         pipeline = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null, null, null);
 
         pipelineProvider = mock(ObjectProvider.class);
         when(pipelineProvider.getIfAvailable()).thenReturn(pipeline);
@@ -60,7 +60,7 @@ class ConsolidationPipelineModeTest {
     void idleModeSkipsScheduledConsolidation() {
         properties.getConsolidation().setTriggerMode("IDLE");
         var cp = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null, null, null);
 
         cp.scheduledConsolidate();
 
@@ -72,7 +72,7 @@ class ConsolidationPipelineModeTest {
     void hybridModeAllowsScheduledConsolidation() {
         properties.getConsolidation().setTriggerMode("HYBRID");
         var cp = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null, null, null);
 
         cp.scheduledConsolidate();
 
@@ -98,7 +98,7 @@ class ConsolidationPipelineModeTest {
     void cronModeAllowsScheduledConsolidation() {
         properties.getConsolidation().setTriggerMode("CRON");
         var cp = new ConsolidationPipeline(
-                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null);
+                semanticConsolidator, proceduralConsolidator, properties, null, null, null, null, null, null, null);
 
         cp.scheduledConsolidate();
 
@@ -154,7 +154,7 @@ class ConsolidationPipelineModeTest {
         var userProfileConsolidator = mock(UserProfileConsolidator.class);
         var cp = new ConsolidationPipeline(
                 semanticConsolidator, proceduralConsolidator, properties,
-                null, null, null, null, userProfileConsolidator);
+                null, null, null, null, userProfileConsolidator, null, null);
 
         cp.consolidate(true);
 
@@ -188,7 +188,7 @@ class ConsolidationPipelineModeTest {
 
         var cp = new ConsolidationPipeline(
                 semanticConsolidator, proceduralConsolidator, properties,
-                null, semanticMemory, proceduralMemory, null, null);
+                null, semanticMemory, proceduralMemory, null, null, null, null);
 
         cp.consolidate();
 

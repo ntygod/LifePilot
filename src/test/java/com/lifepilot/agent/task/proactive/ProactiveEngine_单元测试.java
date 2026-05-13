@@ -1,5 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
+import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +43,8 @@ class ProactiveEngine_单元测试 {
         var focus = new ReminderFocusState("explorer.exe", "Desktop", false, 60, Instant.now());
         var ctx = new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
                 null, null, 0, 5, focus,
-                Instant.now().minusSeconds(1800), 30, null, null);
+                Instant.now().minusSeconds(1800), 30, null, null,
+                BoundaryState.UNKNOWN, FocusMode.NORMAL);
 
         var result = engine.heartbeat(ctx);
 
@@ -162,6 +165,7 @@ class ProactiveEngine_单元测试 {
 
     private ContextPacket activeCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30, null, null);
+                null, null, 0, 5, null, null, 30, null, null,
+                BoundaryState.UNKNOWN, FocusMode.NORMAL);
     }
 }

@@ -63,27 +63,6 @@ public record ContextPacket(
     }
 
     /**
-     * 兼容旧构造签名 — 按默认值补齐 boundaryState / focusMode，便于既有测试逐步迁移。
-     */
-    public ContextPacket(String userId,
-                         Instant now,
-                         ZoneId zoneId,
-                         @Nullable LocalTime quietHoursStart,
-                         @Nullable LocalTime quietHoursEnd,
-                         int actionsSentToday,
-                         int dailyMaxActions,
-                         @Nullable ReminderFocusState focusState,
-                         @Nullable Instant lastHeartbeatAt,
-                         int heartbeatIntervalMin,
-                         @Nullable String userProfile,
-                         @Nullable String recentExperience) {
-        this(userId, now, zoneId, quietHoursStart, quietHoursEnd,
-                actionsSentToday, dailyMaxActions, focusState, lastHeartbeatAt,
-                heartbeatIntervalMin, userProfile, recentExperience,
-                BoundaryState.UNKNOWN, FocusMode.NORMAL);
-    }
-
-    /**
      * Gate 1 判断：自上次心跳以来是否有变化。
      *
      * <p>Phase 1 策略（保守）：如果用户空闲超过心跳间隔，判定无变化。
