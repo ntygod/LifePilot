@@ -658,8 +658,8 @@ public class MemoryProperties {
     @Setter
     @Getter
     public static class Rem {
-        /** 总开关，默认关闭（等稳定后再启用）。 */
-        private boolean enabled = false;
+        /** 总开关，默认启用。 */
+        private boolean enabled = true;
         /** 选择的 seed 实体数量上限。 */
         private int seedLimit = 10;
         /** 每个 seed 的邻居数量上限。 */
@@ -683,8 +683,8 @@ public class MemoryProperties {
     @Setter
     @Getter
     public static class RetrievalOrchestrator {
-        /** 总开关，默认关闭（作为上层可选接口）。 */
-        private boolean enabled = false;
+        /** 总开关，默认启用。 */
+        private boolean enabled = true;
         /** 默认单次检索返回的结果上限。 */
         private int defaultTopK = 10;
         /** 每个 source 单独调用的 topK。 */
@@ -700,8 +700,8 @@ public class MemoryProperties {
     @Setter
     @Getter
     public static class Security {
-        /** 注入检测总开关，默认关闭（先集成再打开）。 */
-        private boolean injectionDetectionEnabled = false;
+        /** 注入检测总开关，默认启用。 */
+        private boolean injectionDetectionEnabled = true;
         /** Mahalanobis 距离异常阈值。 */
         private float outlierThreshold = 3.0f;
         /** 每 space 样本窗口大小。 */
@@ -719,8 +719,8 @@ public class MemoryProperties {
     @Setter
     @Getter
     public static class McpServer {
-        /** 总开关，默认关闭（本地环境可选）。 */
-        private boolean enabled = false;
+        /** 总开关，默认启用。 */
+        private boolean enabled = true;
         /** Server 名称。 */
         private String serverName = "zhiwei-memory";
         /** Server 版本。 */
