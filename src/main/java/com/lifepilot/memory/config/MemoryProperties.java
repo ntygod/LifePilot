@@ -194,6 +194,9 @@ public class MemoryProperties {
         /** 经验提升最低访问次数，默认 3。 */
         private int experiencePromoteMinAccessCount = 3;
 
+        /** 用户画像巩固 LLM 调用超时（秒），默认 120。 */
+        private int userProfileLlmTimeoutSeconds = 120;
+
     }
 
     /**

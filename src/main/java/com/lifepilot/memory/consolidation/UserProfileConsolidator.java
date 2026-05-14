@@ -79,7 +79,7 @@ public class UserProfileConsolidator {
     private static final String PROFILE_CONSOLIDATED_AT_KEY = "profileConsolidatedAt";
 
     /** LLM 调用超时。 */
-    private static final Duration LLM_TIMEOUT = Duration.ofSeconds(60);
+    private final Duration llmTimeout;
 
     @Nullable
     private final SemanticMemory semanticMemory;
@@ -96,12 +96,14 @@ public class UserProfileConsolidator {
                                    @Nullable EpisodicMemory episodicMemory,
                                    @Nullable ProceduralMemory proceduralMemory,
                                    @Nullable GenerationRouter generationRouter,
-                                   @Nullable PromptRegistry promptRegistry) {
+                                   @Nullable PromptRegistry promptRegistry,
+                                   Duration llmTimeout) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
+        this.llmTimeout = llmTimeout;
     }
 
     /**
@@ -219,7 +221,7 @@ public class UserProfileConsolidator {
                 null,
                 null,
                 GenerationCapability.CHAT,
-                LLM_TIMEOUT,
+                llmTimeout,
                 true);
 
         String portraitText = response.content();

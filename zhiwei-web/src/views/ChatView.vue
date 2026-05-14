@@ -670,62 +670,63 @@ function closeTracePanel() {
 
 <template>
   <div class="relative flex h-full flex-col overflow-hidden">
-    <header class="relative shrink-0 px-4 pt-2 sm:px-6">
-      <div class="mx-auto max-w-[800px]">
-        <div class="flex min-w-0 items-center gap-3 px-1 py-1" :class="isEmptyChat ? 'justify-end' : 'justify-between'">
-          <h1 v-if="!isEmptyChat" class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
-            {{ headerTitle }}
-          </h1>
-
-          <div class="flex items-center gap-2">
-            <Button
-              v-if="isStreaming"
-              type="button"
-              variant="destructive"
-              size="sm"
-              class="rounded-full"
-              @click="abort"
-            >
-              <Square class="size-4" />
-              停止生成
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger as-child>
-                <Button type="button" variant="outline" size="icon" class="size-9 rounded-full" aria-label="更多操作">
-                  <EllipsisVertical class="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" class="w-36">
-                <DropdownMenuItem class="gap-2" @click="togglePanel('config')">
-                  <Settings2 class="size-4" />
-                  配置
-                </DropdownMenuItem>
-                <DropdownMenuItem class="gap-2" @click="togglePanel('sidebar')">
-                  <LibraryBig class="size-4" />
-                  信息
-                </DropdownMenuItem>
-                <DropdownMenuItem class="gap-2" @click="togglePanel('debug')">
-                  <SlidersHorizontal class="size-4" />
-                  调试
-                </DropdownMenuItem>
-                <DropdownMenuItem class="gap-2" @click="showDocumentPanel = true">
-                  <FileText class="size-4" />
-                  文档
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <div class="relative min-h-0 flex-1 flex overflow-hidden pt-3">
+    <div class="relative min-h-0 flex-1 flex overflow-hidden">
       <section class="relative min-h-0 flex-1 flex min-w-0 flex-col overflow-hidden">
+        <!-- Header：和消息列表共享同一个宽度基准 -->
+        <header class="relative shrink-0 px-4 pt-2 sm:px-6">
+          <div class="mx-auto max-w-[800px]">
+            <div class="flex min-w-0 items-center gap-3 px-1 py-1" :class="isEmptyChat ? 'justify-end' : 'justify-between'">
+              <h1 v-if="!isEmptyChat" class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
+                {{ headerTitle }}
+              </h1>
+
+              <div class="flex items-center gap-2">
+                <Button
+                  v-if="isStreaming"
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  class="rounded-full"
+                  @click="abort"
+                >
+                  <Square class="size-4" />
+                  停止生成
+                </Button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button type="button" variant="outline" size="icon" class="size-9 rounded-full" aria-label="更多操作">
+                      <EllipsisVertical class="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" class="w-36">
+                    <DropdownMenuItem class="gap-2" @click="togglePanel('config')">
+                      <Settings2 class="size-4" />
+                      配置
+                    </DropdownMenuItem>
+                    <DropdownMenuItem class="gap-2" @click="togglePanel('sidebar')">
+                      <LibraryBig class="size-4" />
+                      信息
+                    </DropdownMenuItem>
+                    <DropdownMenuItem class="gap-2" @click="togglePanel('debug')">
+                      <SlidersHorizontal class="size-4" />
+                      调试
+                    </DropdownMenuItem>
+                    <DropdownMenuItem class="gap-2" @click="showDocumentPanel = true">
+                      <FileText class="size-4" />
+                      文档
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </div>
+        </header>
+
         <div
           ref="scrollContainer"
           data-scroll-container
-          class="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+          class="relative min-h-0 flex-1 overflow-y-auto pt-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
           <!-- 空状态：问候 + 输入框居中 -->
           <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center px-4 pt-[12vh] sm:px-6">
@@ -822,15 +823,24 @@ function closeTracePanel() {
       </section>
 
       <!-- 右侧面板：执行轨迹 + 后台任务 tab 切换 -->
-      <aside
-        v-if="showRightPanel"
-        class="w-[340px] shrink-0 border-l border-border/40 bg-background"
+      <Transition
+        enter-active-class="right-panel-enter-active"
+        enter-from-class="right-panel-enter-from"
+        enter-to-class="right-panel-enter-to"
+        leave-active-class="right-panel-leave-active"
+        leave-from-class="right-panel-leave-from"
+        leave-to-class="right-panel-leave-to"
       >
-        <ChatRightPanel
-          :trace-data="activeTraceData"
-          @close="closeTracePanel"
-        />
-      </aside>
+        <aside
+          v-if="showRightPanel"
+          class="right-panel"
+        >
+          <ChatRightPanel
+            :trace-data="activeTraceData"
+            @close="closeTracePanel"
+          />
+        </aside>
+      </Transition>
 
       <!-- 浮窗侧边栏：配置 / 信息 / 调试 -->
       <Transition
@@ -949,3 +959,68 @@ function closeTracePanel() {
     />
   </div>
 </template>
+
+<style scoped>
+/* ── 右侧面板：滑入/展开动画 ── */
+.right-panel {
+  position: relative;
+  width: 340px;
+  flex-shrink: 0;
+  border-left: 1px solid hsl(from var(--border) h s l / 0.28);
+  background:
+    linear-gradient(180deg, hsl(from var(--card) h s l / 0.6), hsl(from var(--background) h s l / 0.92));
+  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 1px 0 0 hsl(from var(--card) h s l / 0.3),
+    -8px 0 24px -16px hsl(var(--shadow-color) / 0.06);
+}
+
+.right-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 1px;
+  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.12), transparent 60%);
+  pointer-events: none;
+}
+
+/* Enter */
+.right-panel-enter-active {
+  transition:
+    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.right-panel-enter-from {
+  width: 0;
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.right-panel-enter-to {
+  width: 340px;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Leave */
+.right-panel-leave-active {
+  transition:
+    width 220ms cubic-bezier(0.4, 0, 0.6, 1),
+    opacity 180ms cubic-bezier(0.4, 0, 0.6, 1),
+    transform 220ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.right-panel-leave-from {
+  width: 340px;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.right-panel-leave-to {
+  width: 0;
+  opacity: 0;
+  transform: translateX(12px);
+}
+</style>

@@ -74,7 +74,8 @@ class UserProfileConsolidator_单元测试 {
     @BeforeEach
     void 初始化() {
         consolidator = new UserProfileConsolidator(
-                semanticMemory, episodicMemory, proceduralMemory, generationRouter, promptRegistry);
+                semanticMemory, episodicMemory, proceduralMemory, generationRouter, promptRegistry,
+                Duration.ofSeconds(120));
     }
 
     @Test
@@ -330,7 +331,8 @@ class UserProfileConsolidator_单元测试 {
                         PromptRegistry promptRegistry) {
             this(semanticMemory, episodicMemory, proceduralMemory, generationRouter, promptRegistry,
                     new UserProfileConsolidator(
-                            semanticMemory, episodicMemory, proceduralMemory, generationRouter, promptRegistry));
+                            semanticMemory, episodicMemory, proceduralMemory, generationRouter, promptRegistry,
+                            Duration.ofSeconds(120)));
         }
 
         private void 准备基础输入(List<TemporalEntity> fragments,

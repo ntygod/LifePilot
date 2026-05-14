@@ -304,6 +304,16 @@ watch(() => props.streaming, (streaming) => {
   color: hsl(from var(--primary) h s l / 0.88);
 }
 
+/* pre 内部的 inline code 适配深色背景 */
+.message-prose :deep(pre code:not(.hljs)) {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  color: hsl(210 34% 92%);
+}
+
 .message-prose :deep(pre) {
   position: relative;
   overflow-x: auto;

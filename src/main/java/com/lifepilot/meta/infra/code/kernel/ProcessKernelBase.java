@@ -92,6 +92,12 @@ public sealed class ProcessKernelBase implements PersistentKernel
 
     @Override
     public synchronized KernelExecutionResult execute(String code, int timeoutSeconds) {
+        // 快速失败：如果内核正在执行其他代码（理论上 synchronized 已保证串行，
+        // 但 BUSY 态检查让并发误用场景能立即得到明确错误而非默默排队等待）
+        if (stateRef.get() == KernelState.BUSY) {
+            return new KernelExecutionResult("", "",
+                    "内核正在执行其他代码，请稍后重试（kernelId=" + id + "）", 0);
+        }
         ensureAlive();
         stateRef.set(KernelState.BUSY);
         long startMs = System.currentTimeMillis();

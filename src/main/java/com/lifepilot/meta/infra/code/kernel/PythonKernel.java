@@ -24,9 +24,13 @@ public final class PythonKernel extends ProcessKernelBase {
      * <p>脚本开头强制把 stdin/stdout/stderr 重配为 UTF-8（Windows 默认 cp936/GBK），
      * 避免 Java 端 UTF-8 字节流被 GBK 解码产生 lone surrogate（如 \\udcad）导致
      * compile/exec 报 {@code UnicodeEncodeError: surrogates not allowed}。</p>
+     *
+     * <p>stdout/stderr 在 Python 端截断到 _MAX_OUTPUT 字符（默认 60000），
+     * 防止 json.dumps 产生的单行 JSON 超过 OS 管道缓冲区（通常 64KB）导致死锁。</p>
      */
     private static final String PYTHON_KERNEL_SCRIPT = """
             import sys, json, io, traceback, contextlib
+            _MAX_OUTPUT = 60000
             for _stream_name in ("stdin", "stdout", "stderr"):
                 _stream = getattr(sys, _stream_name, None)
                 if _stream is not None and hasattr(_stream, "reconfigure"):
@@ -34,6 +38,10 @@ public final class PythonKernel extends ProcessKernelBase {
                         _stream.reconfigure(encoding="utf-8", errors="replace")
                     except Exception:
                         pass
+            def _truncate(s):
+                if len(s) <= _MAX_OUTPUT:
+                    return s
+                return s[:_MAX_OUTPUT] + "...[输出已截断，原始长度: " + str(len(s)) + " 字符]"
             _g = {"__builtins__": __builtins__}
             for line in sys.stdin:
                 try:
@@ -46,7 +54,7 @@ public final class PythonKernel extends ProcessKernelBase {
                             parts = code.strip().split(None, 2)
                             cmd = ["pip"] + parts[1:]
                             r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-                            res = {"stdout": r.stdout, "stderr": r.stderr, "error": None if r.returncode == 0 else r.stderr}
+                            res = {"stdout": _truncate(r.stdout), "stderr": _truncate(r.stderr), "error": None if r.returncode == 0 else _truncate(r.stderr)}
                         else:
                             so, se = io.StringIO(), io.StringIO()
                             err = None
@@ -55,15 +63,16 @@ public final class PythonKernel extends ProcessKernelBase {
                                     exec(compile(code, "<kernel>", "exec"), _g)
                             except Exception:
                                 err = traceback.format_exc()
-                            res = {"stdout": so.getvalue(), "stderr": se.getvalue(), "error": err}
+                            res = {"stdout": _truncate(so.getvalue()), "stderr": _truncate(se.getvalue()), "error": err}
                     elif action == "inspect":
                         variables = {}
                         for k, v in _g.items():
                             if not k.startswith("_"):
                                 try:
-                                    variables[k] = type(v).__name__
+                                    r = repr(v)
+                                    variables[k] = r[:100] + ("..." if len(r) > 100 else "")
                                 except Exception:
-                                    variables[k] = "unknown"
+                                    variables[k] = type(v).__name__
                         res = {"variables": variables}
                     elif action == "reset":
                         _g.clear()
