@@ -298,7 +298,11 @@ public class CodeExecuteToolExecutor {
     public ToolResult execute(ToolInput input) {
         String sessionId = input.getContextValue(
                 ToolContextKeys.SESSION_ID, String.class
-        ).orElse("default");
+        ).orElse(null);
+        if (sessionId == null) {
+            sessionId = "default";
+            log.debug("ToolContext 中未找到 SESSION_ID，使用默认值 'default'（多用户场景需确保隔离）");
+        }
         return execute(input, sessionId);
     }
 

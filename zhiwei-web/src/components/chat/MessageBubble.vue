@@ -331,7 +331,7 @@ const assistantBubbleClass = computed(() => {
 
 const userBubbleClass = computed(() => [
   'user-bubble rounded-2xl px-xl py-md text-foreground',
-  props.message.status === 'pending' ? 'user-bubble-pending' : 'group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.26)]',
+  'group-hover/message:-translate-y-0.5 group-hover/message:shadow-[0_14px_24px_-20px_hsl(var(--shadow-color)/0.26)]',
 ].join(' '))
 
 function approvalLogTone(log: PermissionApprovalLog) {
@@ -700,10 +700,6 @@ function approvalLogTone(log: PermissionApprovalLog) {
   box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 0.05);
 }
 
-.user-bubble-pending {
-  animation: user-bubble-pulse 1.7s var(--ease-fluid) infinite;
-}
-
 .message-toolbar {}
 
 @keyframes streaming-dot-pulse {
@@ -719,17 +715,6 @@ function approvalLogTone(log: PermissionApprovalLog) {
   }
 }
 
-@keyframes user-bubble-pulse {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-    box-shadow: 0 14px 24px -22px hsl(var(--shadow-color) / 0.24);
-  }
 
-  50% {
-    transform: translateY(-1px) scale(1.01);
-    box-shadow: 0 22px 30px -20px hsl(var(--shadow-color) / 0.28);
-  }
-}
 
 </style>

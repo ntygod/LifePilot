@@ -617,8 +617,10 @@ public class MemoryAutoConfiguration {
         log.info("记忆模块: 注册 UserProfileConsolidator, semanticMemory={}, generationRouter={}",
                 semanticMemory != null ? "available" : "missing",
                 generationRouter != null ? "available" : "missing");
+        Duration llmTimeout = Duration.ofSeconds(
+                Math.max(1, properties.getConsolidation().getUserProfileLlmTimeoutSeconds()));
         return new UserProfileConsolidator(semanticMemory, episodicMemory,
-                proceduralMemory, generationRouter, promptRegistry);
+                proceduralMemory, generationRouter, promptRegistry, llmTimeout);
     }
 
     @Bean

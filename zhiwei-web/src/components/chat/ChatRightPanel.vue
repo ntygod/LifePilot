@@ -48,23 +48,23 @@ watch(hasTrace, (now, prev) => {
 </script>
 
 <template>
-  <Tabs v-model="activeTab" class="flex h-full flex-col gap-0">
-    <div class="flex items-center justify-between border-b border-border/40 px-sm py-xs">
+  <Tabs v-model="activeTab" class="flex h-full flex-col gap-0 overflow-hidden">
+    <div class="right-panel-header">
       <TabsList class="bg-transparent p-0">
         <TabsTrigger
           value="trace"
           :disabled="!hasTrace"
-          class="data-[state=active]:bg-muted/60"
+          class="right-panel-tab"
         >
           执行轨迹
         </TabsTrigger>
-        <TabsTrigger value="tasks" class="data-[state=active]:bg-muted/60">
+        <TabsTrigger value="tasks" class="right-panel-tab">
           <span class="flex items-center gap-xs">
             后台任务
             <Badge
               v-if="runningCount > 0"
               variant="secondary"
-              class="h-4 min-w-[1rem] px-xs text-[10px]"
+              class="h-4 min-w-[1rem] px-xs text-[10px] font-semibold"
             >
               {{ runningCount }}
             </Badge>
@@ -73,15 +73,15 @@ watch(hasTrace, (now, prev) => {
       </TabsList>
       <button
         type="button"
-        class="rounded-md p-xs text-muted-foreground/60 hover:bg-muted/40 hover:text-foreground"
+        class="right-panel-close"
         aria-label="关闭面板"
         @click="emit('close')"
       >
-        <X class="size-4" />
+        <X class="size-3.5" />
       </button>
     </div>
 
-    <TabsContent value="trace" class="m-0 flex-1 overflow-y-auto">
+    <TabsContent value="trace" class="m-0 flex-1 overflow-y-auto scrollbar-thin">
       <TracePanel
         v-if="traceData"
         :reasoning-events="traceData.reasoningEvents"
@@ -93,8 +93,54 @@ watch(hasTrace, (now, prev) => {
       />
     </TabsContent>
 
-    <TabsContent value="tasks" class="m-0 flex-1 overflow-y-auto">
+    <TabsContent value="tasks" class="m-0 flex-1 overflow-y-auto scrollbar-thin">
       <ProcessTaskList />
     </TabsContent>
   </Tabs>
 </template>
+
+
+<style scoped>
+.right-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid hsl(from var(--border) h s l / 0.3);
+  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.5), transparent);
+}
+
+.right-panel-tab {
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.625rem;
+  transition: all 160ms ease;
+}
+
+.right-panel-tab[data-state="active"] {
+  background: hsl(from var(--primary) h s l / 0.08);
+  color: hsl(from var(--primary) h s l / 0.92);
+}
+
+.right-panel-tab[data-disabled] {
+  opacity: 0.35;
+}
+
+.right-panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.5rem;
+  color: hsl(from var(--muted-foreground) h s l / 0.5);
+  transition: all 140ms ease;
+}
+
+.right-panel-close:hover {
+  background: hsl(from var(--muted) h s l / 0.5);
+  color: var(--foreground);
+}
+</style>
