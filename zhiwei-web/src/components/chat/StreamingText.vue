@@ -35,10 +35,6 @@ let parseTimer: ReturnType<typeof setTimeout> | null = null
 let lastParseTs = 0
 const PARSE_INTERVAL_MS = 100
 
-/** Mermaid 占位符标记，用于拆分 HTML */
-const MERMAID_PLACEHOLDER_PREFIX = '<!--mermaid:'
-const MERMAID_PLACEHOLDER_SUFFIX = '-->'
-
 function safeParseMarkdown(text: string): string {
   if (!text) return ''
   try {
@@ -121,9 +117,8 @@ const segments = computed<Segment[]>(() => {
     return [{ type: 'html', content: rawHtml }]
   }
 
-  // 匹配 marked 生成的 mermaid pre 块
-  // marked-highlight 会生成: <pre><code class="hljs language-mermaid">...</code></pre>
-  const mermaidPreRegex = /<pre><code class="hljs language-mermaid">([\s\S]*?)<\/code><\/pre>/g
+  // 匹配 marked 生成的 mermaid pre 块（class 顺序可能因 marked 版本不同而变化）
+  const mermaidPreRegex = /<pre><code class="[^"]*language-mermaid[^"]*">([\s\S]*?)<\/code><\/pre>/g
   const result: Segment[] = []
   let lastIndex = 0
   let mermaidIdx = 0

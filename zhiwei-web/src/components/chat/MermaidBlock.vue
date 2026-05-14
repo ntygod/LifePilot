@@ -8,7 +8,7 @@
  * @author zsg
  * @since 2026-05-14
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Code2, Download, Image, RotateCcw, ZoomIn, ZoomOut } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -46,6 +46,7 @@ async function renderDiagram() {
     const { default: mermaid } = await import('mermaid')
     mermaid.initialize({
       startOnLoad: false,
+      // strict 模式禁止 click 事件绑定，防止 XSS；如需可交互图表可改为 'loose'
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
       securityLevel: 'strict',
       fontFamily: 'var(--font-sans)',
@@ -97,23 +98,44 @@ onMounted(() => {
   }
 })
 
-// 暗色模式切换时重新渲染
-const observer = new MutationObserver(() => {
+// 暗色模式切换时重新渲染（模块级共享 observer，避免每个实例重复监听）
+type ThemeCallback = () => void
+const themeCallbacks = new Set<ThemeCallback>()
+let sharedObserver: MutationObserver | null = null
+
+function registerThemeCallback(cb: ThemeCallback) {
+  themeCallbacks.add(cb)
+  if (!sharedObserver) {
+    sharedObserver = new MutationObserver(() => {
+      themeCallbacks.forEach(fn => fn())
+    })
+    sharedObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    })
+  }
+}
+
+function unregisterThemeCallback(cb: ThemeCallback) {
+  themeCallbacks.delete(cb)
+  if (themeCallbacks.size === 0 && sharedObserver) {
+    sharedObserver.disconnect()
+    sharedObserver = null
+  }
+}
+
+const onThemeChange = () => {
   if (svgContent.value) {
     renderDiagram()
   }
-})
+}
 
 onMounted(() => {
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['class'],
-  })
+  registerThemeCallback(onThemeChange)
 })
 
-import { onUnmounted } from 'vue'
 onUnmounted(() => {
-  observer.disconnect()
+  unregisterThemeCallback(onThemeChange)
 })
 </script>
 
