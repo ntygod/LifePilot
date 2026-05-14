@@ -40,10 +40,14 @@ public class MemoryMcpServerController {
     private static final Logger log = LoggerFactory.getLogger(MemoryMcpServerController.class);
 
     private final MemoryMcpHandler handler;
+    private final String apiKey;
 
-    public MemoryMcpServerController(MemoryMcpHandler handler) {
+    public MemoryMcpServerController(MemoryMcpHandler handler,
+                                     @org.springframework.beans.factory.annotation.Value("${lifepilot.memory.mcp-server.api-key:}") String apiKey) {
         this.handler = handler;
-        log.info("Memory MCP Server 已启用, endpoint=POST /api/mcp/memory");
+        this.apiKey = apiKey;
+        log.info("Memory MCP Server 已启用, endpoint=POST /api/mcp/memory, auth={}",
+                apiKey.isBlank() ? "none (localhost-only)" : "bearer-token");
     }
 
     @PostMapping(value = "/memory",
@@ -51,7 +55,14 @@ public class MemoryMcpServerController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<JsonRpcMessage> handle(@RequestBody JsonRpcMessage request,
                                                   HttpServletRequest httpRequest) {
-        if (!isLocalhost(httpRequest)) {
+        // 认证：配置了 api-key 时验证 Bearer token；未配置时仅限 localhost
+        if (!apiKey.isBlank()) {
+            String authHeader = httpRequest.getHeader("Authorization");
+            if (authHeader == null || !authHeader.equals("Bearer " + apiKey)) {
+                log.warn("Memory MCP 认证失败: remoteAddr={}", httpRequest.getRemoteAddr());
+                return ResponseEntity.status(401).build();
+            }
+        } else if (!isLocalhost(httpRequest)) {
             log.warn("Memory MCP 拒绝非本地请求: remoteAddr={}", httpRequest.getRemoteAddr());
             return ResponseEntity.status(403).build();
         }
