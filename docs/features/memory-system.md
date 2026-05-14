@@ -248,67 +248,6 @@ pipeline.consolidate(true);  // manualTrigger=true
 
 **回退**：`lifepilot.memory.rem.enabled: false`，REM 相关 Bean 不装配，第 7 步直接跳过。
 
-### 3.4 开发期记忆评估 Harness（memory-eval-harness）
-
-面向**开发期迭代**的记忆模块离线回归 harness。每次改动读写链路后可量化回答"整体召回 / 误召回 / 延迟 / token 成本"是否变好。不面向终端用户，不在产品包中默认启用。
-
-**数据集**：LoCoMo + LongMemEval（开源、公开、许可宽松）；首次使用：
-
-```bash
-./scripts/download-eval-datasets.sh
-# 默认落到 ~/.zhiwei/eval-cache/
-```
-
-**两种跑批模式**：
-
-| 模式 | 触发 | 耗时 |
-|---|---|---|
-| 快速 | `mvn test -Pmemory-eval-quick` | ~5 分钟（LongMemEval 前 50 + LoCoMo 前 2） |
-| 完整 | `mvn test -Pmemory-eval-full` | ~60-120 分钟（全量数据集） |
-
-默认 `mvn test` **不跑** eval。
-
-**四维指标**：
-
-- 召回质量：LLM-Score / F1 / BLEU / ExactMatch
-- 效率：p50 / p95 / p99 检索延迟
-- 成本：每次召回 token 数 / 整 session 累计 LLM 调用数
-- 稳定性：N 次重跑方差
-
-**输出**：
-
-- `target/memory-eval/{timestamp}.md` + `.json`
-- 基线归档到 `docs/memory-eval/baseline.json`（纳入 git）
-
-**回归检测**：默认阈值 LLM-Score 掉 >3% / p95 延迟涨 >20% / token 涨 >30% → 自动 fail。
-
-**场景示例**：
-
-```bash
-# 1. 保存基线
-mvn test -Pmemory-eval-full
-
-# 2. 修改代码（例：调整 ForgettingPolicy 权重）
-
-# 3. 再次跑，对比 baseline.json
-mvn test -Pmemory-eval-full
-```
-
-CI 拦截退化 PR：
-
-```yaml
-- name: Memory Eval (quick)
-  run: mvn test -Pmemory-eval-quick
-```
-
-**LLM-as-judge**：默认关闭，只用规则 judge（ExactMatch / F1 / BLEU）。开启：
-
-```yaml
-lifepilot.memory.eval.judge.llm-enabled: true
-```
-
-关闭时复杂问答题标记为 `skipped_judge_required`，不计入整体得分。
-
 ### 3.5 记忆安全加固（memory-security-polish）
 
 对所有外部文本进入 L3 前做两层检测。本 spec 只落地可用组件，**不强制注入到写入链路**；接入节奏由未来 spec 按实际风险场景推进。
