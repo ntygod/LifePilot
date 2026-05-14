@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/mcp")
 @ConditionalOnProperty(name = "lifepilot.memory.mcp-server.enabled", havingValue = "true")
+@org.springframework.boot.autoconfigure.condition.ConditionalOnBean(MemoryMcpHandler.class)
 public class MemoryMcpServerController {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryMcpServerController.class);
