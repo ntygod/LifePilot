@@ -76,7 +76,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
     void schedule后cancel_不触发执行() throws InterruptedException {
         var now = Instant.now().toString();
         var task = new CronTaskEntry("task-cancel", "取消测试", "0 0 0 1 1 *",
-                "不应执行", "active", now, now);
+                "不应执行", "active", now, now, null, null);
         repository.save(task);
 
         cronScheduler.schedule(task);
@@ -90,8 +90,8 @@ class CronScheduler_AgentOrchestrator_集成测试 {
     @Test
     void restoreAll_恢复active任务() {
         var now = Instant.now().toString();
-        repository.save(new CronTaskEntry("t1", "活跃", "0 0 8 * * *", "指令1", "active", now, now));
-        repository.save(new CronTaskEntry("t2", "暂停", "0 0 9 * * *", "指令2", "paused", now, now));
+        repository.save(new CronTaskEntry("t1", "活跃", "0 0 8 * * *", "指令1", "active", now, now, null, null));
+        repository.save(new CronTaskEntry("t2", "暂停", "0 0 9 * * *", "指令2", "paused", now, now, null, null));
 
         cronScheduler.restoreAll();
 
@@ -105,7 +105,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
     void executeTask_成功执行_写入日志() {
         var now = Instant.now().toString();
         var task = new CronTaskEntry("task-exec", "执行测试", "0 0 8 * * *",
-                "搜索新闻", "active", now, now);
+                "搜索新闻", "active", now, now, null, null);
         repository.save(task);
 
         // Mock AgentOrchestrator 返回正常响应
@@ -127,7 +127,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
     void executeTask_静默响应_不发送通知() {
         var now = Instant.now().toString();
         var task = new CronTaskEntry("task-silent", "静默测试", "0 0 8 * * *",
-                "检查状态", "active", now, now);
+                "检查状态", "active", now, now, null, null);
         repository.save(task);
 
         var response = new AgentResponse("trace-2", "session-2", "TASK_SILENT",
@@ -144,7 +144,7 @@ class CronScheduler_AgentOrchestrator_集成测试 {
     void executeTask_异常_日志记录failed() {
         var now = Instant.now().toString();
         var task = new CronTaskEntry("task-fail", "失败测试", "0 0 8 * * *",
-                "触发异常", "active", now, now);
+                "触发异常", "active", now, now, null, null);
         repository.save(task);
 
         when(agentOrchestrator.run(any(AgentRequest.class)))

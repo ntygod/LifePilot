@@ -49,7 +49,7 @@ class ReminderDecisionEngine_单元测试 {
                 ReminderTopicState.empty()
         );
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         ReminderDecision decision = engine.evaluateTopic(snapshot, context, config).orElseThrow();
 
@@ -82,7 +82,7 @@ class ReminderDecisionEngine_单元测试 {
                 ReminderTopicState.empty()
         );
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         ReminderDecision decision = engine.evaluateTopic(snapshot, context, config).orElseThrow();
 
@@ -115,7 +115,7 @@ class ReminderDecisionEngine_单元测试 {
                 ReminderTopicState.empty()
         );
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         ReminderDecision decision = engine.evaluateTopic(snapshot, context, config).orElseThrow();
 
@@ -151,7 +151,7 @@ class ReminderDecisionEngine_单元测试 {
                         1, 0, 1, 0, 0, 0, false)
         );
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0);
+                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 0, null);
 
         ReminderDecision decision = engine.evaluateTopic(snapshot, context, config).orElseThrow();
 
@@ -163,7 +163,7 @@ class ReminderDecisionEngine_单元测试 {
     void evaluate_每日上限仅保留最高分提醒() {
         Instant now = Instant.parse("2026-03-28T02:00:00Z");
         ReminderRuntimeContext context = new ReminderRuntimeContext(
-                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 2);
+                now, zoneId, LocalTime.of(23, 0), LocalTime.of(8, 0), 2, null);
 
         ReminderTopicSnapshot high = new ReminderTopicSnapshot(
                 "tax",

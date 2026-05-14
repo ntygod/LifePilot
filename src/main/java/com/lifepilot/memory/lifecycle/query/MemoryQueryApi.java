@@ -7,6 +7,8 @@ import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.SourceType;
 import com.lifepilot.memory.lifecycle.Temporality;
+import com.lifepilot.memory.procedural.PreferenceRule;
+import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.semantic.EntityType;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import com.lifepilot.memory.semantic.TemporalEntity;
@@ -210,26 +212,81 @@ public class MemoryQueryApi {
         return provenanceRepository.findEntityProvenances(entityId, null, null, null);
     }
 
-    // ========== L4 查询（占位） ==========
+    // ========== L4 查询 ==========
 
     /**
-     * 按来源实体 ID 查找 L4 偏好规则 —— 占位实现。
+     * 按来源实体 ID 查找 L4 偏好规则。
      *
-     * @throws UnsupportedOperationException 等 Task 15 {@code L4SyncListener} 接入 PreferenceRuleRepository
+     * @param sourceEntityId L3 源实体 ID
+     * @return 匹配的偏好规则，未找到时返回 null
      */
-    public Object findRuleBySourceEntity(String sourceEntityId) {
-        throw new UnsupportedOperationException(
-                "L4 偏好规则查询将在 Task 15 L4SyncListener 接入 PreferenceRuleRepository 后实现");
+    public PreferenceRule findRuleBySourceEntity(String sourceEntityId) {
+        var results = jdbcTemplate.query(
+                "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE source_entity_id = ?",
+                (rs, rowNum) -> mapPreferenceRow(rs),
+                sourceEntityId);
+        return results.isEmpty() ? null : results.getFirst();
     }
 
     /**
-     * 按来源实体 ID 查找 L4 程序模板 —— 占位实现。
+     * 按来源实体 ID 查找 L4 程序模板。
      *
-     * @throws UnsupportedOperationException 等 Task 15 {@code L4SyncListener} 接入 ProcedureTemplateRepository
+     * @param sourceEntityId L3 源实体 ID
+     * @return 匹配的程序模板，未找到时返回 null
      */
-    public Object findProcedureBySourceEntity(String sourceEntityId) {
-        throw new UnsupportedOperationException(
-                "L4 程序模板查询将在 Task 15 L4SyncListener 接入 ProcedureTemplateRepository 后实现");
+    public ProcedureTemplate findProcedureBySourceEntity(String sourceEntityId) {
+        var results = jdbcTemplate.query(
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE source_entity_id = ?",
+                (rs, rowNum) -> mapTemplateRow(rs),
+                sourceEntityId);
+        return results.isEmpty() ? null : results.getFirst();
+    }
+
+    @SuppressWarnings("unchecked")
+    private PreferenceRule mapPreferenceRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new PreferenceRule(
+                rs.getString("rule_id"), rs.getString("category"),
+                rs.getString("key"), rs.getString("value"),
+                rs.getFloat("confidence"), rs.getString("learned_from_json"),
+                rs.getInt("observation_count"),
+                Instant.parse(rs.getString("created_at")),
+                Instant.parse(rs.getString("updated_at")),
+                rs.getString("source_entity_id"),
+                rs.getString("deactivated_reason"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private ProcedureTemplate mapTemplateRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        String stepsJson = rs.getString("steps_json");
+        List<com.lifepilot.memory.procedural.TemplateStep> steps = List.of();
+        if (stepsJson != null && !stepsJson.isBlank()) {
+            try { steps = MAPPER.readValue(stepsJson, new TypeReference<>() {}); }
+            catch (Exception ignored) {}
+        }
+        String varsJson = rs.getString("variables_json");
+        Map<String, String> variables = Map.of();
+        if (varsJson != null && !varsJson.isBlank()) {
+            try { variables = MAPPER.readValue(varsJson, new TypeReference<Map<String, String>>() {}); }
+            catch (Exception ignored) {}
+        }
+        String sourceTraceJson = rs.getString("source_trace_ids_json");
+        List<String> sourceTraceIds = List.of();
+        if (sourceTraceJson != null && !sourceTraceJson.isBlank()) {
+            try { sourceTraceIds = MAPPER.readValue(sourceTraceJson, new TypeReference<List<String>>() {}); }
+            catch (Exception ignored) {}
+        }
+        String lastUsedStr = rs.getString("last_used_at");
+        return new ProcedureTemplate(
+                rs.getString("template_id"), rs.getString("name"),
+                rs.getString("description"), rs.getString("trigger_intent"),
+                steps, variables,
+                rs.getFloat("success_rate"), rs.getInt("use_count"),
+                lastUsedStr != null ? Instant.parse(lastUsedStr) : null,
+                sourceTraceIds,
+                Instant.parse(rs.getString("created_at")),
+                Instant.parse(rs.getString("updated_at")),
+                rs.getString("source_entity_id"),
+                rs.getString("deactivated_reason"));
     }
 
     // ========== 内部辅助 ==========

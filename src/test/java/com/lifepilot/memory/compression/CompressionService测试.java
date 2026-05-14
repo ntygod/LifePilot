@@ -28,6 +28,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import java.util.Map;
 
 /**
  * CompressionService 单元测试。
@@ -108,7 +109,7 @@ class CompressionService测试 {
     @Test
     void 混合消息时压缩映射中不会包含Pinned消息() {
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
-                .thenReturn(LlmResponse.simple("摘要", 100, 50, "test", "model", 100));
+                .thenReturn(new LlmResponse("摘要", null, null, List.of(), Map.of(), 100, 50, null, 0, "test", "model", 100, false));
 
         var messages = new ArrayList<MessageRecord>();
         var pinnedIds = new ArrayList<String>();
@@ -137,7 +138,7 @@ class CompressionService测试 {
     void 压缩后仍超过阈值时继续触发Keypoints压缩() {
         properties.setCompressionThresholdTokens(100);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
-                .thenReturn(LlmResponse.simple("这是一段较长的压缩摘要文本用于测试二级压缩", 100, 50, "test", "model", 100));
+                .thenReturn(new LlmResponse("这是一段较长的压缩摘要文本用于测试二级压缩", null, null, List.of(), Map.of(), 100, 50, null, 0, "test", "model", 100, false));
 
         var messages = new ArrayList<MessageRecord>();
         for (int i = 0; i < 25; i++) {
@@ -153,7 +154,7 @@ class CompressionService测试 {
     void 压缩后低于阈值时不会触发Keypoints压缩() {
         properties.setCompressionThresholdTokens(100000);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
-                .thenReturn(LlmResponse.simple("短摘要", 100, 50, "test", "model", 100));
+                .thenReturn(new LlmResponse("短摘要", null, null, List.of(), Map.of(), 100, 50, null, 0, "test", "model", 100, false));
 
         var messages = new ArrayList<MessageRecord>();
         for (int i = 0; i < 25; i++) {

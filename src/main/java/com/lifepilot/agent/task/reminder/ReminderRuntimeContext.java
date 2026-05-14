@@ -39,17 +39,6 @@ public record ReminderRuntimeContext(
     /** 空闲判定阈值（分钟）。 */
     private static final int IDLE_THRESHOLD_MINUTES = 5;
 
-    /**
-     * 兼容旧调用的便捷构造器（无焦点状态）。
-     */
-    public ReminderRuntimeContext(Instant now,
-                                  ZoneId zoneId,
-                                  @Nullable LocalTime quietHoursStart,
-                                  @Nullable LocalTime quietHoursEnd,
-                                  int remindersSentToday) {
-        this(now, zoneId, quietHoursStart, quietHoursEnd, remindersSentToday, null);
-    }
-
     public ReminderRuntimeContext {
         now = Objects.requireNonNull(now, "now 不能为空");
         zoneId = Objects.requireNonNull(zoneId, "zoneId 不能为空");

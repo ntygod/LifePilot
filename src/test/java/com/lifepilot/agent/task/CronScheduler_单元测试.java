@@ -102,7 +102,7 @@ class CronScheduler_单元测试 {
     @Test
     void schedule_paused任务_不注册定时器() {
         var now = Instant.now().toString();
-        var task = new CronTaskEntry("t1", "测试", "0 0 6 * * *", "指令", "paused", now, now);
+        var task = new CronTaskEntry("t1", "测试", "0 0 6 * * *", "指令", "paused", now, now, null, null);
         cronScheduler.schedule(task);
         // paused 任务不应注册，cancel 不会有效果
         cronScheduler.cancel("t1");
@@ -118,7 +118,7 @@ class CronScheduler_单元测试 {
     @Test
     void executeTask_正常执行_写入成功日志() {
         var now = Instant.now().toString();
-        var task = new CronTaskEntry("t-exec", "日报", "0 0 6 * * *", "生成日报", "active", now, now);
+        var task = new CronTaskEntry("t-exec", "日报", "0 0 6 * * *", "生成日报", "active", now, now, null, null);
         repository.save(task);
 
         when(agentOrchestrator.run(any(AgentRequest.class)))
@@ -134,7 +134,7 @@ class CronScheduler_单元测试 {
     @Test
     void executeTask_静默回复_不发送通知() {
         var now = Instant.now().toString();
-        var task = new CronTaskEntry("t-silent", "检查", "0 0 6 * * *", "检查状态", "active", now, now);
+        var task = new CronTaskEntry("t-silent", "检查", "0 0 6 * * *", "检查状态", "active", now, now, null, null);
         repository.save(task);
 
         when(agentOrchestrator.run(any(AgentRequest.class)))
@@ -149,7 +149,7 @@ class CronScheduler_单元测试 {
     @Test
     void executeTask_异常_写入失败日志() {
         var now = Instant.now().toString();
-        var task = new CronTaskEntry("t-err", "出错", "0 0 6 * * *", "指令", "active", now, now);
+        var task = new CronTaskEntry("t-err", "出错", "0 0 6 * * *", "指令", "active", now, now, null, null);
         repository.save(task);
 
         when(agentOrchestrator.run(any(AgentRequest.class)))
@@ -166,9 +166,9 @@ class CronScheduler_单元测试 {
     @Test
     void restoreAll_恢复active任务() {
         var now = Instant.now().toString();
-        repository.save(new CronTaskEntry("r1", "任务1", "0 0 6 * * *", "指令1", "active", now, now));
-        repository.save(new CronTaskEntry("r2", "任务2", "0 0 8 * * *", "指令2", "active", now, now));
-        repository.save(new CronTaskEntry("r3", "任务3", "0 0 10 * * *", "指令3", "paused", now, now));
+        repository.save(new CronTaskEntry("r1", "任务1", "0 0 6 * * *", "指令1", "active", now, now, null, null));
+        repository.save(new CronTaskEntry("r2", "任务2", "0 0 8 * * *", "指令2", "active", now, now, null, null));
+        repository.save(new CronTaskEntry("r3", "任务3", "0 0 10 * * *", "指令3", "paused", now, now, null, null));
 
         cronScheduler.restoreAll();
 

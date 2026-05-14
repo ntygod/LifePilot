@@ -22,7 +22,8 @@ class ProcedureTemplateTest {
                 "tpl-001", "测试模板", "测试描述", "安排会议",
                 List.of(), Map.of(), successRate, useCount, lastUsedAt,
                 List.of("trace-1"), Instant.now(), Instant.now()
-        );
+        ,
+                null, null);
     }
 
     @Test
@@ -75,7 +76,8 @@ class ProcedureTemplateTest {
                 "tpl-002", "模板", "描述", "意图",
                 null, null, 0.5f, 1, null, null,
                 Instant.now(), Instant.now()
-        );
+        ,
+                null, null);
         assertNotNull(tpl.steps());
         assertTrue(tpl.steps().isEmpty());
         assertNotNull(tpl.variables());

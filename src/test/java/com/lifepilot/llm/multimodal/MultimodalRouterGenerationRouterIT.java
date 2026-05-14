@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import java.util.Map;
 
 /**
  * MultimodalRouter 与 GenerationRouter 的端到端协作集成测试。
@@ -66,7 +67,7 @@ class MultimodalRouterGenerationRouterIT {
                 null
         );
 
-        LlmResponse expected = LlmResponse.simple("hi", 1, 1, "p1", "m", 10);
+        LlmResponse expected = new LlmResponse("hi", null, null, List.of(), Map.of(), 1, 1, null, 0, "p1", "m", 10, false);
         when(generationRouter.call(anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenReturn(expected);
 

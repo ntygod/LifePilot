@@ -33,7 +33,10 @@ public enum ReminderSkipReason {
     TRUST_LEVEL_INSUFFICIENT("信任等级不足"),
 
     /** 当前没有足够理由打扰用户 */
-    INSUFFICIENT_REASON("当前没有足够理由打扰用户");
+    INSUFFICIENT_REASON("当前没有足够理由打扰用户"),
+
+    /** 已超过最佳提醒窗口（Goldilocks window closed） */
+    WINDOW_CLOSED("已超过最佳提醒窗口");
 
     private final String label;
 

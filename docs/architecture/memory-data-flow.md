@@ -2,7 +2,7 @@
 
 > **文档性质**：模块级长期数据流参照（源信任文档）
 > **模块归属**：`com.lifepilot.memory` + `com.lifepilot.agent.task.proactive`
-> **最后更新**：2026-05-07（补充统一检索编排未来方向）
+> **最后更新**：2026-05-09（追加 staleness / REM 联想 / retrieval orchestrator / 注入检测 / MCP Server 五个落地 spec）
 > **配套 spec**：`docs/superpowers/specs/2026-04-23-memory-lifecycle-closure-design.md`（一次性归档）
 >
 > 本文档是记忆模块"获取 → 处理 → 存储/生命周期 → 检索/消费"全链路的 **source of truth**。任何对记忆写入链路、事件契约、监听器职责、状态机、Schema、项目隔离策略、工具/API 消费边界的改动，必须 **先更新本文档再改代码**；图代码对账以本文档为准。
@@ -71,7 +71,7 @@
 | 删除清理 | 项目删除、实体归档、生命周期终态转换都要登记 DELETE 投影任务。项目删除需先收集 entityIds，在同一业务事务中写 `memory_projection_outbox`，禁止提交后直删向量。 |
 | KB 来源失效 | 知识库文档删除必须发布 `SourceInvalidated(DOCUMENT, documentId, DELETED)`；知识库删除必须发布 `SourceInvalidated(KNOWLEDGE_BASE, kbId, DELETED)` 并逐文档发布 DOCUMENT 失效事件。L3 domain 图谱 provenance 失效后不再作为 KB chunk 召回证据。 |
 | 生命周期单轨 | TTL 过期统一走 `ExpirationScanner -> SemanticMemory.updateLifecycleState(EXPIRED)`；旧 `EntityExpirationJob` 不再注册。 |
-| 可召回状态 | 默认检索只召回 `ACTIVE / COMPLETED / REGENERATION_NEEDED`，并保留 historical/stale/revalidation 标注。 |
+| 可召回状态 | 默认检索只召回 `ACTIVE / COMPLETED / REGENERATION_NEEDED / STALE_CANDIDATE`，并保留 historical/stale/revalidation 标注。`STALE_CANDIDATE` 由 memory-staleness spec 引入，仍可召回但 `HybridRetriever` 会应用 penalty（默认 0.35），供 Agent 追问确认或更新。 |
 
 ### 0.5 消费层治理规则
 
@@ -222,7 +222,7 @@ stateDiagram-v2
 “可消费实体”是质量、生命周期、项目边界三者的交集：
 
 - 主库当前版本：`is_current = 1`。
-- 生命周期可召回：`lifecycle_state in (ACTIVE, COMPLETED, REGENERATION_NEEDED)`；自动注入必须显式标注 `COMPLETED` / `REGENERATION_NEEDED`，搜索工具必须返回 `lifecycle` 标注。
+- 生命周期可召回：`lifecycle_state in (ACTIVE, COMPLETED, REGENERATION_NEEDED, STALE_CANDIDATE)`；自动注入必须显式标注 `COMPLETED` / `REGENERATION_NEEDED` / `STALE_CANDIDATE`，搜索工具必须返回 `lifecycle` 标注。
 - 未过期：`valid_to is null or valid_to > now`，`expires_at` 过期实体必须先经 `ExpirationScanner` 进入 `EXPIRED`，消费侧也要防御性过滤。
 - 项目读取范围：所有消费入口必须使用 `MemoryAccessPolicy` / `MemoryReadFilter`，包含 overlay 遮蔽语义。
 - 质量门槛：`MemoryQualityPolicy.isPromptConsumable(...) == true`；`UNVERIFIED` 永不消费，`UNKNOWN` 证据不得被默认提升为 `USER_EXPLICIT`。
@@ -1022,3 +1022,21 @@ V25 DROP + CREATE 重建视图以纳入 V24 新列（SQLite 不支持 `ALTER VIE
 | `TrustUpgradeService` 未把提醒负反馈事件化到 L3 | 主动提醒信任度仍主要写 L4 / reminder 表 | 根据 `proactive_insight_entity_id` 发 `EntityWeightChanged(USER_FEEDBACK, 负 delta)` | Phase B/C |
 
 后续代码改动必须先清本表对应文档项，再提交实现与契约测试。
+
+
+---
+
+## 附录：本轮演进落地 spec 对数据流的影响
+
+下表汇总 `feature/memory-evolution` 分支落地的 8 个 spec 对本数据流文档涉及的关键契约的改动点。每个 spec 的详细设计由 `.kiro/specs/{name}/` 下的 requirements / design / tasks 文档承载；整体架构摘要见 [memory-system.md §8](./memory-system.md#8-演进历史与本轮能力)。
+
+| Spec | 数据流契约影响 | Spec 目录 |
+|---|---|---|
+| memory-eval-harness | 不影响运行时数据流；新增 `memory.eval` 子系统做开发期回归，指标包括召回率 / F1 / p95 latency / token | `.kiro/specs/memory-eval-harness/` |
+| memory-staleness | `LifecycleState` 加 `STALE_CANDIDATE`；写入链路末尾触发 afterCommit 异步检测邻居；召回链路降权但可见 | `.kiro/specs/memory-staleness/` |
+| proactive-boundary-training | 不影响记忆数据流；通过 `ProactiveCacheInvalidator` 订阅 `EntityLifecycleChanged` 让主动引擎感知 L3 失活 | `.kiro/specs/proactive-boundary-training/` |
+| proactive-timing-cot | 同上，不直接写记忆；通过 `GoldilocksWindowCalculator` 读 `ReminderExecutionRepository` | `.kiro/specs/proactive-timing-cot/` |
+| memory-rem-consolidation | 巩固管线第 7 步产生 `AssociationCandidate`，**落文件不直写主库**（保持候选/审计分离）；不影响主写入链路契约 | `.kiro/specs/memory-rem-consolidation/` |
+| retrieval-orchestrator | 新增上层编排接口；不替换既有 `memory.search / recall / search-experience` 工具；默认关闭 | `.kiro/specs/retrieval-orchestrator/` |
+| memory-security-polish | 新增 `MemoryInjectionDetector` 可由上层写入链路接入做前置检测；本期只提供组件，不强制注入到 `RealtimeExtractor` | `.kiro/specs/memory-security-polish/` |
+| memory-mcp-server | 新增对外 MCP JSON-RPC 端点，复用既有 `HybridRetriever / EpisodicMemory / SemanticMemory`，不引入新的写入链路 | `.kiro/specs/memory-mcp-server/` |

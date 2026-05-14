@@ -12,8 +12,6 @@ import java.util.Optional;
  * <p>承载推理模型多轮契约所需的全部字段：reasoning_content / reasoning_signature /
  * tool_calls / provider_metadata / reasoning_tokens / cached_input_tokens。
  *
- * <p>迁移期通过 {@link #simple} 静态工厂兼容老调用点（仅 content + tokens 维度）。
- *
  * @param content             响应正文（assistant message text）
  * @param reasoningContent    推理过程文本（DeepSeek V4 / Qwen3 等推理模型返回，可空）
  * @param reasoningSignature  推理签名（仅 Anthropic thinking block 使用，可空）
@@ -74,29 +72,4 @@ public record LlmResponse(
                 0, 0, null, 0, providerId, modelName, 0, true);
     }
 
-    /**
-     * 兼容老调用：仅含 content + tokens 的简单构造（迁移期使用）。
-     *
-     * <p>新代码应直接调用富字段构造器或由 {@link com.lifepilot.llm.adapter.AbstractProviderAdapter#toLlmResponse}
-     * 等转换器构造。
-     *
-     * @param content     响应正文
-     * @param inputTokens 输入 token 数
-     * @param outputTokens 输出 token 数
-     * @param providerId  Provider ID
-     * @param modelName   模型名称
-     * @param latencyMs   调用耗时
-     * @return 简化版响应
-     */
-    public static LlmResponse simple(String content,
-                                     int inputTokens,
-                                     int outputTokens,
-                                     String providerId,
-                                     String modelName,
-                                     long latencyMs) {
-        return new LlmResponse(
-                content, null, null, List.of(), Map.of(),
-                inputTokens, outputTokens, null, 0,
-                providerId, modelName, latencyMs, false);
-    }
 }

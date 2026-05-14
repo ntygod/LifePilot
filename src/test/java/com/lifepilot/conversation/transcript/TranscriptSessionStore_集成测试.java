@@ -85,7 +85,7 @@ class TranscriptSessionStoreTest {
 
         var objectMapper = new ObjectMapper();
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper);
-        sessionTranscriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
+        sessionTranscriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository, null);
         chatSessionRepository = new ChatSessionRepository(sessionStoreRepository);
         transcriptStore = new JdbcTranscriptStore(sessionStoreRepository, sessionTranscriptRepository, chatSessionRepository);
     }

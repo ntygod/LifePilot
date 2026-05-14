@@ -206,7 +206,7 @@ class HybridRetriever属性测试 {
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
                 rerankRouter
-        );
+        , null);
     }
 
     record QueryWithMockResults(

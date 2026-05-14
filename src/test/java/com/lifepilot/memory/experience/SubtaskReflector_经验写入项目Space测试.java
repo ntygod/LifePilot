@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.Map;
 
 /**
  * SubtaskReflector 按 ProjectContext 路由子任务经验写入测试。
@@ -62,12 +63,12 @@ class SubtaskReflector_经验写入项目Space测试 {
         when(promptRegistry.render(eq("memory/subtask-reflection"), anyMap())).thenReturn("prompt");
         when(vectorSearcher.searchEntities(any(), eq(1), any(Float.class))).thenReturn(List.of());
         when(generationRouter.call(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(LlmResponse.simple("""
+                .thenReturn(new LlmResponse("""
                         {"scenario":"子任务","strategy":"策略","lessons":[],
                          "applicableConditions":[],"toolsUsed":["web.search"],"success":true,
                          "failureAttribution":null,"effectivenessScore":0.0,"injectionCount":0,
                          "positiveOutcomes":0,"negativeOutcomes":0}
-                        """, 10, 5, "mock", "mock", 10L));
+                        """, null, null, List.of(), Map.of(), 10, 5, null, 0, "mock", "mock", 10L, false));
         when(semanticMemory.upsertWithConflictDetection(any(), any(), any()))
                 .thenAnswer(inv -> inv.getArgument(0));
     }

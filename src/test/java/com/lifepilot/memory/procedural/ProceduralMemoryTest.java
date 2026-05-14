@@ -105,7 +105,8 @@ class ProceduralMemoryTest {
         var template = new ProcedureTemplate(
                 UUID.randomUUID().toString(), "添加待办并提醒", "创建待办事项并设置截止提醒",
                 "帮我添加一个待办", steps, Map.of("taskName", "", "deadline", ""),
-                0.85f, 5, now, List.of("trace-1", "trace-2"), now, now);
+                0.85f, 5, now, List.of("trace-1", "trace-2"), now, now,
+                null, null);
 
         proceduralMemory.save(template);
 
@@ -150,7 +151,8 @@ class ProceduralMemoryTest {
         var updated = new ProcedureTemplate(
                 template.templateId(), "更新后名称", "更新后描述",
                 "新的触发意图", template.steps(), Map.of("newVar", "value"),
-                0.95f, 10, now, List.of("trace-3"), now, Instant.now());
+                0.95f, 10, now, List.of("trace-3"), now, Instant.now(),
+                null, null);
         proceduralMemory.update(updated);
 
         var found = proceduralMemory.findById(template.templateId());
@@ -186,7 +188,8 @@ class ProceduralMemoryTest {
         var template = new ProcedureTemplate(
                 UUID.randomUUID().toString(), "无使用记录模板", "描述",
                 "触发意图", List.of(), Map.of(),
-                0.0f, 0, null, List.of(), now, now);
+                0.0f, 0, null, List.of(), now, now,
+                null, null);
 
         proceduralMemory.save(template);
 
@@ -206,7 +209,8 @@ class ProceduralMemoryTest {
         // 初始 successRate=0.8, useCount=4
         var template = new ProcedureTemplate(
                 "tpl-exec-success", "测试模板", "描述", "意图",
-                List.of(), Map.of(), 0.8f, 4, now, List.of(), now, now);
+                List.of(), Map.of(), 0.8f, 4, now, List.of(), now, now,
+                null, null);
         proceduralMemory.save(template);
 
         proceduralMemory.recordExecution("tpl-exec-success", true);
@@ -225,7 +229,8 @@ class ProceduralMemoryTest {
         // 初始 successRate=0.8, useCount=4
         var template = new ProcedureTemplate(
                 "tpl-exec-fail", "测试模板", "描述", "意图",
-                List.of(), Map.of(), 0.8f, 4, now, List.of(), now, now);
+                List.of(), Map.of(), 0.8f, 4, now, List.of(), now, now,
+                null, null);
         proceduralMemory.save(template);
 
         proceduralMemory.recordExecution("tpl-exec-fail", false);
@@ -248,7 +253,8 @@ class ProceduralMemoryTest {
         var now = Instant.now();
         var template = new ProcedureTemplate(
                 "tpl-exec-first", "新模板", "描述", "意图",
-                List.of(), Map.of(), 0.0f, 0, null, List.of(), now, now);
+                List.of(), Map.of(), 0.0f, 0, null, List.of(), now, now,
+                null, null);
         proceduralMemory.save(template);
 
         proceduralMemory.recordExecution("tpl-exec-first", true);
@@ -268,7 +274,7 @@ class ProceduralMemoryTest {
         var now = Instant.now();
         var rule = new PreferenceRule(
                 "pref-1", "output", "language", "中文",
-                0.8f, "conversation-123", 3, now, now);
+                0.8f, "conversation-123", 3, now, now, null, null);
 
         proceduralMemory.savePreference(rule);
 
@@ -289,10 +295,10 @@ class ProceduralMemoryTest {
         var now = Instant.now();
         var rule1 = new PreferenceRule(
                 "pref-old", "output", "format", "markdown",
-                0.5f, "conv-1", 1, now, now);
+                0.5f, "conv-1", 1, now, now, null, null);
         var rule2 = new PreferenceRule(
                 "pref-new", "output", "format", "plain-text",
-                0.9f, "conv-2", 5, now, now);
+                0.9f, "conv-2", 5, now, now, null, null);
 
         proceduralMemory.savePreference(rule1);
         proceduralMemory.savePreference(rule2);
@@ -318,13 +324,13 @@ class ProceduralMemoryTest {
         var now = Instant.now();
         proceduralMemory.savePreference(new PreferenceRule(
                 "pref-a", "schedule", "reminder", "提前15分钟",
-                0.6f, "conv-1", 2, now, now));
+                0.6f, "conv-1", 2, now, now, null, null));
         proceduralMemory.savePreference(new PreferenceRule(
                 "pref-b", "schedule", "default-duration", "30分钟",
-                0.7f, "conv-2", 3, now, now));
+                0.7f, "conv-2", 3, now, now, null, null));
         proceduralMemory.savePreference(new PreferenceRule(
                 "pref-c", "output", "tone", "友好",
-                0.5f, "conv-3", 1, now, now));
+                0.5f, "conv-3", 1, now, now, null, null));
 
         var schedulePrefs = proceduralMemory.getPreferences("schedule");
         assertThat(schedulePrefs).hasSize(2);
@@ -343,7 +349,7 @@ class ProceduralMemoryTest {
         var now = Instant.now();
         var rule = new PreferenceRule(
                 "pref-reinforce", "habit", "wake-time", "7:00",
-                0.3f, "conv-1", 1, now, now);
+                0.3f, "conv-1", 1, now, now, null, null);
         proceduralMemory.savePreference(rule);
 
         proceduralMemory.reinforcePreference("pref-reinforce");
@@ -360,7 +366,7 @@ class ProceduralMemoryTest {
         var now = Instant.now();
         var rule = new PreferenceRule(
                 "pref-cap", "habit", "exercise", "跑步",
-                0.98f, "conv-1", 10, now, now);
+                0.98f, "conv-1", 10, now, now, null, null);
         proceduralMemory.savePreference(rule);
 
         proceduralMemory.reinforcePreference("pref-cap");
@@ -383,6 +389,7 @@ class ProceduralMemoryTest {
         return new ProcedureTemplate(
                 id, name, "测试描述", "测试意图",
                 List.of(new TemplateStep(1, "test-tool", "run", Map.of(), "测试步骤", false)),
-                Map.of(), 0.8f, 3, now, List.of(), now, now);
+                Map.of(), 0.8f, 3, now, List.of(), now, now,
+                null, null);
     }
 }

@@ -269,7 +269,7 @@ class RealtimeExtractor_temporality_集成测试 {
     // ---------------- 辅助 ----------------
 
     private void 给出LLM响应(String content) {
-        var response = LlmResponse.simple(content, 10, 20, "mock-provider", "mock-model", 100L);
+        var response = new LlmResponse(content, null, null, List.of(), Map.of(), 10, 20, null, 0, "mock-provider", "mock-model", 100L, false);
         when(generationRouter.call(
                 anyString(),
                 anyString(),

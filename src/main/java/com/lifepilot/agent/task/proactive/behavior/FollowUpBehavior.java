@@ -48,6 +48,9 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
         return Duration.ofHours(config != null ? config.getTask().getProactiveEngineFollowUpMinAgeHours() : 24);
     }
 
+    @Override
+    public BehaviorLayer layer() { return BehaviorLayer.FACT_DRIVEN; }
+
     private int maxCheckCount() {
         return config != null ? config.getTask().getProactiveEngineFollowUpMaxCheckCount() : 5;
     }

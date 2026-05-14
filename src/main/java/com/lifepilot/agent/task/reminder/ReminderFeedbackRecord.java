@@ -35,20 +35,4 @@ public record ReminderFeedbackRecord(
         Instant createdAt,
         Instant updatedAt
 ) {
-    /**
-     * 兼容不带 {@code insightEntityId} 的旧 8 参构造 —— 保留给历史调用点，
-     * 新代码建议显式传 insightEntityId（不可知时传 {@code null}）。
-     */
-    public ReminderFeedbackRecord(
-            String id,
-            String notificationId,
-            String userId,
-            String topicKey,
-            ReminderFeedbackType feedbackType,
-            @Nullable String comment,
-            Instant createdAt,
-            Instant updatedAt
-    ) {
-        this(id, notificationId, userId, topicKey, feedbackType, comment, null, createdAt, updatedAt);
-    }
 }

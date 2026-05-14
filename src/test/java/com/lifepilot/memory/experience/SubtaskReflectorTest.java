@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.Map;
 
 /**
  * SubtaskReflector 单元测试。
@@ -52,7 +53,7 @@ class SubtaskReflectorTest {
                 isNull(),
                 eq(GenerationCapability.CHAT),
                 eq(Duration.ofSeconds(120))
-        )).thenReturn(LlmResponse.simple("""
+        )).thenReturn(new LlmResponse("""
                 {
                   "scenario": "测试子任务",
                   "strategy": "测试工具策略",
@@ -66,7 +67,7 @@ class SubtaskReflectorTest {
                   "positiveOutcomes": 0,
                   "negativeOutcomes": 0
                 }
-                """, 10, 5, "qwen-plus", "qwen3.5-plus", 100));
+                """, null, null, List.of(), Map.of(), 10, 5, null, 0, "qwen-plus", "qwen3.5-plus", 100, false));
 
         var reflector = new SubtaskReflector(
                 semanticMemory,

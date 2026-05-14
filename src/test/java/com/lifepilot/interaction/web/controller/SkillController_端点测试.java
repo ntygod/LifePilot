@@ -427,7 +427,7 @@ class SkillController_端点测试 {
                 .name(name)
                 .description("测试用 Skill")
                 .version("1.0.0")
-                .source(new SkillSource.UserDefined("/fake/" + name))
+                .source(new SkillSource.UserDefined("/fake/" + name, null))
                 .instructions("body")
                 .suggestedTools(List.of())
                 .metadata(Map.of())

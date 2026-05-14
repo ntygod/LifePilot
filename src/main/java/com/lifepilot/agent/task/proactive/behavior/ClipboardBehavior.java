@@ -26,6 +26,9 @@ public class ClipboardBehavior implements ProactiveBehavior {
     public String name() { return "clipboard"; }
 
     @Override
+    public BehaviorLayer layer() { return BehaviorLayer.STANDALONE; }
+
+    @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
         var intents = buffer.drainAll();
         if (intents.isEmpty()) return List.of();

@@ -329,6 +329,10 @@ lifepilot:
       cron: "0 0 5 * * *"
       retention-days: 90
       max-cleanup-per-run: 500
+    # Memory MCP Server（暴露记忆能力给外部 Agent）
+    mcp-server:
+      enabled: true
+      api-key: ${MEMORY_MCP_API_KEY:}
     # 经验总结配置
     experience:
       enabled: true

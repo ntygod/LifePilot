@@ -44,31 +44,6 @@ public record ProcedureTemplate(
     }
 
     /**
-     * 兼容老调用点的 12 参构造器 — {@code sourceEntityId} 与 {@code deactivatedReason} 取默认
-     * {@code null}（未关联源/活跃）。
-     *
-     * <p>新代码建议直接使用 14 参 canonical constructor，填入源实体 ID 以便 L3→L4 级联。</p>
-     */
-    public ProcedureTemplate(
-            String templateId,
-            String name,
-            String description,
-            String triggerIntent,
-            List<TemplateStep> steps,
-            Map<String, String> variables,
-            float successRate,
-            int useCount,
-            @Nullable Instant lastUsedAt,
-            List<String> sourceTraceIds,
-            Instant createdAt,
-            Instant updatedAt
-    ) {
-        this(templateId, name, description, triggerIntent, steps, variables,
-                successRate, useCount, lastUsedAt, sourceTraceIds, createdAt, updatedAt,
-                null, null);
-    }
-
-    /**
      * 判断模板是否可靠 — 成功率和使用次数均达到阈值。
      *
      * @param minReliability 最低成功率阈值

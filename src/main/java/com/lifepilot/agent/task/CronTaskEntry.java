@@ -26,16 +26,4 @@ public record CronTaskEntry(
         @org.springframework.lang.Nullable String skillIds,
         @org.springframework.lang.Nullable String projectId
 ) {
-    /** 兼容旧代码的无 skillIds / projectId 构造器（归属主账户，无预加载技能）。 */
-    public CronTaskEntry(String id, String name, String schedule, String instruction,
-                         String status, String createdAt, String updatedAt) {
-        this(id, name, schedule, instruction, status, createdAt, updatedAt, null, null);
-    }
-
-    /** 兼容旧代码的无 projectId 构造器（归属主账户，支持技能预加载）。 */
-    public CronTaskEntry(String id, String name, String schedule, String instruction,
-                         String status, String createdAt, String updatedAt,
-                         @org.springframework.lang.Nullable String skillIds) {
-        this(id, name, schedule, instruction, status, createdAt, updatedAt, skillIds, null);
-    }
 }

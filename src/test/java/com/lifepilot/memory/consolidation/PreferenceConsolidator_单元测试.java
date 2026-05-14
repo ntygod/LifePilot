@@ -79,7 +79,7 @@ class PreferenceConsolidator_单元测试 {
         var now = Instant.now();
         return new PreferenceRule(
                 "rule-" + key, "user-preference", key, "已有描述",
-                0.6f, "consolidation", 3, now, now);
+                0.6f, "consolidation", 3, now, now, null, null);
     }
 
     // ==================== 新建偏好 ====================
@@ -461,10 +461,10 @@ class PreferenceConsolidator_单元测试 {
             var now = Instant.now();
             var rule1 = new PreferenceRule(
                     "rule-dup-1", "user-preference", "重复key", "值1",
-                    0.6f, "consolidation", 3, now, now);
+                    0.6f, "consolidation", 3, now, now, null, null);
             var rule2 = new PreferenceRule(
                     "rule-dup-2", "user-preference", "重复key", "值2",
-                    0.7f, "consolidation", 5, now, now);
+                    0.7f, "consolidation", 5, now, now, null, null);
             var entity = 偏好实体("重复key", "描述");
 
             when(semanticMemory.findCurrentByType(EntityType.PREFERENCE))

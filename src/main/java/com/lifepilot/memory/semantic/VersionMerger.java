@@ -1,5 +1,6 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.memory.quality.MemoryEvidenceKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,8 +15,9 @@ import java.util.Objects;
  * <p>合并规则：
  * <ul>
  *   <li>新属性直接添加</li>
- *   <li>冲突属性按 extractionConfidence 决定保留</li>
- *   <li>description 取更长者</li>
+ *   <li>用户显式更新（USER_EXPLICIT / USER_CONFIRMED）时，新值优先覆盖旧值</li>
+ *   <li>其他情况下冲突属性按 extractionConfidence 决定保留</li>
+ *   <li>description：用户显式更新时取新值；其他情况取更长者或非空者</li>
  *   <li>无变化时 isNewVersion=false</li>
  * </ul></p>
  *
@@ -39,6 +41,9 @@ public class VersionMerger {
         var mergedProperties = new HashMap<>(existing.properties());
         boolean hasChanges = false;
 
+        // 判断 incoming 是否为用户显式更新：用户最新的显式陈述应覆盖旧值
+        boolean incomingIsUserExplicit = isUserExplicitEvidence(incoming.evidenceKind());
+
         // 合并属性
         for (var entry : incoming.properties().entrySet()) {
             String key = entry.getKey();
@@ -50,9 +55,13 @@ public class VersionMerger {
                 mergedProperties.put(key, newValue);
                 hasChanges = true;
             } else if (!Objects.equals(oldValue, newValue)) {
-                // 冲突属性按 extractionConfidence 决定
+                // 冲突属性解决策略
                 ConflictResolution resolution;
-                if (incoming.extractionConfidence() > existing.extractionConfidence()) {
+                if (incomingIsUserExplicit) {
+                    // 用户显式更新：新值优先（用户最新陈述覆盖旧值）
+                    resolution = ConflictResolution.KEEP_NEW;
+                    mergedProperties.put(key, newValue);
+                } else if (incoming.extractionConfidence() > existing.extractionConfidence()) {
                     resolution = ConflictResolution.KEEP_NEW;
                     mergedProperties.put(key, newValue);
                 } else if (incoming.extractionConfidence() < existing.extractionConfidence()) {
@@ -67,14 +76,10 @@ public class VersionMerger {
             }
         }
 
-        // 合并 description：取更长者
-        String mergedDescription = existing.description();
-        if (incoming.description() != null) {
-            int existingLen = existing.description() != null ? existing.description().length() : 0;
-            if (incoming.description().length() > existingLen) {
-                mergedDescription = incoming.description();
-                hasChanges = true;
-            }
+        // 合并 description
+        String mergedDescription = mergeDescription(existing, incoming, incomingIsUserExplicit);
+        if (!Objects.equals(mergedDescription, existing.description())) {
+            hasChanges = true;
         }
 
         if (!hasChanges) {
@@ -102,7 +107,45 @@ public class VersionMerger {
                 now
         );
 
-        log.debug("版本合并: 创建新版本, name={}, version={}", mergedEntity.name(), mergedEntity.version());
+        log.debug("版本合并: 创建新版本, name={}, version={}, userExplicit={}",
+                mergedEntity.name(), mergedEntity.version(), incomingIsUserExplicit);
         return new MergeResult(mergedEntity, conflicts, true);
+    }
+
+    /**
+     * 合并 description 策略：
+     * - 用户显式更新且 incoming 有内容时：取新值（用户最新陈述覆盖旧值）
+     * - 其他情况：取更长者或非空者
+     */
+    private String mergeDescription(TemporalEntity existing, TemporalEntity incoming,
+                                    boolean incomingIsUserExplicit) {
+        String existingDesc = existing.description();
+        String incomingDesc = incoming.description();
+
+        if (incomingDesc == null || incomingDesc.isBlank()) {
+            return existingDesc; // incoming 无内容，保留旧值
+        }
+
+        if (incomingIsUserExplicit) {
+            // 用户显式更新：新 description 直接覆盖旧值
+            return incomingDesc;
+        }
+
+        // 非用户显式更新：取更长者
+        int existingLen = existingDesc != null ? existingDesc.length() : 0;
+        if (incomingDesc.length() > existingLen) {
+            return incomingDesc;
+        }
+        return existingDesc;
+    }
+
+    /**
+     * 判断 evidenceKind 是否为用户显式来源。
+     * USER_EXPLICIT（用户在对话中明确陈述）和 USER_CONFIRMED（用户通过 UI/API 确认）
+     * 都视为用户显式更新，应优先采纳新值。
+     */
+    private static boolean isUserExplicitEvidence(MemoryEvidenceKind evidenceKind) {
+        return evidenceKind == MemoryEvidenceKind.USER_EXPLICIT
+                || evidenceKind == MemoryEvidenceKind.USER_CONFIRMED;
     }
 }

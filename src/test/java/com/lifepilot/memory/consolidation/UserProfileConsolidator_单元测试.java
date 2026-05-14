@@ -93,7 +93,7 @@ class UserProfileConsolidator_单元测试 {
                 eq(GenerationCapability.CHAT),
                 eq(Duration.ofSeconds(60)),
                 eq(true)
-        )).thenReturn(LlmResponse.simple("用户偏好中文回复。", 10, 5, "mock-provider", "mock-model", 100));
+        )).thenReturn(new LlmResponse("用户偏好中文回复。", null, null, List.of(), Map.of(), 10, 5, null, 0, "mock-provider", "mock-model", 100, false));
 
         // when
         consolidator.consolidate();
@@ -134,7 +134,7 @@ class UserProfileConsolidator_单元测试 {
                 eq(GenerationCapability.CHAT),
                 eq(Duration.ofSeconds(60)),
                 eq(true)
-        )).thenReturn(LlmResponse.simple("用户偏好中文回复。", 10, 5, "mock-provider", "mock-model", 100));
+        )).thenReturn(new LlmResponse("用户偏好中文回复。", null, null, List.of(), Map.of(), 10, 5, null, 0, "mock-provider", "mock-model", 100, false));
 
         consolidator.consolidate();
         var captor = ArgumentCaptor.forClass(TemporalEntity.class);
@@ -248,7 +248,7 @@ class UserProfileConsolidator_单元测试 {
                 eq(GenerationCapability.CHAT),
                 eq(Duration.ofSeconds(60)),
                 eq(true)
-        )).thenReturn(LlmResponse.simple("用户偏好中文且喜欢结论靠前。", 10, 5, "mock-provider", "mock-model", 100));
+        )).thenReturn(new LlmResponse("用户偏好中文且喜欢结论靠前。", null, null, List.of(), Map.of(), 10, 5, null, 0, "mock-provider", "mock-model", 100, false));
 
         // when
         consolidator.consolidate(true);

@@ -75,6 +75,8 @@ public class RealtimeExtractor {
     private final MemoryAccessPolicy memoryAccessPolicy;
     @Nullable
     private final MemoryExtractionCandidateRepository candidateRepository;
+    @Nullable
+    private final com.lifepilot.memory.security.MemoryInjectionDetector injectionDetector;
 
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
@@ -126,6 +128,21 @@ public class RealtimeExtractor {
                              Clock clock,
                              @Nullable MemoryAccessPolicy memoryAccessPolicy,
                              @Nullable MemoryExtractionCandidateRepository candidateRepository) {
+        this(generationRouter, semanticMemory, properties, extractionValidator,
+                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, candidateRepository, null);
+    }
+
+    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
+                             SemanticMemory semanticMemory,
+                             MemoryProperties properties,
+                             ExtractionValidator extractionValidator,
+                             JdbcTemplate jdbcTemplate,
+                             PromptRegistry promptRegistry,
+                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                             Clock clock,
+                             @Nullable MemoryAccessPolicy memoryAccessPolicy,
+                             @Nullable MemoryExtractionCandidateRepository candidateRepository,
+                             @Nullable com.lifepilot.memory.security.MemoryInjectionDetector injectionDetector) {
         this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.extractionValidator = extractionValidator;
@@ -137,6 +154,7 @@ public class RealtimeExtractor {
         this.clock = clock;
         this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
         this.candidateRepository = candidateRepository;
+        this.injectionDetector = injectionDetector;
     }
 
     /**
@@ -224,6 +242,21 @@ public class RealtimeExtractor {
             String candidateId = candidateRepository != null
                     ? candidateRepository.recordValidated(sessionId, writeContext, decision)
                     : null;
+            // 4.1 注入检测
+            if (injectionDetector != null) {
+                float trustScore = safeFloat(decision.extractionConfidence(), 0.5f);
+                var detectionResult = injectionDetector.detect(
+                        writeContext.spaceId(),
+                        decision.description(),
+                        trustScore);
+                if (detectionResult.isBlocked()) {
+                    log.info("注入检测拦截: entity={}, reason={}", decision.entityName(), detectionResult.details());
+                    if (candidateRepository != null) {
+                        candidateRepository.markFailed(candidateId, "injection_blocked: " + detectionResult.details());
+                    }
+                    continue;
+                }
+            }
             try {
                 var result = executeDecision(decision, sessionId, writeContext, summaryReadFilter);
                 if (candidateRepository != null) {

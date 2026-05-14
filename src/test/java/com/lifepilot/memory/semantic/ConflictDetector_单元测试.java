@@ -75,7 +75,7 @@ class ConflictDetector_单元测试 {
 
     /** 构造测试用 LlmResponse */
     private static LlmResponse buildLlmResponse(String content) {
-        return LlmResponse.simple(content, 100, 50, "test-provider", "test-model", 200L);
+        return new LlmResponse(content, null, null, List.of(), Map.of(), 100, 50, null, 0, "test-provider", "test-model", 200L, false);
     }
 
     // ------------------------------------------------------------------

@@ -32,6 +32,11 @@ public class TaskExecutionBehavior implements ProactiveBehavior {
     @Override
     public String name() { return "task-execution"; }
 
+    @Override
+    public com.lifepilot.agent.task.proactive.behavior.BehaviorLayer layer() {
+        return com.lifepilot.agent.task.proactive.behavior.BehaviorLayer.EXPERIENCE_DRIVEN;
+    }
+
     /**
      * 检测目标是否触发条件满足。
      *

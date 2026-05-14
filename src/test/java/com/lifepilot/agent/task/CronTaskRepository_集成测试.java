@@ -64,7 +64,7 @@ class CronTaskRepository_集成测试 {
     private CronTaskEntry 创建任务(String name, String schedule, String status) {
         var now = Instant.now().toString();
         return new CronTaskEntry(UUID.randomUUID().toString(), name, schedule,
-                "测试指令: " + name, status, now, now);
+                "测试指令: " + name, status, now, now, null, null);
     }
 
     @Test
@@ -80,7 +80,7 @@ class CronTaskRepository_集成测试 {
 
         // 更新
         var updated = new CronTaskEntry(task.id(), "每日AI资讯(已修改)", "0 30 9 * * *",
-                task.instruction(), "paused", task.createdAt(), Instant.now().toString());
+                task.instruction(), "paused", task.createdAt(), Instant.now().toString(), null, null);
         repository.update(updated);
 
         var afterUpdate = repository.findById(task.id()).orElseThrow();

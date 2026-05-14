@@ -266,7 +266,9 @@ graph TB
 
 | 主题 | 文档 |
 |------|------|
-| 记忆进阶（巩固/遗忘/混合检索） | [架构](architecture/memory-advanced.md) · [特性](features/memory-advanced.md) |
+| 记忆系统整体架构 / 数据流 / 本轮能力 | [架构](architecture/memory-system.md) · [数据流](architecture/memory-data-flow.md) · [特性](features/memory-system.md) |
+| 主动引擎 Boundary/Focus/Training | [架构](architecture/proactive-boundary-training.md) · [特性](features/proactive-boundary-training.md) |
+| 主动引擎 Timing/CoT/分层激活 | [架构](architecture/proactive-timing-cot.md) · [特性](features/proactive-timing-cot.md) |
 | 预置 Skill（种子 Skill） | [架构](architecture/preset-skills.md) · [特性](features/preset-skills.md) |
 | 工具权限与自动执行 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | 自主任务执行 | 见 [架构](architecture/agent-engine.md) 与 [工作流指南](guides/workflow-guide.md) |
