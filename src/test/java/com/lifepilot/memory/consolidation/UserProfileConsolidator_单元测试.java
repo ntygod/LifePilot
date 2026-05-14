@@ -92,7 +92,7 @@ class UserProfileConsolidator_单元测试 {
                 isNull(),
                 isNull(),
                 eq(GenerationCapability.CHAT),
-                eq(Duration.ofSeconds(60)),
+                eq(Duration.ofSeconds(120)),
                 eq(true)
         )).thenReturn(new LlmResponse("用户偏好中文回复。", null, null, List.of(), Map.of(), 10, 5, null, 0, "mock-provider", "mock-model", 100, false));
 
@@ -133,7 +133,7 @@ class UserProfileConsolidator_单元测试 {
                 isNull(),
                 isNull(),
                 eq(GenerationCapability.CHAT),
-                eq(Duration.ofSeconds(60)),
+                eq(Duration.ofSeconds(120)),
                 eq(true)
         )).thenReturn(new LlmResponse("用户偏好中文回复。", null, null, List.of(), Map.of(), 10, 5, null, 0, "mock-provider", "mock-model", 100, false));
 
@@ -247,7 +247,7 @@ class UserProfileConsolidator_单元测试 {
                 isNull(),
                 isNull(),
                 eq(GenerationCapability.CHAT),
-                eq(Duration.ofSeconds(60)),
+                eq(Duration.ofSeconds(120)),
                 eq(true)
         )).thenReturn(new LlmResponse("用户偏好中文且喜欢结论靠前。", null, null, List.of(), Map.of(), 10, 5, null, 0, "mock-provider", "mock-model", 100, false));
 
