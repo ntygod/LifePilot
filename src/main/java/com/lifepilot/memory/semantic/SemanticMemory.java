@@ -92,6 +92,9 @@ public class SemanticMemory {
     @Nullable
     private MemoryProjectionService projectionService;
 
+    @Nullable
+    private com.lifepilot.memory.lifecycle.staleness.StalenessCoordinator stalenessCoordinator;
+
     public SemanticMemory(JdbcTemplate jdbcTemplate,
                           ConflictDetector conflictDetector,
                           VersionMerger versionMerger,
@@ -146,6 +149,15 @@ public class SemanticMemory {
     /** 注入投影服务。向量 upsert/delete 必须走 outbox。 */
     public void setProjectionService(@Nullable MemoryProjectionService projectionService) {
         this.projectionService = projectionService;
+    }
+
+    /**
+     * 注入 staleness 协调器（memory-staleness spec）。
+     * 在 upsertWithConflictDetection 成功返回前异步触发：识别语义冲突邻居 → 标记 STALE_CANDIDATE
+     * → 生成邻居刷新候选。coordinator 为 null 时等价于 staleness 能力关闭。
+     */
+    public void setStalenessCoordinator(@Nullable com.lifepilot.memory.lifecycle.staleness.StalenessCoordinator stalenessCoordinator) {
+        this.stalenessCoordinator = stalenessCoordinator;
     }
 
     /**
@@ -208,6 +220,7 @@ public class SemanticMemory {
             enqueueVectorUpsertProjection(entity);
             notifyWriteCallback();
             triggerConflictResolution(entity);
+            triggerStalenessProcessing(entity);
             log.debug("语义记忆: 版本化更新, name={}, version={}", entity.name(), entity.version());
             return entity;
         } else {
@@ -238,6 +251,7 @@ public class SemanticMemory {
                     "created by " + (sourceReference != null ? sourceReference : "unknown"),
                     resolveChangeSource(sourceReference)));
             triggerConflictResolution(entity);
+            triggerStalenessProcessing(entity);
             log.debug("语义记忆: 新建实体, name={}, id={}", entity.name(), entity.id());
             return entity;
         }
@@ -523,6 +537,34 @@ public class SemanticMemory {
             });
         } else {
             safeTriggerConflictResolution(savedEntity);
+        }
+    }
+
+    /**
+     * memory-staleness spec：新实体落库后，异步识别冲突邻居并标记 STALE_CANDIDATE。
+     * 使用 afterCommit 钩子确保新实体在邻居检测时对向量检索可见。
+     */
+    private void triggerStalenessProcessing(TemporalEntity savedEntity) {
+        if (stalenessCoordinator == null) return;
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        stalenessCoordinator.process(savedEntity);
+                    } catch (RuntimeException e) {
+                        log.warn("语义记忆: 触发 staleness 处理失败: entity={}, err={}",
+                                savedEntity.id(), e.getMessage());
+                    }
+                }
+            });
+        } else {
+            try {
+                stalenessCoordinator.process(savedEntity);
+            } catch (RuntimeException e) {
+                log.warn("语义记忆: 触发 staleness 处理失败: entity={}, err={}",
+                        savedEntity.id(), e.getMessage());
+            }
         }
     }
 

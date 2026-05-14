@@ -263,6 +263,7 @@ lifepilot:
       short-name-threshold: 2
       experience-promote-min-importance: 0.8
       experience-promote-min-access-count: 3
+      user-profile-llm-timeout-seconds: 120
     # 遗忘引擎
     forgetting:
       cron: "0 0 4 * * SUN"
@@ -329,6 +330,10 @@ lifepilot:
       cron: "0 0 5 * * *"
       retention-days: 90
       max-cleanup-per-run: 500
+    # Memory MCP Server（暴露记忆能力给外部 Agent）
+    mcp-server:
+      enabled: true
+      api-key: ${MEMORY_MCP_API_KEY:}
     # 经验总结配置
     experience:
       enabled: true
@@ -348,7 +353,7 @@ lifepilot:
         enabled: true
         similarity-threshold: 0.80
         initial-importance: 0.7
-        llm-timeout-seconds: 30
+        llm-timeout-seconds: 120
       # 执行上下文隔离配置
       isolation:
         cross-context-retrieval: false

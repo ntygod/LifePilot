@@ -1,5 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
+import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import org.springframework.lang.Nullable;
 
@@ -22,6 +24,8 @@ import java.util.regex.Pattern;
  * @param focusState           桌面焦点状态（可为 null）
  * @param lastHeartbeatAt      上次心跳时间（首次运行为 null）
  * @param heartbeatIntervalMin 心跳间隔（分钟）
+ * @param boundaryState        任务边界状态（IN_BOUNDARY / OUT_OF_BOUNDARY / UNKNOWN）
+ * @param focusMode            用户专注状态（FOCUS_MODE / NORMAL）
  * @author zsg
  * @since 2026-04-14
  */
@@ -37,10 +41,12 @@ public record ContextPacket(
         @Nullable Instant lastHeartbeatAt,
         int heartbeatIntervalMin,
         @Nullable String userProfile,
-        @Nullable String recentExperience
+        @Nullable String recentExperience,
+        BoundaryState boundaryState,
+        FocusMode focusMode
 ) {
 
-    private static final Pattern IDE_TITLE_PATTERN = Pattern.compile(
+    static final Pattern IDE_TITLE_PATTERN = Pattern.compile(
             "VS Code|Visual Studio Code|IntelliJ|WebStorm|PyCharm|CLion|GoLand|Rider|RustRover|Cursor|Zed|Neovim",
             Pattern.CASE_INSENSITIVE
     );
@@ -52,6 +58,8 @@ public record ContextPacket(
         actionsSentToday = Math.max(0, actionsSentToday);
         dailyMaxActions = Math.max(1, dailyMaxActions);
         heartbeatIntervalMin = Math.max(1, heartbeatIntervalMin);
+        boundaryState = boundaryState != null ? boundaryState : BoundaryState.UNKNOWN;
+        focusMode = focusMode != null ? focusMode : FocusMode.NORMAL;
     }
 
     /**
@@ -96,5 +104,20 @@ public record ContextPacket(
     /** 今日剩余投递额度。 */
     public int remainingSlots() {
         return Math.max(0, dailyMaxActions - actionsSentToday);
+    }
+
+    /** 是否处于边界窗口内。 */
+    public boolean isInBoundary() {
+        return boundaryState == BoundaryState.IN_BOUNDARY;
+    }
+
+    /** 是否明确处于边界窗口外（UNKNOWN 返回 false）。 */
+    public boolean isOutOfBoundary() {
+        return boundaryState == BoundaryState.OUT_OF_BOUNDARY;
+    }
+
+    /** 是否处于专注状态。 */
+    public boolean isInFocusMode() {
+        return focusMode == FocusMode.FOCUS_MODE;
     }
 }

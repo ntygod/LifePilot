@@ -83,7 +83,7 @@ class GenerationRouterTest {
         when(circuitBreakerManager.isCallPermitted("chat-explicit", GenerationCapability.CHAT.name()))
                 .thenReturn(true);
         when(clientFactory.getOrCreate(explicitService)).thenReturn(client);
-        var expected = LlmResponse.simple("ok", 10, 20, "chat-explicit", "qwen-explicit", 120);
+        var expected = new LlmResponse("ok", null, null, List.of(), Map.of(), 10, 20, null, 0, "chat-explicit", "qwen-explicit", 120, false);
         when(client.call("你好", null, Duration.ofSeconds(8))).thenReturn(expected);
 
         var router = new GenerationRouter(registry, settingsRepository, clientFactory, circuitBreakerManager, profileRegistry());

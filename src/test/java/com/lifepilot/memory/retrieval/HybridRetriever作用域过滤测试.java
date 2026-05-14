@@ -87,7 +87,7 @@ class HybridRetriever作用域过滤测试 {
                 properties,
                 jdbcTemplate,
                 null
-        );
+        , null);
 
         var results = retriever.retrieve("帮我回忆一下", 10, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
 

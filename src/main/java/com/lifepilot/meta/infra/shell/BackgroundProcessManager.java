@@ -275,6 +275,24 @@ public class BackgroundProcessManager {
     }
 
     /**
+     * 移除已完成的进程 entry — 用于 yieldMs 同步完成后主动释放配额。
+     *
+     * <p>仅移除非 RUNNING 状态的进程。如果进程仍在运行，静默忽略（防御性设计）。</p>
+     *
+     * @param sessionId 会话标识
+     */
+    public void removeCompleted(String sessionId) {
+        var managed = processes.get(sessionId);
+        if (managed == null) {
+            return; // 已被清理，幂等
+        }
+        if (!managed.isRunning()) {
+            processes.remove(sessionId);
+            log.debug("已移除已完成的后台进程 entry: sessionId={}", sessionId);
+        }
+    }
+
+    /**
      * 清理空闲超时的进程。
      */
     void cleanupIdleProcesses() {

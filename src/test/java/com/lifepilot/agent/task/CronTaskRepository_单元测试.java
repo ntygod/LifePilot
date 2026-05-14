@@ -61,7 +61,7 @@ class CronTaskRepository_单元测试 {
     private CronTaskEntry 创建任务(String id, String status) {
         var now = Instant.now().toString();
         return new CronTaskEntry(id, "测试任务-" + id, "0 0 6 * * *",
-                "执行测试指令", status, now, now);
+                "执行测试指令", status, now, now, null, null);
     }
 
     private CronTaskLog 创建日志(String taskId) {
@@ -97,7 +97,7 @@ class CronTaskRepository_单元测试 {
         repository.save(task);
 
         var updated = new CronTaskEntry("task-002", "已修改名称", "0 30 8 * * *",
-                "新指令", "paused", task.createdAt(), Instant.now().toString());
+                "新指令", "paused", task.createdAt(), Instant.now().toString(), null, null);
         repository.update(updated);
 
         var found = repository.findById("task-002").orElseThrow();

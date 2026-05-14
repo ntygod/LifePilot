@@ -158,7 +158,8 @@ class ToolExecutionCoordinatorTest {
                                 List.of("trace-1"),
                                 Instant.now(),
                                 Instant.now()
-                        ),
+                        ,
+                null, null),
                         0.92f
                 )));
 

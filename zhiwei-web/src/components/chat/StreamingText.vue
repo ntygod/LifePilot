@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onBeforeUnmount, onMounted, onUpdated, watch } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, onUpdated, watch } from 'vue'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import markedKatex from 'marked-katex-extension'
 import markedAlert from 'marked-alert'
 import { highlightCode } from '@/lib/highlight'
 import { injectCopyButtons } from '@/utils/codeBlockCopy'
+import MermaidBlock from './MermaidBlock.vue'
 import 'katex/dist/katex.min.css'
 
 const props = defineProps<{
@@ -19,6 +20,8 @@ const markedInstance = new Marked(
   markedHighlight({
     langPrefix: 'hljs language-',
     highlight(code: string, lang: string) {
+      // mermaid 代码块不做高亮，留给 MermaidBlock 处理
+      if (lang === 'mermaid') return code
       return highlightCode(code, lang)
     }
   }),
@@ -26,14 +29,7 @@ const markedInstance = new Marked(
   markedAlert()
 )
 
-/* ---- Markdown 节流渲染 ----
- * 流式输出时，token 以 ~24ms 间隔到达并触发 content 变更。
- * 如果每次变更都做全量 markdown 解析 + v-html 替换 DOM，
- * 60fps 的布局重排是抖动的主要来源。
- *
- * 方案：leading + trailing 节流，首次变更立即解析，
- * 后续变更在 PARSE_INTERVAL_MS 内合并为一次 DOM 更新。
- */
+/* ---- Markdown 节流渲染 ---- */
 const html = ref('')
 let parseTimer: ReturnType<typeof setTimeout> | null = null
 let lastParseTs = 0
@@ -44,7 +40,6 @@ function safeParseMarkdown(text: string): string {
   try {
     return markedInstance.parse(text) as string
   } catch {
-    // 流式输出时尝试修复未闭合的代码块
     let fixed = text
     if ((fixed.match(/```/g) || []).length % 2 !== 0) {
       fixed += '\n```'
@@ -70,26 +65,22 @@ function clearParseTimer() {
   }
 }
 
-/** 立即解析并渲染 markdown */
 function flushMarkdown() {
   clearParseTimer()
   lastParseTs = Date.now()
   html.value = safeParseMarkdown(props.content)
 }
 
-/** leading + trailing 节流：首次立即触发，后续按间隔合并 */
 function scheduleMarkdownParse() {
   const now = Date.now()
   const elapsed = now - lastParseTs
 
-  // leading edge：距上次解析已超过间隔，立即执行
   if (elapsed >= PARSE_INTERVAL_MS) {
     lastParseTs = now
     html.value = safeParseMarkdown(props.content)
     return
   }
 
-  // trailing edge：在剩余时间后执行
   if (parseTimer !== null) return
   parseTimer = setTimeout(() => {
     parseTimer = null
@@ -97,6 +88,66 @@ function scheduleMarkdownParse() {
     html.value = safeParseMarkdown(props.content)
   }, PARSE_INTERVAL_MS - elapsed)
 }
+
+/**
+ * 从原始 content 中提取 mermaid 代码块。
+ * 返回按出现顺序排列的 mermaid 源码数组。
+ */
+const mermaidBlocks = computed(() => {
+  const blocks: string[] = []
+  const regex = /```mermaid\s*\n([\s\S]*?)```/g
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(props.content)) !== null) {
+    blocks.push(match[1].trim())
+  }
+  return blocks
+})
+
+/**
+ * 将 HTML 按 mermaid <pre> 块拆分为交替的段落。
+ * 每段要么是普通 HTML，要么是 mermaid 代码块索引。
+ */
+interface HtmlSegment { type: 'html'; content: string }
+interface MermaidSegment { type: 'mermaid'; index: number; code: string }
+type Segment = HtmlSegment | MermaidSegment
+
+const segments = computed<Segment[]>(() => {
+  const rawHtml = html.value
+  if (!rawHtml || mermaidBlocks.value.length === 0) {
+    return [{ type: 'html', content: rawHtml }]
+  }
+
+  // 匹配 marked 生成的 mermaid pre 块（class 顺序可能因 marked 版本不同而变化）
+  const mermaidPreRegex = /<pre><code class="[^"]*language-mermaid[^"]*">([\s\S]*?)<\/code><\/pre>/g
+  const result: Segment[] = []
+  let lastIndex = 0
+  let mermaidIdx = 0
+  let match: RegExpExecArray | null
+
+  while ((match = mermaidPreRegex.exec(rawHtml)) !== null) {
+    // 前面的 HTML 段
+    if (match.index > lastIndex) {
+      result.push({ type: 'html', content: rawHtml.slice(lastIndex, match.index) })
+    }
+    // Mermaid 段
+    result.push({
+      type: 'mermaid',
+      index: mermaidIdx,
+      code: mermaidBlocks.value[mermaidIdx] ?? '',
+    })
+    mermaidIdx++
+    lastIndex = match.index + match[0].length
+  }
+
+  // 剩余的 HTML 段
+  if (lastIndex < rawHtml.length) {
+    result.push({ type: 'html', content: rawHtml.slice(lastIndex) })
+  }
+
+  return result
+})
+
+const hasMermaid = computed(() => mermaidBlocks.value.length > 0)
 
 /* ---- 生命周期 ---- */
 function tryInjectCopyButtons() {
@@ -120,7 +171,6 @@ watch(() => props.content, () => {
 
 watch(() => props.streaming, (streaming) => {
   if (!streaming) {
-    // 流结束时立即做最终渲染
     flushMarkdown()
   }
 })
@@ -128,13 +178,31 @@ watch(() => props.streaming, (streaming) => {
 
 <template>
   <div class="streaming-shell">
-    <div
-      ref="proseRef"
-      class="message-prose prose max-w-none dark:prose-invert"
-      :class="streaming && 'streaming-prose'"
-      :aria-live="streaming ? 'polite' : undefined"
-      v-html="html"
-    />
+    <!-- 有 mermaid 块时：分段渲染 -->
+    <template v-if="hasMermaid && !streaming">
+      <div ref="proseRef" class="message-prose prose max-w-none dark:prose-invert">
+        <template v-for="(seg, i) in segments" :key="i">
+          <div v-if="seg.type === 'html'" v-html="seg.content" />
+          <MermaidBlock
+            v-else
+            :code="seg.code"
+            :streaming="streaming"
+          />
+        </template>
+      </div>
+    </template>
+
+    <!-- 无 mermaid 或流式阶段：整体 v-html（性能优先） -->
+    <template v-else>
+      <div
+        ref="proseRef"
+        class="message-prose prose max-w-none dark:prose-invert"
+        :class="streaming && 'streaming-prose'"
+        :aria-live="streaming ? 'polite' : undefined"
+        v-html="html"
+      />
+    </template>
+
     <Transition name="caret-fade">
       <span v-if="streaming" class="streaming-caret" />
     </Transition>
@@ -302,6 +370,16 @@ watch(() => props.streaming, (streaming) => {
   padding: 0.16rem 0.42rem;
   font-size: 0.84em;
   color: hsl(from var(--primary) h s l / 0.88);
+}
+
+/* pre 内部的 inline code 适配深色背景 */
+.message-prose :deep(pre code:not(.hljs)) {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  color: hsl(210 34% 92%);
 }
 
 .message-prose :deep(pre) {

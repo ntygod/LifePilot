@@ -788,3 +788,41 @@ QUEUE 级投递的排队动作。同一 userId + topicKey 走 UPSERT 去重。
   https://vowpalwabbit.org/docs/vowpal_wabbit/python/latest/tutorials/python_Contextual_bandits_and_Vowpal_Wabbit.html
 - MABWiser  
   https://github.com/fidelity/mabwiser
+
+
+## 17. 演进落地（新增模块）
+
+以下两个 spec 已在 `feature/memory-evolution` 分支落地（参考 #[[file:docs/planned/memory-and-proactive-evolution-gaps.md]] §2）。均默认关闭关键开关，保持零回归；需手动开启并在真实场景验证。
+
+### 17.1 proactive-boundary-training（P-P0-1/2/3）
+
+详细设计见 #[[file:docs/architecture/proactive-boundary-training.md]]。本文档相关小节的增量映射：
+
+- **对 §6.1 三级管线**：心跳进入 Gate 2 前，引入三个新的可空上下文输入：
+  - `BoundarySignalCollector` 订阅 `ConversationCompletedEvent / WorkflowCompletedEvent / A2aTaskCompletedEvent` → `ContextPacket.boundaryState ∈ {IN_BOUNDARY, OUT_OF_BOUNDARY, UNKNOWN}`
+  - `FocusStateDetector` 综合桌面 `ReminderFocusState` 与对话消息节奏 → `ContextPacket.focusMode ∈ {FOCUS_MODE, NORMAL}`
+- **对 §9 评分与边界**：`DecisionGate.applyBoundaryAndFocus` 新增两维动态阈值调整：
+  - `IN_BOUNDARY`：NOTIFY 阈值 −0.15 / INTERRUPT 阈值 −0.15
+  - `OUT_OF_BOUNDARY`：两级阈值 +0.25
+  - `FOCUS_MODE`：NOTIFY → QUEUE（INTERRUPT 保留真紧急打断能力）
+- **对 §11 反馈协议**：`ProactiveTrainingReplayService` 从 `ReminderExecutionRepository` 历史样本按 reward 分层采样，产出 `ProactiveFewShotLibrary`（文件持久化 `target/cache/proactive-few-shot/{uid}.json`）。本期只生产库，不强制接入 Gate 3 prompt（由下一 spec 消费）。
+
+### 17.2 proactive-timing-cot（P-P1-4/5/6, C-P1-2）
+
+详细设计见 #[[file:docs/architecture/proactive-timing-cot.md]]。关键增量：
+
+- **Goldilocks 窗口**：`GoldilocksWindowCalculator` 按用户 p80 响应延迟估算窗口，`ReminderDecisionEngine.decide` 在硬边界后插入 `isWindowClosed` 检查；超窗口返回 `ReminderSkipReason.WINDOW_CLOSED`（新增枚举）。
+- **Gate 3 CoT**：`GateThreeReasoner` 构造四段 `<observation>/<user-state>/<necessity>/<action>` prompt，消费上一 spec 的 `ProactiveFewShotLibrary` 做 priming；本期只提供组件，不强制接入任何行为插件。
+- **行为分层激活**：`BehaviorLayer` 4 档（FACT_DRIVEN / EXPERIENCE_DRIVEN / HABIT_DRIVEN / STANDALONE），8 个行为插件按归属 override；`BehaviorActivationPolicy.shouldActivate(layer, ctx)` 在 `ProactiveEngine.heartbeat` 的 Gate 2 入口按 ctx 过滤。
+- **偏好命名**：`ProactivePreferenceGuard` 静态工具类固化 `proactive-*` category 前缀约定。
+
+### 17.3 开关矩阵（默认全部保守）
+
+| 开关 | 默认 | 说明 |
+|---|---|---|
+| `lifepilot.agent.task.boundary-signal-enabled` | true | 轻量内存，默认开启 |
+| `lifepilot.agent.task.focus-detection-enabled` | true | 同上 |
+| `lifepilot.agent.task.proactive-training-enabled` | false | 样本积累后再开 |
+| `lifepilot.agent.task.proactive-timing-window-enabled` | true | Goldilocks 检查 |
+| `lifepilot.agent.task.proactive-cot-enabled` | false | 等 few-shot 库就位 |
+| `lifepilot.agent.task.proactive-behavior-layered-activation-enabled` | false | 验证后再开 |

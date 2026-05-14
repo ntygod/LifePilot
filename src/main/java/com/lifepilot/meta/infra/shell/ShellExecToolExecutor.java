@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -173,20 +174,36 @@ public class ShellExecToolExecutor {
     }
 
     /**
+     * 已知的外部编码 CLI 可执行文件名（不含扩展名）。
+     * 匹配到时，后续 {@link #mergeExternalCliEnv} 会注入 CLAUDE_CODE_GIT_BASH_PATH env。
+     */
+    private static final Set<String> EXTERNAL_CLI_NAMES = Set.of("claude", "codex");
+
+    /**
      * 检测命令是否需要 Unix bash（Claude Code / Codex 等外部 CLI 在 Windows 上依赖）。
      *
-     * <p>判定：命令开头或空格分隔 token 是否为 {@code claude} / {@code codex}。
-     * 匹配到时，后续 {@link #mergeExternalCliEnv} 会注入 CLAUDE_CODE_GIT_BASH_PATH env。</p>
+     * <p>判定逻辑：提取命令的第一个 token 的 basename（去掉路径和 .exe/.cmd 扩展名），
+     * 检查是否在 {@link #EXTERNAL_CLI_NAMES} 中。比旧版 contains 匹配更精确，
+     * 不会误匹配 {@code echo "claude is great"} 等无关命令。</p>
      */
     private static boolean commandNeedsBash(String command) {
         if (command == null || command.isBlank()) {
             return false;
         }
-        String lower = command.toLowerCase().trim();
-        return lower.startsWith("claude") || lower.startsWith("codex")
-                || lower.contains(" claude ") || lower.contains(" codex ")
-                || lower.contains("/claude ") || lower.contains("\\claude ")
-                || lower.contains("/codex ") || lower.contains("\\codex ");
+        // 提取第一个 token（命令本身）
+        String firstToken = command.trim().split("\\s+", 2)[0].toLowerCase();
+        // 去掉路径前缀，只保留文件名
+        int lastSlash = Math.max(firstToken.lastIndexOf('/'), firstToken.lastIndexOf('\\'));
+        String basename = lastSlash >= 0 ? firstToken.substring(lastSlash + 1) : firstToken;
+        // 去掉 .exe / .cmd / .bat 扩展名
+        int dotIdx = basename.lastIndexOf('.');
+        if (dotIdx > 0) {
+            String ext = basename.substring(dotIdx);
+            if (ext.equals(".exe") || ext.equals(".cmd") || ext.equals(".bat")) {
+                basename = basename.substring(0, dotIdx);
+            }
+        }
+        return EXTERNAL_CLI_NAMES.contains(basename);
     }
 
     /**
@@ -322,10 +339,11 @@ public class ShellExecToolExecutor {
                     sessionId, cappedYieldMs, TimeUnit.MILLISECONDS);
 
             if (finished) {
-                // 进程已完成，获取最新状态
+                // 进程已完成，获取最新状态并收集输出
                 var processInfo = backgroundProcessManager.getProcessInfo(sessionId);
-                // 进程已完成，收集输出并返回同步结果
                 ProcessOutputChunk outputChunk = backgroundProcessManager.readOutputChunk(sessionId);
+                // yieldMs 同步完成：进程已退出且输出已读取，主动移除 entry 释放配额
+                backgroundProcessManager.removeCompleted(sessionId);
                 int exitCode = processInfo.exitCode() != null
                         ? processInfo.exitCode()
                         : processInfo.state() == ProcessState.COMPLETED ? 0 : 1;

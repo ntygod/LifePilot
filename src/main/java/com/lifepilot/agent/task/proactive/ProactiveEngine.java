@@ -1,6 +1,11 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.task.proactive.behavior.BehaviorActivationPolicy;
+import com.lifepilot.agent.task.proactive.boundary.BoundarySignalCollector;
+import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
+import com.lifepilot.agent.task.proactive.boundary.FocusMode;
+import com.lifepilot.agent.task.proactive.boundary.FocusStateDetector;
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.agent.task.reminder.ReminderFocusStateHolder;
@@ -54,6 +59,9 @@ public class ProactiveEngine {
     @Nullable private final ProactiveMemoryBridge memoryBridge;
     @Nullable private final TrustUpgradeService trustUpgradeService;
     @Nullable private final ImplicitSignalCollector implicitSignalCollector;
+    @Nullable private final BoundarySignalCollector boundarySignalCollector;
+    @Nullable private final FocusStateDetector focusStateDetector;
+    @Nullable private final BehaviorActivationPolicy behaviorActivationPolicy;
     private final BehaviorHealthTracker healthTracker = new BehaviorHealthTracker();
 
     /** 上次心跳时间，用于 Gate 1 变化量检查。 */
@@ -70,6 +78,42 @@ public class ProactiveEngine {
                            @Nullable ProactiveMemoryBridge memoryBridge,
                            @Nullable TrustUpgradeService trustUpgradeService,
                            @Nullable ImplicitSignalCollector implicitSignalCollector) {
+        this(behaviors, decisionGate, deliveryEngine, notificationProperties,
+                notificationRepository, config, focusStateHolder, memoryBridge,
+                trustUpgradeService, implicitSignalCollector, null, null, null);
+    }
+
+    public ProactiveEngine(List<ProactiveBehavior> behaviors,
+                           DecisionGate decisionGate,
+                           DeliveryEngine deliveryEngine,
+                           @Nullable NotificationProperties notificationProperties,
+                           @Nullable NotificationRepository notificationRepository,
+                           @Nullable AgentConfigProperties config,
+                           @Nullable ReminderFocusStateHolder focusStateHolder,
+                           @Nullable ProactiveMemoryBridge memoryBridge,
+                           @Nullable TrustUpgradeService trustUpgradeService,
+                           @Nullable ImplicitSignalCollector implicitSignalCollector,
+                           @Nullable BoundarySignalCollector boundarySignalCollector,
+                           @Nullable FocusStateDetector focusStateDetector) {
+        this(behaviors, decisionGate, deliveryEngine, notificationProperties,
+                notificationRepository, config, focusStateHolder, memoryBridge,
+                trustUpgradeService, implicitSignalCollector,
+                boundarySignalCollector, focusStateDetector, null);
+    }
+
+    public ProactiveEngine(List<ProactiveBehavior> behaviors,
+                           DecisionGate decisionGate,
+                           DeliveryEngine deliveryEngine,
+                           @Nullable NotificationProperties notificationProperties,
+                           @Nullable NotificationRepository notificationRepository,
+                           @Nullable AgentConfigProperties config,
+                           @Nullable ReminderFocusStateHolder focusStateHolder,
+                           @Nullable ProactiveMemoryBridge memoryBridge,
+                           @Nullable TrustUpgradeService trustUpgradeService,
+                           @Nullable ImplicitSignalCollector implicitSignalCollector,
+                           @Nullable BoundarySignalCollector boundarySignalCollector,
+                           @Nullable FocusStateDetector focusStateDetector,
+                           @Nullable BehaviorActivationPolicy behaviorActivationPolicy) {
         this.behaviors = List.copyOf(behaviors);
         this.decisionGate = decisionGate;
         this.deliveryEngine = deliveryEngine;
@@ -80,6 +124,9 @@ public class ProactiveEngine {
         this.memoryBridge = memoryBridge;
         this.trustUpgradeService = trustUpgradeService;
         this.implicitSignalCollector = implicitSignalCollector;
+        this.boundarySignalCollector = boundarySignalCollector;
+        this.focusStateDetector = focusStateDetector;
+        this.behaviorActivationPolicy = behaviorActivationPolicy;
     }
 
     /**
@@ -137,6 +184,12 @@ public class ProactiveEngine {
         for (var behavior : behaviors) {
             if (!healthTracker.tryActivate(behavior.name())) {
                 log.debug("主动引擎: 插件已降级，跳过 detect, behavior={}", behavior.name());
+                continue;
+            }
+            // 分层激活策略：关闭时直通，开启时按 BehaviorLayer 过滤
+            if (behaviorActivationPolicy != null
+                    && !behaviorActivationPolicy.shouldActivate(behavior.layer(), ctx)) {
+                log.debug("主动引擎: 分层激活跳过, behavior={} layer={}", behavior.name(), behavior.layer());
                 continue;
             }
             try {
@@ -320,10 +373,23 @@ public class ProactiveEngine {
         String portrait = memoryBridge != null ? memoryBridge.getUserPortrait() : null;
         String experience = memoryBridge != null ? memoryBridge.getRecentExperiences() : null;
 
+        // 边界 / 专注状态
+        BoundaryState boundaryState = BoundaryState.UNKNOWN;
+        if (boundarySignalCollector != null) {
+            boundaryState = boundarySignalCollector.isWithinBoundary(userId, now)
+                    ? BoundaryState.IN_BOUNDARY
+                    : BoundaryState.OUT_OF_BOUNDARY;
+        }
+        FocusMode focusMode = FocusMode.NORMAL;
+        if (focusStateDetector != null) {
+            focusMode = focusStateDetector.detect(userId, focusState);
+        }
+
         return new ContextPacket(userId, now, zoneId, qStart, qEnd,
                 sentToday, dailyMax, focusState, lastHeartbeatAt, heartbeatMin,
                 portrait != null && !portrait.isBlank() ? portrait : null,
-                experience != null && !experience.isBlank() ? experience : null);
+                experience != null && !experience.isBlank() ? experience : null,
+                boundaryState, focusMode);
     }
 
     @Nullable

@@ -197,8 +197,7 @@ class ForgettingEngine_单元测试 {
         when(semanticMemory.findAllCurrent()).thenReturn(List.of(entity));
         when(promptRegistry.render(eq("memory/entity-compression"), anyMap()))
                 .thenReturn("请压缩此实体");
-        var llmResponse = LlmResponse.simple("压缩后的摘要内容", 100, 50,
-                "provider-1", "model-1", 200L);
+        var llmResponse = new LlmResponse("压缩后的摘要内容", null, null, List.of(), Map.of(), 100, 50, null, 0, "provider-1", "model-1", 200L, false);
         when(generationRouter.call(
                 eq(LlmScene.MEMORY_COMPRESSION), anyString(),
                 isNull(), isNull(), isNull(),
@@ -236,8 +235,7 @@ class ForgettingEngine_单元测试 {
         when(semanticMemory.findAllCurrent()).thenReturn(List.of(entityA));
         when(promptRegistry.render(eq("memory/entity-compression"), anyMap()))
                 .thenReturn("请压缩此实体");
-        var llmResponse = LlmResponse.simple("摘要", 10, 10,
-                "provider-1", "model-1", 50L);
+        var llmResponse = new LlmResponse("摘要", null, null, List.of(), Map.of(), 10, 10, null, 0, "provider-1", "model-1", 50L, false);
         when(generationRouter.call(
                 eq(LlmScene.MEMORY_COMPRESSION), anyString(),
                 isNull(), isNull(), isNull(),

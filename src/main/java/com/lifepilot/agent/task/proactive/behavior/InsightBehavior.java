@@ -44,6 +44,9 @@ public class InsightBehavior extends AbstractLlmBehavior {
     public String name() { return "insight"; }
 
     @Override
+    public BehaviorLayer layer() { return BehaviorLayer.FACT_DRIVEN; }
+
+    @Override
     protected String promptKey() { return PROMPT_KEY; }
 
     @Override

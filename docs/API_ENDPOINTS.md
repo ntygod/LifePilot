@@ -38,6 +38,7 @@
 - [Context（桌面端上下文上报）](#context桌面端上下文上报)
 - [Webhooks（外部渠道回调）](#webhooks外部渠道回调)
 - [MCP Server（服务端 JSON-RPC）](#mcp-server服务端-json-rpc)
+- [Memory MCP Server（记忆子系统 JSON-RPC）](#memory-mcp-server记忆子系统-json-rpc)
 
 ---
 
@@ -591,3 +592,15 @@
 | Method | Path | Handler | 备注 |
 |--------|------|---------|------|
 | POST | `/mcp` | `handleRequest` | MCP Streamable HTTP（JSON-RPC）：initialize / tools/list / tools/call |
+
+---
+
+## Memory MCP Server（记忆子系统 JSON-RPC）
+
+来源：`MemoryMcpServerController`，Base Path: `/api/mcp`
+
+> 仅在 `lifepilot.memory.mcp-server.enabled=true` 时启用；详见 [记忆系统架构](architecture/memory-system.md) §8.6。
+
+| Method | Path | Handler | 备注 |
+|--------|------|---------|------|
+| POST | `/api/mcp/memory` | `handle` | MCP JSON-RPC 2.0：initialize / tools/list / tools/call（memory_search / memory_recall / memory_create） |

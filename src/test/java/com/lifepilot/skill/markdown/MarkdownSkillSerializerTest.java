@@ -31,7 +31,7 @@ class MarkdownSkillSerializerTest {
                 .name("写作助手")
                 .description("帮助用户撰写高质量文章")
                 .version("2.0.0")
-                .source(new SkillSource.UserDefined("/skills/writing-assistant"))
+                .source(new SkillSource.UserDefined("/skills/writing-assistant", null))
                 .instructions("你是一个专业的写作助手。")
                 .suggestedTools(List.of("todo.create", "memory.search"))
                 .metadata(Map.of())

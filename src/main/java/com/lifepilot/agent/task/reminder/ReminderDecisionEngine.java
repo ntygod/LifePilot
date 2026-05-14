@@ -1,5 +1,6 @@
 package com.lifepilot.agent.task.reminder;
 
+import com.lifepilot.agent.task.reminder.timing.GoldilocksWindowCalculator;
 import org.springframework.lang.Nullable;
 
 import java.time.Duration;
@@ -7,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * 提醒决策引擎。
@@ -22,19 +24,32 @@ public class ReminderDecisionEngine {
     private final ReminderCandidateDetector candidateDetector;
     @Nullable
     private final ReminderTrustGradient trustGradient;
+    @Nullable
+    private final GoldilocksWindowCalculator goldilocksWindow;
+    @Nullable
+    private final Supplier<String> userIdSupplier;
 
     public ReminderDecisionEngine() {
-        this(new ReminderCandidateDetector(), null);
+        this(new ReminderCandidateDetector(), null, null, null);
     }
 
     public ReminderDecisionEngine(ReminderCandidateDetector candidateDetector) {
-        this(candidateDetector, null);
+        this(candidateDetector, null, null, null);
     }
 
     public ReminderDecisionEngine(ReminderCandidateDetector candidateDetector,
                                   @Nullable ReminderTrustGradient trustGradient) {
+        this(candidateDetector, trustGradient, null, null);
+    }
+
+    public ReminderDecisionEngine(ReminderCandidateDetector candidateDetector,
+                                  @Nullable ReminderTrustGradient trustGradient,
+                                  @Nullable GoldilocksWindowCalculator goldilocksWindow,
+                                  @Nullable Supplier<String> userIdSupplier) {
         this.candidateDetector = candidateDetector;
         this.trustGradient = trustGradient;
+        this.goldilocksWindow = goldilocksWindow;
+        this.userIdSupplier = userIdSupplier;
     }
 
     /**
@@ -114,6 +129,14 @@ public class ReminderDecisionEngine {
         // --- 焦点状态检查（在静默检查之后、冷却检查之前） ---
         if (context.isFullscreenApp()) {
             return skipDecision(candidate, ReminderSkipReason.FULLSCREEN_APP);
+        }
+
+        // --- Goldilocks 窗口检查 ---
+        if (goldilocksWindow != null) {
+            String userId = userIdSupplier != null ? safeGet(userIdSupplier) : null;
+            if (goldilocksWindow.isWindowClosed(userId, candidate, context.now())) {
+                return skipDecision(candidate, ReminderSkipReason.WINDOW_CLOSED);
+            }
         }
 
         if (isWithinCooldown(state, context, config)) {
@@ -205,5 +228,14 @@ public class ReminderDecisionEngine {
             case DEFER_TO_WINDOW -> 4;
             case SKIP -> 5;
         };
+    }
+
+    @Nullable
+    private static String safeGet(Supplier<String> supplier) {
+        try {
+            return supplier.get();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

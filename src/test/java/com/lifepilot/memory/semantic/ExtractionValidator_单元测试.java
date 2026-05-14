@@ -51,25 +51,25 @@ class ExtractionValidator_单元测试 {
     /** 构建一条 ADD 决策（带默认合法值） */
     private static AudnDecision addDecision(String name, String description, Float confidence) {
         return new AudnDecision(AudnOperation.ADD, name, EntityType.PERSON,
-                description, Map.of(), confidence, 0.8f);
+                description, Map.of(), confidence, 0.8f, null, null, null, null);
     }
 
     /** 构建一条 UPDATE 决策 */
     private static AudnDecision updateDecision(String name, String description, Float confidence) {
         return new AudnDecision(AudnOperation.UPDATE, name, EntityType.PERSON,
-                description, Map.of(), confidence, 0.8f);
+                description, Map.of(), confidence, 0.8f, null, null, null, null);
     }
 
     /** 构建一条 DELETE 决策 */
     private static AudnDecision deleteDecision(String name) {
         return new AudnDecision(AudnOperation.DELETE, name, EntityType.PERSON,
-                null, null, 0.9f, 0.5f);
+                null, null, 0.9f, 0.5f, null, null, null, null);
     }
 
     /** 构建一条 NOOP 决策 */
     private static AudnDecision noopDecision(String name) {
         return new AudnDecision(AudnOperation.NOOP, name, EntityType.PERSON,
-                "描述", null, 0.9f, 0.5f);
+                "描述", null, 0.9f, 0.5f, null, null, null, null);
     }
 
     @BeforeEach
@@ -515,7 +515,7 @@ class ExtractionValidator_单元测试 {
         void DELETE操作跳过名称和描述校验() {
             // given — DELETE 的 entityName 为 null，description 也为 null
             var decision = new AudnDecision(AudnOperation.DELETE, null, EntityType.PERSON,
-                    null, null, 0.9f, 0.5f);
+                    null, null, 0.9f, 0.5f, null, null, null, null);
             var decisions = List.of(decision);
 
             // when
@@ -530,7 +530,7 @@ class ExtractionValidator_单元测试 {
         void DELETE操作跳过置信度校验() {
             // given — DELETE 的置信度为 0，低于阈值
             var decision = new AudnDecision(AudnOperation.DELETE, "待删除实体", EntityType.PERSON,
-                    null, null, 0.0f, 0.0f);
+                    null, null, 0.0f, 0.0f, null, null, null, null);
             var decisions = List.of(decision);
 
             // when
@@ -655,7 +655,7 @@ class ExtractionValidator_单元测试 {
         void confidence为null修正为0_5() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), null, 0.8f);
+                    "描述", Map.of(), null, 0.8f, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -669,7 +669,7 @@ class ExtractionValidator_单元测试 {
         void importance为null修正为0_5() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.8f, null);
+                    "描述", Map.of(), 0.8f, null, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -683,7 +683,7 @@ class ExtractionValidator_单元测试 {
         void 两个分数同时为null时均修正为0_5() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), null, null);
+                    "描述", Map.of(), null, null, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -697,7 +697,7 @@ class ExtractionValidator_单元测试 {
         void confidence负数修正为0_5() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), -0.5f, 0.8f);
+                    "描述", Map.of(), -0.5f, 0.8f, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -710,7 +710,7 @@ class ExtractionValidator_单元测试 {
         void confidence超过1修正为0_5() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 1.1f, 0.8f);
+                    "描述", Map.of(), 1.1f, 0.8f, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -723,7 +723,7 @@ class ExtractionValidator_单元测试 {
         void importance负数修正为0_5() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.8f, -1.0f);
+                    "描述", Map.of(), 0.8f, -1.0f, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -736,7 +736,7 @@ class ExtractionValidator_单元测试 {
         void importance超过1修正为0_5() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.8f, 2.0f);
+                    "描述", Map.of(), 0.8f, 2.0f, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -749,7 +749,7 @@ class ExtractionValidator_单元测试 {
         void 边界值0和1不被修正() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.0f, 1.0f);
+                    "描述", Map.of(), 0.0f, 1.0f, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -765,7 +765,7 @@ class ExtractionValidator_单元测试 {
             // given
             var properties = Map.<String, Object>of("key", "value");
             var decision = new AudnDecision(AudnOperation.UPDATE, "实体名", EntityType.PROJECT,
-                    "项目描述", properties, null, null);
+                    "项目描述", properties, null, null, null, null, null, null);
 
             // when
             var result = validator.normalizeScores(decision);
@@ -930,7 +930,7 @@ class ExtractionValidator_单元测试 {
         // given — jqwik 不执行 @BeforeEach，手动构造 validator
         var propValidator = new ExtractionValidator(defaultProperties());
         var decision = new AudnDecision(AudnOperation.ADD, "测试实体", EntityType.PERSON,
-                "有效描述", Map.of(), confidence, importance);
+                "有效描述", Map.of(), confidence, importance, null, null, null, null);
 
         // when
         var result = propValidator.normalizeScores(decision);

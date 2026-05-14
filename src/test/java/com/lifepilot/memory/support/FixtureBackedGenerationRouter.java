@@ -7,6 +7,8 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.profile.BaseAdapterType;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import org.springframework.lang.Nullable;
+import java.util.Map;
+import java.util.List;
 
 /**
  * 测试用 {@link GenerationRouter} 替身：从 {@link LlmFixture} 取预录响应，不打真 LLM。
@@ -73,13 +75,7 @@ public class FixtureBackedGenerationRouter extends GenerationRouter {
         String lastUserMessage = extractLastUserMessage(prompt);
         LlmFixture.FixtureResponse response = fixture.matchAndRender(lastUserMessage);
         String content = response.finalText().isBlank() ? response.toolCallsJson() : response.finalText();
-        return LlmResponse.simple(
-                content,
-                /* inputTokens = */ 0,
-                /* outputTokens = */ 0,
-                FIXTURE_PROVIDER,
-                FIXTURE_MODEL,
-                /* latencyMs = */ 0L);
+        return new LlmResponse(content, null, null, List.of(), Map.of(), /* inputTokens = */ 0, /* outputTokens = */ 0, null, 0, FIXTURE_PROVIDER, FIXTURE_MODEL, /* latencyMs = */ 0L, false);
     }
 
     @Override

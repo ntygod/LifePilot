@@ -1,6 +1,8 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.task.proactive.*;
+import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
+import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntentType;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,6 +95,7 @@ class ClipboardBehavior_单元测试 {
 
     private ContextPacket testCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30, null, null);
+                null, null, 0, 5, null, null, 30, null, null,
+                BoundaryState.UNKNOWN, FocusMode.NORMAL);
     }
 }

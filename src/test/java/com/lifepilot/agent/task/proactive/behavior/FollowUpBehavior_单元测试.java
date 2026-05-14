@@ -1,6 +1,8 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.task.proactive.*;
+import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
+import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -109,6 +111,7 @@ class FollowUpBehavior_单元测试 {
 
     private ContextPacket testCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
-                null, null, 0, 5, null, null, 30, null, null);
+                null, null, 0, 5, null, null, 30, null, null,
+                BoundaryState.UNKNOWN, FocusMode.NORMAL);
     }
 }

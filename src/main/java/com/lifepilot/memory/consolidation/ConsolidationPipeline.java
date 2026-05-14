@@ -1,6 +1,8 @@
 package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.consolidation.association.AssociationCandidateGenerator;
+import com.lifepilot.memory.consolidation.association.AssociationConsolidator;
 import com.lifepilot.memory.procedural.ProceduralMemory;
 import com.lifepilot.memory.procedural.ProcedureTemplate;
 import com.lifepilot.memory.procedural.TemplateStep;
@@ -45,18 +47,13 @@ public class ConsolidationPipeline {
     private final ExperienceMerger experienceMerger;
     @Nullable
     private final UserProfileConsolidator userProfileConsolidator;
+    @Nullable
+    private final AssociationCandidateGenerator remGenerator;
+    @Nullable
+    private final AssociationConsolidator remConsolidator;
 
     /**
-     * 构造巩固管线。
-     *
-     * @param semanticConsolidator    情景→语义巩固器
-     * @param proceduralConsolidator  情景→程序巩固器
-     * @param properties              记忆配置
-     * @param preferenceConsolidator  L3→L4 偏好同步器（可选）
-     * @param semanticMemory          L3 语义记忆（可选，用于经验提升）
-     * @param proceduralMemory        L4 程序记忆（可选，用于经验提升）
-     * @param experienceMerger        经验合并器（可选，用于相似经验合并为元经验）
-     * @param userProfileConsolidator 用户画像巩固器（可选）
+     * 构造巩固管线（含 REM 联想）。
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
                                   @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
@@ -65,7 +62,9 @@ public class ConsolidationPipeline {
                                   @Nullable SemanticMemory semanticMemory,
                                   @Nullable ProceduralMemory proceduralMemory,
                                   @Nullable ExperienceMerger experienceMerger,
-                                  @Nullable UserProfileConsolidator userProfileConsolidator) {
+                                  @Nullable UserProfileConsolidator userProfileConsolidator,
+                                  @Nullable AssociationCandidateGenerator remGenerator,
+                                  @Nullable AssociationConsolidator remConsolidator) {
         this.semanticConsolidator = semanticConsolidator;
         this.proceduralConsolidator = proceduralConsolidator;
         this.properties = properties;
@@ -74,11 +73,14 @@ public class ConsolidationPipeline {
         this.proceduralMemory = proceduralMemory;
         this.experienceMerger = experienceMerger;
         this.userProfileConsolidator = userProfileConsolidator;
-        log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}, 经验合并={}, 画像巩固={}",
+        this.remGenerator = remGenerator;
+        this.remConsolidator = remConsolidator;
+        log.info("ConsolidationPipeline 初始化完成, cron={}, triggerMode={}, 经验合并={}, 画像巩固={}, REM 联想={}",
                 this.properties.getConsolidation().getCron(),
                 this.properties.getConsolidation().getTriggerMode(),
                 this.experienceMerger != null ? "启用" : "禁用",
-                this.userProfileConsolidator != null ? "启用" : "禁用");
+                this.userProfileConsolidator != null ? "启用" : "禁用",
+                (this.remGenerator != null && this.remConsolidator != null) ? "启用" : "禁用");
     }
 
     /**
@@ -179,6 +181,21 @@ public class ConsolidationPipeline {
                 }
             } catch (Exception e) {
                 log.warn("巩固管线: 经验提升失败, error={}", e.getMessage(), e);
+            }
+        }
+
+        // 7. REM 式联想（memory-rem-consolidation spec）
+        if (remGenerator != null && remConsolidator != null
+                && properties.getRem().isEnabled()) {
+            try {
+                var candidates = remGenerator.generate();
+                int saved = remConsolidator.consolidate(candidates);
+                if (!candidates.isEmpty() || saved > 0) {
+                    log.info("巩固管线: REM 联想完成, candidates={}, saved={}",
+                            candidates.size(), saved);
+                }
+            } catch (Exception e) {
+                log.warn("巩固管线: REM 联想失败, error={}", e.getMessage(), e);
             }
         }
 

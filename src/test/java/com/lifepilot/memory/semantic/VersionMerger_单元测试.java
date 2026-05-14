@@ -673,4 +673,106 @@ class VersionMerger_单元测试 {
             assertThat(result.conflicts()).isEmpty();
         }
     }
+
+    // ------------------------------------------------------------------
+    // 用户显式更新优先（USER_EXPLICIT / USER_CONFIRMED）
+    // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("用户显式更新优先覆盖旧值")
+    class 用户显式更新优先 {
+
+        /** 构造带 evidenceKind 的实体 */
+        private static TemporalEntity buildWithEvidence(
+                String id, String name, String description,
+                Map<String, Object> properties,
+                float confidence, float importance,
+                com.lifepilot.memory.quality.MemoryEvidenceKind evidenceKind) {
+            return new TemporalEntity(
+                    id, EntityType.PREFERENCE, name, description,
+                    properties, 1, true,
+                    BASE_TIME, null, null,
+                    confidence, importance, 5, BASE_TIME, BASE_TIME, BASE_TIME,
+                    com.lifepilot.memory.lifecycle.LifecycleState.ACTIVE,
+                    null, null, com.lifepilot.memory.lifecycle.Temporality.PERSISTENT,
+                    null, false, java.util.List.of(),
+                    evidenceKind,
+                    com.lifepilot.memory.quality.MemoryTrustLevel.EXPLICIT,
+                    0.8f, 1, null);
+        }
+
+        @Test
+        void USER_EXPLICIT_incoming覆盖高置信度existing的属性() {
+            // given — existing 置信度 0.95，incoming 只有 0.5 但是 USER_EXPLICIT
+            var existing = buildWithEvidence("e1", "编程语言", "Java 22",
+                    Map.of("lang", "Java"), 0.95f, 0.8f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+            var incoming = buildWithEvidence("i1", "编程语言", "Rust",
+                    Map.of("lang", "Rust"), 0.5f, 0.7f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+
+            // when
+            var result = merger.merge(existing, incoming, "conv-1");
+
+            // then — USER_EXPLICIT 优先，即使 confidence 更低也覆盖
+            assertThat(result.isNewVersion()).isTrue();
+            assertThat(result.mergedEntity().properties()).containsEntry("lang", "Rust");
+            assertThat(result.mergedEntity().description()).isEqualTo("Rust");
+            assertThat(result.conflicts().get("lang").resolution()).isEqualTo(ConflictResolution.KEEP_NEW);
+        }
+
+        @Test
+        void USER_CONFIRMED_incoming覆盖existing的描述() {
+            // given — existing 描述更长，但 incoming 是 USER_CONFIRMED
+            var existing = buildWithEvidence("e1", "编辑器", "用户使用 Neovim 编辑器，配置了大量插件",
+                    Map.of(), 0.9f, 0.8f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.CHAT_INFERRED);
+            var incoming = buildWithEvidence("i1", "编辑器", "Cursor",
+                    Map.of(), 0.7f, 0.7f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_CONFIRMED);
+
+            // when
+            var result = merger.merge(existing, incoming, "conv-1");
+
+            // then — USER_CONFIRMED 覆盖更长的旧描述
+            assertThat(result.isNewVersion()).isTrue();
+            assertThat(result.mergedEntity().description()).isEqualTo("Cursor");
+        }
+
+        @Test
+        void 非USER_EXPLICIT的incoming不覆盖高置信度existing() {
+            // given — incoming 是 CHAT_INFERRED，置信度低于 existing
+            var existing = buildWithEvidence("e1", "编程语言", "Java 22",
+                    Map.of("lang", "Java"), 0.9f, 0.8f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+            var incoming = buildWithEvidence("i1", "编程语言", "Python",
+                    Map.of("lang", "Python"), 0.5f, 0.5f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.CHAT_INFERRED);
+
+            // when
+            var result = merger.merge(existing, incoming, "conv-1");
+
+            // then — CHAT_INFERRED 置信度低，走 KEEP_OLD
+            assertThat(result.isNewVersion()).isTrue();
+            assertThat(result.mergedEntity().properties()).containsEntry("lang", "Java");
+            assertThat(result.conflicts().get("lang").resolution()).isEqualTo(ConflictResolution.KEEP_OLD);
+        }
+
+        @Test
+        void USER_EXPLICIT_incoming描述为空时_保留existing描述() {
+            // given — incoming 是 USER_EXPLICIT 但描述为空
+            var existing = buildWithEvidence("e1", "城市", "用户住在北京市朝阳区",
+                    Map.of(), 0.9f, 0.8f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+            var incoming = buildWithEvidence("i1", "城市", "",
+                    Map.of(), 0.7f, 0.7f,
+                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+
+            // when
+            var result = merger.merge(existing, incoming, "conv-1");
+
+            // then — 空描述不覆盖
+            assertThat(result.mergedEntity().description()).isEqualTo("用户住在北京市朝阳区");
+        }
+    }
 }

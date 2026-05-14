@@ -71,7 +71,7 @@ class HybridRetriever_归档实体不应召回测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null);
+                null, null);
 
         var results = retriever.retrieve("任意查询", 10, RetrievalWeights.DEFAULT);
 

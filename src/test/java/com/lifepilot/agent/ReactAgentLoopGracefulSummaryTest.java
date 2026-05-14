@@ -42,6 +42,7 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import java.util.Map;
 
 /**
  * ReactAgentLoop 降级收尾总结测试。
@@ -125,7 +126,7 @@ class ReactAgentLoopGracefulSummaryTest {
                 eq(GenerationCapability.CHAT),
                 nullable(Duration.class),
                 eq(true)
-        )).thenReturn(LlmResponse.simple("模型生成的收尾摘要", 0, 0, "mock", "mock-model", 1));
+        )).thenReturn(new LlmResponse("模型生成的收尾摘要", null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock-model", 1, false));
 
         var loop = 创建Loop(config);
         loop.setGenerationRouter(generationRouter);
