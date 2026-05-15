@@ -58,7 +58,7 @@ public class SettingsController {
                               @Nullable MetaProperties metaProperties,
                               WorkspaceResolver workspaceResolver,
                               BootstrapConfigService bootstrapConfigService,
-                              @org.springframework.beans.factory.annotation.Value("${zhiwei.data-dir}") String dataDir) {
+                              @org.springframework.beans.factory.annotation.Value("${zhiwei.home:}") String dataDir) {
         this.settingsRepository = settingsRepository;
         this.objectMapper = objectMapper;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
@@ -232,7 +232,7 @@ public class SettingsController {
     public ApiResponse<Map<String, String>> getDataDir() {
         Map<String, String> result = new LinkedHashMap<>();
         result.put("dataDir", dataDir);
-        result.put("configuredDir", bootstrapConfigService.getDataDir());
+        result.put("configuredDir", bootstrapConfigService.getHome());
         return ApiResponse.ok(result);
     }
 
@@ -253,7 +253,7 @@ public class SettingsController {
                 throw new IllegalArgumentException("数据目录必须是绝对路径");
             }
         }
-        bootstrapConfigService.saveDataDir(newDir);
+        bootstrapConfigService.saveHome(newDir);
         log.info("数据目录配置已更新: dataDir={}", newDir);
         return getDataDir();
     }

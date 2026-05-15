@@ -73,16 +73,16 @@ public class ZhiweiPaths {
 
     /**
      * 从配置读取 HOME 路径。
-     * 当前阶段使用 zhiwei.data-dir（兼容现有配置），后续 task 4.1 会改为 zhiwei.home。
+     * BootstrapConfigReader 将 config.json 中的 home 字段映射到此属性。
      */
-    @Value("${zhiwei.data-dir:}")
+    @Value("${zhiwei.home:}")
     private String configuredHome;
 
     /**
      * 从配置读取 WORKSPACE 路径。
-     * 当前阶段使用 zhiwei.workspace-dir（兼容现有配置），后续 task 7.1 会改为 zhiwei.workspace。
+     * BootstrapConfigReader 将 config.json 中的 workspace 字段映射到此属性。
      */
-    @Value("${zhiwei.workspace-dir:}")
+    @Value("${zhiwei.workspace:}")
     private String configuredWorkspace;
 
     // ==================== 解析后的路径 ====================

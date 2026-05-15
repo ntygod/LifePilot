@@ -1,7 +1,9 @@
-# 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.data-dir=xxx 覆盖）
+# 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.home=xxx 覆盖）
 zhiwei:
-  data-dir: "${user.home}/.zhiwei"
-  workspace-dir: "${zhiwei.data-dir}/workspace"
+  home: "${user.home}/zhiwei"
+  data-dir: "${zhiwei.home}"
+  workspace: "${zhiwei.home}/workspace"
+  workspace-dir: "${zhiwei.workspace}"
 
 spring:
   application:
