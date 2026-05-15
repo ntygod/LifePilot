@@ -2,7 +2,6 @@ package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.bootstrap.BootstrapConfigService;
-import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.meta.config.MetaProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +43,6 @@ class SettingsControllerSearchSettingsTest {
         var zhiweiPaths = mock(com.lifepilot.config.path.ZhiweiPaths.class, org.mockito.Mockito.withSettings().lenient());
         when(zhiweiPaths.workspace()).thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")));
         when(zhiweiPaths.home()).thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "zhiwei"));
-        var workspaceResolver = new WorkspaceResolver(null, zhiweiPaths);
         var bootstrapConfigService = new BootstrapConfigService();
         var pathAccessControl = mock(com.lifepilot.config.path.PathAccessControl.class);
         var controller = new SettingsController(
@@ -52,11 +50,9 @@ class SettingsControllerSearchSettingsTest {
                 new ObjectMapper(),
                 null,
                 metaProperties,
-                workspaceResolver,
                 bootstrapConfigService,
                 zhiweiPaths,
-                pathAccessControl,
-                "/tmp/.zhiwei"
+                pathAccessControl
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
