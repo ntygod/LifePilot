@@ -31,7 +31,7 @@ public class McpToolManifestCache {
     private final Path cacheDir;
 
     public McpToolManifestCache() {
-        this(Path.of(System.getProperty("user.home"), ".zhiwei", "mcp", "tool-cache"));
+        this(Path.of(System.getProperty("user.home"), "zhiwei", "mcp", "tool-cache"));
     }
 
     /** 测试用构造函数，支持自定义缓存目录。 */

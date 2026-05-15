@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    /// 用户数据目录，为空时使用默认 ~/.zhiwei
+    /// 用户数据目录，为空时使用默认 ~/zhiwei
     #[serde(default)]
     pub data_dir: Option<String>,
 }
@@ -38,7 +38,7 @@ impl AppConfig {
         Ok(())
     }
 
-    /// 解析实际数据目录：自定义 > 环境变量 > 默认 ~/.zhiwei
+    /// 解析实际数据目录：自定义 > 环境变量 > 默认 ~/zhiwei
     pub fn resolve_data_dir(&self) -> PathBuf {
         // 1. 应用配置中的自定义路径
         if let Some(ref custom) = self.data_dir {
@@ -54,7 +54,7 @@ impl AppConfig {
         }
         // 3. 默认
         dirs::home_dir()
-            .map(|h| h.join(".zhiwei"))
-            .unwrap_or_else(|| PathBuf::from(".zhiwei"))
+            .map(|h| h.join("zhiwei"))
+            .unwrap_or_else(|| PathBuf::from("zhiwei"))
     }
 }

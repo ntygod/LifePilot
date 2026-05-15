@@ -5,7 +5,7 @@
 -->
 <configuration>
 
-    <property name="LOG_DIR" value="${user.home}/.zhiwei/logs" />
+    <property name="LOG_DIR" value="${zhiwei.home:-${user.home}/zhiwei}/logs" />
     <property name="LOG_FILE" value="${LOG_DIR}/zhiwei.log" />
 
     <!-- 文件 Appender：主日志输出 -->

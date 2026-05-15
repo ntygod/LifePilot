@@ -67,18 +67,18 @@ pub struct WhisperAvailability {
 
 /// Whisper CLI + 模型自动下载管理器
 pub struct WhisperManager {
-    /// 数据目录（~/.zhiwei）
+    /// 数据目录（~/zhiwei）
     data_dir: PathBuf,
     /// 当前状态（Arc 共享给异步下载任务）
     status: Arc<Mutex<WhisperStatus>>,
 }
 
 impl WhisperManager {
-    /// 创建管理器实例，数据目录从 `~/.zhiwei` 解析
+    /// 创建管理器实例，数据目录从 `~/zhiwei` 解析
     pub fn new() -> Self {
         let data_dir = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".zhiwei");
+            .join("zhiwei");
 
         Self {
             data_dir,
