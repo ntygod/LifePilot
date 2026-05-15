@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
 import SettingSection from '@/components/settings/SettingSection.vue'
+import SettingAdvanced from '@/components/settings/SettingAdvanced.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -374,6 +375,11 @@ const fontSizeOptions = [
         </SettingItem>
       </SettingSection>
 
+      <SettingAdvanced
+        title="存储与路径"
+        description="数据目录、工作目录和外部 CLI 依赖配置。大多数情况下保持默认即可。"
+      >
+        <div class="space-y-8">
       <SettingSection title="存储" description="数据目录存放数据库、知识库、技能和工作流等所有用户数据。修改后需重启应用。">
         <SettingItem label="数据目录" :description="dataDir === null ? '加载中...' : ('当前生效路径：' + dataDir)">
           <div class="flex items-center gap-sm">
@@ -474,6 +480,8 @@ const fontSizeOptions = [
           </div>
         </SettingItem>
       </SettingSection>
+        </div>
+      </SettingAdvanced>
 
       <SettingSection title="辅助操作" description="管理只在当前浏览器中生效的引导状态。">
         <SettingItem label="重新开始引导" description="清除本地引导完成标记，刷新后重新进入引导流程。">

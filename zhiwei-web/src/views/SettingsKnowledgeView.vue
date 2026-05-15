@@ -5,6 +5,7 @@ import { logger } from '@/utils/logger'
 import type { KnowledgeSettings, SearchSettings } from '@/api/client'
 import SettingSection from '@/components/settings/SettingSection.vue'
 import SettingItem from '@/components/settings/SettingItem.vue'
+import SettingAdvanced from '@/components/settings/SettingAdvanced.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -172,11 +173,11 @@ async function handleSave() {
         </SettingItem>
       </SettingSection>
 
-      <details class="rounded-[calc(var(--radius)+8px)] border border-border/70 bg-muted/20 px-6 py-4">
-        <summary class="cursor-pointer select-none text-sm font-semibold text-foreground">高级参数</summary>
-        <p class="mt-1 text-sm text-muted-foreground">分块策略、检索权重、向量索引和搜索调优参数。通常无需修改，默认值已适用于大多数场景。</p>
-
-        <div class="mt-6 space-y-8">
+      <SettingAdvanced
+        title="高级参数"
+        description="分块策略、检索权重、向量索引和搜索调优参数。通常无需修改，默认值已适用于大多数场景。"
+      >
+        <div class="space-y-8">
         <SettingSection title="分块配置" description="控制文档如何被切分为检索单元。">
           <SettingItem label="分块策略" description="smart 自动选择最佳策略，fixed 固定大小切分。">
             <Select v-model="knowledgeForm.chunkingStrategy">
@@ -265,7 +266,7 @@ async function handleSave() {
           </SettingItem>
         </SettingSection>
         </div>
-      </details>
+      </SettingAdvanced>
 
       <div class="sticky bottom-0 z-10 pb-2 pt-4">
         <div class="detail-card bg-background/92 px-4 py-4 backdrop-blur">
