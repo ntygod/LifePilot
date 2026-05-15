@@ -654,6 +654,19 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(payload)
     })
+  },
+
+  /** 获取路径统一配置（HOME / WORKSPACE / PathAccessControl） */
+  getPathSettings(): Promise<PathSettingsResponse> {
+    return request('/settings/paths')
+  },
+
+  /** 更新路径统一配置（部分更新） */
+  updatePathSettings(payload: PathSettingsRequest): Promise<PathSettingsResponse> {
+    return request('/settings/paths', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
   }
 }
 
@@ -667,6 +680,32 @@ export interface WorkspaceSettings {
 /** 外部 CLI Bash 依赖配置响应 */
 export interface ExternalCliBashSettings {
   externalCliBashPath: string | null
+}
+
+/** 路径统一配置响应 */
+export interface PathSettingsResponse {
+  home: string
+  workspace: string
+  pathAccess: PathAccessDto
+  restartRequired: boolean
+}
+
+/** 路径访问控制配置 DTO */
+export interface PathAccessDto {
+  mode: string
+  whitelist: string[]
+  blacklist: string[]
+}
+
+/** 路径统一配置更新请求（部分更新） */
+export interface PathSettingsRequest {
+  home?: string | null
+  workspace?: string | null
+  pathAccess?: {
+    mode?: string | null
+    whitelist?: string[] | null
+    blacklist?: string[] | null
+  } | null
 }
 
 /** Reranker 配置响应 */
