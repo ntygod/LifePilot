@@ -41,10 +41,12 @@ class SettingsControllerSearchSettingsTest {
     @BeforeEach
     void setUp() {
         MetaProperties metaProperties = new MetaProperties();
-        var zhiweiPaths = mock(com.lifepilot.config.path.ZhiweiPaths.class);
+        var zhiweiPaths = mock(com.lifepilot.config.path.ZhiweiPaths.class, org.mockito.Mockito.withSettings().lenient());
         when(zhiweiPaths.workspace()).thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")));
+        when(zhiweiPaths.home()).thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "zhiwei"));
         var workspaceResolver = new WorkspaceResolver(null, zhiweiPaths);
         var bootstrapConfigService = new BootstrapConfigService();
+        var pathAccessControl = mock(com.lifepilot.config.path.PathAccessControl.class);
         var controller = new SettingsController(
                 settingsRepository,
                 new ObjectMapper(),
@@ -52,6 +54,8 @@ class SettingsControllerSearchSettingsTest {
                 metaProperties,
                 workspaceResolver,
                 bootstrapConfigService,
+                zhiweiPaths,
+                pathAccessControl,
                 "/tmp/.zhiwei"
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();

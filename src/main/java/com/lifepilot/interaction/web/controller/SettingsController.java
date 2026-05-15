@@ -3,8 +3,13 @@ package com.lifepilot.interaction.web.controller;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.config.bootstrap.BootstrapConfigService;
+import com.lifepilot.config.bootstrap.PathAccessConfig;
+import com.lifepilot.config.path.PathAccessControl;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.model.ApiResponse;
+import com.lifepilot.interaction.web.model.PathSettingsRequest;
+import com.lifepilot.interaction.web.model.PathSettingsResponse;
 import com.lifepilot.interaction.web.model.SearchSettingsRequest;
 import com.lifepilot.interaction.web.model.SearchSettingsResponse;
 import com.lifepilot.interaction.web.model.UserSettings;
@@ -22,6 +27,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -50,6 +56,8 @@ public class SettingsController {
     private final MetaProperties metaProperties;
     private final WorkspaceResolver workspaceResolver;
     private final BootstrapConfigService bootstrapConfigService;
+    private final ZhiweiPaths zhiweiPaths;
+    private final PathAccessControl pathAccessControl;
     private final String dataDir;
 
     public SettingsController(UserSettingsRepository settingsRepository,
@@ -58,6 +66,8 @@ public class SettingsController {
                               @Nullable MetaProperties metaProperties,
                               WorkspaceResolver workspaceResolver,
                               BootstrapConfigService bootstrapConfigService,
+                              ZhiweiPaths zhiweiPaths,
+                              PathAccessControl pathAccessControl,
                               @org.springframework.beans.factory.annotation.Value("${zhiwei.home:}") String dataDir) {
         this.settingsRepository = settingsRepository;
         this.objectMapper = objectMapper;
@@ -65,6 +75,8 @@ public class SettingsController {
         this.metaProperties = metaProperties;
         this.workspaceResolver = workspaceResolver;
         this.bootstrapConfigService = bootstrapConfigService;
+        this.zhiweiPaths = zhiweiPaths;
+        this.pathAccessControl = pathAccessControl;
         this.dataDir = dataDir;
     }
 
@@ -299,6 +311,164 @@ public class SettingsController {
         settingsRepository.save(updated);
         log.info("工作目录设置已更新: workspace={}", workspace);
         return getWorkspaceSettings();
+    }
+
+    // ==================== 路径统一配置端点 ====================
+
+    /**
+     * 获取路径统一配置 —— 返回 HOME、WORKSPACE 和 PathAccessControl 当前状态。
+     *
+     * @return 路径设置响应，包含 restartRequired 标记
+     */
+    @GetMapping("/paths")
+    public ApiResponse<PathSettingsResponse> getPathSettings() {
+        log.debug("获取路径统一配置");
+
+        // 读取 PathAccessControl 当前内存状态
+        var pathAccessDto = new PathSettingsResponse.PathAccessDto(
+                pathAccessControl.getMode().name().toLowerCase(Locale.ROOT).replace('_', '-'),
+                pathAccessControl.getWhitelist().stream().map(Path::toString).toList(),
+                pathAccessControl.getBlacklist().stream().map(Path::toString).toList()
+        );
+
+        var response = new PathSettingsResponse(
+                zhiweiPaths.home().toString(),
+                zhiweiPaths.workspace().toString(),
+                pathAccessDto,
+                zhiweiPaths.isRestartRequired()
+        );
+        return ApiResponse.ok(response);
+    }
+
+    /**
+     * 更新路径统一配置 —— 支持部分更新 HOME、WORKSPACE 和 PathAccessControl。
+     *
+     * <ul>
+     *   <li>HOME 变更：验证绝对路径，保存当前 HOME 为 previousHome，保存新 HOME，返回 restartRequired=true</li>
+     *   <li>WORKSPACE 变更：验证绝对路径，保存到 BootstrapConfig，立即生效无需重启</li>
+     *   <li>PathAccessControl 变更：保存规则到 BootstrapConfig，更新内存中的 PathAccessControl Bean</li>
+     * </ul>
+     *
+     * @param request 路径设置更新请求（所有字段可选，仅提供的字段会被更新）
+     * @return 更新后的路径设置响应
+     */
+    @PutMapping("/paths")
+    public ApiResponse<PathSettingsResponse> updatePathSettings(@RequestBody PathSettingsRequest request) {
+        log.info("更新路径统一配置: home={}, workspace={}, pathAccess={}",
+                request.home() != null ? "***" : "null",
+                request.workspace() != null ? "***" : "null",
+                request.pathAccess() != null ? "provided" : "null");
+
+        // 处理 HOME 变更
+        if (request.home() != null) {
+            updateHome(request.home());
+        }
+
+        // 处理 WORKSPACE 变更
+        if (request.workspace() != null) {
+            updateWorkspace(request.workspace());
+        }
+
+        // 处理 PathAccessControl 变更
+        if (request.pathAccess() != null) {
+            updatePathAccess(request.pathAccess());
+        }
+
+        return getPathSettings();
+    }
+
+    /**
+     * 更新 HOME 目录路径。
+     *
+     * <p>验证绝对路径后，将当前 HOME 保存为 previousHome（供下次启动迁移），
+     * 保存新 HOME 到 BootstrapConfig。HOME 变更需要重启才能生效。</p>
+     *
+     * @param newHome 新的 HOME 目录路径
+     */
+    private void updateHome(String newHome) {
+        String trimmed = newHome.trim();
+        if (trimmed.isEmpty()) {
+            // 空字符串表示清除自定义设置（恢复默认）
+            bootstrapConfigService.saveHome(null);
+            log.info("HOME 配置已清除，将使用默认值");
+            return;
+        }
+        validatePathInput(trimmed, "HOME 目录");
+
+        // 保存当前 HOME 为 previousHome（迁移用）
+        String currentHome = zhiweiPaths.home().toString();
+        bootstrapConfigService.savePreviousHome(currentHome);
+
+        // 保存新 HOME
+        bootstrapConfigService.saveHome(trimmed);
+        log.info("HOME 配置已更新: newHome={}, previousHome={}", trimmed, currentHome);
+    }
+
+    /**
+     * 更新 WORKSPACE 目录路径。
+     *
+     * <p>验证绝对路径后保存到 BootstrapConfig，立即生效无需重启。</p>
+     *
+     * @param newWorkspace 新的 WORKSPACE 目录路径
+     */
+    private void updateWorkspace(String newWorkspace) {
+        String trimmed = newWorkspace.trim();
+        if (trimmed.isEmpty()) {
+            // 空字符串表示清除自定义设置（恢复默认）
+            bootstrapConfigService.saveWorkspace(null);
+            log.info("WORKSPACE 配置已清除，将使用默认值");
+            return;
+        }
+        validatePathInput(trimmed, "WORKSPACE 目录");
+
+        // 保存到 BootstrapConfig
+        bootstrapConfigService.saveWorkspace(trimmed);
+        log.info("WORKSPACE 配置已更新: workspace={}", trimmed);
+    }
+
+    /**
+     * 更新 PathAccessControl 规则。
+     *
+     * <p>保存规则到 BootstrapConfig，同时更新内存中的 PathAccessControl Bean。</p>
+     *
+     * @param dto 路径访问控制配置
+     */
+    private void updatePathAccess(PathSettingsRequest.PathAccessDto dto) {
+        String mode = dto.mode() != null ? dto.mode() : PathAccessConfig.MODE_UNRESTRICTED;
+        List<String> whitelist = dto.whitelist() != null ? dto.whitelist() : List.of();
+        List<String> blacklist = dto.blacklist() != null ? dto.blacklist() : List.of();
+
+        // 保存到 BootstrapConfig
+        var config = new PathAccessConfig(mode, whitelist, blacklist);
+        bootstrapConfigService.savePathAccess(config);
+
+        // 更新内存中的 PathAccessControl Bean
+        PathAccessControl.Mode parsedMode = PathAccessControl.Mode.fromString(mode);
+        List<Path> whitelistPaths = whitelist.stream().map(Path::of).toList();
+        List<Path> blacklistPaths = blacklist.stream().map(Path::of).toList();
+        pathAccessControl.updateRules(parsedMode, whitelistPaths, blacklistPaths);
+
+        log.info("PathAccessControl 配置已更新: mode={}", mode);
+    }
+
+    /**
+     * 验证路径输入 —— 检查长度、禁止 ".."、验证绝对路径。
+     *
+     * @param path  待验证的路径字符串
+     * @param label 路径用途标签（用于错误消息）
+     * @throws IllegalArgumentException 如果路径无效
+     */
+    private void validatePathInput(String path, String label) {
+        if (path.length() > 1024) {
+            throw new IllegalArgumentException(label + "路径过长");
+        }
+        if (path.contains("..")) {
+            throw new IllegalArgumentException(label + "路径不允许包含 '..'");
+        }
+        Path parsed = Path.of(path);
+        if (!parsed.isAbsolute()) {
+            throw new IllegalArgumentException(label + "必须是绝对路径");
+        }
     }
 
     /**
