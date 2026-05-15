@@ -2,6 +2,7 @@ package com.lifepilot.interaction.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.document.repository.SessionDocumentRepository;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.model.ChannelInstance;
 import com.lifepilot.interaction.model.ChannelInstanceStatus;
@@ -15,7 +16,6 @@ import com.lifepilot.interaction.service.ChannelInstanceEventService;
 import com.lifepilot.interaction.service.ChannelInstanceService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
-import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.marketplace.install.InstalledExtensionRepository;
 import com.lifepilot.observability.config.ObservabilityProperties;
 import org.slf4j.Logger;
@@ -181,20 +181,10 @@ public class ChannelControlPlaneConfiguration {
                                                                     ChannelPermissionApprovalService channelApprovalService,
                                                                     ChannelUserMappingCache channelUserMappingCache,
                                                                     AttachmentRepository attachmentRepository,
-                                                                    ObjectProvider<KnowledgeBaseProperties> knowledgeBasePropertiesProvider,
+                                                                    ZhiweiPaths zhiweiPaths,
                                                                     ConnectorManagerProperties connectorManagerProperties) {
-        // 与 ChatController 上传附件的落盘目录保持一致：<dataDir>/attachments
-        // test profile 下 knowledge 模块可禁用，KnowledgeBaseProperties 缺失时降级到 tmpdir
-        KnowledgeBaseProperties knowledgeBaseProperties = knowledgeBasePropertiesProvider.getIfAvailable();
-        String dataDir;
-        if (knowledgeBaseProperties != null) {
-            dataDir = knowledgeBaseProperties.dataDir();
-        } else {
-            dataDir = System.getProperty("java.io.tmpdir") + "/zhiwei";
-            log.warn("KnowledgeBaseProperties 不可用（knowledge 模块已禁用），channel 附件落盘目录降级到 {}；生产环境请确保 knowledge 模块已启用",
-                    dataDir);
-        }
-        String attachmentStorageDir = dataDir + "/attachments";
+        // 与 ChatController 上传附件的落盘目录保持一致：<knowledge>/attachments
+        String attachmentStorageDir = zhiweiPaths.home("knowledge").resolve("attachments").toString();
         return new ChannelRuntimeIngressService(
                 channelInstanceService,
                 channelIngressService,

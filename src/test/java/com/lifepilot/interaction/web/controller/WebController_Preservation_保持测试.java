@@ -76,7 +76,7 @@ class WebController_Preservation_保持测试 {
         var chatController = new ChatController(
                 browserIngressService, channelIngressService, sseSessionManager, chatSessionService,
                 messageFeedbackRepository, attachmentRepository, knowledgeBaseProperties,
-                null, null, mediaProperties);
+                null, null, null, mediaProperties);
         var kbController = new KnowledgeBaseController(
                 knowledgeBaseManager, knowledgeBaseProperties, null, null, null);
 

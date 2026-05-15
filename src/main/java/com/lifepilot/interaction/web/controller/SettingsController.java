@@ -92,7 +92,7 @@ public class SettingsController {
         Map<String, Object> config = deserializeJsonConfig(settingsRepository.getKnowledgeConfig());
         KnowledgeBaseProperties properties = knowledgeBaseProperties != null
                 ? knowledgeBaseProperties
-                : new KnowledgeBaseProperties(null, 0, true, null, null, null, null, null, null, null, null);
+                : new KnowledgeBaseProperties(0, true, null, null, null, null, null, null, null, null);
 
         var chunking = properties.chunking();
         var retrieval = properties.retrieval();

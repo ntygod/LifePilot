@@ -14,6 +14,7 @@ import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.interaction.web.service.BrowserIngressService;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.media.audio.SpeechSynthesizer;
 import com.lifepilot.media.config.MediaProperties;
@@ -32,7 +33,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +85,7 @@ public class ChatController {
     private final MessageFeedbackRepository feedbackRepository;
     private final AttachmentRepository attachmentRepository;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
+    private final ZhiweiPaths zhiweiPaths;
     @Nullable
     private final FeedbackProcessor feedbackProcessor;
     @Nullable
@@ -98,6 +99,7 @@ public class ChatController {
                           MessageFeedbackRepository feedbackRepository,
                           AttachmentRepository attachmentRepository,
                           KnowledgeBaseProperties knowledgeBaseProperties,
+                          ZhiweiPaths zhiweiPaths,
                           @Nullable FeedbackProcessor feedbackProcessor,
                           @Nullable SpeechSynthesizer speechSynthesizer,
                           MediaProperties mediaProperties) {
@@ -108,6 +110,7 @@ public class ChatController {
         this.feedbackRepository = feedbackRepository;
         this.attachmentRepository = attachmentRepository;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
+        this.zhiweiPaths = zhiweiPaths;
         this.feedbackProcessor = feedbackProcessor;
         this.speechSynthesizer = speechSynthesizer;
         this.mediaProperties = mediaProperties;
@@ -636,8 +639,7 @@ public class ChatController {
 
         try {
             // 保存文件到本地存储
-            Path dataDir = Paths.get(knowledgeBaseProperties.dataDir());
-            Path attachmentsDir = dataDir.resolve("attachments");
+            Path attachmentsDir = zhiweiPaths.home("knowledge").resolve("attachments");
             Files.createDirectories(attachmentsDir);
 
             // 生成唯一文件名：UUID + 原始文件名
