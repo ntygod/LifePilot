@@ -3,10 +3,7 @@ package com.lifepilot.config.path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,7 +11,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.lenient;
 
 /**
  * {@link PathAccessControl} 路径权限控制组件测试。
@@ -24,37 +20,29 @@ import static org.mockito.Mockito.lenient;
  * @author zsg
  * @since 2026-06-15
  */
-@ExtendWith(MockitoExtension.class)
 class PathAccessControl_权限控制测试 {
 
     @TempDir
     Path tempDir;
 
-    @Mock
-    ZhiweiPaths zhiweiPaths;
-
-    private Path homeDir;
     private Path projectDir;
     private Path sensitiveDir;
 
     @BeforeEach
     void setUp() throws IOException {
-        homeDir = tempDir.resolve("zhiwei");
         projectDir = tempDir.resolve("projects");
         sensitiveDir = tempDir.resolve("sensitive");
-        Files.createDirectories(homeDir);
         Files.createDirectories(projectDir);
         Files.createDirectories(sensitiveDir);
-        lenient().when(zhiweiPaths.home()).thenReturn(homeDir);
     }
 
     /**
-     * 创建一个使用指定 HOME 目录的 PathAccessControl 实例（绕过 Spring 初始化）。
+     * 创建一个 PathAccessControl 实例并设置规则（绕过 Spring 初始化）。
      */
     private PathAccessControl createControl(PathAccessControl.Mode mode,
                                             List<Path> whitelist,
                                             List<Path> blacklist) {
-        PathAccessControl control = new PathAccessControl(zhiweiPaths);
+        PathAccessControl control = new PathAccessControl();
         control.updateRules(mode, whitelist, blacklist);
         return control;
     }
@@ -70,7 +58,7 @@ class PathAccessControl_权限控制测试 {
 
             assertThat(control.isAllowed(projectDir.resolve("file.txt")).allowed()).isTrue();
             assertThat(control.isAllowed(sensitiveDir.resolve("secret.key")).allowed()).isTrue();
-            assertThat(control.isAllowed(homeDir.resolve("db/zhiwei.db")).allowed()).isTrue();
+            assertThat(control.isAllowed(tempDir.resolve("any/path")).allowed()).isTrue();
         }
     }
 
@@ -224,38 +212,6 @@ class PathAccessControl_权限控制测试 {
             // tempDir 本身不在白名单中
             Path outsidePath = tempDir.resolve("other/file.txt");
             var result = control.isAllowed(outsidePath);
-            assertThat(result.allowed()).isFalse();
-        }
-    }
-
-    // ==================== HOME 默认黑名单 ====================
-
-    @Nested
-    class HOME默认黑名单 {
-
-        @Test
-        void HOME目录始终在黑名单中() {
-            var control = createControl(
-                    PathAccessControl.Mode.BLACKLIST_ONLY,
-                    List.of(),
-                    List.of()); // 不额外传入黑名单，updateRules 会自动加 HOME
-
-            var result = control.isAllowed(homeDir.resolve("db/zhiwei.db"));
-            assertThat(result.allowed()).isFalse();
-        }
-
-        @Test
-        void 更新规则后HOME仍在黑名单中() {
-            PathAccessControl control = new PathAccessControl(zhiweiPaths);
-
-            // 更新规则时不传入 HOME，但 HOME 应自动追加
-            control.updateRules(
-                    PathAccessControl.Mode.BLACKLIST_ONLY,
-                    List.of(),
-                    List.of(sensitiveDir));
-
-            assertThat(control.getBlacklist()).contains(homeDir);
-            var result = control.isAllowed(homeDir.resolve("skills/test.yaml"));
             assertThat(result.allowed()).isFalse();
         }
     }

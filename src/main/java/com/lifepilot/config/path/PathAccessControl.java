@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
@@ -118,8 +117,6 @@ public class PathAccessControl {
 
     // ==================== 依赖注入 ====================
 
-    private final ZhiweiPaths zhiweiPaths;
-
     // ==================== 内部状态 ====================
 
     private volatile Mode mode = Mode.UNRESTRICTED;
@@ -128,18 +125,13 @@ public class PathAccessControl {
 
     // ==================== 构造与初始化 ====================
 
-    public PathAccessControl(ZhiweiPaths zhiweiPaths) {
-        this.zhiweiPaths = zhiweiPaths;
+    public PathAccessControl() {
     }
 
     @PostConstruct
     void init() {
-        // 默认将 HOME 目录加入黑名单
-        List<Path> defaultBlacklist = new ArrayList<>();
-        defaultBlacklist.add(zhiweiPaths.home());
-
-        // 尝试从 BootstrapConfig 的 pathAccess 字段加载规则
-        loadFromBootstrapConfig(defaultBlacklist);
+        // 从 BootstrapConfig 的 pathAccess 字段加载规则（黑名单完全由用户决定）
+        loadFromBootstrapConfig();
 
         log.info("PathAccessControl 初始化完成: mode={}, whitelist={}, blacklist={}",
                 mode, whitelist, blacklist);
@@ -158,15 +150,13 @@ public class PathAccessControl {
      *   }
      * }
      * }</pre>
-     *
-     * @param defaultBlacklist 默认黑名单条目（HOME 目录）
      */
-    private void loadFromBootstrapConfig(List<Path> defaultBlacklist) {
+    private void loadFromBootstrapConfig() {
         Path configPath = Path.of(System.getProperty("user.home"), "zhiwei", "config.json");
         if (!Files.exists(configPath)) {
-            // 无配置文件，使用默认值：blacklist-only + HOME 黑名单
-            this.mode = Mode.BLACKLIST_ONLY;
-            this.blacklist = List.copyOf(defaultBlacklist);
+            // 无配置文件，使用默认值：unrestricted 模式，空黑名单
+            this.mode = Mode.UNRESTRICTED;
+            this.blacklist = List.of();
             return;
         }
 
@@ -177,8 +167,8 @@ public class PathAccessControl {
 
             if (pathAccess == null || pathAccess.isNull()) {
                 // pathAccess 字段不存在，使用默认值
-                this.mode = Mode.BLACKLIST_ONLY;
-                this.blacklist = List.copyOf(defaultBlacklist);
+                this.mode = Mode.UNRESTRICTED;
+                this.blacklist = List.of();
                 return;
             }
 
@@ -201,17 +191,14 @@ public class PathAccessControl {
                 this.whitelist = List.of();
             }
 
-            // 解析黑名单（始终包含默认的 HOME 目录）
-            List<Path> bl = new ArrayList<>(defaultBlacklist);
+            // 解析黑名单（完全由用户配置决定）
+            List<Path> bl = new ArrayList<>();
             JsonNode blacklistNode = pathAccess.get("blacklist");
             if (blacklistNode != null && blacklistNode.isArray()) {
                 for (JsonNode entry : blacklistNode) {
                     String expanded = PathResolver.expand(entry.asText());
                     if (expanded != null && !expanded.isBlank()) {
-                        Path p = Path.of(expanded).toAbsolutePath().normalize();
-                        if (!bl.contains(p)) {
-                            bl.add(p);
-                        }
+                        bl.add(Path.of(expanded).toAbsolutePath().normalize());
                     }
                 }
             }
@@ -219,8 +206,8 @@ public class PathAccessControl {
 
         } catch (IOException e) {
             log.warn("读取 BootstrapConfig pathAccess 配置失败，使用默认值: {}", e.getMessage());
-            this.mode = Mode.BLACKLIST_ONLY;
-            this.blacklist = List.copyOf(defaultBlacklist);
+            this.mode = Mode.UNRESTRICTED;
+            this.blacklist = List.of();
         }
     }
 
@@ -385,26 +372,16 @@ public class PathAccessControl {
      *
      * @param newMode      新模式
      * @param newWhitelist 新白名单条目
-     * @param newBlacklist 新黑名单条目（HOME 目录会自动追加）
+     * @param newBlacklist 新黑名单条目
      */
     public void updateRules(Mode newMode, List<Path> newWhitelist, List<Path> newBlacklist) {
         this.mode = newMode;
         this.whitelist = newWhitelist != null ? List.copyOf(newWhitelist) : List.of();
-
-        // 确保 HOME 目录始终在黑名单中
-        List<Path> bl = new ArrayList<>();
-        Path homePath = zhiweiPaths.home();
-        bl.add(homePath);
-        if (newBlacklist != null) {
-            for (Path p : newBlacklist) {
-                Path normalized = p.toAbsolutePath().normalize();
-                if (!pathStartsWith(normalized, homePath) || !pathStartsWith(homePath, normalized)) {
-                    // 避免重复添加 HOME 本身
-                    bl.add(normalized);
-                }
-            }
-        }
-        this.blacklist = List.copyOf(bl);
+        this.blacklist = newBlacklist != null
+                ? newBlacklist.stream()
+                    .map(p -> p.toAbsolutePath().normalize())
+                    .toList()
+                : List.of();
 
         log.info("PathAccessControl 规则已更新: mode={}, whitelist={}, blacklist={}",
                 mode, whitelist, blacklist);
