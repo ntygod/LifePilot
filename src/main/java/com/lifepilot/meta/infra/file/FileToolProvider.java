@@ -137,7 +137,9 @@ public class FileToolProvider {
                                 fileAccess.getDefaultMaxEntries()).execute(input);
                         case "search" -> new FileSearchToolExecutor(securityChecker).execute(input);
                         case "info" -> new FileInfoToolExecutor(securityChecker).execute(input);
-                        case "attach" -> ToolResult.error("附件功能请直接通过 file.read 读取附件 ID");
+                        case "attach" -> new FileReadToolExecutor(securityChecker,
+                                fileAccess.getDefaultMaxChars(), skillPathWhitelist,
+                                attachmentRepository, documentParserService).execute(input);
                         default -> ToolResult.error("不支持的 action: " + action);
                     };
                 })

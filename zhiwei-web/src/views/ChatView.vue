@@ -279,7 +279,9 @@ watch(() => chatStore.activeSessionId, (newId) => {
 watch(() => route.fullPath, () => {
   const sessionId = route.params.sessionId as string | undefined
   if (route.name === 'newConversation') {
-    // 设置 activeSessionId = null 会触发 store 内部 watcher 清空 messages/streamingContent
+    // 如果 activeSessionId 已有值，说明正在懒创建会话（startNewSession 已完成但 router.replace 尚未生效），
+    // 此时不应重置，否则会导致"闪回欢迎页"的竞态问题
+    if (chatStore.activeSessionId) return
     chatStore.activeSessionId = null
     messagesReady.value = true
     currentSessionDetail.value = null
@@ -368,8 +370,6 @@ function handleScroll() {
 watch(
   () => route.params.sessionId as string | undefined,
   async (sessionId) => {
-    messagesReady.value = false
-
     if (!sessionId) {
       // 空对话页：不立即创建会话，等用户发第一条消息时懒创建
       chatStore.activeSessionId = null
@@ -377,9 +377,15 @@ watch(
       return
     }
 
-    if (sessionId !== chatStore.activeSessionId) {
-      chatStore.activeSessionId = sessionId
+    // 如果 sessionId 和当前 activeSessionId 相同，说明是懒创建后的 router.replace，
+    // 不需要重置状态和重新加载消息
+    if (sessionId === chatStore.activeSessionId) {
+      messagesReady.value = true
+      return
     }
+
+    messagesReady.value = false
+    chatStore.activeSessionId = sessionId
 
     // 等消息加载完成后标记就绪（store 内部 watch 是异步的，延迟兜底）
     if (readyTimer !== null) clearTimeout(readyTimer)

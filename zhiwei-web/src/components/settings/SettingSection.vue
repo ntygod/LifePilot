@@ -7,16 +7,16 @@ defineProps<{
 </script>
 
 <template>
-  <section class="setting-section detail-card p-4 text-card-foreground sm:p-5">
-    <div class="flex items-start justify-between gap-3 border-b border-border/70 pb-3">
-      <div class="min-w-0 space-y-1">
+  <section class="setting-section">
+    <div class="flex items-start justify-between gap-3 pb-1">
+      <div class="min-w-0 space-y-0.5">
         <div class="flex items-center gap-2">
           <slot name="icon">
             <span v-if="icon" class="text-base text-muted-foreground">{{ icon }}</span>
           </slot>
-          <h3 class="text-base font-semibold text-foreground">{{ title }}</h3>
+          <h3 class="text-[15px] font-semibold tracking-tight text-foreground">{{ title }}</h3>
         </div>
-        <p v-if="description" class="text-sm leading-6 text-muted-foreground">
+        <p v-if="description" class="text-[13px] leading-relaxed text-muted-foreground">
           {{ description }}
         </p>
       </div>
@@ -24,8 +24,15 @@ defineProps<{
         <slot name="header-actions" />
       </div>
     </div>
-    <div class="mt-1.5 divide-y divide-border/60">
+    <div class="divide-y divide-border/40">
       <slot />
     </div>
   </section>
 </template>
+
+<style scoped>
+.setting-section {
+  position: relative;
+  padding: 0;
+}
+</style>

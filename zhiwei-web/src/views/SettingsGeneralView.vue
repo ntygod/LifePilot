@@ -158,8 +158,8 @@ async function browseWorkspaceDir() {
   }
 }
 
-/** 浏览器是否支持原生目录选择 */
-const supportsDirPicker = isTauri || 'showDirectoryPicker' in window
+/** 浏览器是否支持原生目录选择（仅 Tauri 桌面端） */
+const supportsDirPicker = isTauri
 
 async function resetWorkspaceDir() {
   workspaceInputValue.value = ''
@@ -323,16 +323,16 @@ const fontSizeOptions = [
 
 <template>
   <div class="space-y-8">
-    <section class="detail-card px-5 py-5 sm:px-6">
-      <div class="space-y-2">
+    <section class="pb-4 border-b border-border/40">
+      <div class="space-y-1.5">
         <div class="surface-label text-[0.68rem]">通用</div>
         <h2 class="text-xl font-semibold text-foreground">界面与显示</h2>
-        <p class="max-w-[42rem] text-sm leading-6 text-muted-foreground">这部分控制当前设备上的显示方式和基础交互习惯。</p>
+        <p class="max-w-[42rem] text-[13px] leading-relaxed text-muted-foreground">这部分控制当前设备上的显示方式和基础交互习惯。</p>
       </div>
-      <p v-if="saveError" class="text-sm text-destructive">{{ saveError }}</p>
+      <p v-if="saveError" class="mt-3 text-sm text-destructive">{{ saveError }}</p>
     </section>
 
-    <div class="space-y-8">
+    <div class="space-y-10">
       <SettingSection title="基础显示" description="主题、布局密度和全局字号。">
         <SettingItem label="主题" description="切换浅色、深色或跟随系统。" html-for="theme">
           <Select :model-value="form.theme" @update:model-value="updateTheme">
@@ -481,8 +481,6 @@ const fontSizeOptions = [
         </SettingItem>
       </SettingSection>
     </div>
-
-    <div class="border-t border-border/55 pt-4"></div>
 
     <ConfirmDialog
       v-model:show="showRestartOnboardingConfirm"

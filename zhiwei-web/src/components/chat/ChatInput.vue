@@ -237,13 +237,16 @@ async function submit() {
     uploadError.value = null
 
     // 懒创建：上传附件需要 sessionId，如果还没有会话则先创建
-    // 若 URL 携带 projectId（来自项目详情页「开始新对话」），会话归入该项目
+    // 注意：创建会话后不要触发路由跳转导致组件状态重置，
+    // 路由同步由 ChatView 的 activeSessionId watcher 统一处理
     if (!chatStore.activeSessionId) {
       const projectIdFromQuery = typeof route.query.projectId === 'string'
         ? route.query.projectId
         : null
       try {
         await chatStore.startNewSession(undefined, projectIdFromQuery)
+        // 等待一个 tick 让 router.replace 和相关 watcher 稳定
+        await new Promise(resolve => setTimeout(resolve, 0))
       } catch {
         uploadError.value = '创建会话失败，请重试'
         isUploading.value = false
@@ -425,9 +428,17 @@ watch(audioBlob, async (blob) => {
   voiceError.value = null
 
   try {
+    // 懒创建：语音上传需要 sessionId，如果还没有会话则先创建
+    if (!chatStore.activeSessionId) {
+      const projectIdFromQuery = typeof route.query.projectId === 'string'
+        ? route.query.projectId
+        : null
+      await chatStore.startNewSession(undefined, projectIdFromQuery)
+    }
+
     const ext = blob.type.includes('wav') ? 'wav' : 'webm'
     const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type })
-    const sessionId = chatStore.activeSessionId ?? undefined
+    const sessionId = chatStore.activeSessionId!
     const uploaded = await chatApi.uploadAttachment(file, sessionId)
     const singleTurnOverride = buildSingleTurnOverride() ?? null
 

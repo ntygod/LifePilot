@@ -5,6 +5,7 @@ import {
   Archive,
   ChevronRight,
   Clock,
+  Ellipsis,
   Monitor,
   Moon,
   Pencil,
@@ -19,6 +20,14 @@ import NotificationBell from '@/components/notification/NotificationBell.vue'
 import WhisperDownloadCard from '@/components/global/WhisperDownloadCard.vue'
 import ProjectSection from '@/components/sidebar/ProjectSection.vue'
 import CreateProjectDialog from '@/components/project/CreateProjectDialog.vue'
+import {
+  DropdownMenuRoot as DropdownMenu,
+  DropdownMenuContent as DropdownMenuContentPrimitive,
+  DropdownMenuItem as DropdownMenuItemPrimitive,
+  DropdownMenuSeparator as DropdownMenuSeparatorPrimitive,
+  DropdownMenuTrigger,
+  DropdownMenuPortal,
+} from 'reka-ui'
 import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
 import { useTheme } from '@/composables/useTheme'
@@ -207,6 +216,21 @@ async function handleDelete(sessionId: string) {
   }
 }
 
+async function togglePin(session: ChatSession) {
+  await chatStore.updateSession(session.id, { pinned: !session.pinned })
+}
+
+async function archiveSession(sessionId: string) {
+  await chatStore.updateSession(sessionId, { archived: true })
+  if (route.params.sessionId === sessionId) {
+    if (chatStore.activeSessionId) {
+      router.replace({ name: 'conversationDetail', params: { sessionId: chatStore.activeSessionId } })
+    } else {
+      router.replace({ name: 'conversations' })
+    }
+  }
+}
+
 function openAllConversations() {
   router.push({ name: 'conversations' })
   emit('close')
@@ -246,6 +270,54 @@ function navigateTo(path: string) {
   emit('close')
 }
 
+/* ── 展开/折叠过渡动画（基于真实高度，丝滑无跳变） ── */
+
+function onBeforeEnter(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = '0'
+  htmlEl.style.opacity = '0'
+  htmlEl.style.overflow = 'hidden'
+}
+
+function onEnter(el: Element, done: () => void) {
+  const htmlEl = el as HTMLElement
+  const height = htmlEl.scrollHeight
+  void htmlEl.offsetHeight
+  htmlEl.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1), opacity 280ms cubic-bezier(0.4, 0, 0.2, 1)'
+  htmlEl.style.height = `${height}px`
+  htmlEl.style.opacity = '1'
+  htmlEl.addEventListener('transitionend', done, { once: true })
+}
+
+function onAfterEnter(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = ''
+  htmlEl.style.overflow = ''
+  htmlEl.style.transition = ''
+}
+
+function onBeforeLeave(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = `${htmlEl.scrollHeight}px`
+  htmlEl.style.overflow = 'hidden'
+  void htmlEl.offsetHeight
+}
+
+function onLeave(el: Element, done: () => void) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.transition = 'height 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 220ms cubic-bezier(0.4, 0, 0.2, 1)'
+  htmlEl.style.height = '0'
+  htmlEl.style.opacity = '0'
+  htmlEl.addEventListener('transitionend', done, { once: true })
+}
+
+function onAfterLeave(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = ''
+  htmlEl.style.overflow = ''
+  htmlEl.style.opacity = ''
+  htmlEl.style.transition = ''
+}
 </script>
 
 <template>
@@ -353,27 +425,46 @@ function navigateTo(path: string) {
                   {{ session.title || '新对话' }}
                 </span>
                 <Pin v-if="session.pinned" class="size-3 shrink-0 text-primary/60" />
-                <!-- 默认：时间 / hover：操作按钮 -->
-                <span class="qw-session-time group-hover:hidden">
-                  {{ formatRelativeTime(session.updatedAt) }}
-                </span>
-                <div class="hidden shrink-0 items-center group-hover:flex">
-                  <button
-                    type="button"
-                    class="qw-session-action"
-                    title="重命名"
-                    @click.stop="startRename(session)"
-                  >
-                    <Pencil class="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    class="qw-session-action hover:text-destructive"
-                    title="删除"
-                    @click.stop="handleDelete(session.id)"
-                  >
-                    <Trash2 class="size-3.5" />
-                  </button>
+                <!-- 时间 + 更多按钮叠加在同一位置，避免布局跳动 -->
+                <div class="relative flex shrink-0 items-center justify-end" style="width: 1.625rem; height: 1.625rem;" @click.stop>
+                  <span class="qw-session-time absolute inset-0 flex items-center justify-end transition-opacity duration-150 group-hover:opacity-0">
+                    {{ formatRelativeTime(session.updatedAt) }}
+                  </span>
+                  <div class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <button type="button" class="qw-session-more" aria-label="更多操作">
+                          <Ellipsis class="size-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuPortal>
+                        <DropdownMenuContentPrimitive
+                          align="end"
+                          side="bottom"
+                          :side-offset="4"
+                          class="qw-context-menu z-[100]"
+                        >
+                          <DropdownMenuItemPrimitive class="qw-context-item" @click="startRename(session)">
+                            <Pencil class="size-4 text-muted-foreground" />
+                            <span>重命名</span>
+                          </DropdownMenuItemPrimitive>
+                          <DropdownMenuItemPrimitive class="qw-context-item" @click="togglePin(session)">
+                            <Pin class="size-4 text-muted-foreground" />
+                            <span>{{ session.pinned ? '取消置顶' : '置顶' }}</span>
+                          </DropdownMenuItemPrimitive>
+                          <DropdownMenuSeparatorPrimitive class="my-1 h-px bg-border/40" />
+                          <DropdownMenuItemPrimitive class="qw-context-item qw-context-item--muted" @click="archiveSession(session.id)">
+                            <Archive class="size-4" />
+                            <span>归档</span>
+                          </DropdownMenuItemPrimitive>
+                          <DropdownMenuItemPrimitive class="qw-context-item qw-context-item--danger" @click="handleDelete(session.id)">
+                            <Trash2 class="size-4" />
+                            <span>删除对话</span>
+                          </DropdownMenuItemPrimitive>
+                        </DropdownMenuContentPrimitive>
+                      </DropdownMenuPortal>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </template>
             </article>
@@ -381,9 +472,9 @@ function navigateTo(path: string) {
         </section>
 
         <!-- 查看全部 -->
-        <div v-if="activeSessions.length > MAX_VISIBLE" class="px-lg pt-sm">
-          <button type="button" class="qw-link" @click="openAllConversations">
-            查看全部 {{ activeSessions.length }} 个对话
+        <div v-if="activeSessions.length > MAX_VISIBLE" class="px-lg pt-md">
+          <button type="button" class="qw-view-all" @click="openAllConversations">
+            <span>查看全部 {{ activeSessions.length }} 个对话</span>
             <ChevronRight class="size-3.5" />
           </button>
         </div>
@@ -399,12 +490,12 @@ function navigateTo(path: string) {
           </button>
         </div>
         <Transition
-          enter-active-class="transition-all duration-200 ease-out overflow-hidden"
-          enter-from-class="max-h-0 opacity-0"
-          enter-to-class="max-h-[400px] opacity-100"
-          leave-active-class="transition-all duration-150 ease-in overflow-hidden"
-          leave-from-class="max-h-[400px] opacity-100"
-          leave-to-class="max-h-0 opacity-0"
+          @before-enter="onBeforeEnter"
+          @enter="onEnter"
+          @after-enter="onAfterEnter"
+          @before-leave="onBeforeLeave"
+          @leave="onLeave"
+          @after-leave="onAfterLeave"
         >
         <div v-if="showArchived" class="qw-session-list px-sm">
           <article
@@ -422,29 +513,38 @@ function navigateTo(path: string) {
 
     <!-- ════════ 管理 Tab ════════ -->
     <template v-else>
-      <div class="flex-1 overflow-y-auto px-sm py-sm scrollbar-thin">
-        <section v-for="group in manageNavGroups" :key="group.id" class="mb-sm">
+      <div class="flex-1 overflow-y-auto px-sm py-md scrollbar-thin">
+        <section v-for="(group, index) in manageNavGroups" :key="group.id" class="mb-lg">
+          <!-- 分组间分割线（第一个分组不显示） -->
+          <div
+            v-if="index > 0"
+            class="mx-md mb-md h-px bg-gradient-to-r from-transparent via-[hsl(from_var(--border)_h_s_l_/_0.5)] to-transparent"
+          />
+
           <button
             type="button"
-            class="flex w-full items-center justify-between rounded-xl px-sm py-xs text-[11px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+            class="group/grp flex w-full items-center justify-between rounded-lg px-md py-sm text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80 transition-colors hover:text-foreground"
             @click="toggleGroup(group.id)"
           >
-            {{ group.label }}
+            <span class="flex items-center gap-sm">
+              <span class="inline-block size-1.5 rounded-full bg-current opacity-40" />
+              {{ group.label }}
+            </span>
             <ChevronRight
-              class="size-3 transition-transform duration-200"
+              class="size-3 text-muted-foreground/50 transition-transform duration-200"
               :class="{ 'rotate-90': !collapsedGroups.has(group.id) }"
             />
           </button>
 
           <Transition
-            enter-active-class="transition-all duration-200 ease-out overflow-hidden"
-            enter-from-class="max-h-0 opacity-0"
-            enter-to-class="max-h-[400px] opacity-100"
-            leave-active-class="transition-all duration-150 ease-in overflow-hidden"
-            leave-from-class="max-h-[400px] opacity-100"
-            leave-to-class="max-h-0 opacity-0"
+            @before-enter="onBeforeEnter"
+            @enter="onEnter"
+            @after-enter="onAfterEnter"
+            @before-leave="onBeforeLeave"
+            @leave="onLeave"
+            @after-leave="onAfterLeave"
           >
-            <div v-if="!collapsedGroups.has(group.id)" class="mt-0.5 space-y-0.5">
+            <div v-if="!collapsedGroups.has(group.id)" class="mt-xs space-y-px px-xs">
               <RouterLink
                 v-for="item in group.items"
                 :key="item.path"
@@ -453,7 +553,11 @@ function navigateTo(path: string) {
                 :class="{ 'nav-link-active': isNavItemActive(route.path, item) }"
                 @click="emit('close')"
               >
-                <component :is="item.icon" class="size-[16px] shrink-0 text-muted-foreground" />
+                <component
+                  :is="item.icon"
+                  class="size-[16px] shrink-0"
+                  :class="item.iconColor || group.iconColor || 'text-muted-foreground'"
+                />
                 <span class="truncate text-[13px]">{{ item.label }}</span>
               </RouterLink>
             </div>
@@ -485,30 +589,31 @@ function navigateTo(path: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.875rem 1rem 0.875rem 1.125rem;
+  padding: 1rem 1rem 1rem 1.125rem;
 }
 
 /* ── Tab 栏 ── */
 .tab-bar {
   display: flex;
   gap: 2px;
-  margin: 0 0.75rem 0.375rem;
+  margin: 0 0.75rem 0.5rem;
   padding: 3px;
-  border-radius: 0.5rem;
-  background: hsl(from var(--muted) h s l / 0.5);
+  border-radius: 0.625rem;
+  background: hsl(from var(--muted) h s l / 0.55);
+  box-shadow: inset 0 1px 2px hsl(var(--shadow-color) / 0.04);
 }
 
 .tab-trigger {
   flex: 1;
-  padding: 0.3rem 0;
-  border-radius: 0.375rem;
+  padding: 0.35rem 0;
+  border-radius: 0.5rem;
   font-size: 13px;
   font-weight: 500;
   text-align: center;
   color: var(--muted-foreground);
   background: transparent;
   border: none;
-  transition: all 160ms ease;
+  transition: all 180ms var(--ease-fluid);
   cursor: pointer;
 }
 
@@ -518,14 +623,16 @@ function navigateTo(path: string) {
 
 .tab-trigger--active {
   color: var(--foreground);
-  background: hsl(from var(--background) h s l / 0.95);
-  box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.06);
+  background: hsl(from var(--background) h s l / 0.98);
+  box-shadow:
+    0 1px 3px hsl(var(--shadow-color) / 0.08),
+    0 0 0 1px hsl(from var(--border) h s l / 0.12);
 }
 
 /* ═══ Qwen 风格对话区 ═══ */
 
 .qw-actions {
-  padding: 0.25rem 0.625rem;
+  padding: 0.375rem 0.625rem;
 }
 
 .qw-action-row {
@@ -535,20 +642,29 @@ function navigateTo(path: string) {
   width: 100%;
   padding: 0.55rem 0.75rem;
   border-radius: 0.5rem;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   font-size: 14px;
   color: var(--foreground);
   cursor: pointer;
-  transition: background 120ms ease;
+  transition:
+    background 160ms var(--ease-fluid),
+    border-color 160ms var(--ease-fluid),
+    transform 160ms var(--ease-fluid);
 }
 
 .qw-action-row:hover {
-  background: hsl(from var(--muted) h s l / 0.5);
+  background: linear-gradient(135deg, hsl(from var(--card) h s l / 0.6), hsl(from var(--muted) h s l / 0.4));
+  border-color: hsl(from var(--border) h s l / 0.2);
+  transform: translateX(2px);
+}
+
+.qw-action-row:hover .qw-action-icon {
+  color: hsl(from var(--primary) h s l / 0.75);
 }
 
 .qw-action-row--search {
-  background: hsl(from var(--muted) h s l / 0.4);
+  background: hsl(from var(--muted) h s l / 0.35);
 }
 
 .qw-action-icon {
@@ -556,16 +672,24 @@ function navigateTo(path: string) {
   height: 18px;
   flex-shrink: 0;
   color: var(--muted-foreground);
+  transition: color 160ms var(--ease-fluid);
 }
 
 .qw-section-label {
-  padding: 0.75rem 0.75rem 0.35rem 1.375rem;
-  font-size: 13px;
+  padding: 0.85rem 0.75rem 0.4rem 1.375rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--muted-foreground);
+  opacity: 0.75;
 }
 
 .qw-session-list {
   padding: 0 0.625rem;
+}
+
+.qw-session-list .qw-session {
+  position: relative;
 }
 
 .qw-session {
@@ -574,23 +698,35 @@ function navigateTo(path: string) {
   gap: 0.5rem;
   padding: 0.55rem 0.75rem;
   border-radius: 0.5rem;
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: background 120ms ease, box-shadow 120ms ease;
+  transition:
+    background 160ms var(--ease-fluid),
+    border-color 160ms var(--ease-fluid),
+    box-shadow 160ms var(--ease-fluid),
+    transform 160ms var(--ease-fluid);
 }
 
 .qw-session:hover {
-  background: hsl(from var(--background) h s l / 0.8);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(135deg, hsl(from var(--card) h s l / 0.7), hsl(from var(--background) h s l / 0.5));
+  border-color: hsl(from var(--border) h s l / 0.25);
+  box-shadow: 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  transform: translateX(2px);
 }
 
 .qw-session--active {
-  background: hsl(from var(--background) h s l / 0.95);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, hsl(from var(--primary) h s l / 0.08), hsl(from var(--card) h s l / 0.6));
+  border-color: hsl(from var(--primary) h s l / 0.14);
+  box-shadow:
+    0 2px 8px -2px hsl(from var(--primary) h s l / 0.1),
+    inset 0 0 0 1px hsl(from var(--primary) h s l / 0.04);
 }
 
 .qw-session--active:hover {
-  background: hsl(from var(--background) h s l / 0.98);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(135deg, hsl(from var(--primary) h s l / 0.1), hsl(from var(--card) h s l / 0.7));
+  border-color: hsl(from var(--primary) h s l / 0.18);
+  box-shadow: 0 3px 10px -3px hsl(from var(--primary) h s l / 0.12);
+  transform: translateX(2px);
 }
 
 .qw-session-title {
@@ -605,20 +741,115 @@ function navigateTo(path: string) {
 }
 
 .qw-session-time {
-  flex-shrink: 0;
   font-size: 12px;
   color: var(--muted-foreground);
+  white-space: nowrap;
 }
 
 .qw-session-action {
-  padding: 0.25rem;
-  border-radius: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
   color: var(--muted-foreground);
-  transition: color 120ms ease;
+  background: transparent;
+  transition:
+    color 160ms var(--ease-fluid),
+    background 160ms var(--ease-fluid),
+    border-color 160ms var(--ease-fluid),
+    transform 160ms var(--ease-fluid);
 }
 
 .qw-session-action:hover {
   color: var(--foreground);
+  background: hsl(from var(--muted) h s l / 0.6);
+  border-color: hsl(from var(--border) h s l / 0.3);
+  transform: scale(1.1);
+}
+
+.qw-session-action--danger:hover {
+  color: hsl(from var(--destructive) h s l / 0.9);
+  background: hsl(from var(--destructive) h s l / 0.08);
+  border-color: hsl(from var(--destructive) h s l / 0.15);
+}
+
+.qw-session-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 160ms var(--ease-fluid),
+    background 160ms var(--ease-fluid),
+    border-color 160ms var(--ease-fluid),
+    transform 160ms var(--ease-fluid);
+}
+
+.qw-session-more:hover {
+  color: var(--foreground);
+  background: hsl(from var(--muted) h s l / 0.6);
+  border-color: hsl(from var(--border) h s l / 0.3);
+  transform: scale(1.08);
+}
+
+/* ── 右键/更多菜单 ── */
+:global(.qw-context-menu) {
+  min-width: 10rem;
+  padding: 0.375rem;
+  border-radius: 0.75rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.4);
+  background: hsl(from var(--popover) h s l / 0.98);
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 8px 24px -4px hsl(var(--shadow-color) / 0.12),
+    0 2px 6px -1px hsl(var(--shadow-color) / 0.06);
+}
+
+:global(.qw-context-item) {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 14px;
+  font-weight: 450;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+:global(.qw-context-item:hover),
+:global(.qw-context-item[data-highlighted]) {
+  background: hsl(from var(--accent) h s l / 0.7);
+}
+
+:global(.qw-context-item--danger) {
+  color: hsl(from var(--destructive) h s l / 0.85);
+}
+
+:global(.qw-context-item--danger:hover),
+:global(.qw-context-item--danger[data-highlighted]) {
+  background: hsl(from var(--destructive) h s l / 0.06);
+  color: var(--destructive);
+}
+
+:global(.qw-context-item--muted) {
+  color: var(--muted-foreground);
+}
+
+:global(.qw-context-item--muted:hover),
+:global(.qw-context-item--muted[data-highlighted]) {
+  background: hsl(from var(--accent) h s l / 0.7);
+  color: var(--muted-foreground);
 }
 
 .qw-link {
@@ -639,33 +870,70 @@ function navigateTo(path: string) {
   color: var(--foreground);
 }
 
+.qw-view-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.3);
+  border-radius: 0.5rem;
+  background: linear-gradient(135deg, hsl(from var(--card) h s l / 0.4), hsl(from var(--muted) h s l / 0.2));
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    color 180ms var(--ease-fluid),
+    background 180ms var(--ease-fluid),
+    border-color 180ms var(--ease-fluid),
+    box-shadow 180ms var(--ease-fluid),
+    transform 180ms var(--ease-fluid);
+}
+
+.qw-view-all:hover {
+  color: var(--foreground);
+  background: linear-gradient(135deg, hsl(from var(--card) h s l / 0.6), hsl(from var(--muted) h s l / 0.35));
+  border-color: hsl(from var(--border) h s l / 0.5);
+  box-shadow: 0 2px 6px -2px hsl(var(--shadow-color) / 0.06);
+  transform: translateY(-1px);
+}
+
 /* ═══ 底部 ═══ */
 
 .sidebar-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0.5rem 0.75rem 0.625rem;
-  border-top: 1px solid hsl(from var(--sidebar-border) h s l / 0.4);
+  padding: 0.625rem 0.75rem 0.75rem;
+  border-top: 1px solid hsl(from var(--sidebar-border) h s l / 0.3);
+  background: linear-gradient(180deg, transparent, hsl(from var(--sidebar-background) h s l / 0.5));
 }
 
 .theme-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.875rem;
-  height: 1.875rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 0.5rem;
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid hsl(from var(--border) h s l / 0.2);
+  background: hsl(from var(--card) h s l / 0.3);
   color: var(--muted-foreground);
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+  transition:
+    background 180ms var(--ease-fluid),
+    color 180ms var(--ease-fluid),
+    border-color 180ms var(--ease-fluid),
+    transform 180ms var(--ease-fluid),
+    box-shadow 180ms var(--ease-fluid);
 }
 
 .theme-toggle:hover {
-  background: hsl(from var(--muted) h s l / 0.5);
+  background: hsl(from var(--card) h s l / 0.6);
   border-color: hsl(from var(--border) h s l / 0.5);
   color: var(--foreground);
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px -3px hsl(var(--shadow-color) / 0.1);
 }
 </style>
