@@ -43,7 +43,7 @@ class WorkspaceResolver_工作目录解析测试 {
      */
     private static ZhiweiPaths mockZhiweiPaths(Path workspacePath) {
         var paths = mock(ZhiweiPaths.class);
-        when(paths.workspace()).thenReturn(workspacePath);
+        org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(workspacePath);
         return paths;
     }
 

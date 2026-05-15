@@ -82,7 +82,7 @@ class SkillSynthesizer_管线测试 {
         var validator = new SkillValidator(descriptionValidator, bodyValidator, toolRegistry);
         var installer = new SkillInstaller(parser, descriptionValidator, bodyValidator, repository);
         var config = new SkillConfigProperties();
-        when(zhiweiPaths.home("skills")).thenReturn(tempDir);
+        lenient().when(zhiweiPaths.home("skills")).thenReturn(tempDir);
 
         synthesizer = new SkillSynthesizer(
                 generationRouter, promptRegistry, parser, validator, installer, publisher, config, zhiweiPaths);
