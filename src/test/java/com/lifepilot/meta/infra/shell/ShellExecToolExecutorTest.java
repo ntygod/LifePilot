@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.shell;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
@@ -18,6 +19,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * ShellExecToolExecutor 单元测试。
@@ -30,7 +33,14 @@ class ShellExecToolExecutorTest {
     private ShellExecToolExecutor executor;
     private MetaProperties properties;
     private BackgroundProcessManager backgroundProcessManager;
-    private final WorkspaceResolver workspaceResolver = new WorkspaceResolver(null, "");
+    private final WorkspaceResolver workspaceResolver;
+
+    {
+        var zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.workspace()).thenReturn(
+                Path.of(System.getProperty("user.home"), "zhiwei", "workspace"));
+        workspaceResolver = new WorkspaceResolver(null, zhiweiPaths);
+    }
 
     @BeforeEach
     void setUp() {
