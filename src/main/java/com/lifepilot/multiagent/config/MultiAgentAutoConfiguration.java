@@ -2,6 +2,7 @@ package com.lifepilot.multiagent.config;
 
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.config.AgentAutoConfiguration;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.multiagent.discovery.ToolDiscoveryService;
 import com.lifepilot.multiagent.execution.AgentExecutor;
@@ -89,10 +90,11 @@ public class MultiAgentAutoConfiguration {
     public AgentMarkdownLoader agentMarkdownLoader(AgentRegistry agentRegistry,
                                                     AgentMarkdownParser parser,
                                                     MultiAgentProperties config,
+                                                    ZhiweiPaths zhiweiPaths,
                                                     SharedScheduler sharedScheduler) {
         log.info("多 Agent 协作: 注册 AgentMarkdownLoader, path={}",
-                config.getAgentDefinitionsPath());
-        return new AgentMarkdownLoader(agentRegistry, parser, config, sharedScheduler);
+                zhiweiPaths.home("agents"));
+        return new AgentMarkdownLoader(agentRegistry, parser, config, zhiweiPaths, sharedScheduler);
     }
 
     @Bean
@@ -130,7 +132,7 @@ public class MultiAgentAutoConfiguration {
      * 应用启动完成后加载预设 Agent 和用户自定义 Agent，启动热加载。
      *
      * <p>加载顺序：先从 classpath preset-agents/ 加载预设 Agent（Builtin 来源），
-     * 再从 agentDefinitionsPath 加载用户自定义 Markdown Agent（MarkdownDefined 来源）。
+     * 再从 ZhiweiPaths.home("agents") 加载用户自定义 Markdown Agent（MarkdownDefined 来源）。
      * MarkdownDefined 可覆盖 Builtin，实现用户自定义优先。</p>
      */
     @EventListener(ApplicationReadyEvent.class)
@@ -149,12 +151,8 @@ public class MultiAgentAutoConfiguration {
         // 1. 加载预设 Agent（Builtin 来源）
         loadPresetAgents(registry, parser);
 
-        // 2. 加载用户自定义 Agent（MarkdownDefined 来源）
-        String agentPath = config.getAgentDefinitionsPath();
-        if (agentPath.startsWith("~")) {
-            agentPath = System.getProperty("user.home") + agentPath.substring(1);
-        }
-        loader.loadFromDirectory(Path.of(agentPath));
+        // 2. 加载用户自定义 Agent（MarkdownDefined 来源，路径由 ZhiweiPaths 提供）
+        loader.loadFromDirectory(loader.getAgentDirectory());
 
         // 3. 启动热加载
         if (config.getHotReload().isEnabled()) {

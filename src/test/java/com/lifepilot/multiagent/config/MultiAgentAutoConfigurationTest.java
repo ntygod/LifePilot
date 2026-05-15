@@ -2,6 +2,7 @@ package com.lifepilot.multiagent.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.multiagent.discovery.ToolDiscoveryService;
@@ -20,6 +21,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.nio.file.Path;
 import java.util.concurrent.ScheduledExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -132,6 +134,13 @@ class MultiAgentAutoConfigurationTest {
             when(scheduler.debounce()).thenReturn(executor);
             when(scheduler.heartbeat()).thenReturn(executor);
             return scheduler;
+        }
+
+        @Bean
+        ZhiweiPaths zhiweiPaths() {
+            var paths = mock(ZhiweiPaths.class);
+            when(paths.home("agents")).thenReturn(Path.of(System.getProperty("java.io.tmpdir"), "zhiwei-test", "agents"));
+            return paths;
         }
     }
 }

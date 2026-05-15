@@ -1,5 +1,6 @@
 package com.lifepilot.multiagent.loader;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
 import com.lifepilot.multiagent.model.AgentDefinition;
@@ -36,6 +37,7 @@ public class AgentMarkdownLoader {
     private final AgentRegistry agentRegistry;
     private final AgentMarkdownParser parser;
     private final MultiAgentProperties config;
+    private final ZhiweiPaths zhiweiPaths;
     private final SharedScheduler sharedScheduler;
 
     /** 已加载文件的 lastModified 缓存，用于热加载变更检测。 */
@@ -44,10 +46,12 @@ public class AgentMarkdownLoader {
     public AgentMarkdownLoader(AgentRegistry agentRegistry,
                                AgentMarkdownParser parser,
                                MultiAgentProperties config,
+                               ZhiweiPaths zhiweiPaths,
                                SharedScheduler sharedScheduler) {
         this.agentRegistry = agentRegistry;
         this.parser = parser;
         this.config = config;
+        this.zhiweiPaths = zhiweiPaths;
         this.sharedScheduler = sharedScheduler;
     }
 
@@ -106,7 +110,7 @@ public class AgentMarkdownLoader {
      */
     public void startHotReload() {
         int interval = config.getHotReload().getScanIntervalSeconds();
-        Path directory = resolveAgentPath();
+        Path directory = zhiweiPaths.home("agents");
 
         sharedScheduler.debounce().scheduleWithFixedDelay(
                 () -> performScan(directory),
@@ -173,12 +177,12 @@ public class AgentMarkdownLoader {
         }
     }
 
-    /** 解析 Agent 定义文件目录路径（支持 ~ 展开）。 */
-    private Path resolveAgentPath() {
-        String path = config.getAgentDefinitionsPath();
-        if (path.startsWith("~")) {
-            path = System.getProperty("user.home") + path.substring(1);
-        }
-        return Path.of(path);
+    /**
+     * 返回 Agent 定义文件目录路径（由 ZhiweiPaths 提供）。
+     *
+     * @return Agent 定义目录绝对路径
+     */
+    public Path getAgentDirectory() {
+        return zhiweiPaths.home("agents");
     }
 }

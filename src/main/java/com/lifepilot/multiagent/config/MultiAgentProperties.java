@@ -17,9 +17,6 @@ public class MultiAgentProperties {
     /** 最大委托深度。 */
     private int maxDelegationDepth = 2;
 
-    /** Agent Markdown 定义文件目录。 */
-    private String agentDefinitionsPath = "~/.zhiwei/agents/";
-
     /** 热加载配置。 */
     private HotReload hotReload = new HotReload();
 
@@ -34,9 +31,6 @@ public class MultiAgentProperties {
 
     public int getMaxDelegationDepth() { return maxDelegationDepth; }
     public void setMaxDelegationDepth(int maxDelegationDepth) { this.maxDelegationDepth = maxDelegationDepth; }
-
-    public String getAgentDefinitionsPath() { return agentDefinitionsPath; }
-    public void setAgentDefinitionsPath(String agentDefinitionsPath) { this.agentDefinitionsPath = agentDefinitionsPath; }
 
     public HotReload getHotReload() { return hotReload; }
     public void setHotReload(HotReload hotReload) { this.hotReload = hotReload; }
