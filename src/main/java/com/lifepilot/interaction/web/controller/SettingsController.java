@@ -6,7 +6,6 @@ import com.lifepilot.config.bootstrap.BootstrapConfigService;
 import com.lifepilot.config.bootstrap.PathAccessConfig;
 import com.lifepilot.config.path.PathAccessControl;
 import com.lifepilot.config.path.ZhiweiPaths;
-import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.PathSettingsRequest;
 import com.lifepilot.interaction.web.model.PathSettingsResponse;
@@ -20,7 +19,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
@@ -54,30 +52,24 @@ public class SettingsController {
     private final ObjectMapper objectMapper;
     private final KnowledgeBaseProperties knowledgeBaseProperties;
     private final MetaProperties metaProperties;
-    private final WorkspaceResolver workspaceResolver;
     private final BootstrapConfigService bootstrapConfigService;
     private final ZhiweiPaths zhiweiPaths;
     private final PathAccessControl pathAccessControl;
-    private final String dataDir;
 
     public SettingsController(UserSettingsRepository settingsRepository,
                               ObjectMapper objectMapper,
                               @Nullable KnowledgeBaseProperties knowledgeBaseProperties,
                               @Nullable MetaProperties metaProperties,
-                              WorkspaceResolver workspaceResolver,
                               BootstrapConfigService bootstrapConfigService,
                               ZhiweiPaths zhiweiPaths,
-                              PathAccessControl pathAccessControl,
-                              @org.springframework.beans.factory.annotation.Value("${zhiwei.home:}") String dataDir) {
+                              PathAccessControl pathAccessControl) {
         this.settingsRepository = settingsRepository;
         this.objectMapper = objectMapper;
         this.knowledgeBaseProperties = knowledgeBaseProperties;
         this.metaProperties = metaProperties;
-        this.workspaceResolver = workspaceResolver;
         this.bootstrapConfigService = bootstrapConfigService;
         this.zhiweiPaths = zhiweiPaths;
         this.pathAccessControl = pathAccessControl;
-        this.dataDir = dataDir;
     }
 
     @GetMapping
@@ -240,78 +232,7 @@ public class SettingsController {
         return getSearchSettings();
     }
 
-    @GetMapping("/data-dir")
-    public ApiResponse<Map<String, String>> getDataDir() {
-        Map<String, String> result = new LinkedHashMap<>();
-        result.put("dataDir", dataDir);
-        result.put("configuredDir", bootstrapConfigService.getHome());
-        return ApiResponse.ok(result);
-    }
 
-    @PutMapping("/data-dir")
-    public ApiResponse<Map<String, String>> updateDataDir(@RequestBody Map<String, String> request) {
-        String newDir = request.get("dataDir");
-        if (newDir != null && newDir.isBlank()) {
-            newDir = null;
-        }
-        if (newDir != null) {
-            if (newDir.length() > 1024) {
-                throw new IllegalArgumentException("数据目录路径过长");
-            }
-            if (newDir.contains("..")) {
-                throw new IllegalArgumentException("数据目录路径不允许包含 '..'");
-            }
-            if (!Path.of(newDir).isAbsolute()) {
-                throw new IllegalArgumentException("数据目录必须是绝对路径");
-            }
-        }
-        bootstrapConfigService.saveHome(newDir);
-        log.info("数据目录配置已更新: dataDir={}", newDir);
-        return getDataDir();
-    }
-
-    @GetMapping("/workspace")
-    public ApiResponse<Map<String, String>> getWorkspaceSettings() {
-        UserSettings settings = settingsRepository.getSettings();
-        Path resolved = workspaceResolver.resolve();
-        Map<String, String> result = new LinkedHashMap<>();
-        result.put("defaultWorkspace", settings.defaultWorkspace());
-        result.put("resolvedPath", resolved.toString());
-        result.put("systemDefault", workspaceResolver.getDefaultDir());
-        return ApiResponse.ok(result);
-    }
-
-    @PutMapping("/workspace")
-    public ApiResponse<Map<String, String>> updateWorkspaceSettings(@RequestBody Map<String, String> request) {
-        String workspace = request.get("defaultWorkspace");
-        // 空字符串视为清除自定义设置
-        if (workspace != null && workspace.isBlank()) {
-            workspace = null;
-        }
-        // 校验路径有效性
-        if (workspace != null) {
-            if (workspace.length() > 1024) {
-                throw new IllegalArgumentException("工作目录路径过长");
-            }
-            if (workspace.contains("..")) {
-                throw new IllegalArgumentException("工作目录路径不允许包含 '..'");
-            }
-            Path path = Path.of(workspace);
-            if (!path.isAbsolute()) {
-                throw new IllegalArgumentException("工作目录必须是绝对路径");
-            }
-        }
-        UserSettings current = settingsRepository.getSettings();
-        UserSettings updated = new UserSettings(
-                current.theme(), current.language(),
-                current.enableStreaming(), current.enableFunctionCall(),
-                current.enableKnowledgeBase(), current.enableToolCall(),
-                workspace, current.externalCliBashPath()
-        );
-        settingsRepository.save(updated);
-        log.info("工作目录设置已更新: workspace={}", workspace);
-        return getWorkspaceSettings();
-    }
 
     // ==================== 路径统一配置端点 ====================
 
@@ -407,23 +328,37 @@ public class SettingsController {
     /**
      * 更新 WORKSPACE 目录路径。
      *
-     * <p>验证绝对路径后保存到 BootstrapConfig，立即生效无需重启。</p>
+     * <p>验证绝对路径后保存到 BootstrapConfig，同时更新 DB 中的 defaultWorkspace 字段，
+     * 使 WorkspaceResolver.resolve() 立即读取到新值，无需重启。</p>
      *
      * @param newWorkspace 新的 WORKSPACE 目录路径
      */
     private void updateWorkspace(String newWorkspace) {
         String trimmed = newWorkspace.trim();
-        if (trimmed.isEmpty()) {
-            // 空字符串表示清除自定义设置（恢复默认）
-            bootstrapConfigService.saveWorkspace(null);
-            log.info("WORKSPACE 配置已清除，将使用默认值");
-            return;
-        }
-        validatePathInput(trimmed, "WORKSPACE 目录");
+        String workspace = trimmed.isEmpty() ? null : trimmed;
 
-        // 保存到 BootstrapConfig
-        bootstrapConfigService.saveWorkspace(trimmed);
-        log.info("WORKSPACE 配置已更新: workspace={}", trimmed);
+        if (workspace != null) {
+            validatePathInput(workspace, "WORKSPACE 目录");
+        }
+
+        // 保存到 BootstrapConfig（持久化到 config.json，下次启动时 ZhiweiPaths 读取）
+        bootstrapConfigService.saveWorkspace(workspace);
+
+        // 同步更新 DB，使 WorkspaceResolver.resolve() 立即生效
+        UserSettings current = settingsRepository.getSettings();
+        UserSettings updated = new UserSettings(
+                current.theme(), current.language(),
+                current.enableStreaming(), current.enableFunctionCall(),
+                current.enableKnowledgeBase(), current.enableToolCall(),
+                workspace, current.externalCliBashPath()
+        );
+        settingsRepository.save(updated);
+
+        if (workspace == null) {
+            log.info("WORKSPACE 配置已清除，将使用默认值");
+        } else {
+            log.info("WORKSPACE 配置已更新: workspace={}", workspace);
+        }
     }
 
     /**

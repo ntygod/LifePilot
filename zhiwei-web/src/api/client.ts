@@ -617,32 +617,6 @@ export const settingsApi = {
     })
   },
 
-  /** 获取数据目录 */
-  getDataDir(): Promise<{ dataDir: string, configuredDir: string | null }> {
-    return request('/settings/data-dir')
-  },
-
-  /** 更新数据目录（需重启生效） */
-  updateDataDir(dataDir: string | null): Promise<{ dataDir: string, configuredDir: string | null }> {
-    return request('/settings/data-dir', {
-      method: 'PUT',
-      body: JSON.stringify({ dataDir: dataDir ?? '' })
-    })
-  },
-
-  /** 获取工作目录配置 */
-  getWorkspaceSettings(): Promise<WorkspaceSettings> {
-    return request('/settings/workspace')
-  },
-
-  /** 更新工作目录配置 */
-  updateWorkspaceSettings(workspace: { defaultWorkspace: string | null }): Promise<WorkspaceSettings> {
-    return request('/settings/workspace', {
-      method: 'PUT',
-      body: JSON.stringify(workspace)
-    })
-  },
-
   /** 获取外部 CLI Bash 依赖路径 */
   getExternalCliBashSettings(): Promise<ExternalCliBashSettings> {
     return request('/settings/external-cli-bash')
@@ -668,13 +642,6 @@ export const settingsApi = {
       body: JSON.stringify(payload)
     })
   }
-}
-
-/** 工作目录配置响应 */
-export interface WorkspaceSettings {
-  defaultWorkspace: string | null
-  resolvedPath: string
-  systemDefault: string
 }
 
 /** 外部 CLI Bash 依赖配置响应 */
