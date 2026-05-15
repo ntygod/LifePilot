@@ -284,9 +284,6 @@ public class MetaProperties {
             /** 额外 Chromium 启动参数。 */
             private List<String> extraLaunchArgs = List.of();
 
-            /** storageState 持久化目录，空字符串关闭持久化。 */
-            private String storageStateDir = "";
-
             /** 是否在会话关闭时自动保存 storageState，默认 false。 */
             private boolean persistStorageState = false;
 
@@ -301,9 +298,6 @@ public class MetaProperties {
 
             /** CDP 端点 URL，仅 CDP 模式使用（如 http://localhost:9222）。 */
             private String cdpUrl = "";
-
-            /** Chrome 用户数据目录，仅 PERSISTENT 模式使用。 */
-            private String userDataDir = "";
 
             /** 页面标号快照配置。 */
             private Snapshot snapshot = new Snapshot();

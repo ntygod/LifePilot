@@ -12,6 +12,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.sandbox.booter.DockerBooter;
@@ -58,16 +59,18 @@ public class SandboxAutoConfiguration {
      * historyRepo 缺失（罕见的非数据库场景）时仍可注册，仅跳过审计写入。</p>
      *
      * @param config      沙箱配置
+     * @param zhiweiPaths 统一路径提供 Bean
      * @param historyRepo 安装历史仓库（可选）
      * @return PythonRuntimeManager 实例
      */
     @Bean
     @ConditionalOnMissingBean
     PythonRuntimeManager pythonRuntimeManager(SandboxConfigProperties config,
+                                              ZhiweiPaths zhiweiPaths,
                                               @Nullable RuntimeInstallHistoryRepository historyRepo) {
         log.info("PythonRuntimeManager 注册完成: historyRepo={}",
                 historyRepo != null ? "available" : "absent");
-        return new PythonRuntimeManager(config, historyRepo);
+        return new PythonRuntimeManager(config, zhiweiPaths, historyRepo);
     }
 
     /**

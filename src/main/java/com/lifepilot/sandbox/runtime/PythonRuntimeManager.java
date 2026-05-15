@@ -3,7 +3,6 @@ package com.lifepilot.sandbox.runtime;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -13,6 +12,7 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
 import com.lifepilot.sandbox.util.SandboxUtils;
 
@@ -41,6 +41,9 @@ public class PythonRuntimeManager {
 
     private final SandboxConfigProperties config;
 
+    /** 统一路径提供 Bean，用于获取 Python 运行时安装目录。 */
+    private final ZhiweiPaths zhiweiPaths;
+
     /** 安装/卸载历史审计仓库，可空（无 Spring 容器场景）。 */
     @Nullable
     private final RuntimeInstallHistoryRepository historyRepo;
@@ -60,13 +63,15 @@ public class PythonRuntimeManager {
      */
     private final AtomicReference<String> lastInstallError = new AtomicReference<>();
 
-    public PythonRuntimeManager(SandboxConfigProperties config) {
-        this(config, null);
+    public PythonRuntimeManager(SandboxConfigProperties config, ZhiweiPaths zhiweiPaths) {
+        this(config, zhiweiPaths, null);
     }
 
     public PythonRuntimeManager(SandboxConfigProperties config,
+                                ZhiweiPaths zhiweiPaths,
                                 @Nullable RuntimeInstallHistoryRepository historyRepo) {
         this.config = config;
+        this.zhiweiPaths = zhiweiPaths;
         this.historyRepo = historyRepo;
     }
 
@@ -321,9 +326,7 @@ public class PythonRuntimeManager {
 
     /** 解析 installPath 配置，替换 {@code ${user.home}} 占位符。 */
     Path resolveInstallPath() {
-        String raw = config.getRuntime().getPython().getInstallPath();
-        String resolved = raw.replace("${user.home}", System.getProperty("user.home"));
-        return Paths.get(resolved);
+        return zhiweiPaths.home(ZhiweiPaths.DIR_RUNTIME_PYTHON);
     }
 
     /** 由 install() 写入安装中状态（包级可见，便于状态机测试覆盖）。 */

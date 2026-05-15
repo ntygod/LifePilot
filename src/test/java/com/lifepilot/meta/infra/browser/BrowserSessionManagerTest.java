@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.browser;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.meta.config.MetaProperties;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
@@ -36,15 +37,18 @@ import static org.mockito.Mockito.when;
 class BrowserSessionManagerTest {
 
     private MetaProperties properties;
+    private ZhiweiPaths zhiweiPaths;
 
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
+        zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.home(ZhiweiPaths.DIR_CACHE_BROWSER)).thenReturn(Path.of(System.getProperty("java.io.tmpdir"), "zhiwei-test", "cache", "browser"));
     }
 
     @Test
     void isAvailable_返回布尔值不抛异常() {
-        var manager = new BrowserSessionManager(properties);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths);
         // 不论 Playwright 是否在 classpath 上，isAvailable() 都不应抛异常
         boolean available = manager.isAvailable();
         assertThat(available).isIn(true, false);
@@ -52,7 +56,7 @@ class BrowserSessionManagerTest {
 
     @Test
     void getUnavailableMessage_API缺失时提示安装Playwright() {
-        var manager = new BrowserSessionManager(properties,
+        var manager = new BrowserSessionManager(properties, zhiweiPaths,
                 "浏览器功能未配置，请安装 Playwright",
                 mock(BrowserSessionManager.BrowserRuntime.class));
         assertThat(manager.isAvailable()).isFalse();
@@ -62,7 +66,7 @@ class BrowserSessionManagerTest {
     @Test
     void getUnavailableMessage_缺少驱动包时包含安装指引() {
         String driverMissingReason = "Playwright API 已就绪，但缺少浏览器驱动包（driver-bundle）";
-        var manager = new BrowserSessionManager(properties, driverMissingReason,
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, driverMissingReason,
                 mock(BrowserSessionManager.BrowserRuntime.class));
         assertThat(manager.isAvailable()).isFalse();
         assertThat(manager.getUnavailableMessage()).contains("driver-bundle");
@@ -70,13 +74,13 @@ class BrowserSessionManagerTest {
 
     @Test
     void getActiveSessionCount_初始为零() {
-        var manager = new BrowserSessionManager(properties);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths);
         assertThat(manager.getActiveSessionCount()).isZero();
     }
 
     @Test
     void close_无活跃会话时不抛异常() {
-        var manager = new BrowserSessionManager(properties);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths);
         // close() 在无活跃会话时应安全执行
         manager.close();
         assertThat(manager.getActiveSessionCount()).isZero();
@@ -85,13 +89,13 @@ class BrowserSessionManagerTest {
     @Test
     void isAvailable_禁用浏览器时返回false() {
         properties.getInfra().getBrowser().setEnabled(false);
-        var manager = new BrowserSessionManager(properties);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths);
         assertThat(manager.isAvailable()).isFalse();
     }
 
     @Test
     void cleanupIdleSessions_无会话时不抛异常() {
-        var manager = new BrowserSessionManager(properties);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths);
         manager.cleanupIdleSessions();
         assertThat(manager.getActiveSessionCount()).isZero();
     }
@@ -115,7 +119,7 @@ class BrowserSessionManagerTest {
                 stubPage(sharedContext, sharedLocalStorage, "https://example.com/first", "First"),
                 stubPage(sharedContext, sharedLocalStorage, "https://example.com/second", "Second")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         var firstPage = manager.getOrCreatePage("session-1");
         firstPage.setCookie("token", "abc", null, null);
@@ -147,7 +151,7 @@ class BrowserSessionManagerTest {
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://a.com", "A"),
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://b.com", "B")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         // 创建两个会话
         manager.getOrCreatePage("s1");
@@ -174,7 +178,7 @@ class BrowserSessionManagerTest {
 
         BrowserContext ctx = mock(BrowserContext.class);
         var runtime = new StubBrowserRuntime(List.of(), ctx);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         assertThatThrownBy(() -> manager.getOrCreatePage("s1"))
                 .isInstanceOf(IllegalStateException.class)
@@ -186,14 +190,13 @@ class BrowserSessionManagerTest {
     @Test
     void PERSISTENT模式_使用持久上下文_关闭会话不关闭Context() {
         properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
-        properties.getInfra().getBrowser().setUserDataDir("/tmp/test-profile");
 
         BrowserContext sharedContext = mock(BrowserContext.class);
         var runtime = new StubBrowserRuntime(List.of(
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://c.com", "C"),
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://d.com", "D")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         manager.getOrCreatePage("s1");
         manager.getOrCreatePage("s2");
@@ -212,20 +215,6 @@ class BrowserSessionManagerTest {
         assertThat(runtime.closeContextCount).isEqualTo(1);
     }
 
-    @Test
-    void PERSISTENT模式_userDataDir为空时抛异常() {
-        properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
-        properties.getInfra().getBrowser().setUserDataDir("");
-
-        BrowserContext ctx = mock(BrowserContext.class);
-        var runtime = new StubBrowserRuntime(List.of(), ctx);
-        var manager = new BrowserSessionManager(properties, null, runtime);
-
-        assertThatThrownBy(() -> manager.getOrCreatePage("s1"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("user-data-dir");
-    }
-
     // ==================== User-Agent 动态解析测试 ====================
 
     @Test
@@ -235,7 +224,7 @@ class BrowserSessionManagerTest {
         var runtime = new StubBrowserRuntime(List.of(
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         manager.getOrCreatePage("ua-launch");
 
@@ -254,7 +243,7 @@ class BrowserSessionManagerTest {
         var runtime = new StubBrowserRuntime(List.of(
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         manager.getOrCreatePage("ua-custom");
 
@@ -265,13 +254,12 @@ class BrowserSessionManagerTest {
     void PERSISTENT模式_默认auto配置时传null使Chromium真实UA生效() {
         // PERSISTENT 模式无独立 Browser 对象，auto 下 resolveUserAgent 返回 null
         properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
-        properties.getInfra().getBrowser().setUserDataDir("/tmp/ua-profile");
 
         BrowserContext sharedContext = mock(BrowserContext.class);
         var runtime = new StubBrowserRuntime(List.of(
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         manager.getOrCreatePage("ua-persistent");
 
@@ -282,14 +270,13 @@ class BrowserSessionManagerTest {
     void PERSISTENT模式_显式UA配置时仍原样透传() {
         String customUa = "PersistentBot/1.0";
         properties.getInfra().getBrowser().setAcquisitionMode(BrowserAcquisitionMode.PERSISTENT);
-        properties.getInfra().getBrowser().setUserDataDir("/tmp/ua-profile");
         properties.getInfra().getBrowser().setUserAgent(customUa);
 
         BrowserContext sharedContext = mock(BrowserContext.class);
         var runtime = new StubBrowserRuntime(List.of(
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://x.com", "X")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         manager.getOrCreatePage("ua-persistent-custom");
 
@@ -308,7 +295,7 @@ class BrowserSessionManagerTest {
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://e.com", "E"),
                 stubPage(sharedContext, new LinkedHashMap<>(), "https://f.com", "F")
         ), sharedContext);
-        var manager = new BrowserSessionManager(properties, null, runtime);
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
 
         manager.getOrCreatePage("s1");
         String tab2 = manager.openNewPage("s1", "https://f.com");

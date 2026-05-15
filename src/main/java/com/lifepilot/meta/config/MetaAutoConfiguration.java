@@ -3,6 +3,7 @@ package com.lifepilot.meta.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.task.CronScheduler;
 import com.lifepilot.agent.task.CronTaskRepository;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.interaction.runtime.ChannelDeliveryDispatcher;
@@ -42,7 +43,6 @@ import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.skill.MarkdownSkillParser;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.install.SkillInstaller;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -176,8 +176,8 @@ public class MetaAutoConfiguration {
     @ConditionalOnClass(name = "com.microsoft.playwright.Playwright")
     @ConditionalOnProperty(name = "lifepilot.meta.infra.browser.enabled",
                            havingValue = "true", matchIfMissing = true)
-    BrowserSessionManager browserSessionManager(MetaProperties properties) {
-        return new BrowserSessionManager(properties);
+    BrowserSessionManager browserSessionManager(MetaProperties properties, ZhiweiPaths zhiweiPaths) {
+        return new BrowserSessionManager(properties, zhiweiPaths);
     }
 
     /**
@@ -236,12 +236,12 @@ public class MetaAutoConfiguration {
     @ConditionalOnProperty(name = "lifepilot.meta.skill-discovery.enabled",
                            havingValue = "true", matchIfMissing = true)
     SkillDiscoveryRegistrar skillDiscoveryRegistrar(MetaProperties properties,
-                                                    SkillConfigProperties skillConfig,
+                                                    com.lifepilot.config.path.ZhiweiPaths zhiweiPaths,
                                                     SkillInstaller installer,
                                                     com.lifepilot.skill.install.SkillInstallationRepository installationRepository,
                                                     MarkdownSkillParser parser,
                                                     SkillRegistry skillRegistry) {
-        return new SkillDiscoveryRegistrar(properties, skillConfig, installer,
+        return new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer,
                 installationRepository, parser, skillRegistry);
     }
 

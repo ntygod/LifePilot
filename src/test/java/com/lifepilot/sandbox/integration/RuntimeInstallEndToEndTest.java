@@ -1,5 +1,6 @@
 package com.lifepilot.sandbox.integration;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
 import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.runtime.RuntimeInstallProgressEmitter;
@@ -20,6 +21,8 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Python 运行时端到端安装测试 — mock HTTP 服务器 + 现场打 fake tarball + 验证 Ready。
@@ -62,13 +65,15 @@ class RuntimeInstallEndToEndTest {
             // 3. 配置指向 mock URL
             var config = new SandboxConfigProperties();
             config.getRuntime().getPython().setBundledVersion("0.0.0-test");
-            config.getRuntime().getPython().setInstallPath(tempDir.resolve("python").toString());
             config.getRuntime().getPython().setDownloadUrlTemplate(
                 "http://localhost:" + port + "/file.tar.zst");
             config.getRuntime().getPython().setSha256UrlTemplate(
                 "http://localhost:" + port + "/file.tar.zst.sha256");
 
-            var manager = new PythonRuntimeManager(config);
+            var zhiweiPaths = mock(ZhiweiPaths.class);
+            when(zhiweiPaths.home(ZhiweiPaths.DIR_RUNTIME_PYTHON)).thenReturn(tempDir.resolve("python"));
+
+            var manager = new PythonRuntimeManager(config, zhiweiPaths);
             var emitter = new RuntimeInstallProgressEmitter();
 
             // 4. install — 同步等待 CompletableFuture 完成
