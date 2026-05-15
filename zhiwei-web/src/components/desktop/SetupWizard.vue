@@ -22,6 +22,7 @@ import {
   defaultModelForKind,
   modelOptionsForKind,
 } from '@/components/settings/modelServiceCatalog'
+import { listProviderProfiles, type ProviderProfileDto } from '@/api/providerProfile'
 import SetupWizardPythonRuntime from './SetupWizardPythonRuntime.vue'
 
 const router = useRouter()
@@ -44,6 +45,7 @@ const dotIndex = computed(() => {
 // === 模型配置 ===
 const errorMsg = ref('')
 const templates = ref<ModelServiceTemplate[]>([])
+const profiles = ref<ProviderProfileDto[]>([])
 const selectedVendor = ref<ModelServiceTemplate | null>(null)
 const selectedModel = ref<ModelServiceTemplateModel | null>(null)
 const apiKey = ref('')
@@ -60,9 +62,37 @@ const canCreate = computed(() => {
   return apiKey.value.trim().length > 0
 })
 
+/** vendorKey → profileId 映射：根据模板的 defaultApiUrl 匹配最合适的 profile */
+function resolveProfileId(vendor: ModelServiceTemplate): string | undefined {
+  const url = vendor.defaultApiUrl.toLowerCase()
+  // 精确匹配：按 profile 的 defaultBaseUrl 找
+  const matched = profiles.value.find(p => url.includes(new URL(p.defaultBaseUrl).hostname))
+  if (matched) return matched.id
+  // 兜底：按 vendorKey 常见映射
+  const fallbackMap: Record<string, string> = {
+    deepseek: 'deepseek-official',
+    openai: 'openai-official',
+    qwen: 'qwen-dashscope',
+    ollama: 'ollama-local',
+    anthropic: 'anthropic-official',
+    volcengine: 'volcengine-ark',
+    zhipu: 'zhipu-bigmodel',
+    moonshot: 'moonshot-kimi',
+    minimax: 'minimax-text',
+    siliconflow: 'siliconflow',
+    tei: 'tei-local',
+  }
+  return fallbackMap[vendor.vendorKey] ?? undefined
+}
+
 onMounted(async () => {
   try {
-    templates.value = await modelServiceApi.listTemplates()
+    const [loadedTemplates, loadedProfiles] = await Promise.all([
+      modelServiceApi.listTemplates(),
+      listProviderProfiles().catch(() => [] as ProviderProfileDto[]),
+    ])
+    templates.value = loadedTemplates
+    profiles.value = loadedProfiles
   } catch (e) {
     errorMsg.value = `加载模板失败: ${e}`
   }
@@ -90,6 +120,7 @@ async function createService() {
     id: buildSuggestedServiceId('GENERATION', vendor.vendorKey, model.value),
     kind: 'GENERATION',
     type: vendor.providerType,
+    profileId: resolveProfileId(vendor),
     vendorKey: vendor.vendorKey,
     apiUrl: vendor.defaultApiUrl,
     apiKey: isLocalProvider.value ? undefined : apiKey.value.trim(),
