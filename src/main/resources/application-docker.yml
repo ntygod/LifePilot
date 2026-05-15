@@ -1,29 +1,19 @@
 # Docker 环境专用配置（通过 SPRING_PROFILES_ACTIVE=docker 激活）
 # 所有路径映射到容器内 /data 卷，由 docker-compose.yml 的 zhiwei-data 卷持久化
+# 目录管理统一由 ZhiweiPaths Bean 基于 zhiwei.home 派生子目录
+
+zhiwei:
+  home: "/data"
 
 spring:
   datasource:
-    url: "jdbc:sqlite:/data/zhiwei.db?enable_load_extension=true"
+    url: "jdbc:sqlite:${zhiwei.home}/db/zhiwei.db?enable_load_extension=true"
 
 lifepilot:
   memory:
-    vector-db-url: "jdbc:sqlite:/data/vectors.db"
-  knowledge:
-    data-dir: "/data/knowledge"
-  skills:
-    directory: "/data/skills"
-  agent:
-    multi-agent:
-      agent-definitions-path: "/data/agents/"
-  workflow:
-    definitions-dir: "/data/workflows"
+    vector-db-url: "jdbc:sqlite:${zhiwei.home}/db/vectors.db"
   eval:
     scenario-directory: "/data/eval/scenarios"
-  marketplace:
-    install-dirs:
-      skills: "/data/skills"
-      agents: "/data/agents"
-      workflows: "/data/workflows"
 
 logging:
   pattern:
