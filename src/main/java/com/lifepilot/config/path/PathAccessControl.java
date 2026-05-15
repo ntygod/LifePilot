@@ -267,8 +267,6 @@ public class PathAccessControl {
     /**
      * 便捷方法 —— 校验路径是否允许访问，不允许时抛出 SecurityException。
      *
-     * <p>用于替代原 {@code SkillPathWhitelist.validate()} 的调用场景。</p>
-     *
      * @param pathStr 待校验的路径字符串
      * @throws SecurityException 路径被拒绝访问
      * @throws IllegalArgumentException 路径为 null 或空白
