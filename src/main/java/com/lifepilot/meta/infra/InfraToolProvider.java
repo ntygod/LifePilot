@@ -40,7 +40,7 @@ import com.lifepilot.sandbox.session.SandboxSessionManager;
 import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
-import com.lifepilot.tool.validation.SkillPathWhitelist;
+import com.lifepilot.config.path.PathAccessControl;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,7 +80,7 @@ public class InfraToolProvider {
     private final WorkspaceResolver workspaceResolver;
     @Nullable private final AttachmentRepository attachmentRepository;
     @Nullable private final ChatSessionRepository chatSessionRepository;
-    @Nullable private final SkillPathWhitelist skillPathWhitelist;
+    @Nullable private final PathAccessControl pathAccessControl;
     private final SsrfGuard ssrfGuard;
     private final InteractiveElementIndexer interactiveElementIndexer;
     @Nullable private final PythonRuntimeManager pythonRuntimeManager;
@@ -105,7 +105,7 @@ public class InfraToolProvider {
                              WorkspaceResolver workspaceResolver,
                              @Nullable AttachmentRepository attachmentRepository,
                              @Nullable ChatSessionRepository chatSessionRepository,
-                             @Nullable SkillPathWhitelist skillPathWhitelist,
+                             @Nullable PathAccessControl pathAccessControl,
                              SsrfGuard ssrfGuard,
                              InteractiveElementIndexer interactiveElementIndexer,
                              @Nullable PythonRuntimeManager pythonRuntimeManager,
@@ -129,7 +129,7 @@ public class InfraToolProvider {
         this.workspaceResolver = workspaceResolver;
         this.attachmentRepository = attachmentRepository;
         this.chatSessionRepository = chatSessionRepository;
-        this.skillPathWhitelist = skillPathWhitelist;
+        this.pathAccessControl = pathAccessControl;
         this.ssrfGuard = ssrfGuard;
         this.interactiveElementIndexer = interactiveElementIndexer;
         this.pythonRuntimeManager = pythonRuntimeManager;
@@ -159,7 +159,7 @@ public class InfraToolProvider {
                 fileEditConfig.getUndoMaxDepth(),
                 fileEditConfig.getMaxSnapshotSizeBytes());
         var lintHook = new LintHookExecutor();
-        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, skillPathWhitelist);
+        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, pathAccessControl);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
         // 通知工具
@@ -202,7 +202,7 @@ public class InfraToolProvider {
         }
 
         // Shell 工具（shell.exec + shell.process）— 注入 commandGuard 让 shell.exec 也走 HARDLINE/DANGEROUS 护栏
-        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, commandGuard);
+        var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, pathAccessControl, commandGuard);
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 

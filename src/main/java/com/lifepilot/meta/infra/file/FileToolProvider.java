@@ -15,7 +15,7 @@ import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
-import com.lifepilot.tool.validation.SkillPathWhitelist;
+import com.lifepilot.config.path.PathAccessControl;
 import jakarta.annotation.Nullable;
 
 import java.util.ArrayList;
@@ -40,19 +40,19 @@ public class FileToolProvider {
     @Nullable
     private final AttachmentRepository attachmentRepository;
     @Nullable
-    private final SkillPathWhitelist skillPathWhitelist;
+    private final PathAccessControl pathAccessControl;
     private final DocumentParserService documentParserService;
 
     public FileToolProvider(MetaProperties properties,
                             @Nullable FileEditHistory editHistory,
                             @Nullable LintHookExecutor lintHook,
                             @Nullable AttachmentRepository attachmentRepository,
-                            @Nullable SkillPathWhitelist skillPathWhitelist) {
+                            @Nullable PathAccessControl pathAccessControl) {
         this.properties = properties;
         this.editHistory = editHistory;
         this.lintHook = lintHook;
         this.attachmentRepository = attachmentRepository;
-        this.skillPathWhitelist = skillPathWhitelist;
+        this.pathAccessControl = pathAccessControl;
         this.documentParserService = DocumentParserService.buildDefault();
     }
 
@@ -131,14 +131,14 @@ public class FileToolProvider {
                     String action = input.getOptionalParam("action", String.class).orElse("read");
                     return switch (action) {
                         case "read" -> new FileReadToolExecutor(securityChecker,
-                                fileAccess.getDefaultMaxChars(), skillPathWhitelist,
+                                fileAccess.getDefaultMaxChars(), pathAccessControl,
                                 attachmentRepository, documentParserService).execute(input);
                         case "list" -> new FileListToolExecutor(securityChecker,
                                 fileAccess.getDefaultMaxEntries()).execute(input);
                         case "search" -> new FileSearchToolExecutor(securityChecker).execute(input);
                         case "info" -> new FileInfoToolExecutor(securityChecker).execute(input);
                         case "attach" -> new FileReadToolExecutor(securityChecker,
-                                fileAccess.getDefaultMaxChars(), skillPathWhitelist,
+                                fileAccess.getDefaultMaxChars(), pathAccessControl,
                                 attachmentRepository, documentParserService).execute(input);
                         default -> ToolResult.error("不支持的 action: " + action);
                     };

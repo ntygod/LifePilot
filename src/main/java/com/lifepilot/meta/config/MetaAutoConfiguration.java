@@ -140,7 +140,7 @@ public class MetaAutoConfiguration {
                                         com.lifepilot.config.workspace.WorkspaceResolver workspaceResolver,
                                         @Nullable AttachmentRepository attachmentRepository,
                                         @Nullable com.lifepilot.interaction.web.repository.ChatSessionRepository chatSessionRepository,
-                                        @Nullable com.lifepilot.tool.validation.SkillPathWhitelist skillPathWhitelist,
+                                        @Nullable com.lifepilot.config.path.PathAccessControl pathAccessControl,
                                         SsrfGuard ssrfGuard,
                                         InteractiveElementIndexer interactiveElementIndexer,
                                         @Nullable PythonRuntimeManager pythonRuntimeManager,
@@ -150,7 +150,7 @@ public class MetaAutoConfiguration {
                 sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler,
                 notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher,
                 channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository,
-                chatSessionRepository, skillPathWhitelist, ssrfGuard, interactiveElementIndexer,
+                chatSessionRepository, pathAccessControl, ssrfGuard, interactiveElementIndexer,
                 pythonRuntimeManager, commandGuard, sessionTranscriptRepository);
     }
 
