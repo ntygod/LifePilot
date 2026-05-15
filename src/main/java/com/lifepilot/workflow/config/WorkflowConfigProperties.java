@@ -28,9 +28,6 @@ public class WorkflowConfigProperties {
     /** 最大循环迭代次数（LoopStep），默认 100。 */
     private int maxLoopIterations = 100;
 
-    /** 工作流 YAML 定义文件目录，默认 ~/.zhiwei/workflows。 */
-    private String definitionsDir = "~/.zhiwei/workflows";
-
     /** 崩溃恢复开关，默认 true。 */
     private boolean crashRecoveryEnabled = true;
 
@@ -68,9 +65,6 @@ public class WorkflowConfigProperties {
 
     public int getMaxLoopIterations() { return maxLoopIterations; }
     public void setMaxLoopIterations(int maxLoopIterations) { this.maxLoopIterations = maxLoopIterations; }
-
-    public String getDefinitionsDir() { return definitionsDir; }
-    public void setDefinitionsDir(String definitionsDir) { this.definitionsDir = definitionsDir; }
 
     public boolean isCrashRecoveryEnabled() { return crashRecoveryEnabled; }
     public void setCrashRecoveryEnabled(boolean crashRecoveryEnabled) { this.crashRecoveryEnabled = crashRecoveryEnabled; }

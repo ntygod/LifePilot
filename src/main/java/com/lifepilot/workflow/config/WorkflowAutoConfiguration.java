@@ -1,5 +1,6 @@
 package com.lifepilot.workflow.config;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.notification.NotificationService;
@@ -111,6 +112,7 @@ public class WorkflowAutoConfiguration {
     @ConditionalOnMissingBean
     public WorkflowRegistry workflowRegistry(WorkflowYamlParser parser,
                                              WorkflowConfigProperties config,
+                                             ZhiweiPaths zhiweiPaths,
                                              TaskScheduler workflowTaskScheduler,
                                              DagScheduler dagScheduler,
                                              DynamicToolRegistry toolRegistry,
@@ -119,6 +121,7 @@ public class WorkflowAutoConfiguration {
                                              WorkflowYamlPrinter workflowYamlPrinter) {
         var registry = new WorkflowRegistry(parser);
         registry.setConfigProperties(config);
+        registry.setZhiweiPaths(zhiweiPaths);
         registry.setTaskScheduler(workflowTaskScheduler);
         registry.setDagScheduler(dagScheduler);
         registry.setToolRegistry(toolRegistry);
@@ -217,11 +220,12 @@ public class WorkflowAutoConfiguration {
         var config = ctx.getBean(WorkflowConfigProperties.class);
         var parser = ctx.getBean(WorkflowYamlParser.class);
         var registry = ctx.getBean(WorkflowRegistry.class);
+        var zhiweiPaths = ctx.getBean(ZhiweiPaths.class);
 
         registry.setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
 
         // 先同步内置工作流到用户目录
-        loadBuiltinWorkflows(parser, registry, config, localWorkflowStems(config));
+        loadBuiltinWorkflows(parser, registry, zhiweiPaths);
         // 再启动扫描，加载用户目录中的所有工作流
         registry.startScheduledScan();
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
@@ -238,9 +242,9 @@ public class WorkflowAutoConfiguration {
 
     private void loadBuiltinWorkflows(WorkflowYamlParser parser,
                                       WorkflowRegistry registry,
-                                      WorkflowConfigProperties config,
-                                      Set<String> localWorkflowStems) {
-        Path definitionsDir = WorkflowRegistry.resolveDefinitionsDir(config.getDefinitionsDir());
+                                      ZhiweiPaths zhiweiPaths) {
+        Path definitionsDir = zhiweiPaths.home("workflows");
+        Set<String> localWorkflowStems = localWorkflowStems(definitionsDir);
         int loaded = 0;
         int skipped = 0;
         int synced = 0;
@@ -295,8 +299,7 @@ public class WorkflowAutoConfiguration {
         }
     }
 
-    private Set<String> localWorkflowStems(WorkflowConfigProperties config) {
-        Path definitionsDir = WorkflowRegistry.resolveDefinitionsDir(config.getDefinitionsDir());
+    private Set<String> localWorkflowStems(Path definitionsDir) {
         if (!Files.isDirectory(definitionsDir)) {
             return Set.of();
         }
