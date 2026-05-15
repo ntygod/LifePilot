@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.file;
 
+import com.lifepilot.config.path.PathResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -70,7 +71,7 @@ public class FileSearchToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: " + e.getMessage());
         }
-        pathStr = PathExpander.expand(pathStr);
+        pathStr = PathResolver.expand(pathStr);
 
         String filePattern = input.getOptionalParam("filePattern", String.class)
                 .orElse(null);

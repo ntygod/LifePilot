@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.file;
 
+import com.lifepilot.config.path.PathResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -64,7 +65,7 @@ public class FileListToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: path");
         }
-        pathStr = PathExpander.expand(pathStr);
+        pathStr = PathResolver.expand(pathStr);
 
         int maxDepth = input.getOptionalParam("maxDepth", Number.class)
                 .map(Number::intValue)
