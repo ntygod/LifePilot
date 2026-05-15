@@ -3,6 +3,7 @@ package com.lifepilot.interaction.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.config.path.ZhiweiPaths;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.lifepilot.interaction.gateway.MessageGateway;
 import com.lifepilot.interaction.model.ChannelInstance;
 import com.lifepilot.interaction.model.ChannelInstanceStatus;
@@ -40,6 +41,7 @@ import org.springframework.web.client.RestClient;
  * @since 2026-03-29
  */
 @Configuration(proxyBeanMethods = false)
+@ConditionalOnProperty(name = "lifepilot.gateway.enabled", havingValue = "true", matchIfMissing = true)
 public class ChannelControlPlaneConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(ChannelControlPlaneConfiguration.class);

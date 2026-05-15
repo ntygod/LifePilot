@@ -98,4 +98,20 @@ public class ScenarioTestConfiguration {
     public ManualTaskScheduler testScheduler(MutableClock clock) {
         return new ManualTaskScheduler(clock);
     }
+
+    /**
+     * ZhiweiPaths mock — 场景测试不依赖真实目录结构，提供临时目录兜底。
+     */
+    @Bean
+    @Primary
+    public com.lifepilot.config.path.ZhiweiPaths scenarioZhiweiPaths() {
+        var paths = org.mockito.Mockito.mock(com.lifepilot.config.path.ZhiweiPaths.class);
+        var tmpDir = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "zhiwei-scenario-test");
+        org.mockito.Mockito.lenient().when(paths.home()).thenReturn(tmpDir);
+        org.mockito.Mockito.lenient().when(paths.home(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> tmpDir.resolve(inv.getArgument(0, String.class)));
+        org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(tmpDir.resolve("workspace"));
+        return paths;
+    }
 }
+
