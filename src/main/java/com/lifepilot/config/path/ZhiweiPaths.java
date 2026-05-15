@@ -61,7 +61,7 @@ public class ZhiweiPaths {
 
     /** 所有需要在初始化时创建的固定子目录 */
     private static final List<String> REQUIRED_SUBDIRS = List.of(
-            DIR_DB, DIR_SKILLS, DIR_AGENTS, DIR_WORKFLOWS, DIR_CHANNELS,
+            DIR_DB, DIR_SKILLS, DIR_CHANNELS,
             DIR_KNOWLEDGE, DIR_DOCUMENTS, DIR_CACHE, DIR_CACHE_BROWSER,
             DIR_RUNTIME, DIR_RUNTIME_PYTHON, DIR_LOGS
     );

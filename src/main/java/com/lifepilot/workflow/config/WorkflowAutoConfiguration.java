@@ -224,9 +224,9 @@ public class WorkflowAutoConfiguration {
 
         registry.setTriggerManager(ctx.getBean(WorkflowTriggerManager.class));
 
-        // 先同步内置工作流到用户目录
-        loadBuiltinWorkflows(parser, registry, zhiweiPaths);
-        // 再启动扫描，加载用户目录中的所有工作流
+        // 先同步内置工作流到用户目录（当前已禁用：工作流不再对用户开放，仅从 classpath 加载）
+        // loadBuiltinWorkflows(parser, registry, zhiweiPaths);
+        // 启动扫描，加载用户目录中的所有工作流（如目录存在）
         registry.startScheduledScan();
         ctx.getBean(WorkflowTriggerManager.class).registerAllTriggers();
         registry.setStartupPhase(false);

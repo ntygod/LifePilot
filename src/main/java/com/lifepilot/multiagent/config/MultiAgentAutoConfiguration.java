@@ -134,6 +134,9 @@ public class MultiAgentAutoConfiguration {
      * <p>加载顺序：先从 classpath preset-agents/ 加载预设 Agent（Builtin 来源），
      * 再从 ZhiweiPaths.home("agents") 加载用户自定义 Markdown Agent（MarkdownDefined 来源）。
      * MarkdownDefined 可覆盖 Builtin，实现用户自定义优先。</p>
+     *
+     * <p>注：当前 agents 目录不再对用户开放，跳过用户目录扫描和热加载。
+     * 仅从 classpath 加载预设 Agent。</p>
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady(ApplicationReadyEvent event) {
@@ -145,19 +148,13 @@ public class MultiAgentAutoConfiguration {
 
         var registry = ctx.getBean(AgentRegistry.class);
         var parser = ctx.getBean(AgentMarkdownParser.class);
-        var loader = ctx.getBean(AgentMarkdownLoader.class);
-        var config = ctx.getBean(MultiAgentProperties.class);
 
         // 1. 加载预设 Agent（Builtin 来源）
         loadPresetAgents(registry, parser);
 
-        // 2. 加载用户自定义 Agent（MarkdownDefined 来源，路径由 ZhiweiPaths 提供）
-        loader.loadFromDirectory(loader.getAgentDirectory());
-
-        // 3. 启动热加载
-        if (config.getHotReload().isEnabled()) {
-            loader.startHotReload();
-        }
+        // 2. 用户自定义 Agent 目录扫描和热加载已禁用（agents 目录不再对用户开放）
+        // loader.loadFromDirectory(loader.getAgentDirectory());
+        // if (config.getHotReload().isEnabled()) { loader.startHotReload(); }
 
         log.info("多 Agent 协作初始化完成: 已注册 {} 个 Agent", registry.listAll().size());
     }
