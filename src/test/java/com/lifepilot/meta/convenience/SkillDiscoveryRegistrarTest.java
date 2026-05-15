@@ -1,8 +1,8 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.skill.MarkdownSkillParser;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.install.SkillInstallation;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.install.SkillInstaller;
@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
 class SkillDiscoveryRegistrarTest {
 
     private MetaProperties properties;
-    private SkillConfigProperties skillConfig;
+    private ZhiweiPaths zhiweiPaths;
     private SkillInstallationRepository repository;
     private SkillInstaller installer;
     private MarkdownSkillParser parser;
@@ -57,8 +57,8 @@ class SkillDiscoveryRegistrarTest {
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        skillConfig = new SkillConfigProperties();
-        skillConfig.setDirectory(tempDir.toString());
+        zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.home("skills")).thenReturn(tempDir);
 
         parser = new MarkdownSkillParser();
         repository = mock(SkillInstallationRepository.class);
@@ -72,7 +72,7 @@ class SkillDiscoveryRegistrarTest {
 
     @Test
     void afterPropertiesSet_应安装v2格式Skill成功落盘() {
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer, repository, parser, registry);
 
         registrar.afterPropertiesSet();
 
@@ -93,7 +93,7 @@ class SkillDiscoveryRegistrarTest {
     @Test
     void afterPropertiesSet_老格式Skill应被WARN跳过但不阻断其他安装() {
         // 26 个老格式 Skill 会被 parser 拒绝（id 已废弃），但至少 daily-manager 成功
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer, repository, parser, registry);
 
         registrar.afterPropertiesSet();
 
@@ -112,7 +112,7 @@ class SkillDiscoveryRegistrarTest {
     void afterPropertiesSet_功能禁用时应跳过整个扫描() {
         properties.getSkillDiscovery().setEnabled(false);
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer, repository, parser, registry);
         registrar.afterPropertiesSet();
 
         // 禁用后不应有任何 upsert 或 register 调用

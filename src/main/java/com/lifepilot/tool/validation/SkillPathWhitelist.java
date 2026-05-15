@@ -1,7 +1,7 @@
 package com.lifepilot.tool.validation;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.workspace.WorkspaceResolver;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,8 +22,8 @@ import java.util.Locale;
  *
  * <p>白名单根：</p>
  * <ul>
- *   <li>Skill 目录：{@link SkillConfigProperties#getDirectory()} —— 通常是 {@code ~/.zhiwei/skills}</li>
- *   <li>工作区目录：{@link WorkspaceResolver#getDefaultDir()} —— 通常是 {@code ~/.zhiwei/workspace}</li>
+ *   <li>Skill 目录：{@link ZhiweiPaths#home(String)} ("skills") —— 通常是 {@code ~/zhiwei/skills}</li>
+ *   <li>工作区目录：{@link WorkspaceResolver#getDefaultDir()} —— 通常是 {@code ~/zhiwei/workspace}</li>
  *   <li>当前 JVM 进程工作目录：{@code System.getProperty("user.dir")} —— 开发态命令行调试兜底</li>
  * </ul>
  *
@@ -45,12 +45,11 @@ public class SkillPathWhitelist {
     /** 白名单根路径（已规范化为绝对路径）。 */
     private final List<Path> whitelistRoots;
 
-    public SkillPathWhitelist(@Nullable SkillConfigProperties skillConfig,
+    public SkillPathWhitelist(@Nullable ZhiweiPaths zhiweiPaths,
                               @Nullable WorkspaceResolver workspaceResolver) {
         var roots = new ArrayList<Path>();
-        if (skillConfig != null && skillConfig.getDirectory() != null
-                && !skillConfig.getDirectory().isBlank()) {
-            roots.add(normalize(skillConfig.getDirectory()));
+        if (zhiweiPaths != null) {
+            roots.add(zhiweiPaths.home("skills").toAbsolutePath().normalize());
         }
         if (workspaceResolver != null) {
             String workspaceDir = workspaceResolver.getDefaultDir();

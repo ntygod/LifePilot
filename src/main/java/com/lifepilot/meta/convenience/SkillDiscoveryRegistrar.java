@@ -1,9 +1,9 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.MarkdownSkillParser.ParsedSkill;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.install.SkillInstallation;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.install.SkillInstaller;
@@ -54,20 +54,20 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
     private static final String SKILLS_RESOURCE_PATTERN = "classpath:skills/*/SKILL.md";
 
     private final MetaProperties properties;
-    private final SkillConfigProperties skillConfig;
+    private final ZhiweiPaths zhiweiPaths;
     private final SkillInstaller installer;
     private final SkillInstallationRepository installationRepository;
     private final MarkdownSkillParser parser;
     private final SkillRegistry skillRegistry;
 
     public SkillDiscoveryRegistrar(MetaProperties properties,
-                                   SkillConfigProperties skillConfig,
+                                   ZhiweiPaths zhiweiPaths,
                                    SkillInstaller installer,
                                    SkillInstallationRepository installationRepository,
                                    MarkdownSkillParser parser,
                                    SkillRegistry skillRegistry) {
         this.properties = properties;
-        this.skillConfig = skillConfig;
+        this.zhiweiPaths = zhiweiPaths;
         this.installer = installer;
         this.installationRepository = installationRepository;
         this.parser = parser;
@@ -99,7 +99,7 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
             return;
         }
 
-        Path skillsRoot = Path.of(skillConfig.getDirectory());
+        Path skillsRoot = zhiweiPaths.home("skills");
         int installed = 0;
         int upgraded = 0;
         int kept = 0;

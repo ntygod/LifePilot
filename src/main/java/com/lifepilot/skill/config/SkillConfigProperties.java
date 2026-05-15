@@ -23,9 +23,6 @@ public class SkillConfigProperties {
     /** 最大并发激活数，默认 5。 */
     private int maxConcurrentActivations = 5;
 
-    /** YAML Skill 文件目录，默认 ~/.zhiwei/skills。 */
-    private String directory = System.getProperty("user.home") + "/.zhiwei/skills";
-
     /** 热加载防抖间隔（毫秒），默认 500。 */
     private long hotReloadDebounceMs = 500;
 

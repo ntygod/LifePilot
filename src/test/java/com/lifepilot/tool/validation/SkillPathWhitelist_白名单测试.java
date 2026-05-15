@@ -1,7 +1,7 @@
 package com.lifepilot.tool.validation;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.workspace.WorkspaceResolver;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link SkillPathWhitelist} 路径白名单校验测试。
@@ -36,15 +37,16 @@ class SkillPathWhitelist_白名单测试 {
     @Mock
     WorkspaceResolver workspaceResolver;
 
-    private SkillConfigProperties skillConfig;
+    @Mock
+    ZhiweiPaths zhiweiPaths;
+
     private SkillPathWhitelist whitelist;
 
     @BeforeEach
     void setUp() {
-        skillConfig = new SkillConfigProperties();
-        skillConfig.setDirectory(skillsDir.toString());
+        when(zhiweiPaths.home("skills")).thenReturn(skillsDir);
         lenient().when(workspaceResolver.getDefaultDir()).thenReturn(workspaceDir.toString());
-        whitelist = new SkillPathWhitelist(skillConfig, workspaceResolver);
+        whitelist = new SkillPathWhitelist(zhiweiPaths, workspaceResolver);
     }
 
     @Test

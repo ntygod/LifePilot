@@ -1,6 +1,6 @@
 package com.lifepilot.skill.install;
 
-import com.lifepilot.skill.config.SkillConfigProperties;
+import com.lifepilot.config.path.ZhiweiPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.util.zip.ZipEntry;
@@ -42,14 +41,14 @@ public class SkillImportService {
 
     private final SkillInstaller installer;
     private final SkillInstallationRepository repository;
-    private final SkillConfigProperties config;
+    private final ZhiweiPaths zhiweiPaths;
 
     public SkillImportService(SkillInstaller installer,
                               SkillInstallationRepository repository,
-                              SkillConfigProperties config) {
+                              ZhiweiPaths zhiweiPaths) {
         this.installer = installer;
         this.repository = repository;
-        this.config = config;
+        this.zhiweiPaths = zhiweiPaths;
     }
 
     /**
@@ -73,7 +72,7 @@ public class SkillImportService {
                 throw new IllegalArgumentException(".skill 包根目录必须包含 SKILL.md");
             }
             String content = Files.readString(skillMd);
-            Path skillsRoot = Paths.get(config.getDirectory());
+            Path skillsRoot = zhiweiPaths.home("skills");
             Files.createDirectories(skillsRoot);
             var install = installer.install(new SkillInstaller.InstallRequest(
                     SkillSourceType.USER_IMPORTED,
@@ -83,7 +82,7 @@ public class SkillImportService {
                     skillsRoot));
             // aux 复制失败必须回滚：否则 skills 表与文件系统会进入 "入表但 references 缺失" 的脏态
             try {
-                copyAuxFiles(tempDir, Paths.get(install.filePath()));
+                copyAuxFiles(tempDir, Path.of(install.filePath()));
             } catch (IOException | RuntimeException auxError) {
                 rollbackInstall(install, auxError);
                 throw auxError;
@@ -108,7 +107,7 @@ public class SkillImportService {
             log.warn("回滚 skills 表失败（忽略）: name={}, error={}", install.name(), dbErr.getMessage());
         }
         try {
-            deleteDirRecursive(Paths.get(install.filePath()));
+            deleteDirRecursive(Path.of(install.filePath()));
         } catch (Exception fsErr) {
             log.warn("回滚 skill 目录失败（忽略）: path={}, error={}", install.filePath(), fsErr.getMessage());
         }

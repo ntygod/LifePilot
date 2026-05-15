@@ -1,8 +1,8 @@
 package com.lifepilot.meta.convenience;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.skill.MarkdownSkillParser;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.install.SkillInstallation;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.install.SkillInstaller;
@@ -41,8 +41,8 @@ class SkillDiscoveryRegistrar_全量迁移测试 {
     @Test
     void 启动后classpath下全部BUILTIN_Skill都应安装成功_无任一被跳过() {
         var properties = new MetaProperties();
-        var skillConfig = new SkillConfigProperties();
-        skillConfig.setDirectory(tempDir.toString());
+        var zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.home("skills")).thenReturn(tempDir);
 
         var parser = new MarkdownSkillParser();
         var repository = mock(SkillInstallationRepository.class);
@@ -53,7 +53,7 @@ class SkillDiscoveryRegistrar_全量迁移测试 {
         var registry = mock(SkillRegistry.class);
         when(registry.register(any())).thenReturn(true);
 
-        var registrar = new SkillDiscoveryRegistrar(properties, skillConfig, installer, repository, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer, repository, parser, registry);
         registrar.afterPropertiesSet();
 
         ArgumentCaptor<SkillInstallation> captor = ArgumentCaptor.forClass(SkillInstallation.class);

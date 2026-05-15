@@ -1,5 +1,6 @@
 package com.lifepilot.skill.generation;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
@@ -19,7 +20,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.Map;
 
@@ -53,7 +53,7 @@ public class SkillSynthesizer {
 
     private static final Logger log = LoggerFactory.getLogger(SkillSynthesizer.class);
 
-    /** 自生成 SKILL.md 相对子目录（相对于 {@link SkillConfigProperties#getDirectory()}）。 */
+    /** 自生成 SKILL.md 相对子目录（相对于 skills 根目录）。 */
     private static final String AUTO_SUBDIR = "auto";
 
     private static final String SYNTHESIS_PROMPT_KEY = "generation/skill-synthesis";
@@ -66,6 +66,7 @@ public class SkillSynthesizer {
     private final SkillInstaller installer;
     private final ApplicationEventPublisher publisher;
     private final SkillConfigProperties config;
+    private final ZhiweiPaths zhiweiPaths;
 
     public SkillSynthesizer(GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
@@ -73,7 +74,8 @@ public class SkillSynthesizer {
                             SkillValidator validator,
                             SkillInstaller installer,
                             ApplicationEventPublisher publisher,
-                            SkillConfigProperties config) {
+                            SkillConfigProperties config,
+                            ZhiweiPaths zhiweiPaths) {
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
         this.parser = parser;
@@ -81,6 +83,7 @@ public class SkillSynthesizer {
         this.installer = installer;
         this.publisher = publisher;
         this.config = config;
+        this.zhiweiPaths = zhiweiPaths;
     }
 
     /**
@@ -170,8 +173,8 @@ public class SkillSynthesizer {
         return response.content();
     }
 
-    /** 解析自生成 Skill 目标根目录：{@code {skills.directory}/auto}。 */
+    /** 解析自生成 Skill 目标根目录：{@code {skills}/auto}。 */
     private Path autoDir() {
-        return Paths.get(config.getDirectory(), AUTO_SUBDIR);
+        return zhiweiPaths.home("skills").resolve(AUTO_SUBDIR);
     }
 }

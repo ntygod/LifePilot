@@ -1,12 +1,12 @@
 package com.lifepilot.skill.install;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.marketplace.clawhub.ClawHubClient;
 import com.lifepilot.marketplace.clawhub.ClawHubIndexSource;
 import com.lifepilot.marketplace.clawhub.ClawHubZipExtractor;
 import com.lifepilot.marketplace.index.IndexManager;
 import com.lifepilot.marketplace.model.ExtensionPackage;
 import com.lifepilot.marketplace.model.ExtensionType;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -18,7 +18,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 
@@ -64,7 +63,7 @@ public class SkillMarketplaceInstaller {
     private final SkillInstaller installer;
     private final SkillInstallationRepository repository;
     private final IndexManager indexManager;
-    private final SkillConfigProperties config;
+    private final ZhiweiPaths zhiweiPaths;
     private final RestClient restClient;
     @Nullable private final ClawHubClient clawHubClient;
     @Nullable private final ClawHubZipExtractor clawHubZipExtractor;
@@ -72,14 +71,14 @@ public class SkillMarketplaceInstaller {
     public SkillMarketplaceInstaller(SkillInstaller installer,
                                      SkillInstallationRepository repository,
                                      IndexManager indexManager,
-                                     SkillConfigProperties config,
+                                     ZhiweiPaths zhiweiPaths,
                                      RestClient.Builder restClientBuilder,
                                      @Nullable ClawHubClient clawHubClient,
                                      @Nullable ClawHubZipExtractor clawHubZipExtractor) {
         this.installer = installer;
         this.repository = repository;
         this.indexManager = indexManager;
-        this.config = config;
+        this.zhiweiPaths = zhiweiPaths;
         this.restClient = restClientBuilder.build();
         this.clawHubClient = clawHubClient;
         this.clawHubZipExtractor = clawHubZipExtractor;
@@ -108,7 +107,7 @@ public class SkillMarketplaceInstaller {
                     "包类型不是 SKILL: marketplaceId=" + marketplaceId + ", type=" + pkg.type());
         }
 
-        Path skillsRoot = Paths.get(config.getDirectory());
+        Path skillsRoot = zhiweiPaths.home("skills");
         Files.createDirectories(skillsRoot);
 
         if (isClawHubPackage(pkg)) {

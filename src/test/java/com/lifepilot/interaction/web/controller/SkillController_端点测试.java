@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.mcp.registry.McpServerRegistry;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.install.SkillImportService;
@@ -73,6 +74,7 @@ class SkillController_端点测试 {
     @Mock private SkillInstallationRepository installationRepository;
     @Mock private SkillImportService skillImportService;
     @Mock private SkillMarketplaceInstaller marketplaceInstaller;
+    @Mock private ZhiweiPaths zhiweiPaths;
 
     private SkillConfigProperties skillConfig;
     private MockMvc mockMvc;
@@ -82,7 +84,7 @@ class SkillController_端点测试 {
     @BeforeEach
     void setUp() {
         skillConfig = new SkillConfigProperties();
-        skillConfig.setDirectory(tempSkillsDir.toString());
+        when(zhiweiPaths.home("skills")).thenReturn(tempSkillsDir);
         // 默认 skillFilename 已是 SKILL.md
 
         var controller = new SkillController(
@@ -90,6 +92,7 @@ class SkillController_端点测试 {
                 mcpServerRegistry,
                 toolRegistry,
                 skillConfig,
+                zhiweiPaths,
                 skillInstaller,
                 installationRepository,
                 skillImportService,
