@@ -69,7 +69,9 @@ public class ZhiweiPaths {
     /** HOME 默认值 */
     private static final String DEFAULT_HOME = "~/zhiwei";
 
-    // ==================== 配置注入 ====================
+    // ==================== 依赖注入 ====================
+
+    private final HomeMigrator homeMigrator;
 
     /**
      * 从配置读取 HOME 路径。
@@ -90,6 +92,10 @@ public class ZhiweiPaths {
     private Path homePath;
     private Path workspacePath;
 
+    public ZhiweiPaths(HomeMigrator homeMigrator) {
+        this.homeMigrator = homeMigrator;
+    }
+
     // ==================== 初始化 ====================
 
     @PostConstruct
@@ -100,7 +106,11 @@ public class ZhiweiPaths {
         this.homePath = Path.of(expandedHome).toAbsolutePath().normalize();
         PathResolver.validateAbsolute(this.homePath);
 
-        // 解析 WORKSPACE 路径
+        // 在创建目录之前执行迁移检测（Req 3.4）
+        // 如果迁移失败，homePath 会被回滚为旧路径
+        this.homePath = homeMigrator.migrateIfNeeded(this.homePath);
+
+        // 解析 WORKSPACE 路径（基于可能已回滚的 homePath）
         String defaultWorkspace = homePath.resolve("workspace").toString();
         String rawWorkspace = PathResolver.resolveOrDefault(configuredWorkspace, defaultWorkspace);
         String expandedWorkspace = PathResolver.expand(rawWorkspace);
@@ -181,5 +191,16 @@ public class ZhiweiPaths {
             }
         }
         return workspacePath;
+    }
+
+    /**
+     * 是否需要重启应用。
+     *
+     * <p>当 HOME 目录迁移成功完成后返回 true，上层组件可据此提示用户重启。</p>
+     *
+     * @return true 表示需要重启应用以使新 HOME 路径完全生效
+     */
+    public boolean isRestartRequired() {
+        return homeMigrator.isRestartRequired();
     }
 }
