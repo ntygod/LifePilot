@@ -67,7 +67,8 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor
+                autonomousTaskApprovalAdvisor,
+                null
         );
         var tool = BuiltinTool.builder()
                 .id("shell.exec")
@@ -107,7 +108,8 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor
+                autonomousTaskApprovalAdvisor,
+                null
         );
         var tool = BuiltinTool.builder()
                 .id("cron.create")
@@ -143,7 +145,8 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor
+                autonomousTaskApprovalAdvisor,
+                null
         );
         var tool = BuiltinTool.builder()
                 .id("file.write")
@@ -178,7 +181,8 @@ class PermissionRequestFactoryTest {
         var factory = new PermissionRequestFactory(
                 new ObservabilityProperties(),
                 new ToolConfigProperties(),
-                autonomousTaskApprovalAdvisor
+                autonomousTaskApprovalAdvisor,
+                null
         );
         var tool = BuiltinTool.builder()
                 .id("cron.create")

@@ -41,7 +41,9 @@ class SettingsControllerSearchSettingsTest {
     @BeforeEach
     void setUp() {
         MetaProperties metaProperties = new MetaProperties();
-        var workspaceResolver = new WorkspaceResolver(null, "");
+        var zhiweiPaths = mock(com.lifepilot.config.path.ZhiweiPaths.class);
+        when(zhiweiPaths.workspace()).thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")));
+        var workspaceResolver = new WorkspaceResolver(null, zhiweiPaths);
         var bootstrapConfigService = new BootstrapConfigService();
         var controller = new SettingsController(
                 settingsRepository,

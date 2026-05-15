@@ -146,8 +146,14 @@ class AttachmentRegisterToolExecutor_登记测试 {
         private final Path root;
 
         TestWorkspaceResolver(Path root) {
-            super(null, root.toString());
+            super(null, createMockZhiweiPaths(root));
             this.root = root;
+        }
+
+        private static com.lifepilot.config.path.ZhiweiPaths createMockZhiweiPaths(Path root) {
+            var mock = org.mockito.Mockito.mock(com.lifepilot.config.path.ZhiweiPaths.class);
+            org.mockito.Mockito.when(mock.workspace()).thenReturn(root);
+            return mock;
         }
 
         @Override

@@ -1,5 +1,6 @@
 package com.lifepilot.permission.service;
 
+import com.lifepilot.config.path.PathAccessControl;
 import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.observability.config.ObservabilityProperties;
@@ -12,11 +13,10 @@ import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.model.ToolContextKeys;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
-import com.lifepilot.tool.semantics.ToolScopeNormalizer;
 import com.lifepilot.tool.semantics.ToolScopeResolution;
+import jakarta.annotation.Nullable;
 import org.springframework.stereotype.Service;
 
-import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
@@ -34,13 +34,17 @@ public class PermissionRequestFactory {
     private final ObservabilityProperties observabilityProperties;
     private final ToolConfigProperties toolConfigProperties;
     private final AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor;
+    @Nullable
+    private final PathAccessControl pathAccessControl;
 
     public PermissionRequestFactory(ObservabilityProperties observabilityProperties,
                                     ToolConfigProperties toolConfigProperties,
-                                    AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor) {
+                                    AutonomousTaskApprovalAdvisor autonomousTaskApprovalAdvisor,
+                                    @Nullable PathAccessControl pathAccessControl) {
         this.observabilityProperties = observabilityProperties;
         this.toolConfigProperties = toolConfigProperties;
         this.autonomousTaskApprovalAdvisor = autonomousTaskApprovalAdvisor;
+        this.pathAccessControl = pathAccessControl;
     }
 
     public PermissionRequest create(ToolContract tool, ToolInput input, String fallbackTraceId) {
@@ -139,25 +143,31 @@ public class PermissionRequestFactory {
         return RiskLevel.valueOf(configured.toUpperCase(Locale.ROOT));
     }
 
+    /**
+     * 基于 PathAccessControl 判断工作目录是否在允许范围内，若允许则降级风险等级。
+     *
+     * <p>替代原 {@code lifepilot.tool.trusted-workspace.paths} 配置机制，
+     * 统一委托 PathAccessControl 进行路径权限判断。</p>
+     */
     private RiskLevel applyTrustedWorkspaceDowngrade(String toolId, RiskLevel originalLevel, ToolInput input) {
         if (!"shell.exec".equals(toolId) && !"code".equals(toolId)) {
             return originalLevel;
         }
+        if (pathAccessControl == null) {
+            return originalLevel;
+        }
         String execPath = firstNonBlankParam(input, "workingDirectory", "workDir", "cwd");
-        if (execPath == null || toolConfigProperties.getTrustedWorkspace().getPaths().isEmpty()) {
+        if (execPath == null) {
             return originalLevel;
         }
-        String normalizedExecPath = ToolScopeNormalizer.normalizePath(execPath);
-        boolean trusted = toolConfigProperties.getTrustedWorkspace().getPaths().stream()
-                .map(ToolScopeNormalizer::normalizePath)
-                .filter(java.util.Objects::nonNull)
-                .anyMatch(normalizedExecPath::startsWith);
-        if (!trusted) {
-            return originalLevel;
+        // 委托 PathAccessControl 判断路径是否允许访问
+        var accessResult = pathAccessControl.isAllowed(execPath);
+        if (accessResult.allowed()) {
+            // 路径在允许范围内，降级风险等级为 LOW
+            RiskLevel downgraded = RiskLevel.LOW;
+            return downgraded.ordinal() < originalLevel.ordinal() ? downgraded : originalLevel;
         }
-        RiskLevel downgraded = RiskLevel.valueOf(
-                toolConfigProperties.getTrustedWorkspace().getDowngradeLevel().toUpperCase(Locale.ROOT));
-        return downgraded.ordinal() < originalLevel.ordinal() ? downgraded : originalLevel;
+        return originalLevel;
     }
 
     private String resolveTaskId(SourceKind sourceKind, String sourceId, String sessionId) {

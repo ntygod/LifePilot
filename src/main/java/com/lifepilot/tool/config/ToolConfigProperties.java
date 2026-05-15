@@ -23,25 +23,12 @@ public class ToolConfigProperties {
     private boolean enabled = true;
     private PipelineConfig pipeline = new PipelineConfig();
     private Yaml yaml = new Yaml();
-    private TrustedWorkspace trustedWorkspace = new TrustedWorkspace();
 
     /** 核心工具注入配置 — 只有 pinned 工具默认进入 Agent 可见列表，其余通过 tool.search 发现。 */
     private Tier1 tier1 = new Tier1();
 
     /** 搜索服务配置 — tool.search / FTS5 / 三层缓存。 */
     private Search search = new Search();
-
-    /** 信任工作区配置 — 在信任目录下降低 shell/code 执行的风险等级。 */
-    @Setter
-    @Getter
-    public static class TrustedWorkspace {
-        /** 信任目录路径列表，默认空（不信任任何目录）。 */
-        private List<String> paths = List.of();
-
-        /** 降级后的风险等级，默认 MEDIUM。 */
-        private String downgradeLevel = "MEDIUM";
-
-    }
 
     /** YAML 工具配置。 */
     @Setter
