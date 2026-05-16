@@ -48,9 +48,6 @@ public class MarketplaceProperties {
     /** 安全扫描配置。 */
     private Security security = new Security();
 
-    /** 扩展安装目录配置。 */
-    private InstallDirs installDirs = new InstallDirs();
-
     /**
      * 安全扫描配置。
      */
@@ -68,26 +65,6 @@ public class MarketplaceProperties {
                 "(?i)disregard\\s+(all\\s+)?(above|previous)",
                 "(?i)forget\\s+(all\\s+)?previous"
         );
-    }
-
-    /**
-     * 扩展安装目录配置 — 按类型指定本地安装路径。
-     */
-    @Getter
-    @Setter
-    public static class InstallDirs {
-
-        /** Skill 扩展安装目录。 */
-        private String skills = "${user.home}/.zhiwei/skills";
-
-        /** Agent 模板安装目录。 */
-        private String agents = "${user.home}/.zhiwei/agents";
-
-        /** Workflow 模板安装目录。 */
-        private String workflows = "${user.home}/.zhiwei/workflows";
-
-        /** 渠道插件安装目录。 */
-        private String channels = "${user.home}/.zhiwei/channels";
     }
 
     /**

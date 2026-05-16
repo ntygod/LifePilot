@@ -1,3 +1,32 @@
+## [2026-05-08] 每日工作总结
+
+### 🚀 核心进展
+- **对话页重设计（Phase B）**：空态改为 Wordmark + 欢迎语 + 2×2 示例卡片 + 精简 Composer；头部 ... 菜单从 4 项砍到 2 项（会话概览 / 当前会话设置），停止生成迁到 Composer 顶部浮窗 Pill；右侧面板从"流式自动占位 340px"改为显式触发的 420px overlay（遮罩 + Esc 关闭），不再挤压主列。
+- **设计 token 基线**：新增 chat-tokens.css（20+ 变量），固化主列 720px、气泡 640px、行高 1.7、圆角 18px、字号 15px 等，去除魔法值。
+- **MessageActions hover 披露**：默认 opacity:0，父级 hover / 键盘 focus 时浮现，降低噪声。
+- **后端假开关修复（Phase A）**：
+  - `GET /chat/sessions/{id}` 返回真实 sessionConfig（原来永远空）
+  - 新增 `POST /chat/sessions/{id}/clear`（前端"清空消息"终于能用）
+  - 新增 `POST /chat/sessions/{sessionId}/cancel` 驱动 SseSessionManager.cancelBySessionId → CancellationToken.cancel，真实中断 Agent 循环
+  - `ChatRequest.singleTurnOverride` 单轮临时覆盖语义：替换"发送前 PATCH → 发送后 PATCH 还原"双 PATCH race 实现，@ 叠加知识库 / 单轮模型切换走请求体
+  - `forkFromTranscript` 继承原会话 sessionConfig
+  - `ChatSessionDetail.totalTokens` 从 traces 表按 session_id 聚合真实值
+- **Interaction 死代码清理**：前端删除 respondInteraction / activeInteraction / handleInteractionRequest 等整套未落地协议，共减 ~200 行。
+- **根路由**：`/` 直达对话页，LandingView 迁到 `/landing` 保留。
+
+### 📝 详细提交记录
+- **e3029d2e**: chore(web): 删除 ChatRightPanel 与 ChatView 残留未用的 computed
+- **12728fef**: refactor(web): 根路由直达对话页，Landing 迁到 /landing 保留
+- **805bf354**: feat(web): MessageActions / MessageFeedback hover 披露（默认 opacity:0）
+- **abae34a8**: feat(web): 对话页重设计 - 空态 PromptGallery + Overlay 面板 + 精简头部
+- **121a4af0**: refactor(web): useChat/ChatInput 对齐后端 singleTurnOverride + cancelTurn + 删除 interaction 死代码
+- **1959ef30**: test(chat): 对齐 ChatRequest/AgentRequest 新字段的测试构造
+- **2988f886**: feat(chat): 支持 singleTurnOverride 单轮临时覆盖会话配置
+- **74fe73e6**: feat(chat): SseSessionManager 暴露 cancelBySessionId 供 stop endpoint 驱动
+- **4e310b07**: feat(chat): 新增清空会话消息 + 真实停止生成 endpoint
+- **47bfa08f**: fix(chat): SessionDetail 回显真实 sessionConfig + 聚合 totalTokens + fork 继承配置
+
+---
 ## [2026-04-14] 每日工作总结
 
 ### 🚀 核心进展

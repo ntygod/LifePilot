@@ -651,7 +651,7 @@ public class ContextAssembler {
         if (!loadedSkills.isBlank()) {
             userPrompt = loadedSkills + "\n\n" + userPrompt;
         }
-        String knowledgeBindingPrompt = buildKnowledgeBindingPrompt(state.sessionId());
+        String knowledgeBindingPrompt = buildKnowledgeBindingPrompt(state.sessionId(), state.overrideKnowledgeBaseIds());
         if (!knowledgeBindingPrompt.isBlank()) {
             userPrompt = userPrompt + "\n\n" + knowledgeBindingPrompt;
         }
@@ -667,16 +667,24 @@ public class ContextAssembler {
         return userPrompt;
     }
 
-    private String buildKnowledgeBindingPrompt(@Nullable String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
+    private String buildKnowledgeBindingPrompt(@Nullable String sessionId, @Nullable List<String> overrideKnowledgeBaseIds) {
+        List<String> knowledgeBaseIds;
+        if (overrideKnowledgeBaseIds != null && !overrideKnowledgeBaseIds.isEmpty()) {
+            // 单轮临时覆盖：完全替换会话持久化绑定（覆盖而非追加）
+            knowledgeBaseIds = overrideKnowledgeBaseIds;
+        } else if (sessionId != null && !sessionId.isBlank() && sessionKnowledgeBaseRepository != null) {
+            knowledgeBaseIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId);
+        } else {
+            return "";
+        }
+
+        if (knowledgeBaseIds == null || knowledgeBaseIds.isEmpty()) {
             return "";
         }
 
         List<String> knowledgeBaseLines = new ArrayList<>();
-        if (sessionKnowledgeBaseRepository != null) {
-            for (String knowledgeBaseId : sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId)) {
-                knowledgeBaseLines.add(formatKnowledgeBaseBinding(knowledgeBaseId));
-            }
+        for (String knowledgeBaseId : knowledgeBaseIds) {
+            knowledgeBaseLines.add(formatKnowledgeBaseBinding(knowledgeBaseId));
         }
 
         if (knowledgeBaseLines.isEmpty()) {

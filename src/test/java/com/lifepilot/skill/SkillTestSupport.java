@@ -1,6 +1,7 @@
 package com.lifepilot.skill;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -23,6 +24,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.nio.file.Path;
 import java.util.concurrent.Executors;
 
 import static org.mockito.Mockito.mock;
@@ -82,6 +84,17 @@ public class SkillTestSupport {
     @Bean
     ObjectMapper objectMapper() {
         return new ObjectMapper();
+    }
+
+    @Bean
+    ZhiweiPaths zhiweiPaths() {
+        // 返回 mock ZhiweiPaths，home("skills") 指向临时目录
+        ZhiweiPaths paths = mock(ZhiweiPaths.class);
+        Path tmpSkills = Path.of(System.getProperty("java.io.tmpdir"), "skill-test-support-skills");
+        org.mockito.Mockito.lenient().when(paths.home("skills")).thenReturn(tmpSkills);
+        org.mockito.Mockito.lenient().when(paths.home()).thenReturn(tmpSkills.getParent());
+        org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(tmpSkills.getParent().resolve("workspace"));
+        return paths;
     }
 
     @Bean

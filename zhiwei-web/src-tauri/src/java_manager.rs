@@ -73,7 +73,7 @@ impl JavaManager {
 
         // 确保数据目录存在
         if let Some(home) = dirs::home_dir() {
-            let data_dir = home.join(".zhiwei");
+            let data_dir = home.join("zhiwei");
             std::fs::create_dir_all(&data_dir)
                 .map_err(|e| format!("创建数据目录失败: {}", e))?;
         }

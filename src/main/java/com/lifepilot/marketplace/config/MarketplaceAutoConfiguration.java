@@ -1,6 +1,7 @@
 package com.lifepilot.marketplace.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.interaction.registry.ChannelRegistry;
 import com.lifepilot.interaction.repository.ChannelPluginRepository;
 import com.lifepilot.interaction.service.ChannelInstanceService;
@@ -147,11 +148,10 @@ public class MarketplaceAutoConfiguration {
     @ConditionalOnMissingBean
     public SkillInstallStrategy skillInstallStrategy(MarkdownSkillLoader markdownSkillLoader,
                                                      SkillRegistry skillRegistry,
-                                                     MarketplaceProperties properties,
+                                                     ZhiweiPaths zhiweiPaths,
                                                      @Nullable ClawHubClient clawHubClient,
                                                      @Nullable ClawHubZipExtractor clawHubZipExtractor) {
-        Path installDir = Path.of(properties.getInstallDirs().getSkills()
-                .replace("${user.home}", System.getProperty("user.home")));
+        Path installDir = zhiweiPaths.home(ZhiweiPaths.DIR_SKILLS);
         log.info("扩展市场: 注册 SkillInstallStrategy, installDir={}, clawHub={}",
                 installDir, clawHubClient != null);
         return new SkillInstallStrategy(markdownSkillLoader, skillRegistry, installDir,
@@ -162,9 +162,8 @@ public class MarketplaceAutoConfiguration {
     @ConditionalOnMissingBean
     public AgentInstallStrategy agentInstallStrategy(AgentMarkdownLoader agentMarkdownLoader,
                                                      AgentRegistry agentRegistry,
-                                                     MarketplaceProperties properties) {
-        Path installDir = Path.of(properties.getInstallDirs().getAgents()
-                .replace("${user.home}", System.getProperty("user.home")));
+                                                     ZhiweiPaths zhiweiPaths) {
+        Path installDir = zhiweiPaths.home(ZhiweiPaths.DIR_AGENTS);
         log.info("扩展市场: 注册 AgentInstallStrategy, installDir={}", installDir);
         return new AgentInstallStrategy(agentMarkdownLoader, agentRegistry, installDir);
     }
@@ -174,9 +173,8 @@ public class MarketplaceAutoConfiguration {
     public WorkflowInstallStrategy workflowInstallStrategy(WorkflowYamlParser workflowYamlParser,
                                                            WorkflowRepository workflowRepository,
                                                            WorkflowRegistry workflowRegistry,
-                                                           MarketplaceProperties properties) {
-        Path installDir = Path.of(properties.getInstallDirs().getWorkflows()
-                .replace("${user.home}", System.getProperty("user.home")));
+                                                           ZhiweiPaths zhiweiPaths) {
+        Path installDir = zhiweiPaths.home(ZhiweiPaths.DIR_WORKFLOWS);
         log.info("扩展市场: 注册 WorkflowInstallStrategy, installDir={}", installDir);
         return new WorkflowInstallStrategy(workflowYamlParser, workflowRepository,
                 workflowRegistry, installDir);
@@ -188,9 +186,9 @@ public class MarketplaceAutoConfiguration {
                                                          ChannelPluginRepository channelPluginRepository,
                                                          ChannelInstanceService channelInstanceService,
                                                          ObjectMapper objectMapper,
-                                                         MarketplaceProperties properties) {
-        Path installDir = Path.of(properties.getInstallDirs().getChannels()
-                .replace("${user.home}", System.getProperty("user.home")));
+                                                         MarketplaceProperties properties,
+                                                         ZhiweiPaths zhiweiPaths) {
+        Path installDir = zhiweiPaths.home(ZhiweiPaths.DIR_CHANNELS);
         log.info("扩展市场: 注册 ChannelInstallStrategy, installDir={}", installDir);
         return new ChannelInstallStrategy(
                 channelRegistry,

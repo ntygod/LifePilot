@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.shell;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
@@ -18,6 +19,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * ShellExecToolExecutor 单元测试。
@@ -30,12 +33,19 @@ class ShellExecToolExecutorTest {
     private ShellExecToolExecutor executor;
     private MetaProperties properties;
     private BackgroundProcessManager backgroundProcessManager;
-    private final WorkspaceResolver workspaceResolver = new WorkspaceResolver(null, "");
+    private final WorkspaceResolver workspaceResolver;
+
+    {
+        var zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.workspace()).thenReturn(
+                Path.of(System.getProperty("user.home"), "zhiwei", "workspace"));
+        workspaceResolver = new WorkspaceResolver(null, zhiweiPaths);
+    }
 
     @BeforeEach
     void setUp() {
         properties = new MetaProperties();
-        executor = new ShellExecToolExecutor(properties, null, workspaceResolver, null);
+        executor = new ShellExecToolExecutor(properties, null, workspaceResolver, null, null);
         backgroundProcessManager = null;
     }
 
@@ -108,7 +118,7 @@ class ShellExecToolExecutorTest {
     void execute_HARDLINE命令被护栏永久阻断() {
         // 注入真实 CommandGuard，验证 shell.exec 走 HARDLINE 阻断（与 code.execute 同款语义）
         var guard = new CommandGuard(new SandboxConfigProperties());
-        var executorWithGuard = new ShellExecToolExecutor(properties, null, workspaceResolver, guard);
+        var executorWithGuard = new ShellExecToolExecutor(properties, null, workspaceResolver, null, guard);
         // 选 systemctl poweroff：HARDLINE 命中（关机），不在 ShellExec blacklist 内，能走到 guard 层
         ToolInput input = buildInput(Map.of("command", "systemctl poweroff"));
 
@@ -121,7 +131,7 @@ class ShellExecToolExecutorTest {
     @Test
     void execute_DANGEROUS命令被护栏拒绝() {
         var guard = new CommandGuard(new SandboxConfigProperties());
-        var executorWithGuard = new ShellExecToolExecutor(properties, null, workspaceResolver, guard);
+        var executorWithGuard = new ShellExecToolExecutor(properties, null, workspaceResolver, null, guard);
         // git reset --hard 是 DANGEROUS（默认拒绝）
         ToolInput input = buildInput(Map.of("command", "git reset --hard HEAD~5"));
 
@@ -252,7 +262,7 @@ class ShellExecToolExecutorTest {
     void execute_输出超过maxOutputLength被截断_Unix() {
         // 设置极小的 maxOutputLength
         properties.getInfra().getShell().setMaxOutputLength(10);
-        executor = new ShellExecToolExecutor(properties, null, workspaceResolver, null);
+        executor = new ShellExecToolExecutor(properties, null, workspaceResolver, null, null);
 
         // 生成超过 10 字符的输出
         ToolInput input = buildInput(Map.of("command", "echo abcdefghijklmnopqrstuvwxyz"));
@@ -267,7 +277,7 @@ class ShellExecToolExecutorTest {
     @Test
     void execute_yieldMs快速失败时保留真实exitCode与双通道输出() {
         backgroundProcessManager = new BackgroundProcessManager(properties.getInfra().getProcess(), null);
-        executor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, null);
+        executor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, null, null);
 
         ToolInput input = buildInput(Map.of(
                 "command", buildStdoutStderrFailCommand(7),

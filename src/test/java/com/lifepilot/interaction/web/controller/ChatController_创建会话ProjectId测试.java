@@ -67,6 +67,7 @@ class ChatController_创建会话ProjectId测试 {
                 messageFeedbackRepository,
                 attachmentRepository,
                 knowledgeBaseProperties,
+                null,  // ZhiweiPaths — 本测试不涉及附件上传
                 null,
                 null,
                 mediaProperties

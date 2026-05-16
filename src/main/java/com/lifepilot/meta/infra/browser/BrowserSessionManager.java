@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.browser;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.meta.config.MetaProperties;
 import jakarta.annotation.Nullable;
 import jakarta.annotation.PreDestroy;
@@ -50,6 +51,7 @@ public class BrowserSessionManager {
     private final String unavailableReason;
     private final BrowserRuntime browserRuntime;
     private final BrowserAcquisitionMode acquisitionMode;
+    private final ZhiweiPaths zhiweiPaths;
 
     /** Playwright 实例（懒初始化），仅在 Playwright 可用时非 null。 */
     @Nullable
@@ -111,8 +113,8 @@ public class BrowserSessionManager {
         }
     }
 
-    public BrowserSessionManager(MetaProperties properties) {
-        this(properties, detectPlaywright(), new DefaultBrowserRuntime());
+    public BrowserSessionManager(MetaProperties properties, ZhiweiPaths zhiweiPaths) {
+        this(properties, zhiweiPaths, detectPlaywright(), new DefaultBrowserRuntime());
     }
 
     /**
@@ -120,8 +122,10 @@ public class BrowserSessionManager {
      *
      * @param unavailableReason null 表示 Playwright 可用；非 null 为不可用原因
      */
-    BrowserSessionManager(MetaProperties properties, @Nullable String unavailableReason, BrowserRuntime browserRuntime) {
+    BrowserSessionManager(MetaProperties properties, ZhiweiPaths zhiweiPaths,
+                          @Nullable String unavailableReason, BrowserRuntime browserRuntime) {
         this.browserConfig = properties.getInfra().getBrowser();
+        this.zhiweiPaths = zhiweiPaths;
         this.unavailableReason = unavailableReason;
         this.playwrightAvailable = unavailableReason == null;
         this.browserRuntime = browserRuntime;
@@ -506,7 +510,7 @@ public class BrowserSessionManager {
         }
         String dir = (override != null && override.userDataDir() != null && !override.userDataDir().isBlank())
                 ? override.userDataDir()
-                : browserConfig.getUserDataDir();
+                : zhiweiPaths.home(ZhiweiPaths.DIR_CACHE_BROWSER).toString();
         if (dir == null || dir.isBlank()) {
             throw new IllegalStateException("PERSISTENT 模式需要配置 user-data-dir");
         }
@@ -611,15 +615,17 @@ public class BrowserSessionManager {
     /**
      * 解析 storageState 持久化路径（带路径穿越防护）。
      *
+     * <p>storageState 文件存储在 {@code cache/browser/storage-state/} 子目录下。</p>
+     *
      * @param sessionId 会话 ID
-     * @return 持久化路径，storageStateDir 为空时返回 null
+     * @return 持久化路径，persistStorageState 关闭时返回 null
      */
     @Nullable
     private Path resolveStorageStatePath(String sessionId) {
-        String dir = browserConfig.getStorageStateDir();
-        if (dir == null || dir.isBlank()) return null;
+        if (!browserConfig.isPersistStorageState()) return null;
+        Path storageDir = zhiweiPaths.home(ZhiweiPaths.DIR_CACHE_BROWSER).resolve("storage-state");
         String safeId = sessionId.replaceAll("[/\\\\:*?\"<>|]", "_");
-        return Path.of(dir, safeId + ".json");
+        return storageDir.resolve(safeId + ".json");
     }
 
     /**

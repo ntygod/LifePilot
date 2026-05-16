@@ -1,5 +1,6 @@
 package com.lifepilot.config.workspace;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.interaction.web.model.UserSettings;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,12 +16,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * WorkspaceResolver 工作目录解析测试。
  *
- * <p>覆盖三级优先级解析（用户设置 > yml 配置 > 默认路径）以及目录创建行为。</p>
+ * <p>覆盖三级优先级解析（用户设置 > ZhiweiPaths.workspace()）以及目录创建行为。</p>
  *
  * @author zsg
  * @since 2026-04-12
@@ -34,24 +36,33 @@ class WorkspaceResolver_工作目录解析测试 {
 
     /** 计算出的默认路径，用于断言比较 */
     private static final Path SYSTEM_DEFAULT_PATH =
-            Path.of(System.getProperty("user.home"), ".zhiwei", "workspace");
+            Path.of(System.getProperty("user.home"), "zhiwei", "workspace");
 
-    // ─── 默认路径（无用户设置、无 yml 配置） ───
+    /**
+     * 创建一个 mock ZhiweiPaths，workspace() 返回指定路径。
+     */
+    private static ZhiweiPaths mockZhiweiPaths(Path workspacePath) {
+        var paths = mock(ZhiweiPaths.class);
+        org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(workspacePath);
+        return paths;
+    }
+
+    // ─── 默认路径（无用户设置，ZhiweiPaths 提供默认值） ───
 
     @Nested
-    @DisplayName("无用户设置且无 yml 配置时")
+    @DisplayName("无用户设置时使用 ZhiweiPaths 默认值")
     class 默认路径 {
 
         private WorkspaceResolver resolver;
 
         @BeforeEach
         void 初始化() {
-            // configuredDir 为空字符串，模拟 yml 未配置
-            resolver = new WorkspaceResolver(settingsRepository, "");
+            // ZhiweiPaths 返回系统默认 workspace 路径
+            resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(SYSTEM_DEFAULT_PATH));
         }
 
         @Test
-        void 返回默认的用户主目录下路径() {
+        void 返回ZhiweiPaths提供的默认路径() {
             // given — settingsRepository 返回无 defaultWorkspace 的设置
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true, null, null)
@@ -65,17 +76,17 @@ class WorkspaceResolver_工作目录解析测试 {
         }
 
         @Test
-        void getDefaultDir返回系统默认路径字符串() {
+        void getDefaultDir返回ZhiweiPaths提供的路径字符串() {
             // when & then
             assertThat(resolver.getDefaultDir()).isEqualTo(SYSTEM_DEFAULT_PATH.toString());
         }
     }
 
-    // ─── yml 配置路径 ───
+    // ─── ZhiweiPaths 配置路径 ───
 
     @Nested
-    @DisplayName("有 yml 配置时")
-    class yml配置路径 {
+    @DisplayName("ZhiweiPaths 提供自定义 workspace 时")
+    class ZhiweiPaths配置路径 {
 
         @TempDir
         Path tempDir;
@@ -84,12 +95,12 @@ class WorkspaceResolver_工作目录解析测试 {
 
         @BeforeEach
         void 初始化() {
-            // 使用临时目录作为 yml 配置路径
-            resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
+            // 使用临时目录作为 ZhiweiPaths 提供的 workspace 路径
+            resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
         }
 
         @Test
-        void 使用yml配置的路径() {
+        void 使用ZhiweiPaths提供的路径() {
             // given — 用户设置中无自定义工作目录
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true, null, null)
@@ -103,7 +114,7 @@ class WorkspaceResolver_工作目录解析测试 {
         }
 
         @Test
-        void getDefaultDir返回yml配置路径() {
+        void getDefaultDir返回ZhiweiPaths路径() {
             // when & then
             assertThat(resolver.getDefaultDir()).isEqualTo(tempDir.toString());
         }
@@ -126,27 +137,27 @@ class WorkspaceResolver_工作目录解析测试 {
                     new UserSettings("dark", "zh-CN", true, true, true, true,
                             userWorkspace.toAbsolutePath().toString(), null)
             );
-            var resolver = new WorkspaceResolver(settingsRepository, "/some/yml/path");
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(Path.of("/some/zhiwei/workspace")));
 
             // when
             Path result = resolver.resolve();
 
-            // then — 用户设置路径应覆盖 yml 配置
+            // then — 用户设置路径应覆盖 ZhiweiPaths 默认值
             assertThat(result).isEqualTo(userWorkspace.toAbsolutePath());
         }
 
         @Test
-        void 用户设置为非绝对路径时忽略并回退到yml配置() {
+        void 用户设置为非绝对路径时忽略并回退到ZhiweiPaths默认值() {
             // given — 相对路径应被忽略
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true, "relative/path", null)
             );
-            var resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolve();
 
-            // then — 应回退到 yml 配置路径
+            // then — 应回退到 ZhiweiPaths 默认值
             assertThat(result).isEqualTo(tempDir);
         }
 
@@ -156,7 +167,7 @@ class WorkspaceResolver_工作目录解析测试 {
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true, "", null)
             );
-            var resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolve();
@@ -171,7 +182,7 @@ class WorkspaceResolver_工作目录解析测试 {
             when(settingsRepository.getSettings()).thenReturn(
                     new UserSettings("system", "zh-CN", true, true, true, true, "   ", null)
             );
-            var resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolve();
@@ -191,9 +202,9 @@ class WorkspaceResolver_工作目录解析测试 {
         Path tempDir;
 
         @Test
-        void 不报错并使用yml配置路径() {
+        void 不报错并使用ZhiweiPaths路径() {
             // given — repository 传 null
-            var resolver = new WorkspaceResolver(null, tempDir.toString());
+            var resolver = new WorkspaceResolver(null, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolve();
@@ -204,8 +215,8 @@ class WorkspaceResolver_工作目录解析测试 {
 
         @Test
         void 不报错并使用系统默认路径() {
-            // given — repository 和 yml 都缺失
-            var resolver = new WorkspaceResolver(null, "");
+            // given — repository 为 null，ZhiweiPaths 返回系统默认
+            var resolver = new WorkspaceResolver(null, mockZhiweiPaths(SYSTEM_DEFAULT_PATH));
 
             // when
             Path result = resolver.resolve();
@@ -229,12 +240,12 @@ class WorkspaceResolver_工作目录解析测试 {
             // given
             when(settingsRepository.getSettings())
                     .thenThrow(new RuntimeException("数据库连接失败"));
-            var resolver = new WorkspaceResolver(settingsRepository, tempDir.toString());
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolve();
 
-            // then — 异常不应传播，应回退到默认值
+            // then — 异常不应传播，应回退到 ZhiweiPaths 默认值
             assertThat(result).isEqualTo(tempDir);
         }
     }
@@ -256,7 +267,7 @@ class WorkspaceResolver_工作目录解析测试 {
                     new UserSettings("system", "zh-CN", true, true, true, true,
                             targetDir.toAbsolutePath().toString(), null)
             );
-            var resolver = new WorkspaceResolver(settingsRepository, "");
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolveAndCreate();
@@ -274,7 +285,7 @@ class WorkspaceResolver_工作目录解析测试 {
                     new UserSettings("system", "zh-CN", true, true, true, true,
                             tempDir.toAbsolutePath().toString(), null)
             );
-            var resolver = new WorkspaceResolver(settingsRepository, "");
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolveAndCreate();
@@ -292,7 +303,7 @@ class WorkspaceResolver_工作目录解析测试 {
                     new UserSettings("system", "zh-CN", true, true, true, true,
                             deepDir.toAbsolutePath().toString(), null)
             );
-            var resolver = new WorkspaceResolver(settingsRepository, "");
+            var resolver = new WorkspaceResolver(settingsRepository, mockZhiweiPaths(tempDir));
 
             // when
             Path result = resolver.resolveAndCreate();

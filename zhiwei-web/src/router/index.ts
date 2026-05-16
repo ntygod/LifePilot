@@ -25,11 +25,20 @@ const router = createRouter({
     },
 
     /**
-     * 根路由：产品介绍页（登录前）
+     * 根路由：直接重定向到对话主入口，不再经过 LandingView（桌面客户端优先）
      */
     {
       path: '/',
       name: 'landing',
+      redirect: '/home'
+    },
+
+    /**
+     * 保留旧版 Landing 页（如需展示产品介绍可手动访问 /landing）
+     */
+    {
+      path: '/landing',
+      name: 'landingPage',
       component: () => import('@/views/LandingView.vue')
     },
 

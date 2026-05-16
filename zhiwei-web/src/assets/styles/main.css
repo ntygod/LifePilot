@@ -1,6 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700;800&family=Noto+Serif+SC:wght@500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./chat-tokens.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -361,15 +362,38 @@ html[data-ui-density="compact"] {
     flex: 1;
     flex-direction: column;
     overflow: hidden;
-    border-left: 1px solid hsl(from var(--border) h s l / 0.3);
-    background: var(--card);
+    border-left: 1px solid hsl(from var(--border) h s l / 0.2);
+    background:
+      radial-gradient(circle at 80% 20%, hsl(from var(--primary) h s l / 0.02), transparent 40%),
+      var(--card);
   }
 
   .app-nav-shell {
     display: flex;
     min-width: 0;
-    background: var(--sidebar-background);
+    position: relative;
+    background:
+      linear-gradient(180deg,
+        hsl(from var(--primary) h s l / 0.03) 0%,
+        transparent 40%
+      ),
+      var(--sidebar-background);
     color: var(--sidebar-foreground);
+  }
+
+  .app-nav-shell::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 1px;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      hsl(from var(--primary) h s l / 0.12),
+      hsl(from var(--border) h s l / 0.3) 30%,
+      hsl(from var(--border) h s l / 0.15) 70%,
+      transparent
+    );
   }
 
   /* AppRail 已移除，使用 UnifiedSidebar 单栏导航 */
@@ -379,28 +403,31 @@ html[data-ui-density="compact"] {
     display: flex;
     height: 100%;
     flex-direction: column;
-    background: var(--sidebar-background);
+    background: transparent;
     color: var(--sidebar-foreground);
+  }
+
+  .sidebar-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.018'/%3E%3C/svg%3E");
+    opacity: 1;
+    mix-blend-mode: overlay;
   }
 
   .shell-card {
     position: relative;
     overflow: hidden;
-    border: 1px solid hsl(from var(--border) h s l / 0.48);
+    border: 1px solid hsl(from var(--border) h s l / 0.35);
     border-radius: calc(var(--radius) + 2px);
-    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.96), hsl(from var(--card) h s l / 0.92));
+    background: hsl(from var(--card) h s l / 0.85);
+    backdrop-filter: blur(12px);
     box-shadow:
-      0 10px 18px -26px hsl(var(--shadow-color) / 0.1),
-      inset 0 1px 0 hsl(from var(--card) h s l / 0.72);
-  }
-
-  .shell-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.12), transparent 22%);
-    opacity: 0.36;
+      0 4px 16px -8px hsl(var(--shadow-color) / 0.08),
+      inset 0 1px 0 hsl(from var(--card) h s l / 0.8);
   }
 
   .list-card {
@@ -413,10 +440,10 @@ html[data-ui-density="compact"] {
       0 8px 14px -22px hsl(var(--shadow-color) / 0.08),
       inset 0 1px 0 hsl(from var(--card) h s l / 0.66);
     transition:
-      transform 180ms var(--ease-fluid),
-      border-color 180ms var(--ease-fluid),
-      box-shadow 180ms var(--ease-fluid),
-      background-color 180ms var(--ease-fluid);
+      transform 220ms var(--ease-fluid),
+      border-color 220ms var(--ease-fluid),
+      box-shadow 220ms var(--ease-fluid),
+      background-color 220ms var(--ease-fluid);
   }
 
   .list-card::before {
@@ -426,15 +453,17 @@ html[data-ui-density="compact"] {
     height: 1px;
     background: linear-gradient(90deg, hsl(from var(--primary) h s l / 0.52), transparent 76%);
     opacity: 0;
-    transition: opacity 180ms var(--ease-fluid);
+    transition: opacity 220ms var(--ease-fluid);
   }
 
   .list-card:hover,
   .list-card:focus-within {
-    transform: translateY(-1px);
-    border-color: hsl(from var(--primary) h s l / 0.2);
-    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.96), hsl(from var(--background) h s l / 0.84));
-    box-shadow: 0 12px 20px -24px hsl(var(--shadow-color) / 0.1);
+    transform: translateY(-2px);
+    border-color: hsl(from var(--primary) h s l / 0.18);
+    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.98), hsl(from var(--background) h s l / 0.88));
+    box-shadow:
+      0 16px 32px -16px hsl(var(--shadow-color) / 0.12),
+      0 4px 8px -4px hsl(from var(--primary) h s l / 0.06);
   }
 
   .list-card:hover::before,
@@ -445,47 +474,35 @@ html[data-ui-density="compact"] {
   .detail-card {
     position: relative;
     overflow: hidden;
-    border: 1px solid hsl(from var(--border) h s l / 0.42);
+    border: 1px solid hsl(from var(--border) h s l / 0.35);
     border-radius: calc(var(--radius) + 2px);
-    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.94), hsl(from var(--background) h s l / 0.84));
+    background: hsl(from var(--card) h s l / 0.88);
+    backdrop-filter: blur(8px);
     box-shadow:
-      inset 0 1px 0 hsl(from var(--card) h s l / 0.68),
-      0 8px 14px -22px hsl(var(--shadow-color) / 0.08);
+      inset 0 1px 0 hsl(from var(--card) h s l / 0.7),
+      0 4px 12px -8px hsl(var(--shadow-color) / 0.06);
     transition:
-      transform 180ms var(--ease-fluid),
-      border-color 180ms var(--ease-fluid),
-      box-shadow 180ms var(--ease-fluid);
+      border-color 200ms var(--ease-fluid),
+      box-shadow 200ms var(--ease-fluid);
   }
 
-  .detail-card::before {
-    content: "";
-    position: absolute;
-    inset: 0 auto 0 0;
-    pointer-events: none;
-    width: 2px;
-    background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.72), hsl(from var(--primary) h s l / 0.08));
-    opacity: 0.82;
+  .detail-card:hover {
+    border-color: hsl(from var(--border) h s l / 0.5);
+    box-shadow:
+      inset 0 1px 0 hsl(from var(--card) h s l / 0.7),
+      0 8px 20px -10px hsl(var(--shadow-color) / 0.1);
   }
 
   .section-panel {
     position: relative;
     overflow: hidden;
-    border: 1px solid hsl(from var(--border) h s l / 0.4);
+    border: 1px solid hsl(from var(--border) h s l / 0.3);
     border-radius: calc(var(--radius) + 2px);
-    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.88), hsl(from var(--background) h s l / 0.78));
+    background: hsl(from var(--card) h s l / 0.82);
+    backdrop-filter: blur(6px);
     box-shadow:
-      inset 0 1px 0 hsl(from var(--card) h s l / 0.62),
-      0 8px 14px -24px hsl(var(--shadow-color) / 0.06);
-  }
-
-  .section-panel::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    pointer-events: none;
-    height: 1px;
-    background: linear-gradient(90deg, hsl(from var(--primary) h s l / 0.38), transparent 72%);
-    opacity: 0.72;
+      inset 0 1px 0 hsl(from var(--card) h s l / 0.65),
+      0 2px 8px -6px hsl(var(--shadow-color) / 0.05);
   }
 
   .page-header {
@@ -493,18 +510,25 @@ html[data-ui-density="compact"] {
   }
 
   .page-toolbar {
-    border-color: hsl(from var(--border) h s l / 0.46);
-    background: hsl(from var(--card) h s l / 0.86);
+    border-color: hsl(from var(--border) h s l / 0.3);
+    background: hsl(from var(--card) h s l / 0.75);
+    backdrop-filter: blur(12px);
     box-shadow:
-      inset 0 1px 0 hsl(from var(--card) h s l / 0.48),
-      0 12px 20px -26px hsl(var(--shadow-color) / 0.1);
+      inset 0 1px 0 hsl(from var(--card) h s l / 0.5),
+      0 4px 12px -8px hsl(var(--shadow-color) / 0.06);
   }
 
   .metric-card {
     position: relative;
     min-width: 0;
-    padding: 0.1rem 0 0.1rem 0.75rem;
-    border-left: 1px solid hsl(from var(--border) h s l / 0.66);
+    padding: 0.6rem 0.85rem;
+    border-radius: calc(var(--radius) - 2px);
+    border: 1px solid hsl(from var(--border) h s l / 0.3);
+    background: linear-gradient(135deg, hsl(from var(--card) h s l / 0.6), hsl(from var(--background) h s l / 0.4));
+    transition:
+      border-color 180ms var(--ease-fluid),
+      background-color 180ms var(--ease-fluid),
+      box-shadow 180ms var(--ease-fluid);
   }
 
   .metric-card::before {
@@ -514,7 +538,9 @@ html[data-ui-density="compact"] {
   .metric-card:hover,
   .metric-card:focus-within {
     transform: none;
-    border-left-color: hsl(from var(--primary) h s l / 0.46);
+    border-color: hsl(from var(--primary) h s l / 0.2);
+    background: linear-gradient(135deg, hsl(from var(--card) h s l / 0.8), hsl(from var(--background) h s l / 0.5));
+    box-shadow: 0 4px 12px -6px hsl(from var(--primary) h s l / 0.08);
   }
 
   .metric-card-icon {
@@ -537,15 +563,6 @@ html[data-ui-density="compact"] {
       transform 180ms var(--ease-fluid),
       border-color 180ms var(--ease-fluid),
       box-shadow 180ms var(--ease-fluid);
-  }
-
-  .state-panel::before {
-    content: "";
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.8), transparent 76%);
-    opacity: 0.9;
   }
 
   .status-btn-active {
@@ -599,15 +616,6 @@ html[data-ui-density="compact"] {
       0 12px 22px -26px hsl(var(--shadow-color) / 0.08);
   }
 
-  .session-item-active::before {
-    content: "";
-    position: absolute;
-    inset: 10px auto 10px 0;
-    width: 2px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, hsl(from var(--primary) h s l), hsl(from var(--primary) h s l / 0.24));
-  }
-
   .nav-section-title {
     font-size: 0.7rem;
     font-weight: 600;
@@ -638,37 +646,45 @@ html[data-ui-density="compact"] {
     align-items: center;
     gap: 0.62rem;
     border: 1px solid transparent;
-    border-radius: calc(var(--radius) + 1px);
+    border-radius: calc(var(--radius) - 2px);
     padding: var(--nav-link-padding-y) var(--nav-link-padding-x);
     font-size: 0.84rem;
     font-weight: 500;
-    color: var(--muted-foreground);
+    color: var(--foreground);
+    opacity: 0.72;
     transition:
       border-color 180ms var(--ease-fluid),
       background-color 180ms var(--ease-fluid),
-      color 180ms var(--ease-fluid);
+      color 180ms var(--ease-fluid),
+      opacity 180ms var(--ease-fluid),
+      transform 180ms var(--ease-fluid),
+      box-shadow 180ms var(--ease-fluid);
   }
 
   .nav-link:hover {
-    border-color: hsl(from var(--border) h s l / 0.3);
-    background: hsl(from var(--card) h s l / 0.44);
+    border-color: hsl(from var(--border) h s l / 0.35);
+    background: linear-gradient(135deg, hsl(from var(--card) h s l / 0.56), hsl(from var(--card) h s l / 0.36));
     color: var(--foreground);
+    opacity: 1;
+    transform: translateX(2px);
+  }
+
+  .nav-link:hover > :first-child {
+    color: hsl(from var(--primary) h s l / 0.72);
   }
 
   .nav-link-active {
-    border-color: hsl(from var(--primary) h s l / 0.14);
-    background: hsl(from var(--primary) h s l / 0.08);
+    border-color: hsl(from var(--primary) h s l / 0.16);
+    background: linear-gradient(135deg, hsl(from var(--primary) h s l / 0.1), hsl(from var(--primary) h s l / 0.04));
     color: var(--foreground);
-    box-shadow: inset 0 0 0 1px hsl(from var(--primary) h s l / 0.08);
+    opacity: 1;
+    box-shadow:
+      inset 0 0 0 1px hsl(from var(--primary) h s l / 0.06),
+      0 2px 8px -4px hsl(from var(--primary) h s l / 0.12);
   }
 
-  .nav-link-active::before {
-    content: "";
-    position: absolute;
-    inset: 10px auto 10px 0;
-    width: 3px;
-    border-radius: 999px;
-    background: var(--primary);
+  .nav-link-active > :first-child {
+    color: hsl(from var(--primary) h s l / 0.85);
   }
 
   .stat-block {
@@ -721,8 +737,8 @@ html[data-ui-density="compact"] {
     display: flex;
     flex-direction: column;
     gap: 0.7rem;
-    border-bottom: 1px solid hsl(from var(--border) h s l / 0.58);
-    padding-bottom: 0.75rem;
+    border-bottom: 1px solid hsl(from var(--border) h s l / 0.35);
+    padding-bottom: 0.85rem;
   }
 
   .toolbar-counter {
@@ -753,27 +769,30 @@ html[data-ui-density="compact"] {
     align-items: center;
     gap: 0.5rem;
     border-radius: 999px;
-    border: 1px solid hsl(from var(--border) h s l / 0.4);
-    background: hsl(from var(--card) h s l / 0.68);
-    padding: 0.48rem 0.82rem;
+    border: 1px solid hsl(from var(--border) h s l / 0.35);
+    background: hsl(from var(--card) h s l / 0.6);
+    padding: 0.48rem 0.88rem;
+    font-size: 0.82rem;
+    font-weight: 450;
     color: var(--muted-foreground);
-    box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.28);
     transition:
       transform 180ms var(--ease-fluid),
       border-color 180ms var(--ease-fluid),
       background-color 180ms var(--ease-fluid),
-      color 180ms var(--ease-fluid);
+      color 180ms var(--ease-fluid),
+      box-shadow 180ms var(--ease-fluid);
   }
 
   .filter-pill:hover {
     border-color: hsl(from var(--primary) h s l / 0.24);
-    background: hsl(from var(--accent) h s l / 0.58);
+    background: hsl(from var(--primary) h s l / 0.06);
     color: var(--foreground);
+    box-shadow: 0 2px 8px -4px hsl(from var(--primary) h s l / 0.1);
   }
 
   .filter-pill:active {
     transform: scale(0.96);
-    background: hsl(from var(--accent) h s l / 0.9);
+    background: hsl(from var(--primary) h s l / 0.1);
   }
 
   .surface-chip {
@@ -781,19 +800,20 @@ html[data-ui-density="compact"] {
     align-items: center;
     gap: 0.45rem;
     border-radius: 999px;
-    border: 1px solid hsl(from var(--border) h s l / 0.46);
-    background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.74), hsl(from var(--background) h s l / 0.62));
-    padding: 0.24rem 0.58rem;
+    border: 1px solid hsl(from var(--border) h s l / 0.35);
+    background: hsl(from var(--card) h s l / 0.7);
+    backdrop-filter: blur(4px);
+    padding: 0.24rem 0.62rem;
     font-size: 0.74rem;
+    font-weight: 450;
     line-height: 1.1;
     color: var(--muted-foreground);
-    box-shadow: inset 0 1px 0 hsl(from var(--card) h s l / 0.62);
   }
 
   .surface-chip-strong {
-    border-color: hsl(from var(--primary) h s l / 0.2);
-    background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.1), hsl(from var(--primary) h s l / 0.05));
-    color: hsl(from var(--primary) h s l / 0.92);
+    border-color: hsl(from var(--primary) h s l / 0.18);
+    background: hsl(from var(--primary) h s l / 0.08);
+    color: hsl(from var(--primary) h s l / 0.88);
   }
 
   @media (max-width: 767px) {

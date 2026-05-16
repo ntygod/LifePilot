@@ -23,7 +23,7 @@ import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.multiagent.model.AgentSource;
 import com.lifepilot.multiagent.registry.AgentRegistry;
-import com.lifepilot.multiagent.config.MultiAgentProperties;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.multiagent.loader.AgentMarkdownLoader;
 import com.lifepilot.multiagent.loader.AgentMarkdownParser;
 import com.lifepilot.multiagent.loader.AgentMarkdownSerializer;
@@ -74,7 +74,7 @@ public class AgentController {
     private final AgentMarkdownParser markdownParser;
     private final AgentMarkdownSerializer markdownSerializer;
     private final AgentMarkdownLoader markdownLoader;
-    private final MultiAgentProperties multiAgentConfig;
+    private final ZhiweiPaths zhiweiPaths;
     @Nullable private final SseSessionManager sseSessionManager;
 
     public AgentController(AgentRegistry agentRegistry,
@@ -84,7 +84,7 @@ public class AgentController {
                            AgentMarkdownParser markdownParser,
                            AgentMarkdownSerializer markdownSerializer,
                            AgentMarkdownLoader markdownLoader,
-                           MultiAgentProperties multiAgentConfig,
+                           ZhiweiPaths zhiweiPaths,
                            @Nullable SseSessionManager sseSessionManager) {
         this.agentRegistry = agentRegistry;
         this.agentOrchestrator = agentOrchestrator;
@@ -93,7 +93,7 @@ public class AgentController {
         this.markdownParser = markdownParser;
         this.markdownSerializer = markdownSerializer;
         this.markdownLoader = markdownLoader;
-        this.multiAgentConfig = multiAgentConfig;
+        this.zhiweiPaths = zhiweiPaths;
         this.sseSessionManager = sseSessionManager;
     }
 
@@ -1228,12 +1228,8 @@ public class AgentController {
         }
 
         try {
-            // 持久化到文件系统
-            String agentPath = multiAgentConfig.getAgentDefinitionsPath();
-            if (agentPath.startsWith("~")) {
-                agentPath = System.getProperty("user.home") + agentPath.substring(1);
-            }
-            Path directory = Path.of(agentPath);
+            // 持久化到文件系统（路径由 ZhiweiPaths 提供）
+            Path directory = zhiweiPaths.home("agents");
             if (!Files.exists(directory)) {
                 Files.createDirectories(directory);
             }

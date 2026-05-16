@@ -1,5 +1,6 @@
 package com.lifepilot.interaction.web.controller;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.mcp.config.McpServerConfig;
 import com.lifepilot.mcp.registry.McpServerRegistry;
@@ -74,6 +75,7 @@ public class SkillController {
                            McpServerRegistry mcpServerRegistry,
                            DynamicToolRegistry toolRegistry,
                            SkillConfigProperties skillConfig,
+                           ZhiweiPaths zhiweiPaths,
                            SkillInstaller skillInstaller,
                            SkillInstallationRepository installationRepository,
                            SkillImportService skillImportService,
@@ -82,7 +84,7 @@ public class SkillController {
         this.mcpServerRegistry = mcpServerRegistry;
         this.toolRegistry = toolRegistry;
         this.skillConfig = skillConfig;
-        this.skillsDirectory = Path.of(skillConfig.getDirectory());
+        this.skillsDirectory = zhiweiPaths.home("skills");
         this.skillInstaller = skillInstaller;
         this.installationRepository = installationRepository;
         this.skillImportService = skillImportService;

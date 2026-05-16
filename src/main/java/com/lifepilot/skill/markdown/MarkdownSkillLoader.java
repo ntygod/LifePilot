@@ -1,5 +1,6 @@
 package com.lifepilot.skill.markdown;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.MarkdownSkillParser.ParsedSkill;
 import com.lifepilot.skill.config.SkillConfigProperties;
@@ -52,13 +53,14 @@ public class MarkdownSkillLoader {
                                SkillConfigProperties config,
                                MarkdownSkillParser parser,
                                SkillDescriptionValidator descriptionValidator,
-                               SkillBodyValidator bodyValidator) {
+                               SkillBodyValidator bodyValidator,
+                               ZhiweiPaths zhiweiPaths) {
         this.skillRegistry = skillRegistry;
         this.config = config;
         this.parser = parser;
         this.descriptionValidator = descriptionValidator;
         this.bodyValidator = bodyValidator;
-        this.skillsDirectory = Path.of(config.getDirectory());
+        this.skillsDirectory = zhiweiPaths.home("skills");
     }
 
     /**

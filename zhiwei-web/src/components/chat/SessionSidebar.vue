@@ -17,12 +17,15 @@ const props = withDefaults(defineProps<{
   contextCount?: number
   matchedMessageCount?: number
   showClose?: boolean
+  /** 嵌入外层容器（如 OverlayHost）时隐藏 InspectorRail 自身 header，避免双层标题 */
+  hideHeader?: boolean
 }>(), {
   searchQuery: '',
   statusText: '就绪',
   contextCount: 0,
   matchedMessageCount: 0,
   showClose: true,
+  hideHeader: false,
 })
 
 const emit = defineEmits<{
@@ -126,6 +129,7 @@ function formatNumber(value?: number | null) {
   <InspectorRail
     title="会话信息"
     :show-close="showClose"
+    :hide-header="hideHeader"
     @close="emit('close')"
   >
     <template #eyebrow>

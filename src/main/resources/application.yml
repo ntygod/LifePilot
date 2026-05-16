@@ -1,7 +1,8 @@
-# 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.data-dir=xxx 覆盖）
+# 数据根目录，所有持久化数据存放于此（可通过命令行参数 --zhiwei.home=xxx 覆盖）
+# 目录管理统一由 ZhiweiPaths Bean 提供，各模块注入 ZhiweiPaths 获取子目录路径
 zhiwei:
-  data-dir: "${user.home}/.zhiwei"
-  workspace-dir: "${zhiwei.data-dir}/workspace"
+  home: "${user.home}/zhiwei"
+  workspace: ""
 
 spring:
   application:
@@ -10,7 +11,7 @@ spring:
     serialization:
       write-dates-as-timestamps: false
   datasource:
-    url: "jdbc:sqlite:${zhiwei.data-dir}/zhiwei.db?enable_load_extension=true"
+    url: "jdbc:sqlite:${zhiwei.home}/db/zhiwei.db?enable_load_extension=true"
     driver-class-name: org.sqlite.JDBC
   flyway:
     enabled: true
@@ -56,9 +57,7 @@ lifepilot:
   prompt:
     base-path: "classpath:prompts/"
   document:
-    # 文档产物落盘目录（Agent 生成的 docx / xlsx / pptx） —
-    # 跟随用户在设置页配置的 ${zhiwei.data-dir}, 默认 ~/.zhiwei/documents
-    storage-dir: "${zhiwei.data-dir}/documents"
+    # 文档产物落盘目录由 ZhiweiPaths.home("documents") 提供
   agent:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
@@ -112,7 +111,7 @@ lifepilot:
       heartbeat-enabled: true
       proactive-reminder-enabled: false
       heartbeat-interval-seconds: 1800
-      heartbeat-file: "${zhiwei.data-dir}/HEARTBEAT.md"
+      heartbeat-file: "${zhiwei.home}/HEARTBEAT.md"
       execution-timeout-seconds: 300
       # active-hours-start: "08:00"
       # active-hours-end: "22:00"
@@ -120,7 +119,7 @@ lifepilot:
     multi-agent:
       enabled: true
       max-delegation-depth: 2
-      agent-definitions-path: "${zhiwei.data-dir}/agents/"
+      # agent-definitions-path 由 ZhiweiPaths.home("agents") 提供
       hot-reload:
         enabled: true
         scan-interval-seconds: 5
@@ -179,10 +178,6 @@ lifepilot:
       keep-alive-seconds: 300
   tool:
     enabled: true
-    trusted-workspace:
-      paths:
-        - "${user.home}"
-      downgrade-level: LOW
     pipeline:
       default-timeout-seconds: 30
       default-max-retries: 2
@@ -223,7 +218,7 @@ lifepilot:
     max-retention-days: 180
     embedding-dimensions: 1024
     semantic-match-threshold: 0.92
-    vector-db-url: "jdbc:sqlite:${zhiwei.data-dir}/vectors.db"
+    vector-db-url: "jdbc:sqlite:${zhiwei.home}/db/vectors.db"
     # L3.5 热记忆摘要（小预算、带来源，从 L3 可消费实体和 L4 高置信偏好实时派生）
     hot-digest:
       enabled: true
@@ -374,9 +369,9 @@ lifepilot:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
     # LLM 不可用时 Skill 搜索降级为关键词匹配模式
+    # skills 目录由 ZhiweiPaths.home("skills") 提供
     enabled: true
     max-concurrent-activations: 5
-    directory: "${zhiwei.data-dir}/skills"
     hot-reload-debounce-ms: 500
     skill-filename: SKILL.md
     builtin: {}
@@ -404,7 +399,7 @@ lifepilot:
       default-top-k: 10
   knowledge:
     enabled: true
-    data-dir: "${zhiwei.data-dir}/data"
+    # data-dir 由 ZhiweiPaths.home("knowledge") 提供
     max-file-size: 104857600
     chunking:
       default-strategy: smart
@@ -680,10 +675,7 @@ lifepilot:
       enabled: false
       base-url: "https://clawhub.ai/api/v1"
       max-index-size: 50
-    install-dirs:
-      skills: "${zhiwei.data-dir}/skills"
-      agents: "${zhiwei.data-dir}/agents"
-      workflows: "${zhiwei.data-dir}/workflows"
+    # install-dirs 由 ZhiweiPaths 提供（skills/agents/workflows 子目录）
   mcp:
     enabled: true
     server:
@@ -711,8 +703,7 @@ lifepilot:
     max-nesting-depth: 3
     # 最大循环迭代次数（LoopStep）
     max-loop-iterations: 100
-    # 工作流 YAML 定义文件目录
-    definitions-dir: "${zhiwei.data-dir}/workflows"
+    # 工作流 YAML 定义文件目录由 ZhiweiPaths.home("workflows") 提供
     # 崩溃恢复开关
     crash-recovery-enabled: true
     # YAML 文件扫描间隔（秒）
@@ -805,8 +796,7 @@ lifepilot:
         download-url-template: "https://github.com/ntygod/ZhiWei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst"
         # SHA256 校验文件地址模板
         sha256-url-template: "https://github.com/ntygod/ZhiWei/releases/download/runtime-{version}/zhiwei-python-runtime-{version}-{platform}-{arch}.tar.zst.sha256"
-        # 安装路径
-        install-path: "${user.home}/.zhiwei/python"
+        # install-path 由 ZhiweiPaths.home("runtime/python") 提供
         # 是否禁用捆绑运行时（true 时回退到系统 PATH 的 python）
         disabled: false
       # Shell 命令护栏
@@ -902,11 +892,11 @@ lifepilot:
         wait-timeout-seconds: 10
         accessibility-max-depth: 5
         js-execution-timeout-seconds: 10
-        storage-state-dir: "${zhiwei.data-dir}/cache/browser/storage-state"
+        # storage-state-dir 和 user-data-dir 由 ZhiweiPaths.home("cache/browser") 提供
         persist-storage-state: false
         acquisition-mode: LAUNCH        # LAUNCH / CDP / PERSISTENT
         cdp-url: ""                      # CDP 模式的远程调试端口 URL
-        user-data-dir: "${zhiwei.data-dir}/cache/browser/profile"  # PERSISTENT 模式的用户数据目录
+        # user-data-dir 由 ZhiweiPaths.home("cache/browser") 提供
         snapshot:
           max-elements: 200
           viewport-only: true

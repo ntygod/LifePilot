@@ -154,7 +154,6 @@ class ExtensionInstallerTest {
     private MarketplaceProperties marketplaceProperties(String compatibilityVersion) {
         MarketplaceProperties properties = new MarketplaceProperties();
         properties.setCompatibilityVersion(compatibilityVersion);
-        properties.getInstallDirs().setChannels(tempDir.toString());
         properties.setIndexSources(List.of("https://raw.githubusercontent.com/ntygod/ZhiWei-index/main/index.json"));
         return properties;
     }

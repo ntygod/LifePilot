@@ -35,7 +35,8 @@ public record AgentRequest(
         @Nullable List<String> allowedToolIds,
         @Nullable List<MediaContent> mediaContents,
         @Nullable Double temperature,
-        @Nullable ResumePolicy resumePolicy
+        @Nullable ResumePolicy resumePolicy,
+        @Nullable List<String> overrideKnowledgeBaseIds
 ) {
 
     public AgentRequest {
@@ -45,6 +46,7 @@ public record AgentRequest(
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
         mediaContents = mediaContents != null ? List.copyOf(mediaContents) : null;
         resumePolicy = resumePolicy != null ? resumePolicy : ResumePolicy.AUTO;
+        overrideKnowledgeBaseIds = overrideKnowledgeBaseIds != null ? List.copyOf(overrideKnowledgeBaseIds) : null;
     }
 
     public AgentRequest(String message,
@@ -64,7 +66,7 @@ public record AgentRequest(
                         @Nullable ResumePolicy resumePolicy) {
         this(message, sessionId, source, userId, turnId, action, null, systemPrompt, budget,
                 parentTraceId, depth, preferredProvider, allowedToolIds, mediaContents,
-                temperature, resumePolicy);
+                temperature, resumePolicy, null);
     }
 
     public AgentRequest(String message,
@@ -84,7 +86,7 @@ public record AgentRequest(
                         @Nullable ResumePolicy resumePolicy) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, turnId, action,
                 null, systemPrompt, budget, parentTraceId, depth, preferredProvider,
-                allowedToolIds, mediaContents, temperature, resumePolicy);
+                allowedToolIds, mediaContents, temperature, resumePolicy, null);
     }
 
     public AgentRequest(String message,
@@ -105,7 +107,7 @@ public record AgentRequest(
                         @Nullable ResumePolicy resumePolicy) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, turnId, action,
                 taskMode, systemPrompt, budget, parentTraceId, depth, preferredProvider,
-                allowedToolIds, mediaContents, temperature, resumePolicy);
+                allowedToolIds, mediaContents, temperature, resumePolicy, null);
     }
 
     public AgentRequest(String message,
@@ -123,7 +125,7 @@ public record AgentRequest(
                         @Nullable Double temperature) {
         this(message, sessionId, source, userId, null, ChatTurnAction.SEND, taskMode, systemPrompt, budget,
                 parentTraceId, depth, preferredProvider, allowedToolIds, mediaContents,
-                temperature, ResumePolicy.AUTO);
+                temperature, ResumePolicy.AUTO, null);
     }
 
     public AgentRequest(String message,
@@ -141,7 +143,7 @@ public record AgentRequest(
                         @Nullable Double temperature) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, null, ChatTurnAction.SEND,
                 taskMode, systemPrompt, budget, parentTraceId, depth, preferredProvider,
-                allowedToolIds, mediaContents, temperature, ResumePolicy.AUTO);
+                allowedToolIds, mediaContents, temperature, ResumePolicy.AUTO, null);
     }
 
     public AgentRequest(String message,
@@ -187,22 +189,22 @@ public record AgentRequest(
      */
     public AgentRequest(String message, String sessionId, String channel) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), null, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
     }
 
     public AgentRequest(String message, String sessionId, InteractionSource source) {
         this(message, sessionId, source, null, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
     }
 
     public AgentRequest(String message, String sessionId, String channel, @Nullable String userId) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
     }
 
     public AgentRequest(String message, String sessionId, InteractionSource source, @Nullable String userId) {
         this(message, sessionId, source, userId, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
     }
 
     /**
@@ -214,7 +216,7 @@ public record AgentRequest(
     public AgentRequest withMessage(String newMessage) {
         return new AgentRequest(newMessage, sessionId, source, userId, turnId, action, taskMode,
                 systemPrompt, budget, parentTraceId, depth, preferredProvider, allowedToolIds,
-                mediaContents, temperature, resumePolicy);
+                mediaContents, temperature, resumePolicy, overrideKnowledgeBaseIds);
     }
 
     /**
@@ -226,7 +228,7 @@ public record AgentRequest(
     public AgentRequest withMediaContents(@Nullable List<MediaContent> newMediaContents) {
         return new AgentRequest(message, sessionId, source, userId, turnId, action, taskMode,
                 systemPrompt, budget, parentTraceId, depth, preferredProvider, allowedToolIds,
-                newMediaContents, temperature, resumePolicy);
+                newMediaContents, temperature, resumePolicy, overrideKnowledgeBaseIds);
     }
 
     public String channel() {

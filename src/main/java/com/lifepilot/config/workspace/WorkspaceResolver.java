@@ -1,10 +1,10 @@
 package com.lifepilot.config.workspace;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * 统一工作目录解析器。
  *
  * <p>为沙箱、Shell 执行、Tmux 会话等子系统提供统一的默认工作目录。
- * 解析优先级：用户设置（DB） &gt; application.yml 配置 &gt; 默认 ~/.zhiwei/workspace/。</p>
+ * 解析优先级：用户设置（DB） &gt; ZhiweiPaths.workspace()。</p>
  *
  * @author zsg
  * @since 2026-04-12
@@ -27,20 +27,24 @@ public class WorkspaceResolver {
     private static final Logger log = LoggerFactory.getLogger(WorkspaceResolver.class);
 
     private final UserSettingsRepository settingsRepository;
-    private final String defaultWorkspaceDir;
+    private final ZhiweiPaths zhiweiPaths;
 
+    /**
+     * 构造工作目录解析器。
+     *
+     * @param settingsRepository 用户设置仓库，可为 null（CLI 模式下无 DB）
+     * @param zhiweiPaths        统一路径提供 Bean，提供默认 workspace 路径
+     */
     public WorkspaceResolver(@Nullable UserSettingsRepository settingsRepository,
-                             @Value("${zhiwei.workspace-dir:}") String configuredDir) {
+                             ZhiweiPaths zhiweiPaths) {
         this.settingsRepository = settingsRepository;
-        this.defaultWorkspaceDir = configuredDir.isBlank()
-                ? Path.of(System.getProperty("user.home"), ".zhiwei", "workspace").toString()
-                : configuredDir;
+        this.zhiweiPaths = zhiweiPaths;
     }
 
     /**
      * 解析当前生效的工作目录路径。
      *
-     * <p>优先级：用户设置 &gt; yml 配置 &gt; ~/.zhiwei/workspace/</p>
+     * <p>优先级：用户设置 &gt; ZhiweiPaths.workspace()</p>
      *
      * @return 绝对路径
      */
@@ -61,7 +65,7 @@ public class WorkspaceResolver {
                 log.debug("读取用户工作目录设置失败，使用默认值: {}", e.getMessage());
             }
         }
-        return Path.of(defaultWorkspaceDir);
+        return zhiweiPaths.workspace();
     }
 
     /**
@@ -83,12 +87,12 @@ public class WorkspaceResolver {
     }
 
     /**
-     * 获取 application.yml 中配置的默认值（不考虑用户设置）。
+     * 获取默认工作目录路径（不考虑用户设置）。
      *
-     * @return 默认工作目录路径字符串
+     * @return 默认工作目录路径字符串，来源于 ZhiweiPaths.workspace()
      */
     public String getDefaultDir() {
-        return defaultWorkspaceDir;
+        return zhiweiPaths.workspace().toString();
     }
 
     /**

@@ -199,9 +199,6 @@ public class SandboxConfigProperties {
             /** SHA256 校验文件地址模板（含 {version}/{platform}/{arch} 占位符）。 */
             private String sha256UrlTemplate = "";
 
-            /** 安装路径，默认 ${user.home}/.zhiwei/python。 */
-            private String installPath = "${user.home}/.zhiwei/python";
-
             /** 预期内置数据科学/办公库清单，用于安装后自检。 */
             private List<String> expectedLibraries = List.of(
                 "pandas", "numpy", "scipy", "scikit-learn", "matplotlib", "seaborn",
@@ -219,9 +216,6 @@ public class SandboxConfigProperties {
 
             public String getSha256UrlTemplate() { return sha256UrlTemplate; }
             public void setSha256UrlTemplate(String sha256UrlTemplate) { this.sha256UrlTemplate = sha256UrlTemplate; }
-
-            public String getInstallPath() { return installPath; }
-            public void setInstallPath(String installPath) { this.installPath = installPath; }
 
             public List<String> getExpectedLibraries() { return expectedLibraries; }
             public void setExpectedLibraries(List<String> expectedLibraries) { this.expectedLibraries = expectedLibraries; }

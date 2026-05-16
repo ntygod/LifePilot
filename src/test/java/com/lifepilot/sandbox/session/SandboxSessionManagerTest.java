@@ -53,7 +53,9 @@ class SandboxSessionManagerTest {
         var runtimeManager = mock(PythonRuntimeManager.class);
         when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 0L));
         SandboxBooter template = new ProcessBooter(config, runtimeManager);
-        var workspaceResolver = new WorkspaceResolver(null, "");
+        var zhiweiPaths = mock(com.lifepilot.config.path.ZhiweiPaths.class);
+        when(zhiweiPaths.workspace()).thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")));
+        var workspaceResolver = new WorkspaceResolver(null, zhiweiPaths);
         manager = new SandboxSessionManager(config, template, sharedScheduler, workspaceResolver, runtimeManager);
     }
 

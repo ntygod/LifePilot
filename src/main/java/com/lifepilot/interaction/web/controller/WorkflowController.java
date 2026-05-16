@@ -1,6 +1,7 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.ErrorResponse;
 import com.lifepilot.interaction.web.model.TriggerWorkflowRequest;
@@ -89,7 +90,8 @@ public class WorkflowController {
                                SseSessionManager sseSessionManager,
                                WorkflowYamlParser yamlParser,
                                WorkflowYamlPrinter yamlPrinter,
-                               WorkflowConfigProperties workflowConfig) {
+                               WorkflowConfigProperties workflowConfig,
+                               ZhiweiPaths zhiweiPaths) {
         this.workflowRegistry = workflowRegistry;
         this.workflowEngine = workflowEngine;
         this.workflowCommandService = workflowCommandService;
@@ -101,12 +103,7 @@ public class WorkflowController {
         this.yamlPrinter = yamlPrinter;
         this.workflowConfig = workflowConfig;
         this.objectMapper = new ObjectMapper();
-        String dir = workflowConfig.getDefinitionsDir();
-        // 处理 ~ 符号
-        if (dir.startsWith("~")) {
-            dir = System.getProperty("user.home") + dir.substring(1);
-        }
-        this.workflowsDirectory = Path.of(dir);
+        this.workflowsDirectory = zhiweiPaths.home("workflows");
     }
 
     /**

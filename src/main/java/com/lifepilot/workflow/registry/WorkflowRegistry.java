@@ -1,5 +1,6 @@
 package com.lifepilot.workflow.registry;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.config.WorkflowConfigProperties;
@@ -62,6 +63,10 @@ public class WorkflowRegistry {
     @Setter
     private WorkflowConfigProperties configProperties;
 
+    /** 统一路径提供 Bean，用于获取工作流定义目录。 */
+    @Setter
+    private ZhiweiPaths zhiweiPaths;
+
     @Setter
     private TaskScheduler taskScheduler;
 
@@ -107,12 +112,12 @@ public class WorkflowRegistry {
     }
 
     public void startScheduledScan() {
-        if (configProperties == null || taskScheduler == null) {
-            log.warn("热加载启动失败: configProperties 或 taskScheduler 未注入");
+        if (zhiweiPaths == null || configProperties == null || taskScheduler == null) {
+            log.warn("热加载启动失败: zhiweiPaths / configProperties / taskScheduler 未注入");
             return;
         }
 
-        Path directory = resolveDefinitionsDir(configProperties.getDefinitionsDir());
+        Path directory = zhiweiPaths.home("workflows");
         int intervalSeconds = configProperties.getScanIntervalSeconds();
         performScan(directory);
         taskScheduler.scheduleAtFixedRate(() -> performScan(directory), Duration.ofSeconds(intervalSeconds));
@@ -286,6 +291,10 @@ public class WorkflowRegistry {
         return List.copyOf(missing);
     }
 
+    /**
+     * @deprecated 使用 {@link ZhiweiPaths#home(String)} 替代，传入 "workflows"。
+     */
+    @Deprecated(forRemoval = true)
     public static Path resolveDefinitionsDir(String dir) {
         if (dir.startsWith("~")) {
             return Path.of(System.getProperty("user.home") + dir.substring(1));

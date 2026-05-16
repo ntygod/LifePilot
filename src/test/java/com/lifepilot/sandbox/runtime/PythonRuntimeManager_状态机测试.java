@@ -1,6 +1,8 @@
 package com.lifepilot.sandbox.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.sandbox.config.SandboxConfigProperties;
 
 /**
@@ -21,8 +24,10 @@ class PythonRuntimeManager_状态机测试 {
 
     @Test
     void 安装目录不存在时返回NotInstalled(@TempDir Path tempDir) {
-        var config = buildConfig(tempDir.resolve("not-exists"));
-        var manager = new PythonRuntimeManager(config);
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
+        var zhiweiPaths = mockZhiweiPaths(tempDir.resolve("not-exists"));
+        var manager = new PythonRuntimeManager(config, zhiweiPaths);
 
         assertThat(manager.checkStatus()).isInstanceOf(RuntimeStatus.NotInstalled.class);
     }
@@ -32,10 +37,12 @@ class PythonRuntimeManager_状态机测试 {
         var pythonDir = tempDir.resolve("python");
         Files.createDirectories(pythonDir);
         Files.writeString(pythonDir.resolve("VERSION"), "3.12.13");
-        var config = buildConfig(pythonDir);
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
         config.getRuntime().getPython().setDisabled(true);
+        var zhiweiPaths = mockZhiweiPaths(pythonDir);
 
-        var manager = new PythonRuntimeManager(config);
+        var manager = new PythonRuntimeManager(config, zhiweiPaths);
 
         assertThat(manager.checkStatus()).isInstanceOf(RuntimeStatus.Disabled.class);
     }
@@ -46,9 +53,11 @@ class PythonRuntimeManager_状态机测试 {
         Files.createDirectories(pythonDir.resolve("bin"));
         Files.writeString(pythonDir.resolve("VERSION"), "3.12.13");
         Files.writeString(pythonDir.resolve("bin/python"), "#!/bin/sh\necho fake");
-        var config = buildConfig(pythonDir);
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
+        var zhiweiPaths = mockZhiweiPaths(pythonDir);
 
-        var manager = new PythonRuntimeManager(config);
+        var manager = new PythonRuntimeManager(config, zhiweiPaths);
         var status = manager.checkStatus();
 
         assertThat(status).isInstanceOf(RuntimeStatus.Ready.class);
@@ -60,9 +69,11 @@ class PythonRuntimeManager_状态机测试 {
         var pythonDir = tempDir.resolve("python");
         Files.createDirectories(pythonDir);
         Files.writeString(pythonDir.resolve("VERSION"), "3.11.0");
-        var config = buildConfig(pythonDir);
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
+        var zhiweiPaths = mockZhiweiPaths(pythonDir);
 
-        var manager = new PythonRuntimeManager(config);
+        var manager = new PythonRuntimeManager(config, zhiweiPaths);
 
         assertThat(manager.checkStatus()).isInstanceOf(RuntimeStatus.InstallFailed.class);
     }
@@ -74,8 +85,10 @@ class PythonRuntimeManager_状态机测试 {
         Files.writeString(pythonDir.resolve("VERSION"), "3.12.13");
         Files.writeString(pythonDir.resolve("bin/python"), "#!/bin/sh\necho fake");
 
-        var config = buildConfig(pythonDir);
-        var manager = new PythonRuntimeManager(config);
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
+        var zhiweiPaths = mockZhiweiPaths(pythonDir);
+        var manager = new PythonRuntimeManager(config, zhiweiPaths);
 
         // 即便文件齐全本可返回 Ready，setInstalling 也应让 checkStatus 优先返回 Installing
         manager.setInstalling(new RuntimeStatus.Installing("downloading", 50, 100));
@@ -95,8 +108,10 @@ class PythonRuntimeManager_状态机测试 {
     void Windows系统下getPythonExecutable返回pythonExe(@TempDir Path tempDir) {
         Assumptions.assumeTrue(System.getProperty("os.name").toLowerCase().contains("win"),
                 "仅在 Windows 系统验证");
-        var config = buildConfig(tempDir.resolve("python"));
-        var manager = new PythonRuntimeManager(config);
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
+        var zhiweiPaths = mockZhiweiPaths(tempDir.resolve("python"));
+        var manager = new PythonRuntimeManager(config, zhiweiPaths);
 
         Path exe = manager.getPythonExecutable();
         assertThat(exe.getFileName().toString()).isEqualTo("python.exe");
@@ -107,18 +122,19 @@ class PythonRuntimeManager_状态机测试 {
     void 非Windows系统下getPythonExecutable返回binPython(@TempDir Path tempDir) {
         Assumptions.assumeFalse(System.getProperty("os.name").toLowerCase().contains("win"),
                 "仅在非 Windows 系统验证");
-        var config = buildConfig(tempDir.resolve("python"));
-        var manager = new PythonRuntimeManager(config);
+        var config = new SandboxConfigProperties();
+        config.getRuntime().getPython().setBundledVersion("3.12.13");
+        var zhiweiPaths = mockZhiweiPaths(tempDir.resolve("python"));
+        var manager = new PythonRuntimeManager(config, zhiweiPaths);
 
         Path exe = manager.getPythonExecutable();
         assertThat(exe.getFileName().toString()).isEqualTo("python");
         assertThat(exe.getParent().getFileName().toString()).isEqualTo("bin");
     }
 
-    private SandboxConfigProperties buildConfig(Path installPath) {
-        var config = new SandboxConfigProperties();
-        config.getRuntime().getPython().setBundledVersion("3.12.13");
-        config.getRuntime().getPython().setInstallPath(installPath.toString());
-        return config;
+    private ZhiweiPaths mockZhiweiPaths(Path pythonDir) {
+        var zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.home(ZhiweiPaths.DIR_RUNTIME_PYTHON)).thenReturn(pythonDir);
+        return zhiweiPaths;
     }
 }

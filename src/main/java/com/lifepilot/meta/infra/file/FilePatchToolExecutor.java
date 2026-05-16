@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.file;
 
+import com.lifepilot.config.path.PathResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
@@ -90,7 +91,7 @@ public class FilePatchToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("缺少必需参数: " + e.getMessage());
         }
-        pathStr = PathExpander.expand(pathStr);
+        pathStr = PathResolver.expand(pathStr);
 
         if (operations == null || operations.isEmpty()) {
             return ToolResult.error("operations 不能为空");

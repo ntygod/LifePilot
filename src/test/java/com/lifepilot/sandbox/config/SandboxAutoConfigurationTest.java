@@ -11,6 +11,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.sandbox.booter.SandboxBooter;
@@ -137,6 +138,14 @@ class SandboxAutoConfigurationTest {
             return mock(WorkspaceResolver.class);
         }
 
+        @Bean(name = "sandboxTestZhiweiPathsWithJdbc")
+        ZhiweiPaths zhiweiPaths() {
+            var paths = mock(ZhiweiPaths.class);
+            when(paths.home(ZhiweiPaths.DIR_RUNTIME_PYTHON))
+                    .thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "zhiwei-test", "runtime", "python"));
+            return paths;
+        }
+
         @Bean(name = "sandboxTestDataSourceWithJdbc")
         DataSource dataSource() {
             return mock(DataSource.class);
@@ -164,6 +173,14 @@ class SandboxAutoConfigurationTest {
         @Bean(name = "sandboxTestWorkspaceResolverNoJdbc")
         WorkspaceResolver workspaceResolver() {
             return mock(WorkspaceResolver.class);
+        }
+
+        @Bean(name = "sandboxTestZhiweiPathsNoJdbc")
+        ZhiweiPaths zhiweiPaths() {
+            var paths = mock(ZhiweiPaths.class);
+            when(paths.home(ZhiweiPaths.DIR_RUNTIME_PYTHON))
+                    .thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "zhiwei-test", "runtime", "python"));
+            return paths;
         }
     }
 }

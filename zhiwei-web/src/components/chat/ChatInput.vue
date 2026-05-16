@@ -26,7 +26,7 @@ import { useVoice } from '@/composables/useVoice'
 import { useWhisperDownload } from '@/composables/useWhisperDownload'
 import AudioWaveform from '@/components/chat/AudioWaveform.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import type { ChatAttachment, KnowledgeBase, SessionConfig } from '@/types'
+import type { ChatAttachment, KnowledgeBase, SessionConfig, SessionConfigOverride } from '@/types'
 
 const props = defineProps<{
   disabled?: boolean
@@ -42,14 +42,15 @@ const emit = defineEmits<{
     content: string
     attachmentIds?: string[]
     attachments?: ChatAttachment[]
-    sessionConfig?: SessionConfig
-    restoreSessionConfig?: SessionConfig
+    /** 单轮临时覆盖的会话配置：仅影响本轮 Agent 执行，不污染持久化 config */
+    singleTurnOverride?: SessionConfigOverride | null
   }]
 }>()
 
 const chatStore = useChatStore()
 const route = useRoute()
 const input = ref('')
+const textareaRef = ref<{ $el?: HTMLElement; focus?: () => void } | null>(null)
 const maxLength = 4000
 
 const PLACEHOLDERS = [
@@ -236,13 +237,16 @@ async function submit() {
     uploadError.value = null
 
     // 懒创建：上传附件需要 sessionId，如果还没有会话则先创建
-    // 若 URL 携带 projectId（来自项目详情页「开始新对话」），会话归入该项目
+    // 注意：创建会话后不要触发路由跳转导致组件状态重置，
+    // 路由同步由 ChatView 的 activeSessionId watcher 统一处理
     if (!chatStore.activeSessionId) {
       const projectIdFromQuery = typeof route.query.projectId === 'string'
         ? route.query.projectId
         : null
       try {
         await chatStore.startNewSession(undefined, projectIdFromQuery)
+        // 等待一个 tick 让 router.replace 和相关 watcher 稳定
+        await new Promise(resolve => setTimeout(resolve, 0))
       } catch {
         uploadError.value = '创建会话失败，请重试'
         isUploading.value = false
@@ -265,8 +269,7 @@ async function submit() {
     }
   }
 
-  const sessionConfig = buildTemporarySessionConfig()
-  const restoreSessionConfig = sessionConfig ? buildRestoreSessionConfig() : undefined
+  const singleTurnOverride = buildSingleTurnOverride() ?? null
 
   // 发送脉冲动效
   sendPulsing.value = true
@@ -276,8 +279,7 @@ async function submit() {
     content,
     attachmentIds,
     attachments: uploadedAttachments,
-    sessionConfig,
-    restoreSessionConfig,
+    singleTurnOverride,
   })
 
   input.value = ''
@@ -362,36 +364,20 @@ function removeTrailingMention() {
   }
 }
 
-function buildTemporarySessionConfig(): SessionConfig | undefined {
-  if (selectedContexts.value.length === 0 || !props.baseSessionConfig) {
+function buildSingleTurnOverride(): SessionConfigOverride | undefined {
+  // 仅当用户临时勾选了 @ 上下文（当前为知识库）时才构造 override；
+  // 没勾时返回 undefined，让后端走会话持久化配置。
+  if (selectedContexts.value.length === 0) {
     return undefined
   }
 
-  const knowledgeBaseIds = mergeIds(
-    props.baseSessionConfig.knowledgeBaseIds ?? [],
-    selectedContexts.value.filter(option => option.kind === 'knowledge-base').map(option => option.id),
-  )
+  const baseKbIds = props.baseSessionConfig?.knowledgeBaseIds ?? []
+  const extraKbIds = selectedContexts.value
+    .filter(option => option.kind === 'knowledge-base')
+    .map(option => option.id)
 
   return {
-    preferredProviderId: props.baseSessionConfig.preferredProviderId,
-    temperature: props.baseSessionConfig.temperature,
-    maxSteps: props.baseSessionConfig.maxSteps,
-    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-    knowledgeBaseIds,
-  }
-}
-
-function buildRestoreSessionConfig(): SessionConfig | undefined {
-  if (!props.baseSessionConfig) {
-    return undefined
-  }
-
-  return {
-    preferredProviderId: props.baseSessionConfig.preferredProviderId,
-    temperature: props.baseSessionConfig.temperature,
-    maxSteps: props.baseSessionConfig.maxSteps,
-    maxDurationSeconds: props.baseSessionConfig.maxDurationSeconds,
-    knowledgeBaseIds: props.baseSessionConfig.knowledgeBaseIds ?? [],
+    knowledgeBaseIds: mergeIds(baseKbIds, extraKbIds),
   }
 }
 
@@ -442,19 +428,25 @@ watch(audioBlob, async (blob) => {
   voiceError.value = null
 
   try {
+    // 懒创建：语音上传需要 sessionId，如果还没有会话则先创建
+    if (!chatStore.activeSessionId) {
+      const projectIdFromQuery = typeof route.query.projectId === 'string'
+        ? route.query.projectId
+        : null
+      await chatStore.startNewSession(undefined, projectIdFromQuery)
+    }
+
     const ext = blob.type.includes('wav') ? 'wav' : 'webm'
     const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blob.type })
-    const sessionId = chatStore.activeSessionId ?? undefined
+    const sessionId = chatStore.activeSessionId!
     const uploaded = await chatApi.uploadAttachment(file, sessionId)
-    const sessionConfig = buildTemporarySessionConfig()
-    const restoreSessionConfig = sessionConfig ? buildRestoreSessionConfig() : undefined
+    const singleTurnOverride = buildSingleTurnOverride() ?? null
 
     emit('send', {
       content: '[语音消息]',
       attachmentIds: [uploaded.fileId],
       attachments: [uploaded],
-      sessionConfig,
-      restoreSessionConfig,
+      singleTurnOverride,
     })
     resetTemporaryContextSelection()
   } catch (error) {
@@ -469,6 +461,21 @@ defineExpose({
   input,
   isUploading,
   getFileIcon,
+  /** 把外部文本填入输入框 —— 用于 PromptGallery 点击卡片 → 灌入 prompt */
+  setContent(text: string) {
+    input.value = text
+  },
+  /** 聚焦到输入框 */
+  focus() {
+    const el = (textareaRef.value as { $el?: HTMLElement; focus?: () => void } | null) ?? null
+    if (!el) return
+    if (typeof el.focus === 'function') {
+      el.focus()
+    } else if (el.$el instanceof HTMLElement) {
+      const real = el.$el.tagName === 'TEXTAREA' ? el.$el : el.$el.querySelector('textarea')
+      real?.focus()
+    }
+  },
 })
 </script>
 
@@ -631,6 +638,7 @@ defineExpose({
         <!-- 输入区 -->
         <div class="relative px-4 pb-1 pt-2">
           <Textarea
+            ref="textareaRef"
             v-model="input"
             :disabled="disabled"
             :maxlength="maxLength"

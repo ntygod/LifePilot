@@ -119,6 +119,10 @@ public class ChatSessionRepository {
         return sessionStoreRepository.getConfig(id);
     }
 
+    public long[] getTokenUsage(String id) {
+        return sessionStoreRepository.getTokenUsage(id);
+    }
+
     private ChatSession mapRow(SessionStoreRepository.SessionStoreRow row) {
         return new ChatSession(
                 row.sessionId(),

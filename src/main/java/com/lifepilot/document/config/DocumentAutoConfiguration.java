@@ -1,5 +1,6 @@
 package com.lifepilot.document.config;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.document.patch.docx.DocxDiffBuilder;
 import com.lifepilot.document.patch.docx.DocxPatchEngine;
 import com.lifepilot.document.patch.docx.TextAnchorLocator;
@@ -85,6 +86,7 @@ public class DocumentAutoConfiguration {
             XlsxDiffBuilder xlsxDiffBuilder,
             DocumentProperties properties,
             MetaProperties metaProperties,
+            ZhiweiPaths zhiweiPaths,
             org.springframework.transaction.PlatformTransactionManager transactionManager) {
         var pathSecurityChecker = new PathSecurityChecker(metaProperties.getInfra().getFile());
         var repositories = new DocumentVersionService.DocumentRepositories(
@@ -92,7 +94,7 @@ public class DocumentAutoConfiguration {
         var engines = new DocumentVersionService.PatchEngines(
                 docxPatchEngine, docxDiffBuilder, xlsxPatchEngine, xlsxDiffBuilder);
         var service = new DocumentVersionService(
-                repositories, engines, properties.getStorageDir(), pathSecurityChecker,
+                repositories, engines, zhiweiPaths.home("documents").toString(), pathSecurityChecker,
                 transactionManager);
         service.setMaxFileSize(properties.getMaxFileSize());
         return service;
@@ -120,10 +122,11 @@ public class DocumentAutoConfiguration {
             SessionDocumentRepository documentRepository,
             DocumentVersionRepository versionRepository,
             DocumentProperties properties,
+            ZhiweiPaths zhiweiPaths,
             com.lifepilot.config.threadpool.SharedScheduler sharedScheduler) {
         var gc = new com.lifepilot.document.version.DocumentGarbageCollector(
                 documentRepository, versionRepository,
-                properties.getStorageDir(), properties.getWorkingRetentionDays());
+                zhiweiPaths.home("documents").toString(), properties.getWorkingRetentionDays());
         int intervalMin = properties.getGcIntervalMinutes();
         if (intervalMin > 0) {
             sharedScheduler.cleanup().scheduleAtFixedRate(

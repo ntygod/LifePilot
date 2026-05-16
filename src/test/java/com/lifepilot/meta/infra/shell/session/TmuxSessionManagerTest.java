@@ -40,7 +40,9 @@ class TmuxSessionManagerTest {
         config.setExecTimeoutSeconds(120);
         config.setOutputMaxChars(50000);
         config.setCleanupIntervalSeconds(3600); // 测试中设置长间隔，避免自动清理干扰
-        var workspaceResolver = new WorkspaceResolver(null, "");
+        var zhiweiPaths = mock(com.lifepilot.config.path.ZhiweiPaths.class);
+        when(zhiweiPaths.workspace()).thenReturn(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")));
+        var workspaceResolver = new WorkspaceResolver(null, zhiweiPaths);
         manager = new TmuxSessionManager(tmuxCmd, config, workspaceResolver);
     }
 

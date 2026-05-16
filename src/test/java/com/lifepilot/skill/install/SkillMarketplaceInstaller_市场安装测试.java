@@ -1,5 +1,6 @@
 package com.lifepilot.skill.install;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.marketplace.clawhub.ClawHubClient;
 import com.lifepilot.marketplace.clawhub.ClawHubIndexSource;
 import com.lifepilot.marketplace.clawhub.ClawHubZipExtractor;
@@ -7,7 +8,6 @@ import com.lifepilot.marketplace.index.IndexManager;
 import com.lifepilot.marketplace.model.ExtensionPackage;
 import com.lifepilot.marketplace.model.ExtensionType;
 import com.lifepilot.skill.MarkdownSkillParser;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
 import com.sun.net.httpserver.HttpExchange;
@@ -70,7 +70,7 @@ class SkillMarketplaceInstaller_市场安装测试 {
 
     IndexManager indexManager;
     SkillInstaller installer;
-    SkillConfigProperties config;
+    ZhiweiPaths zhiweiPaths;
     SkillInstallationRepository repository;
 
     @BeforeEach
@@ -82,8 +82,8 @@ class SkillMarketplaceInstaller_市场安装测试 {
                 new SkillBodyValidator(),
                 repository);
         indexManager = mock(IndexManager.class);
-        config = new SkillConfigProperties();
-        config.setDirectory(skillsRoot.toString());
+        zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.home("skills")).thenReturn(skillsRoot);
     }
 
     // ────────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ class SkillMarketplaceInstaller_市场安装测试 {
                 installer,
                 repository,
                 indexManager,
-                config,
+                zhiweiPaths,
                 RestClient.builder(),
                 clawHubClient,
                 clawHubZipExtractor);

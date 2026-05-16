@@ -74,6 +74,7 @@ class ChatController_A2uiContract_测试 {
                 messageFeedbackRepository,
                 attachmentRepository,
                 knowledgeBaseProperties,
+                null,  // ZhiweiPaths — 本测试不涉及附件上传
                 null,
                 null,
                 mediaProperties

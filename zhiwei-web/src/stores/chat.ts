@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { ChatAttachment, ChatSession, Message, SessionConfig } from '@/types'
+import type { ChatAttachment, ChatSession, Message, SessionConfigOverride } from '@/types'
 import { chatApi } from '@/api/client'
 
 /**
@@ -11,8 +11,8 @@ export interface PendingFirstSend {
   content: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
-  sessionConfig?: SessionConfig
-  restoreSessionConfig?: SessionConfig
+  /** 单轮临时覆盖的会话配置（模型 / KB / 温度 / 预算），对齐新版 useChat 的 singleTurnOverride 语义 */
+  singleTurnOverride?: SessionConfigOverride | null
 }
 
 export const useChatStore = defineStore('chat', () => {

@@ -143,6 +143,58 @@ function openSession(sessionId: string) {
 function isActiveSession(sessionId: string): boolean {
   return route.name === 'conversationDetail' && chatStore.activeSessionId === sessionId
 }
+
+/* ── 展开/折叠过渡动画（基于真实高度） ── */
+
+function onBeforeEnter(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = '0'
+  htmlEl.style.opacity = '0'
+  htmlEl.style.overflow = 'hidden'
+}
+
+function onEnter(el: Element, done: () => void) {
+  const htmlEl = el as HTMLElement
+  // 先让浏览器计算出真实高度
+  const height = htmlEl.scrollHeight
+  // 强制 reflow
+  void htmlEl.offsetHeight
+  htmlEl.style.transition = 'height 280ms cubic-bezier(0.4, 0, 0.2, 1), opacity 280ms cubic-bezier(0.4, 0, 0.2, 1)'
+  htmlEl.style.height = `${height}px`
+  htmlEl.style.opacity = '1'
+  htmlEl.addEventListener('transitionend', done, { once: true })
+}
+
+function onAfterEnter(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = ''
+  htmlEl.style.overflow = ''
+  htmlEl.style.transition = ''
+}
+
+function onBeforeLeave(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = `${htmlEl.scrollHeight}px`
+  htmlEl.style.overflow = 'hidden'
+  // 强制 reflow
+  void htmlEl.offsetHeight
+}
+
+function onLeave(el: Element, done: () => void) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.transition = 'height 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 220ms cubic-bezier(0.4, 0, 0.2, 1)'
+  htmlEl.style.height = '0'
+  htmlEl.style.opacity = '0'
+  htmlEl.addEventListener('transitionend', done, { once: true })
+}
+
+function onAfterLeave(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.height = ''
+  htmlEl.style.overflow = ''
+  htmlEl.style.opacity = ''
+  htmlEl.style.transition = ''
+}
 </script>
 
 <template>
@@ -193,6 +245,14 @@ function isActiveSession(sessionId: string): boolean {
       </div>
 
       <!-- 展开后的嵌套会话列表 -->
+      <Transition
+        @before-enter="onBeforeEnter"
+        @enter="onEnter"
+        @after-enter="onAfterEnter"
+        @before-leave="onBeforeLeave"
+        @leave="onLeave"
+        @after-leave="onAfterLeave"
+      >
       <div
         v-if="expandedProjects.has(p.id)"
         class="flex flex-col gap-xs pl-xl"
@@ -235,6 +295,7 @@ function isActiveSession(sessionId: string): boolean {
           <span class="text-sm truncate">{{ s.title || '新对话' }}</span>
         </button>
       </div>
+      </Transition>
     </div>
   </div>
 </template>

@@ -27,7 +27,7 @@ import ProjectSettingsPanel from '@/components/project/ProjectSettingsPanel.vue'
 import { useChatStore } from '@/stores/chat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useProjectStore } from '@/stores/project'
-import type { ChatAttachment, ChatSession, SessionConfig } from '@/types'
+import type { ChatAttachment, ChatSession, SessionConfigOverride } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -107,8 +107,7 @@ async function handleSend(payload: {
   content: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
-  sessionConfig?: SessionConfig
-  restoreSessionConfig?: SessionConfig
+  singleTurnOverride?: SessionConfigOverride | null
 }) {
   if (submitting.value) return
 
@@ -128,8 +127,7 @@ async function handleSend(payload: {
       content,
       attachmentIds: payload.attachmentIds,
       attachments: payload.attachments,
-      sessionConfig: payload.sessionConfig,
-      restoreSessionConfig: payload.restoreSessionConfig,
+      singleTurnOverride: payload.singleTurnOverride,
     }
 
     await router.push({

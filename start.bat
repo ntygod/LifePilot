@@ -34,7 +34,7 @@ if not exist "%JAR_FILE%" (
 )
 
 REM 4. 创建数据目录
-if not exist "%USERPROFILE%\.zhiwei" mkdir "%USERPROFILE%\.zhiwei"
+if not exist "%USERPROFILE%\zhiwei" mkdir "%USERPROFILE%\zhiwei"
 
 REM 5. 计算 JVM 内存参数（系统内存 50%，上限 2048MB）
 set "XMX=512"
@@ -55,7 +55,7 @@ echo   ZhiWei（知微）v%VERSION%
 echo   见微知著，你的 AI 伙伴
 echo ======================================
 echo   访问地址: http://localhost:%PORT%
-echo   数据目录: %USERPROFILE%\.zhiwei\
+echo   数据目录: %USERPROFILE%\zhiwei\
 echo   JVM 内存: %XMX%m
 echo ======================================
 

@@ -30,8 +30,8 @@ public class SkillHubClient {
 
     private final Path skillsDirectory;
 
-    public SkillHubClient(String skillsDirectory) {
-        this.skillsDirectory = Path.of(skillsDirectory);
+    public SkillHubClient(Path skillsDirectory) {
+        this.skillsDirectory = skillsDirectory;
     }
 
     /**

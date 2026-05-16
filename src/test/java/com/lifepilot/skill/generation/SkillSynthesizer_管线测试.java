@@ -1,5 +1,6 @@
 package com.lifepilot.skill.generation;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.prompt.PromptRegistry;
@@ -68,6 +69,8 @@ class SkillSynthesizer_管线测试 {
     SkillInstallationRepository repository;
     @Mock
     DynamicToolRegistry toolRegistry;
+    @Mock
+    ZhiweiPaths zhiweiPaths;
 
     SkillSynthesizer synthesizer;
 
@@ -79,10 +82,10 @@ class SkillSynthesizer_管线测试 {
         var validator = new SkillValidator(descriptionValidator, bodyValidator, toolRegistry);
         var installer = new SkillInstaller(parser, descriptionValidator, bodyValidator, repository);
         var config = new SkillConfigProperties();
-        config.setDirectory(tempDir.toString());
+        lenient().when(zhiweiPaths.home("skills")).thenReturn(tempDir);
 
         synthesizer = new SkillSynthesizer(
-                generationRouter, promptRegistry, parser, validator, installer, publisher, config);
+                generationRouter, promptRegistry, parser, validator, installer, publisher, config, zhiweiPaths);
 
         // 测试只关心行为契约，promptRegistry 返回固定字符串即可（真实模板由 C.4 补）
         lenient().when(promptRegistry.render(anyString(), any())).thenReturn("rendered");

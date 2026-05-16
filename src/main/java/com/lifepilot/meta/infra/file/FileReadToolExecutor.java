@@ -8,7 +8,8 @@ import com.lifepilot.knowledge.parser.ParseResult;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
-import com.lifepilot.tool.validation.SkillPathWhitelist;
+import com.lifepilot.config.path.PathAccessControl;
+import com.lifepilot.config.path.PathResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,7 +39,7 @@ import java.util.Set;
  *
  * <p>安全机制：两道校验串联：</p>
  * <ul>
- *   <li>{@link SkillPathWhitelist}：硬约束，{@code file.read} 只允许访问 skills 目录 + 工作区 + 进程目录，
+ *   <li>{@link PathAccessControl}：硬约束，基于白名单/黑名单机制约束 Agent 可访问的本机目录，
  *       防 LLM 通过绝对路径读取 {@code /etc/passwd} 等系统敏感文件。</li>
  *   <li>{@link PathSecurityChecker}：软约束，校验用户在 {@code application.yml} 中自定义的 allow/deny 列表。</li>
  * </ul>
@@ -102,9 +103,9 @@ public class FileReadToolExecutor {
 
     private final PathSecurityChecker securityChecker;
     private final int defaultMaxChars;
-    /** Skill 目录 + 工作区 + 进程目录硬约束白名单，防 path traversal。 */
+    /** 路径权限控制 —— 白名单/黑名单硬约束，防 path traversal。 */
     @org.springframework.lang.Nullable
-    private final SkillPathWhitelist skillPathWhitelist;
+    private final PathAccessControl pathAccessControl;
     /** 附件仓储 —— 用于 attachmentId 分支查询真实文件路径，Web 未启用时为 null。 */
     @org.springframework.lang.Nullable
     private final AttachmentRepository attachmentRepository;
@@ -126,7 +127,7 @@ public class FileReadToolExecutor {
         var fileConfig = properties.getInfra().getFile();
         this.securityChecker = new PathSecurityChecker(fileConfig);
         this.defaultMaxChars = fileConfig.getDefaultMaxChars();
-        this.skillPathWhitelist = null;
+        this.pathAccessControl = null;
         this.attachmentRepository = null;
         this.documentParserService = documentParserService;
     }
@@ -136,17 +137,17 @@ public class FileReadToolExecutor {
      *
      * @param securityChecker       路径安全校验器（allow/deny 列表）
      * @param defaultMaxChars       默认最大字符数
-     * @param skillPathWhitelist    Skill/工作区硬约束白名单，null 表示跳过白名单校验（仅测试场景）
+     * @param pathAccessControl     路径权限控制，null 表示跳过权限校验（仅测试场景）
      * @param attachmentRepository  附件仓储，null 表示不支持 attachmentId 参数
      * @param documentParserService 文档解析服务，必选（覆盖纯文本 + 结构化文档路由）
      */
     FileReadToolExecutor(PathSecurityChecker securityChecker, int defaultMaxChars,
-                         @org.springframework.lang.Nullable SkillPathWhitelist skillPathWhitelist,
+                         @org.springframework.lang.Nullable PathAccessControl pathAccessControl,
                          @org.springframework.lang.Nullable AttachmentRepository attachmentRepository,
                          DocumentParserService documentParserService) {
         this.securityChecker = securityChecker;
         this.defaultMaxChars = defaultMaxChars;
-        this.skillPathWhitelist = skillPathWhitelist;
+        this.pathAccessControl = pathAccessControl;
         this.attachmentRepository = attachmentRepository;
         this.documentParserService = documentParserService;
     }
@@ -176,12 +177,12 @@ public class FileReadToolExecutor {
         } catch (IllegalArgumentException e) {
             return ToolResult.error("需要提供 path 或 attachmentId 之一");
         }
-        pathStr = PathExpander.expand(pathStr);
+        pathStr = PathResolver.expand(pathStr);
 
         // ★ 2.1 硬约束白名单 —— 防 path traversal，仅允许 skills / 工作区 / 进程目录
-        if (skillPathWhitelist != null) {
+        if (pathAccessControl != null) {
             try {
-                skillPathWhitelist.validate(pathStr);
+                pathAccessControl.validate(pathStr);
             } catch (SecurityException e) {
                 return ToolResult.error(e.getMessage());
             } catch (IllegalArgumentException e) {
@@ -392,8 +393,8 @@ public class FileReadToolExecutor {
         if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
             return ToolResult.error("附件文件不存在或不是普通文件：" + filePath);
         }
-        // 附件分支不做 securityChecker / skillPathWhitelist 检查 —— 附件物理位置由 AttachmentRepository
-        // 控制，属于受信目录（~/.zhiwei/data/attachments），无需再与用户侧白名单对齐。
+        // 附件分支不做 securityChecker / pathAccessControl 检查 —— 附件物理位置由 AttachmentRepository
+        // 控制，属于受信目录（~/zhiwei/data/attachments），无需再与用户侧白名单对齐。
 
         if (isFormattedDocument(filePath)) {
             return executeFormattedRead(filePath, fileName, maxChars);

@@ -10,7 +10,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "lifepilot.knowledge")
 public record KnowledgeBaseProperties(
-        String dataDir,
         long maxFileSize,
         boolean enabled,
         Chunking chunking,
@@ -24,7 +23,6 @@ public record KnowledgeBaseProperties(
 ) {
 
     public KnowledgeBaseProperties {
-        if (dataDir == null) dataDir = System.getProperty("user.home") + "/.zhiwei/data";
         if (maxFileSize <= 0) maxFileSize = 104857600L;
         if (chunking == null) chunking = new Chunking(null, null, null, null, null, null, null, null, null);
         if (vectorIndexer == null) vectorIndexer = new VectorIndexer(0, 0, 0);

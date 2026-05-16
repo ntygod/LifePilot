@@ -29,7 +29,7 @@ if [ ! -f "$JAR_FILE" ]; then
 fi
 
 # 4. 创建数据目录
-DATA_DIR="${HOME}/.zhiwei"
+DATA_DIR="${HOME}/zhiwei"
 mkdir -p "${DATA_DIR}"
 
 # 5. 计算 JVM 内存参数（系统内存 50%，上限 2048MB，检测失败回退 512MB）
@@ -57,7 +57,7 @@ echo "║  ZhiWei（知微）v${VERSION}               ║"
 echo "║  见微知著，你的 AI 伙伴             ║"
 echo "╠══════════════════════════════════════╣"
 echo "║  访问地址: http://localhost:${PORT}     ║"
-echo "║  数据目录: ~/.zhiwei/                ║"
+echo "║  数据目录: ~/zhiwei/                 ║"
 echo "║  JVM 内存: ${XMX}m                     ║"
 echo "╚══════════════════════════════════════╝"
 

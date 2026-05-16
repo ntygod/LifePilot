@@ -57,7 +57,9 @@ public record ReactAgentState(
         @Nullable List<MediaContent> pendingMedia,
         int earlyStopRejectCount,
         boolean suspended,
-        @Nullable SuspendReason suspendReason
+        @Nullable SuspendReason suspendReason,
+        /** 单轮临时覆盖的知识库 ID 列表；非空时 ContextAssembler / 知识检索优先使用此列表，而非会话持久化绑定。 */
+        @Nullable List<String> overrideKnowledgeBaseIds
 ) {
 
     public ReactAgentState {
@@ -69,6 +71,7 @@ public record ReactAgentState(
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
         discoveredToolIds = discoveredToolIds != null ? Set.copyOf(discoveredToolIds) : null;
         pendingMedia = pendingMedia != null ? List.copyOf(pendingMedia) : null;
+        overrideKnowledgeBaseIds = overrideKnowledgeBaseIds != null ? List.copyOf(overrideKnowledgeBaseIds) : null;
     }
 
     /**
@@ -107,6 +110,7 @@ public record ReactAgentState(
                 .earlyStopRejectCount(0)
                 .suspended(false)
                 .suspendReason(null)
+                .overrideKnowledgeBaseIds(request.overrideKnowledgeBaseIds())
                 .build();
     }
 

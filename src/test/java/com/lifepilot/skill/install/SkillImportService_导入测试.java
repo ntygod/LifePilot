@@ -1,7 +1,7 @@
 package com.lifepilot.skill.install;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.skill.MarkdownSkillParser;
-import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +18,7 @@ import java.util.zip.ZipOutputStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * SkillImportService 导入测试 —— .skill 包解压 + 安全校验。
@@ -34,7 +35,7 @@ class SkillImportService_导入测试 {
     Path skillsRoot;
 
     SkillInstaller installer;
-    SkillConfigProperties config;
+    ZhiweiPaths zhiweiPaths;
     SkillImportService service;
     SkillInstallationRepository repository;
 
@@ -46,9 +47,9 @@ class SkillImportService_导入测试 {
                 new SkillDescriptionValidator(),
                 new SkillBodyValidator(),
                 repository);
-        config = new SkillConfigProperties();
-        config.setDirectory(skillsRoot.toString());
-        service = new SkillImportService(installer, repository, config);
+        zhiweiPaths = mock(ZhiweiPaths.class);
+        when(zhiweiPaths.home("skills")).thenReturn(skillsRoot);
+        service = new SkillImportService(installer, repository, zhiweiPaths);
     }
 
     @Test

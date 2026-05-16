@@ -3,36 +3,31 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
-  EllipsisVertical,
-  FileText,
-  LibraryBig,
-  Settings2,
-  SlidersHorizontal,
-  Square,
 } from 'lucide-vue-next'
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
-import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig } from '@/types'
+import { listSessionDocuments } from '@/api/documents'
+import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig, SessionConfigOverride } from '@/types'
 import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import ChatInput from '@/components/chat/ChatInput.vue'
-import DebugDrawer from '@/components/chat/DebugDrawer.vue'
+import ChatHeader from '@/components/chat/ChatHeader.vue'
+import ComposerStopPill from '@/components/chat/ComposerStopPill.vue'
+import ContinuationHint from '@/components/chat/ContinuationHint.vue'
 import DocumentWorkspacePanel from '@/components/chat/DocumentWorkspacePanel.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
 import HumanTakeoverModal from '@/components/chat/HumanTakeoverModal.vue'
 import MessageList from '@/components/chat/MessageList.vue'
+import OverlayHost from '@/components/chat/OverlayHost.vue'
+import PromptGallery from '@/components/chat/PromptGallery.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
 import SessionSidebar from '@/components/chat/SessionSidebar.vue'
-import ChatRightPanel from '@/components/chat/ChatRightPanel.vue'
+import TracePanel from '@/components/chat/TracePanel.vue'
+import ProcessTaskList from '@/components/process/ProcessTaskList.vue'
 import { useProcessTaskStore } from '@/stores/processTask'
 import { useChat } from '@/composables/useChat'
+import { useChatOverlays } from '@/composables/useChatOverlays'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useChatStore } from '@/stores/chat'
 import { useSkillStore } from '@/stores/skill'
@@ -59,7 +54,6 @@ const {
   reasoningEvents,
   streamingReactSteps,
   streamingA2uiComponents,
-  activeInteraction,
   pendingPermissionApprovals,
   pendingPermissionApprovalResolutions,
   resolvePermissionApproval,
@@ -69,15 +63,10 @@ const {
   cancelBrowserTakeover,
 } = useChat()
 
-type SidebarPanel = 'session' | 'config' | 'debug'
-
 const scrollContainer = ref<HTMLElement | null>(null)
 const showScrollToBottom = ref(false)
 const messagesReady = ref(false)
 const searchQuery = ref('')
-const activeSidebarPanel = ref<SidebarPanel>('session')
-const showMobileSidebar = ref(false)
-const showDocumentPanel = ref(false)
 const providers = ref<ModelService[]>([])
 
 const DEFAULT_SESSION_TEMPERATURE = 0.7
@@ -135,6 +124,7 @@ async function loadActiveSessionConfig(sessionId: string | null) {
   if (!sessionId) {
     currentSessionDetail.value = null
     resetActiveSessionConfig()
+    sessionDocumentCount.value = 0
     return
   }
 
@@ -155,6 +145,26 @@ async function loadActiveSessionConfig(sessionId: string | null) {
     if (chatStore.activeSessionId === sessionId) {
       currentSessionDetail.value = null
       resetActiveSessionConfig()
+    }
+  }
+
+  // 刷新文档工作副本数量（独立请求，失败不影响会话元数据）
+  void refreshSessionDocumentCount(sessionId)
+}
+
+/** 当前会话下已开始编辑的文档工作副本数量（用于头部快捷入口角标） */
+const sessionDocumentCount = ref(0)
+
+async function refreshSessionDocumentCount(sessionId: string) {
+  try {
+    const docs = await listSessionDocuments(sessionId, 'working')
+    if (chatStore.activeSessionId === sessionId) {
+      sessionDocumentCount.value = docs.length
+    }
+  } catch {
+    // 拉不到就当 0，不影响主流程
+    if (chatStore.activeSessionId === sessionId) {
+      sessionDocumentCount.value = 0
     }
   }
 }
@@ -269,7 +279,9 @@ watch(() => chatStore.activeSessionId, (newId) => {
 watch(() => route.fullPath, () => {
   const sessionId = route.params.sessionId as string | undefined
   if (route.name === 'newConversation') {
-    // 设置 activeSessionId = null 会触发 store 内部 watcher 清空 messages/streamingContent
+    // 如果 activeSessionId 已有值，说明正在懒创建会话（startNewSession 已完成但 router.replace 尚未生效），
+    // 此时不应重置，否则会导致"闪回欢迎页"的竞态问题
+    if (chatStore.activeSessionId) return
     chatStore.activeSessionId = null
     messagesReady.value = true
     currentSessionDetail.value = null
@@ -298,7 +310,7 @@ onMounted(async () => {
   }
 
   // 处理首屏传递的待发送消息
-  // 1) 项目详情页等场景：使用完整结构（含附件 / sessionConfig）
+  // 1) 项目详情页等场景：使用完整结构（含附件 / 单轮 override）
   // 2) 首屏纯文本链路：保留兼容字段
   if (chatStore.pendingFirstSend) {
     const payload = chatStore.pendingFirstSend
@@ -307,8 +319,7 @@ onMounted(async () => {
       payload.content,
       payload.attachmentIds,
       payload.attachments,
-      payload.sessionConfig,
-      payload.restoreSessionConfig,
+      payload.singleTurnOverride,
     )
   } else if (chatStore.pendingFirstMessage) {
     const content = chatStore.pendingFirstMessage
@@ -359,8 +370,6 @@ function handleScroll() {
 watch(
   () => route.params.sessionId as string | undefined,
   async (sessionId) => {
-    messagesReady.value = false
-
     if (!sessionId) {
       // 空对话页：不立即创建会话，等用户发第一条消息时懒创建
       chatStore.activeSessionId = null
@@ -368,9 +377,15 @@ watch(
       return
     }
 
-    if (sessionId !== chatStore.activeSessionId) {
-      chatStore.activeSessionId = sessionId
+    // 如果 sessionId 和当前 activeSessionId 相同，说明是懒创建后的 router.replace，
+    // 不需要重置状态和重新加载消息
+    if (sessionId === chatStore.activeSessionId) {
+      messagesReady.value = true
+      return
     }
+
+    messagesReady.value = false
+    chatStore.activeSessionId = sessionId
 
     // 等消息加载完成后标记就绪（store 内部 watch 是异步的，延迟兜底）
     if (readyTimer !== null) clearTimeout(readyTimer)
@@ -437,8 +452,7 @@ async function handleSend(payload: {
   content: string
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
-  sessionConfig?: SessionConfig
-  restoreSessionConfig?: SessionConfig
+  singleTurnOverride?: SessionConfigOverride | null
 }) {
   // 发送后立即滚到底，让用户看到消息弹入
   nextTick(() => {
@@ -448,8 +462,7 @@ async function handleSend(payload: {
     payload.content,
     payload.attachmentIds,
     payload.attachments,
-    payload.sessionConfig,
-    payload.restoreSessionConfig,
+    payload.singleTurnOverride,
   )
 }
 
@@ -597,22 +610,10 @@ async function handleUpdateSessionTitle(title: string) {
   }
 }
 
-function togglePanel(panel: 'config' | 'sidebar' | 'debug') {
-  const mapped: SidebarPanel = panel === 'sidebar' ? 'session' : panel
-  if (showMobileSidebar.value && activeSidebarPanel.value === mapped) {
-    showMobileSidebar.value = false
-    return
-  }
-  activeSidebarPanel.value = mapped
-  showMobileSidebar.value = true
-}
-
-function closeMobileSidebar() {
-  showMobileSidebar.value = false
-}
-
-function selectSidebarPanel(panel: SidebarPanel) {
-  activeSidebarPanel.value = panel
+function handlePromptPick(card: { prompt: string }) {
+  // 点击示例卡片 → 把 prompt 灌入空态输入框并聚焦
+  emptyInputRef.value?.setContent?.(card.prompt)
+  emptyInputRef.value?.focus?.()
 }
 
 // ─── 执行轨迹面板 ───
@@ -643,12 +644,7 @@ const activeTraceData = computed(() => {
   }
 })
 
-const showTracePanel = computed(() => !!activeTraceMessageId.value && !!activeTraceData.value)
 const processTaskStore = useProcessTaskStore()
-/** 右侧面板显示条件：有轨迹数据、或有任何后台任务（含终态，避免最后一个任务结束瞬间面板消失） */
-const showRightPanel = computed(() =>
-  showTracePanel.value || processTaskStore.tasksOrdered.length > 0
-)
 
 // 流式结束后，把 'streaming' placeholder ID 更新为真实消息 ID
 watch(isStreaming, (streaming) => {
@@ -656,82 +652,85 @@ watch(isStreaming, (streaming) => {
     const realMsg = lastAssistantMessage.value
     activeTraceMessageId.value = realMsg?.id ?? null
   }
+  // 流式结束可能产出新文档工件，刷新一次快捷入口数量
+  if (!streaming && chatStore.activeSessionId) {
+    void refreshSessionDocumentCount(chatStore.activeSessionId)
+  }
 })
 
 function handleShowTrace(messageId: string) {
   activeTraceMessageId.value = messageId
-  showMobileSidebar.value = false
+  overlays.openTrace(messageId)
 }
 
 function closeTracePanel() {
   activeTraceMessageId.value = null
+  if (overlays.activeOverlay.value === 'trace') {
+    overlays.close()
+  }
 }
+
+/* ── Overlay 统一管理 ── */
+
+const overlays = useChatOverlays()
+
+function openDocumentOverlay() {
+  overlays.openDocument()
+}
+
+function dismissContinuationHint() {
+  // 轻量忽略：只标记不同步到后端
+  continuationHintDismissed.value = true
+}
+const continuationHintDismissed = ref(false)
+
+/** 点击 ContinuationHint 的"继续"按钮 → 用空 RESUME 触发挂起会话恢复 */
+async function handleContinuationResume() {
+  const target = latestSuspendedAssistant.value
+  if (!target) return
+  await handleResume(target)
+}
+
+watch(() => latestSuspendedAssistant.value?.id, () => {
+  continuationHintDismissed.value = false
+})
+
+const shouldShowContinuationHint = computed(() =>
+  Boolean(continuationTitle.value)
+    && !continuationHintDismissed.value
+    && !isStreaming.value
+)
 </script>
 
 <template>
-  <div class="relative flex h-full flex-col overflow-hidden">
-    <div class="relative min-h-0 flex-1 flex overflow-hidden">
-      <section class="relative min-h-0 flex-1 flex min-w-0 flex-col overflow-hidden">
-        <!-- Header：和消息列表共享同一个宽度基准 -->
-        <header class="relative shrink-0 px-4 pt-2 sm:px-6">
-          <div class="mx-auto max-w-[800px]">
-            <div class="flex min-w-0 items-center gap-3 px-1 py-1" :class="isEmptyChat ? 'justify-end' : 'justify-between'">
-              <h1 v-if="!isEmptyChat" class="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
-                {{ headerTitle }}
-              </h1>
+  <div class="chat-shell">
+    <ChatHeader
+      :is-empty="isEmptyChat"
+      :title="headerTitle"
+      :document-count="sessionDocumentCount"
+      :task-count="processTaskStore.tasksOrdered.length"
+      :has-active-task="processTaskStore.runningCount > 0"
+      @rename="handleUpdateSessionTitle"
+      @open-info="overlays.openInfo"
+      @open-settings="overlays.openSettings"
+      @open-document="overlays.openDocument"
+      @open-tasks="overlays.openTasks"
+    />
 
-              <div class="flex items-center gap-2">
-                <Button
-                  v-if="isStreaming"
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  class="rounded-full"
-                  @click="abort"
-                >
-                  <Square class="size-4" />
-                  停止生成
-                </Button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button type="button" variant="outline" size="icon" class="size-9 rounded-full" aria-label="更多操作">
-                      <EllipsisVertical class="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" class="w-36">
-                    <DropdownMenuItem class="gap-2" @click="togglePanel('config')">
-                      <Settings2 class="size-4" />
-                      配置
-                    </DropdownMenuItem>
-                    <DropdownMenuItem class="gap-2" @click="togglePanel('sidebar')">
-                      <LibraryBig class="size-4" />
-                      信息
-                    </DropdownMenuItem>
-                    <DropdownMenuItem class="gap-2" @click="togglePanel('debug')">
-                      <SlidersHorizontal class="size-4" />
-                      调试
-                    </DropdownMenuItem>
-                    <DropdownMenuItem class="gap-2" @click="showDocumentPanel = true">
-                      <FileText class="size-4" />
-                      文档
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </div>
-        </header>
-
+    <div class="chat-main">
+      <section class="chat-main__stream">
         <div
           ref="scrollContainer"
           data-scroll-container
-          class="relative min-h-0 flex-1 overflow-y-auto pt-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
+          class="chat-scroll scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
-          <!-- 空状态：问候 + 输入框居中 -->
-          <div v-if="isEmptyChat" key="empty" class="flex h-full flex-col items-center px-4 pt-[12vh] sm:px-6">
+          <!-- 空态：Wordmark + 欢迎语 + PromptGallery + 居中 Composer -->
+          <div v-if="isEmptyChat" key="empty" class="chat-empty">
             <EmptyState />
-            <div class="w-full max-w-[600px] mt-xl animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
+            <div class="chat-empty__gallery">
+              <PromptGallery @pick="handlePromptPick" />
+            </div>
+            <div class="chat-empty__composer">
               <ChatInput
                 ref="emptyInputRef"
                 :placeholder="inputPlaceholder"
@@ -742,8 +741,8 @@ function closeTracePanel() {
             </div>
           </div>
 
-          <!-- 有消息：正常消息列表 -->
-          <div v-else key="messages" class="mx-auto w-full max-w-[800px] px-4 pt-4 pb-[48px] sm:px-6">
+          <!-- 对话态：消息列表 -->
+          <div v-else key="messages" class="chat-stream">
             <MessageList
               :messages="chatStore.messages"
               :is-streaming="isStreaming"
@@ -768,186 +767,193 @@ function closeTracePanel() {
             />
           </div>
         </div>
-        <!-- 底部输入框：仅有消息时显示 -->
+
+        <!-- 对话态底部输入区域：Continuation + Composer + StopPill + 全局错误 -->
         <Transition
           enter-active-class="transition-all duration-300 ease-out"
           enter-from-class="translate-y-4 opacity-0"
           enter-to-class="translate-y-0 opacity-100"
         >
-        <div v-if="!isEmptyChat" class="shrink-0 px-4 pb-3 pt-2 sm:px-6">
-          <div class="mx-auto w-full max-w-[800px] relative">
-            <!-- 回到底部按钮：固定在输入框上方 -->
-            <Transition
-              enter-active-class="transition-all duration-200 ease-out"
-              enter-from-class="translate-y-2 opacity-0"
-              enter-to-class="translate-y-0 opacity-100"
-              leave-active-class="transition-all duration-150 ease-in"
-              leave-from-class="translate-y-0 opacity-100"
-              leave-to-class="translate-y-2 opacity-0"
-            >
-              <button
-                v-if="showScrollToBottom"
-                type="button"
-                class="absolute -top-10 left-1/2 z-10 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-md transition-colors hover:bg-muted"
-                title="回到底部"
-                @click="scrollToBottomSmooth"
+          <div v-if="!isEmptyChat" class="chat-composer-wrap">
+            <div class="chat-composer-wrap__inner">
+              <!-- 右下角悬浮集群：停止 + 回到底部（竖排，对话区右下角） -->
+              <div class="chat-floating-cluster">
+                <Transition
+                  enter-active-class="transition-all duration-200 ease-out"
+                  enter-from-class="translate-y-2 opacity-0"
+                  enter-to-class="translate-y-0 opacity-100"
+                  leave-active-class="transition-all duration-150 ease-in"
+                  leave-from-class="translate-y-0 opacity-100"
+                  leave-to-class="translate-y-2 opacity-0"
+                >
+                  <ComposerStopPill v-if="isStreaming" @abort="abort" />
+                </Transition>
+                <Transition
+                  enter-active-class="transition-all duration-200 ease-out"
+                  enter-from-class="translate-y-2 opacity-0"
+                  enter-to-class="translate-y-0 opacity-100"
+                  leave-active-class="transition-all duration-150 ease-in"
+                  leave-from-class="translate-y-0 opacity-100"
+                  leave-to-class="translate-y-2 opacity-0"
+                >
+                  <button
+                    v-if="showScrollToBottom"
+                    type="button"
+                    class="chat-scroll-to-bottom"
+                    title="回到底部"
+                    @click="scrollToBottomSmooth"
+                  >
+                    <ArrowDown class="size-4 text-muted-foreground" />
+                  </button>
+                </Transition>
+              </div>
+
+              <!-- 挂起恢复小卡片 -->
+              <ContinuationHint
+                v-if="shouldShowContinuationHint && continuationTitle"
+                class="chat-composer-wrap__continuation"
+                :title="continuationTitle"
+                :detail="continuationDetail"
+                @resume="handleContinuationResume"
+                @dismiss="dismissContinuationHint"
+              />
+
+              <!-- 全局错误提示 -->
+              <StatePanel
+                v-if="showGlobalErrorPanel"
+                class="mb-3"
+                title="本轮对话出现错误"
+                :description="error ?? undefined"
+                tone="danger"
               >
-                <ArrowDown class="size-4 text-muted-foreground" />
-              </button>
-            </Transition>
-            <StatePanel
-              v-if="showGlobalErrorPanel"
-              class="mb-3"
-              title="本轮对话出现错误"
-              :description="error ?? undefined"
-              tone="danger"
-            >
-              <template #actions>
-                <Button type="button" variant="outline" size="sm" @click="error = null">
-                  关闭
-                </Button>
-              </template>
-            </StatePanel>
-            <ChatInput
-              :disabled="isStreaming && !activeInteraction"
-              :placeholder="inputPlaceholder"
-              :continuation-title="continuationTitle"
-              :continuation-detail="continuationDetail"
-              :knowledge-bases="kbStore.list"
-              :base-session-config="activeSessionConfig"
-              @send="handleSend"
-            />
+                <template #actions>
+                  <Button type="button" variant="outline" size="sm" @click="error = null">
+                    关闭
+                  </Button>
+                </template>
+              </StatePanel>
+
+              <ChatInput
+                :disabled="isStreaming"
+                :placeholder="inputPlaceholder"
+                :continuation-title="null"
+                :continuation-detail="null"
+                :knowledge-bases="kbStore.list"
+                :base-session-config="activeSessionConfig"
+                @send="handleSend"
+              />
+            </div>
           </div>
-        </div>
         </Transition>
       </section>
-
-      <!-- 右侧面板：执行轨迹 + 后台任务 tab 切换 -->
-      <Transition
-        enter-active-class="right-panel-enter-active"
-        enter-from-class="right-panel-enter-from"
-        enter-to-class="right-panel-enter-to"
-        leave-active-class="right-panel-leave-active"
-        leave-from-class="right-panel-leave-from"
-        leave-to-class="right-panel-leave-to"
-      >
-        <aside
-          v-if="showRightPanel"
-          class="right-panel"
-        >
-          <ChatRightPanel
-            :trace-data="activeTraceData"
-            @close="closeTracePanel"
-          />
-        </aside>
-      </Transition>
-
-      <!-- 浮窗侧边栏：配置 / 信息 / 调试 -->
-      <Transition
-        enter-active-class="transition-all duration-250 ease-out"
-        enter-from-class="opacity-0 translate-x-4"
-        enter-to-class="opacity-100 translate-x-0"
-        leave-active-class="transition-all duration-200 ease-in"
-        leave-from-class="opacity-100 translate-x-0"
-        leave-to-class="opacity-0 translate-x-4"
-      >
-        <div
-          v-if="showMobileSidebar"
-          class="absolute inset-y-4 right-4 z-30 w-[340px] rounded-[1.2rem] border border-border/58 bg-background/94 p-3 shadow-[0_18px_32px_-24px_hsl(var(--shadow-color)/0.18)]"
-        >
-          <div class="flex h-full min-h-0 flex-col gap-3">
-            <div class="shell-card border-border/52 bg-card/86 p-1">
-              <div class="grid grid-cols-3 gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  class="rounded-xl"
-                  :class="activeSidebarPanel === 'session' && 'status-btn-active'"
-                  @click="selectSidebarPanel('session')"
-                >
-                  <LibraryBig class="size-4" />
-                  信息
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  class="rounded-xl"
-                  :class="activeSidebarPanel === 'config' && 'status-btn-active'"
-                  @click="selectSidebarPanel('config')"
-                >
-                  <Settings2 class="size-4" />
-                  配置
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  class="rounded-xl"
-                  :class="activeSidebarPanel === 'debug' && 'status-btn-active'"
-                  @click="selectSidebarPanel('debug')"
-                >
-                  <SlidersHorizontal class="size-4" />
-                  调试
-                </Button>
-              </div>
-            </div>
-
-            <div class="min-h-0 flex-1 overflow-hidden">
-              <div v-if="activeSidebarPanel === 'config'" class="h-full overflow-y-auto pr-1 scrollbar-thin">
-                <SessionConfigPanel
-                  :preferred-provider-id="activeSessionConfig.preferredProviderId"
-                  :temperature="activeSessionConfig.temperature"
-                  :max-steps="activeSessionConfig.maxSteps"
-                  :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
-                  :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
-                  :providers="chatProviders"
-                  :knowledge-bases="kbStore.list"
-                  @close="closeMobileSidebar"
-                  @update="handleConfigUpdate"
-                />
-              </div>
-              <SessionSidebar
-                v-else-if="activeSidebarPanel === 'session'"
-                :session="currentSessionDetail"
-                :knowledge-bases="kbStore.list"
-                v-model:search-query="searchQuery"
-                :message-count="chatStore.messages.length"
-                :status-text="sessionStatusText"
-                :context-count="activeContextCount"
-                :matched-message-count="matchedMessageCount"
-                @close="closeMobileSidebar"
-                @clear="handleClearSession"
-                @update-title="handleUpdateSessionTitle"
-              />
-              <DebugDrawer
-                v-else
-                :token-usage="lastTokenUsage"
-                :model-id="lastModelId"
-                :prompt="lastPrompt"
-                :reasoning-events="reasoningEvents"
-                :tools-summary="lastToolsSummary"
-                :kb-sources="lastKbSources"
-                :trace-id="lastAssistantMessage?.traceId"
-                @close="closeMobileSidebar"
-              />
-            </div>
-          </div>
-        </div>
-      </Transition>
     </div>
 
-    <!-- P1-6 文档工作区抽屉：列出本 session 下的工作副本；点击暂时仅用于查看（open-document 跳转留给后续） -->
-    <DocumentWorkspacePanel
-      v-if="chatStore.activeSessionId"
-      :session-id="chatStore.activeSessionId"
-      :open="showDocumentPanel"
-      @close="showDocumentPanel = false"
-      @open-document="(id: string) => console.info('切换到文档', id)"
-    />
+    <!-- Overlay：Trace / Document / Tasks / Settings / Info（fixed 定位，覆盖整个视口） -->
+    <OverlayHost
+      :open="overlays.activeOverlay.value === 'trace'"
+      @close="closeTracePanel"
+    >
+      <div class="overlay-scroll">
+        <div class="overlay-heading">
+          <div class="overlay-heading__eyebrow">对话观测</div>
+          <div class="overlay-heading__title">执行轨迹</div>
+        </div>
+        <TracePanel
+          v-if="activeTraceData"
+          :reasoning-events="activeTraceData.reasoningEvents"
+          :react-steps="activeTraceData.reactSteps"
+          :streaming="activeTraceData.streaming"
+          :trace-id="activeTraceData.traceId"
+          hide-header
+        />
+      </div>
+    </OverlayHost>
 
-    <!-- P2-D 浏览器人工接管弹窗：Agent 因登录/验证码/人机验证挂起时出现 -->
+    <OverlayHost
+      :open="overlays.activeOverlay.value === 'tasks'"
+      @close="overlays.close"
+    >
+      <div class="overlay-scroll">
+        <div class="overlay-heading">
+          <div class="overlay-heading__eyebrow">会话</div>
+          <div class="overlay-heading__title">后台任务</div>
+        </div>
+        <div
+          v-if="processTaskStore.tasksOrdered.length === 0"
+          class="overlay-empty"
+        >
+          暂无后台任务。助手调用 shell.run 等长耗时操作时会在这里显示进度。
+        </div>
+        <ProcessTaskList v-else />
+      </div>
+    </OverlayHost>
+
+    <OverlayHost
+      :open="overlays.activeOverlay.value === 'document'"
+      @close="overlays.close"
+    >
+      <DocumentWorkspacePanel
+        v-if="chatStore.activeSessionId"
+        :session-id="chatStore.activeSessionId"
+        :open="true"
+        embedded
+        @close="overlays.close"
+        @open-document="(id: string) => logger.info('切换到文档', id)"
+      />
+    </OverlayHost>
+
+    <OverlayHost
+      :open="overlays.activeOverlay.value === 'settings'"
+      @close="overlays.close"
+    >
+      <div class="overlay-scroll">
+        <div class="overlay-heading">
+          <div class="overlay-heading__eyebrow">会话</div>
+          <div class="overlay-heading__title">当前会话设置</div>
+        </div>
+        <SessionConfigPanel
+          :preferred-provider-id="activeSessionConfig.preferredProviderId"
+          :temperature="activeSessionConfig.temperature"
+          :max-steps="activeSessionConfig.maxSteps"
+          :max-duration-seconds="activeSessionConfig.maxDurationSeconds"
+          :knowledge-base-ids="activeSessionConfig.knowledgeBaseIds"
+          :providers="chatProviders"
+          :knowledge-bases="kbStore.list"
+          :show-close="false"
+          hide-header
+          @close="overlays.close"
+          @update="handleConfigUpdate"
+        />
+      </div>
+    </OverlayHost>
+
+    <OverlayHost
+      :open="overlays.activeOverlay.value === 'info'"
+      @close="overlays.close"
+    >
+      <div class="overlay-scroll">
+        <div class="overlay-heading">
+          <div class="overlay-heading__eyebrow">会话</div>
+          <div class="overlay-heading__title">本次会话概览</div>
+        </div>
+        <SessionSidebar
+          :session="currentSessionDetail"
+          :knowledge-bases="kbStore.list"
+          v-model:search-query="searchQuery"
+          :message-count="chatStore.messages.length"
+          :status-text="sessionStatusText"
+          :context-count="activeContextCount"
+          :matched-message-count="matchedMessageCount"
+          :show-close="false"
+          hide-header
+          @close="overlays.close"
+          @clear="handleClearSession"
+          @update-title="handleUpdateSessionTitle"
+        />
+      </div>
+    </OverlayHost>
+
+    <!-- 浏览器人工接管弹窗：优先级最高，单独挂载 -->
     <HumanTakeoverModal
       v-if="activeBrowserTakeover"
       :open="true"
@@ -961,66 +967,199 @@ function closeTracePanel() {
 </template>
 
 <style scoped>
-/* ── 右侧面板：滑入/展开动画 ── */
-.right-panel {
+.chat-shell {
   position: relative;
-  width: 340px;
-  flex-shrink: 0;
-  border-left: 1px solid hsl(from var(--border) h s l / 0.28);
-  background:
-    linear-gradient(180deg, hsl(from var(--card) h s l / 0.6), hsl(from var(--background) h s l / 0.92));
-  backdrop-filter: blur(12px);
-  box-shadow:
-    inset 1px 0 0 hsl(from var(--card) h s l / 0.3),
-    -8px 0 24px -16px hsl(var(--shadow-color) / 0.06);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
-.right-panel::before {
-  content: "";
+.chat-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.chat-main__stream {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100%;
+  padding: 14vh var(--chat-gutter-x-desktop, 24px) 24px;
+  gap: 28px;
+}
+
+.chat-empty__gallery {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  animation: fade-slide-in 500ms ease-out both;
+  animation-delay: 160ms;
+}
+
+.chat-empty__composer {
+  width: 100%;
+  max-width: 600px;
+  animation: fade-slide-in 500ms ease-out both;
+  animation-delay: 220ms;
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-stream {
+  margin: 0 auto;
+  width: 100%;
+  max-width: var(--chat-main-max-w, 720px);
+  padding: 16px var(--chat-gutter-x-desktop, 24px) 48px;
+}
+
+.chat-composer-wrap {
+  flex-shrink: 0;
+  padding: 8px var(--chat-gutter-x-desktop, 24px) 12px;
+}
+
+.chat-composer-wrap__inner {
+  position: relative;
+  margin: 0 auto;
+  width: 100%;
+  max-width: var(--chat-main-max-w, 720px);
+}
+
+.chat-composer-wrap__continuation {
+  margin-bottom: 8px;
+}
+
+/* 右下角悬浮集群：停止生成 + 回到底部，竖排 */
+.chat-floating-cluster {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 1px;
-  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.12), transparent 60%);
+  right: 0;
+  bottom: calc(100% + 12px);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 10;
   pointer-events: none;
 }
 
-/* Enter */
-.right-panel-enter-active {
-  transition:
-    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+.chat-floating-cluster > * {
+  pointer-events: auto;
 }
 
-.right-panel-enter-from {
-  width: 0;
-  opacity: 0;
-  transform: translateX(12px);
+.chat-scroll-to-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid hsl(from var(--border) h s l / 0.5);
+  background: var(--background);
+  box-shadow: 0 4px 12px -6px hsl(var(--shadow-color) / 0.18);
+  cursor: pointer;
+  transition: background 120ms ease;
 }
 
-.right-panel-enter-to {
-  width: 340px;
-  opacity: 1;
-  transform: translateX(0);
+.chat-scroll-to-bottom:hover {
+  background: hsl(from var(--muted) h s l / 0.6);
 }
 
-/* Leave */
-.right-panel-leave-active {
-  transition:
-    width 220ms cubic-bezier(0.4, 0, 0.6, 1),
-    opacity 180ms cubic-bezier(0.4, 0, 0.6, 1),
-    transform 220ms cubic-bezier(0.4, 0, 0.6, 1);
+.overlay-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  scroll-behavior: smooth;
 }
 
-.right-panel-leave-from {
-  width: 340px;
-  opacity: 1;
-  transform: translateX(0);
+.overlay-heading {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.right-panel-leave-to {
-  width: 0;
-  opacity: 0;
-  transform: translateX(12px);
+.overlay-heading__eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.overlay-heading__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.overlay-tasks {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px dashed hsl(from var(--border) h s l / 0.55);
+}
+
+.overlay-tasks__label {
+  padding: 0 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+/* Overlay 的空状态提示（文档 0 份、任务 0 个时显示） */
+.overlay-empty {
+  padding: 32px 12px;
+  border-radius: 12px;
+  border: 1px dashed hsl(from var(--border) h s l / 0.55);
+  background: hsl(from var(--muted) h s l / 0.25);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+
+/* Overlay 内嵌 InspectorRail 时去除其 320px 宽度限制 + 外框，让它融入 Overlay */
+.overlay-scroll :deep(.inspector-rail) {
+  max-width: none;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.overlay-scroll :deep(.inspector-rail > div:last-child) {
+  padding: 0;
 }
 </style>

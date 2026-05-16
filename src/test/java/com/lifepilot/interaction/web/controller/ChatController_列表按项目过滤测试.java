@@ -67,6 +67,7 @@ class ChatController_列表按项目过滤测试 {
                 messageFeedbackRepository,
                 attachmentRepository,
                 knowledgeBaseProperties,
+                null,  // ZhiweiPaths — 本测试不涉及附件上传
                 null,
                 null,
                 mediaProperties

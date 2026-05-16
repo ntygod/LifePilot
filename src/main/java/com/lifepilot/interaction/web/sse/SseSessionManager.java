@@ -401,6 +401,34 @@ public class SseSessionManager {
     }
 
     /**
+     * 根据会话 ID 取消当前正在进行的流式推理。
+     *
+     * <p>对话页"停止生成"按钮的真实驱动点：前端只断 HTTP 时后端仍可能在进行 LLM 调用或工具执行，
+     * 需要主动触发 {@link CancellationToken#cancel()} 让 ReactAgentLoop 尽早退出。</p>
+     *
+     * @param sessionId 会话 ID
+     * @return 是否触发了取消（true 表示会话存在活跃流且 token 已 cancel）
+     */
+    public boolean cancelBySessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return false;
+        }
+        String streamId = chatSessionStreams.get(sessionId);
+        if (streamId == null) {
+            log.debug("取消流式推理时未找到活跃流: sessionId={}", sessionId);
+            return false;
+        }
+        var token = cancellationTokens.get(streamId);
+        if (token == null) {
+            log.debug("取消流式推理时未找到 CancellationToken: sessionId={}, streamId={}", sessionId, streamId);
+            return false;
+        }
+        token.cancel();
+        log.info("已根据 sessionId 取消流式推理: sessionId={}, streamId={}", sessionId, streamId);
+        return true;
+    }
+
+    /**
      * 关闭所有 SseEmitter 并清理资源。
      */
     public void shutdown() {

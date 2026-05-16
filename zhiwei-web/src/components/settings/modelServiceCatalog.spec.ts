@@ -54,27 +54,27 @@ const templates: ModelServiceTemplate[] = [
     defaultCapabilities: ['CHAT', 'STRUCTURED_OUTPUT', 'FUNCTION_CALLING', 'STREAMING'],
     defaultScenes: ['chat', 'agent_react'],
     defaultSupportsStreaming: true,
-    defaultMaxContextWindow: 128000,
+    defaultMaxContextWindow: 1000000,
     modelOptions: [
       {
         kind: 'GENERATION',
-        value: 'deepseek-chat',
-        label: 'DeepSeek Chat',
+        value: 'deepseek-v4-pro',
+        label: 'DeepSeek V4 Pro',
         recommended: true,
         capabilities: ['CHAT', 'STRUCTURED_OUTPUT', 'FUNCTION_CALLING', 'STREAMING'],
         scenes: ['chat', 'agent_react'],
         supportsStreaming: true,
-        maxContextWindow: 128000,
+        maxContextWindow: 1000000,
       },
       {
         kind: 'GENERATION',
-        value: 'deepseek-reasoner',
-        label: 'DeepSeek Reasoner',
+        value: 'deepseek-v4-flash',
+        label: 'DeepSeek V4 Flash',
         recommended: false,
         capabilities: ['CHAT', 'STRUCTURED_OUTPUT', 'FUNCTION_CALLING', 'STREAMING'],
         scenes: ['chat', 'agent_react'],
         supportsStreaming: true,
-        maxContextWindow: 128000,
+        maxContextWindow: 1000000,
       },
     ],
   },
@@ -109,8 +109,8 @@ describe('modelServiceCatalog', () => {
 
   it('返回模板对应种类的模型列表', () => {
     expect(modelOptionsForKind(templates[1], 'GENERATION').map(item => item.value)).toEqual([
-      'deepseek-chat',
-      'deepseek-reasoner',
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
     ])
   })
 })

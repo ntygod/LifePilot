@@ -574,6 +574,38 @@ public class SessionStoreRepository {
         }
     }
 
+    /**
+     * 读取会话累计 token 使用量（input / output / total）。
+     *
+     * <p>从 {@code traces} 表按 session_id 聚合。这是目前唯一真实记录每轮 Agent 执行 token 的数据源，
+     * {@code session_store} 表的 *_tokens 列虽然存在但**无代码写入**。</p>
+     *
+     * @param sessionId 会话 ID
+     * @return { @code {input, output, total} } 三元素数组（long 类型，单位 token 数），
+     *         会话无 trace 时三项全为 0
+     */
+    public long[] getTokenUsage(String sessionId) {
+        try {
+            Map<String, Object> row = jdbcTemplate.queryForMap(
+                    """
+                    SELECT COALESCE(SUM(input_tokens), 0)  AS input_sum,
+                           COALESCE(SUM(output_tokens), 0) AS output_sum,
+                           COALESCE(SUM(total_tokens), 0)  AS total_sum
+                    FROM traces
+                    WHERE session_id = ?
+                    """,
+                    sessionId
+            );
+            return new long[] {
+                    ((Number) row.getOrDefault("input_sum", 0L)).longValue(),
+                    ((Number) row.getOrDefault("output_sum", 0L)).longValue(),
+                    ((Number) row.getOrDefault("total_sum", 0L)).longValue(),
+            };
+        } catch (Exception e) {
+            return new long[] {0L, 0L, 0L};
+        }
+    }
+
     private boolean exists(String sessionId) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM session_store WHERE session_id = ?",

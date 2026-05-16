@@ -1,5 +1,6 @@
 package com.lifepilot.meta.infra.shell;
 
+import com.lifepilot.config.path.PathAccessControl;
 import com.lifepilot.config.workspace.WorkspaceResolver;
 import com.lifepilot.config.workspace.WorkspaceResolver.NormalizedPath;
 import com.lifepilot.meta.config.MetaProperties;
@@ -65,15 +66,19 @@ public class ShellExecToolExecutor {
     private final BackgroundProcessManager backgroundProcessManager;
     private final WorkspaceResolver workspaceResolver;
     @Nullable
+    private final PathAccessControl pathAccessControl;
+    @Nullable
     private final CommandGuard commandGuard;
 
     public ShellExecToolExecutor(MetaProperties properties,
                                   @Nullable BackgroundProcessManager backgroundProcessManager,
                                   WorkspaceResolver workspaceResolver,
+                                  @Nullable PathAccessControl pathAccessControl,
                                   @Nullable CommandGuard commandGuard) {
         this.shellConfig = properties.getInfra().getShell();
         this.backgroundProcessManager = backgroundProcessManager;
         this.workspaceResolver = workspaceResolver;
+        this.pathAccessControl = pathAccessControl;
         this.commandGuard = commandGuard;
         // 构造时编译正则模式，避免每次执行重复编译
         this.compiledBlacklist = shellConfig.getCommandBlacklist().stream()
@@ -139,6 +144,16 @@ public class ShellExecToolExecutor {
         Path workDir = workDirResolved;
         if (!Files.isDirectory(workDir)) {
             return ToolResult.error("工作目录不存在: " + workingDirectory);
+        }
+
+        // 路径权限校验 — 委托 PathAccessControl 判断工作目录是否允许访问
+        if (pathAccessControl != null) {
+            var accessResult = pathAccessControl.isAllowed(workDir);
+            if (!accessResult.allowed()) {
+                String reason = ((PathAccessControl.AccessResult.Denied) accessResult).reason();
+                log.warn("shell.exec 工作目录被路径权限拒绝: workDir={}, reason={}", workDir, reason);
+                return ToolResult.error("工作目录访问被拒绝: " + reason);
+            }
         }
 
         // Windows 下 PTY 不支持，降级警告

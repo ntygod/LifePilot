@@ -491,5 +491,16 @@ class MemorySmokeE2E_端到端冒烟测试 {
         AgentMarkdownLoader smokeAgentMarkdownLoader() {
             return mock(AgentMarkdownLoader.class);
         }
+
+        @Bean
+        @Primary
+        com.lifepilot.config.path.ZhiweiPaths smokeZhiweiPaths() {
+            var paths = mock(com.lifepilot.config.path.ZhiweiPaths.class);
+            var tmpDir = Path.of(System.getProperty("java.io.tmpdir"), "zhiwei-smoke-test");
+            org.mockito.Mockito.lenient().when(paths.home()).thenReturn(tmpDir);
+            org.mockito.Mockito.lenient().when(paths.home(anyString())).thenAnswer(inv -> tmpDir.resolve(inv.getArgument(0, String.class)));
+            org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(tmpDir.resolve("workspace"));
+            return paths;
+        }
     }
 }

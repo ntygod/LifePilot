@@ -166,7 +166,7 @@ public class McpServerDiscovery {
      * 获取用户 MCP 配置目录路径。
      */
     Path getUserMcpDir() {
-        return Path.of(System.getProperty("user.home"), ".zhiwei", "mcp");
+        return Path.of(System.getProperty("user.home"), "zhiwei", "mcp");
     }
 
     /**

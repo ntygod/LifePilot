@@ -16,9 +16,10 @@ import java.util.Map;
 /**
  * 应用启动引导配置读取器。
  *
- * <p>在 Spring Environment 初始化阶段读取 {@code ~/.zhiwei/config.json}，
- * 将其中的 {@code dataDir} 映射到 {@code zhiwei.data-dir} 属性，
- * 使用户可以通过前端设置页面修改数据目录。</p>
+ * <p>在 Spring Environment 初始化阶段读取 {@code ~/zhiwei/config.json}，
+ * 将其中的 {@code home} 映射到 {@code zhiwei.home} 属性，
+ * 将其中的 {@code workspace} 映射到 {@code zhiwei.workspace} 属性，
+ * 使用户可以通过前端设置页面修改 HOME 和 WORKSPACE 目录。</p>
  *
  * <p>优先级：命令行参数 &gt; config.json &gt; application.yml 默认值。</p>
  *
@@ -27,8 +28,8 @@ import java.util.Map;
  */
 public class BootstrapConfigReader implements EnvironmentPostProcessor {
 
-    /** 固定配置文件路径：{user.home}/.zhiwei/config.json */
-    private static final Path CONFIG_PATH = Path.of(System.getProperty("user.home"), ".zhiwei", "config.json");
+    /** 固定配置文件路径：{user.home}/zhiwei/config.json */
+    private static final Path CONFIG_PATH = Path.of(System.getProperty("user.home"), "zhiwei", "config.json");
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
@@ -40,9 +41,16 @@ public class BootstrapConfigReader implements EnvironmentPostProcessor {
             JsonNode root = mapper.readTree(CONFIG_PATH.toFile());
             Map<String, Object> properties = new HashMap<>();
 
-            JsonNode dataDirNode = root.get("dataDir");
-            if (dataDirNode != null && dataDirNode.isTextual() && !dataDirNode.asText().isBlank()) {
-                properties.put("zhiwei.data-dir", dataDirNode.asText());
+            // 读取 home 字段映射到 zhiwei.home
+            JsonNode homeNode = root.get("home");
+            if (homeNode != null && homeNode.isTextual() && !homeNode.asText().isBlank()) {
+                properties.put("zhiwei.home", homeNode.asText());
+            }
+
+            // 读取 workspace 字段映射到 zhiwei.workspace
+            JsonNode workspaceNode = root.get("workspace");
+            if (workspaceNode != null && workspaceNode.isTextual() && !workspaceNode.asText().isBlank()) {
+                properties.put("zhiwei.workspace", workspaceNode.asText());
             }
 
             if (!properties.isEmpty()) {

@@ -1,5 +1,6 @@
 package com.lifepilot.skill.config;
 
+import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.skill.MarkdownSkillParser;
@@ -166,9 +167,10 @@ public class SkillAutoConfiguration {
                                                    SkillConfigProperties config,
                                                    MarkdownSkillParser parser,
                                                    SkillDescriptionValidator descriptionValidator,
-                                                   SkillBodyValidator bodyValidator) {
-        log.info("Skill 系统: 注册 MarkdownSkillLoader, directory={}", config.getDirectory());
-        return new MarkdownSkillLoader(registry, config, parser, descriptionValidator, bodyValidator);
+                                                   SkillBodyValidator bodyValidator,
+                                                   ZhiweiPaths zhiweiPaths) {
+        log.info("Skill 系统: 注册 MarkdownSkillLoader, directory={}", zhiweiPaths.home("skills"));
+        return new MarkdownSkillLoader(registry, config, parser, descriptionValidator, bodyValidator, zhiweiPaths);
     }
 
     @Bean
@@ -196,9 +198,9 @@ public class SkillAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "lifepilot.skills.skill-hub", name = "enabled",
             havingValue = "true", matchIfMissing = true)
-    public SkillHubClient skillHubClient(SkillConfigProperties skillConfig) {
+    public SkillHubClient skillHubClient(ZhiweiPaths zhiweiPaths) {
         log.info("Skill 系统: 注册 SkillHubClient (CLI 模式)");
-        return new SkillHubClient(skillConfig.getDirectory());
+        return new SkillHubClient(zhiweiPaths.home("skills"));
     }
 
     // ==================== 启动后初始化 ====================

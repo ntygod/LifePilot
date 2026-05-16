@@ -75,7 +75,7 @@
   ProactiveConfigUpdate,
   QueuedAction,
   TrustStatus,
-  SseInteractionEvent,
+  SessionConfigOverride,
   // 记忆管理类型
   MemoryStats,
   MemorySearchResult,
@@ -219,12 +219,13 @@ export const chatApi = {
     attachmentIds?: string[],
     turnId?: string,
     action: ChatTurnAction = 'SEND',
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    singleTurnOverride?: SessionConfigOverride | null
   ): Promise<ReadableStream<Uint8Array>> {
     const res = await fetch(`${getBase()}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action }),
+      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action, singleTurnOverride: singleTurnOverride ?? null }),
       signal
     })
     if (!res.ok || !res.body) {
@@ -366,19 +367,15 @@ export const chatApi = {
     })
   },
 
-  /** 用户交互回传 */
-  respondInteraction(
-    interactionId: string,
-    payload: Pick<SseInteractionEvent, 'type'> & { value?: string | null; confirmed: boolean; timedOut?: boolean }
-  ): Promise<void> {
-    return request(`/chat/interactions/${interactionId}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        value: payload.value ?? null,
-        confirmed: payload.confirmed,
-        timedOut: payload.timedOut ?? false,
-      })
-    })
+  /**
+   * 真实中断当前会话正在进行的 Agent 推理。
+   *
+   * <p>前端"停止生成"按钮调用此端点，驱动后端 SseSessionManager.cancelBySessionId
+   * 触发 CancellationToken.cancel，让 ReactAgentLoop 在下一轮循环头退出。单独断
+   * HTTP 连接不够——后端可能仍在长 LLM 调用或工具执行中。</p>
+   */
+  cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
+    return request(`/chat/sessions/${sessionId}/cancel`, { method: 'POST' })
   },
 
   /**
@@ -620,32 +617,6 @@ export const settingsApi = {
     })
   },
 
-  /** 获取数据目录 */
-  getDataDir(): Promise<{ dataDir: string, configuredDir: string | null }> {
-    return request('/settings/data-dir')
-  },
-
-  /** 更新数据目录（需重启生效） */
-  updateDataDir(dataDir: string | null): Promise<{ dataDir: string, configuredDir: string | null }> {
-    return request('/settings/data-dir', {
-      method: 'PUT',
-      body: JSON.stringify({ dataDir: dataDir ?? '' })
-    })
-  },
-
-  /** 获取工作目录配置 */
-  getWorkspaceSettings(): Promise<WorkspaceSettings> {
-    return request('/settings/workspace')
-  },
-
-  /** 更新工作目录配置 */
-  updateWorkspaceSettings(workspace: { defaultWorkspace: string | null }): Promise<WorkspaceSettings> {
-    return request('/settings/workspace', {
-      method: 'PUT',
-      body: JSON.stringify(workspace)
-    })
-  },
-
   /** 获取外部 CLI Bash 依赖路径 */
   getExternalCliBashSettings(): Promise<ExternalCliBashSettings> {
     return request('/settings/external-cli-bash')
@@ -657,19 +628,51 @@ export const settingsApi = {
       method: 'PUT',
       body: JSON.stringify(payload)
     })
-  }
-}
+  },
 
-/** 工作目录配置响应 */
-export interface WorkspaceSettings {
-  defaultWorkspace: string | null
-  resolvedPath: string
-  systemDefault: string
+  /** 获取路径统一配置（HOME / WORKSPACE / PathAccessControl） */
+  getPathSettings(): Promise<PathSettingsResponse> {
+    return request('/settings/paths')
+  },
+
+  /** 更新路径统一配置（部分更新） */
+  updatePathSettings(payload: PathSettingsRequest): Promise<PathSettingsResponse> {
+    return request('/settings/paths', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    })
+  }
 }
 
 /** 外部 CLI Bash 依赖配置响应 */
 export interface ExternalCliBashSettings {
   externalCliBashPath: string | null
+}
+
+/** 路径统一配置响应 */
+export interface PathSettingsResponse {
+  home: string
+  workspace: string
+  pathAccess: PathAccessDto
+  restartRequired: boolean
+}
+
+/** 路径访问控制配置 DTO */
+export interface PathAccessDto {
+  mode: string
+  whitelist: string[]
+  blacklist: string[]
+}
+
+/** 路径统一配置更新请求（部分更新） */
+export interface PathSettingsRequest {
+  home?: string | null
+  workspace?: string | null
+  pathAccess?: {
+    mode?: string | null
+    whitelist?: string[] | null
+    blacklist?: string[] | null
+  } | null
 }
 
 /** Reranker 配置响应 */

@@ -221,7 +221,7 @@ class FileReadToolExecutor_多格式解析测试 {
         return new FileReadToolExecutor(
                 securityChecker,
                 properties.getInfra().getFile().getDefaultMaxChars(),
-                null,  // SkillPathWhitelist —— 本测试用 PathSecurityChecker 白名单兜底
+                null,  // PathAccessControl —— 本测试用 PathSecurityChecker 白名单兜底
                 attachmentRepo,
                 parserService);
     }
