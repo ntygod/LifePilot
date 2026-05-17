@@ -383,7 +383,8 @@ public class ShellExecToolExecutor {
                             ToolResultStatus.ERROR,
                             Map.copyOf(data),
                             "命令执行失败 (exitCode=" + exitCode + "): " + errorMessage,
-                            ToolResultMeta.empty()
+                            ToolResultMeta.empty(),
+                            java.util.List.of()
                     );
                 }
                 return ToolResult.success(Map.copyOf(data));

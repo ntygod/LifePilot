@@ -273,7 +273,8 @@ public class CodeExecuteToolExecutor {
             // exitCode 非零视为执行失败
             if (result.exitCode() != 0) {
                 return new ToolResult(ToolResultStatus.ERROR, Map.copyOf(data),
-                        "代码执行失败: exitCode=" + result.exitCode(), ToolResultMeta.empty());
+                        "代码执行失败: exitCode=" + result.exitCode(), ToolResultMeta.empty(),
+                        java.util.List.of());
             }
             return ToolResult.success(Map.copyOf(data));
         } catch (Exception e) {
@@ -338,7 +339,8 @@ public class CodeExecuteToolExecutor {
                         "kernel", true, 0, 1, null, null,
                         (long) result.durationMs(), "FAILED", result.error()));
                 return new ToolResult(ToolResultStatus.ERROR, Map.copyOf(data),
-                        "内核执行失败: " + result.error(), ToolResultMeta.empty());
+                        "内核执行失败: " + result.error(), ToolResultMeta.empty(),
+                        java.util.List.of());
             }
 
             // 审计持久化（内核执行成功）
