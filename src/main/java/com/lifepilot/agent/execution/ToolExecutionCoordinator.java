@@ -1070,9 +1070,14 @@ public class ToolExecutionCoordinator {
             payload.put("producedBy", toolId);
             payload.put("toolCallId", toolCall.id());
             String type = artifact.kind() == com.lifepilot.tool.model.ArtifactKind.IMAGE ? "image" : "file";
+            // sourceEntryId 传 null —— 该字段外键指向 session_transcript_entries.id（UUID），
+            // 不是 LLM 给的 toolCall.id()。在工具结果 transcript entry 落库之前，没有可用的
+            // entry_id；为避免 FK 拒绝写入导致 SSE artifact-ref 无法推送（前端 ArtifactCard 不渲染），
+            // 此处传 null 由 SET NULL 语义兜底。关联信息已通过 payload.toolCallId / producedBy / traceId
+            // 完全保留，下游可按这三者反查。
             return sessionArtifactRepository.save(
                     state.sessionId(),
-                    toolCall.id(),
+                    null,
                     state.traceId(),
                     type,
                     artifact.fileName(),
