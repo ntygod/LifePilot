@@ -1,9 +1,5 @@
-package com.lifepilot.document.parser;
+package com.lifepilot.knowledge.parser;
 
-import com.lifepilot.knowledge.parser.DocumentParseException;
-import com.lifepilot.knowledge.parser.MarkdownParser;
-import com.lifepilot.knowledge.parser.ParseResult;
-import com.lifepilot.knowledge.parser.PlainTextParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

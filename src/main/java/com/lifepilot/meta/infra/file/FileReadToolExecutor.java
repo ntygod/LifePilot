@@ -1,9 +1,9 @@
 package com.lifepilot.meta.infra.file;
 
-import com.lifepilot.document.parser.DocumentParserService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.knowledge.parser.DocumentMetadata;
 import com.lifepilot.knowledge.parser.DocumentParseException;
+import com.lifepilot.knowledge.parser.DocumentParserService;
 import com.lifepilot.knowledge.parser.ParseResult;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.tool.model.ToolInput;
