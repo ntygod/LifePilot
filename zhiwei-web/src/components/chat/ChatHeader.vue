@@ -3,7 +3,7 @@
  * 对话页顶部导航条（精简版）。
  *
  * <p>空态下整个 header 不渲染；对话态下保留左侧可编辑标题 + 右侧：
- * 快捷图标入口（文档 / 后台任务，带角标显示数量） + `...` 菜单
+ * 快捷图标入口（后台任务，带角标显示数量） + `...` 菜单
  * （本次会话概览 / 当前会话设置）。</p>
  *
  * @author zsg
@@ -13,7 +13,6 @@ import { ref, watch } from 'vue'
 import {
   Activity,
   EllipsisVertical,
-  FileText,
   Info,
   Pencil,
   SlidersHorizontal,
@@ -31,8 +30,6 @@ const props = defineProps<{
   /** 空态 = 不渲染 Header */
   isEmpty: boolean
   title: string
-  /** 文档工作区的文档数量；> 0 时头部快捷按钮显示角标，=0 时按钮保留但隐藏角标 */
-  documentCount?: number
   /** 后台任务数量；> 0 时头部快捷按钮显示角标 */
   taskCount?: number
   /** 是否有活跃（进行中）后台任务，用于做一个脉冲动画提示 */
@@ -43,7 +40,6 @@ const emit = defineEmits<{
   rename: [nextTitle: string]
   openInfo: []
   openSettings: []
-  openDocument: []
   openTasks: []
 }>()
 
@@ -100,20 +96,6 @@ function confirmEdit() {
       </div>
 
       <div class="chat-header__actions">
-        <!-- 文档工作区快捷入口（常驻，角标仅在有文档时显示） -->
-        <button
-          type="button"
-          class="chat-header__quick-btn"
-          title="文档工作区"
-          data-overlay-toggle
-          @click="emit('openDocument')"
-        >
-          <FileText class="size-4" />
-          <span v-if="(props.documentCount ?? 0) > 0" class="chat-header__badge">
-            {{ props.documentCount }}
-          </span>
-        </button>
-
         <!-- 后台任务快捷入口（常驻，角标 / 脉冲仅在有任务时生效） -->
         <button
           type="button"

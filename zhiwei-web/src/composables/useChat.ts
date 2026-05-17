@@ -5,7 +5,6 @@ import { useA2uiStore } from '@/stores/a2ui'
 import { chatApi, browserTakeoverApi } from '@/api/client'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import { logger } from '@/utils/logger'
-import { useDocumentMeta } from '@/composables/useDocumentMeta'
 import type {
   A2uiComponent,
   ChatAttachment,
@@ -38,7 +37,6 @@ const TOKEN_FLUSH_CHAR_THRESHOLD = 160
 
 export function useChat() {
   const chatStore = useChatStore()
-  const { invalidateAllDocumentMeta } = useDocumentMeta()
   const a2uiStore = useA2uiStore()
   // 懒创建会话时读 URL query.projectId，实现「项目详情页 → 新建对话」的项目上下文继承
   const route = useRoute()
@@ -521,11 +519,6 @@ export function useChat() {
           }
 
           chatStore.upsertMessage(assistantMessage)
-
-          // 失效 documentMetaCache：任一文档都可能刚被 patch，旧的 latestVersion 必须作废。
-          if (event.sessionId) {
-            invalidateAllDocumentMeta()
-          }
 
           if (event.tokenUsage) {
             lastTokenUsage.value = event.tokenUsage

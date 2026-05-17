@@ -25,9 +25,6 @@ import ThinkingIndicator from './ThinkingIndicator.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
-import DocumentDiffCard from './DocumentDiffCard.vue'
-import DocumentXlsxDiffCard from './DocumentXlsxDiffCard.vue'
-import { useDocumentMeta } from '@/composables/useDocumentMeta'
 
 const props = defineProps<{
   message: Message
@@ -157,48 +154,6 @@ function documentIcon(att: { type?: string; filename: string }) {
   if (ext === 'pptx') return Presentation
   if (ext === 'md') return FileCode2
   return FileText
-}
-
-/**
- * Phase 3A：识别「已被 document.edit 修改过的 docx」—— 需要换用 DocumentDiffCard 渲染。
- *
- * 判定条件：
- * 1. MIME 包含 `wordprocessingml.document`（docx）
- * 2. URL 形如 `/api/documents/{id}/download`，可解析出 documentId
- * 3. GET `/api/documents/{id}` 返回 `latestVersion > 0`（经历过至少一次 patch）
- *
- * 条件不满足 → 回落到既有附件卡片（非 docx / Phase 2A 产物 / 未编辑 docx）。
- */
-// 文档元数据缓存：从 composable 取模块级共享实例，所有 MessageBubble + useChat 都引用同一份。
-// useChat 在 AI 流式结束时调 invalidateAllDocumentMeta() 清空，触发下次 render 重新拉 latestVersion
-const { documentMetaCache, resolveDocumentMeta, invalidateDocumentMeta } = useDocumentMeta()
-
-/** 按 download URL 提取 documentId；不匹配则返回 null */
-function extractDocumentId(url: string | undefined): string | null {
-  if (!url) return null
-  const m = url.match(/\/api\/documents\/([^/]+)\/download/)
-  return m ? m[1] : null
-}
-
-/**
- * 判断文档附件是否已被编辑过（存在工作副本）。
- * 不限制 MIME 类型，docx/xlsx/md/txt/pptx 等所有文档类型通用。
- * 同步返回缓存结果，异步触发 meta 拉取，下次渲染自动生效。
- */
-function isEditedDocument(att: { type?: string; url?: string }): boolean {
-  const docId = extractDocumentId(att.url)
-  if (!docId) return false
-  void resolveDocumentMeta(docId)
-  const meta = documentMetaCache.value[docId]
-  return !!meta && meta.latestVersion > 0
-}
-
-/** DiffCard commit / 丢弃工作副本 → 失效缓存，下次渲染重新拉取（latestVersion 变化 or 404） */
-function onDocumentCommitted(documentId: string) {
-  invalidateDocumentMeta(documentId)
-}
-function onDocumentDiscarded(documentId: string) {
-  invalidateDocumentMeta(documentId)
 }
 
 const audioAttachments = computed(() =>
@@ -524,30 +479,9 @@ function approvalLogTone(log: PermissionApprovalLog) {
 
           <div v-if="fileAttachments.length > 0" class="mt-md flex flex-col gap-sm">
             <template v-for="attachment in fileAttachments" :key="attachment.fileId">
-              <!-- 文档被编辑过 → 按类型选 DiffCard；无专用 DiffCard 的类型显示通用「已编辑」文件卡片 -->
-              <template v-if="isEditedDocument(attachment)">
-                <DocumentDiffCard
-                  v-if="attachment.type?.includes('wordprocessingml.document')"
-                  :document-id="extractDocumentId(attachment.url)!"
-                  @committed="onDocumentCommitted"
-                  @discarded="onDocumentDiscarded"
-                />
-                <DocumentXlsxDiffCard
-                  v-else-if="attachment.type?.includes('spreadsheetml.sheet')"
-                  :document-id="extractDocumentId(attachment.url)!"
-                  @committed="onDocumentCommitted"
-                  @discarded="onDocumentDiscarded"
-                />
-                <div v-else class="flex items-center gap-sm rounded-md border border-border bg-muted/40 p-sm">
-                  <component :is="documentIcon(attachment)" class="h-md w-md shrink-0 text-primary" />
-                  <span class="truncate text-sm">{{ attachment.filename }}</span>
-                  <span class="shrink-0 rounded-md bg-primary/10 px-xs py-xs text-xs text-primary">已编辑</span>
-                </div>
-              </template>
-
               <!-- 视频附件：保留原 list-card + <video> 播放器布局 -->
               <div
-                v-else-if="attachment.type?.startsWith('video/')"
+                v-if="attachment.type?.startsWith('video/')"
                 class="list-card flex flex-col gap-sm px-md py-md text-xs text-foreground"
               >
                 <div class="flex items-center justify-between gap-sm">
