@@ -313,7 +313,9 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) ExperienceSummarizer experienceSummarizer) {
+            @Autowired(required = false) ExperienceSummarizer experienceSummarizer,
+            @Autowired(required = false) SessionArtifactRepository sessionArtifactRepository,
+            @Autowired(required = false) com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager) {
         var loop = new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -333,6 +335,9 @@ public class AgentAutoConfiguration {
                 experienceSummarizer);
         // 注入 run(sessionId, UserMessage) 便捷入口所需的路由器
         loop.setGenerationRouter(generationRouter);
+        // 文件产物链路：让 Agent 主循环把工具产物升级为 session_artifacts 并通过 SSE 推送
+        loop.setSessionArtifactRepository(sessionArtifactRepository);
+        loop.setSseSessionManager(sseSessionManager);
         return loop;
     }
 

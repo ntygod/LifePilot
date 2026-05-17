@@ -178,6 +178,26 @@ public class ReactAgentLoop implements CallbackHelper {
         this.generationRouter = generationRouter;
     }
 
+    /**
+     * 注入会话产物持久化仓库 — 委托给 {@link ToolExecutionCoordinator}，让工具执行后
+     * 把 {@code ToolResult.artifacts()} 写入 {@code session_artifacts} 表。
+     *
+     * <p>生产环境由 {@code AgentAutoConfiguration} 装配；测试环境若不需要文件产物
+     * 链路可不调用。</p>
+     */
+    public void setSessionArtifactRepository(
+            @Nullable com.lifepilot.conversation.artifact.SessionArtifactRepository repo) {
+        this.toolExecutionCoordinator.setSessionArtifactRepository(repo);
+    }
+
+    /**
+     * 注入 SSE 会话管理器 — 委托给 {@link ToolExecutionCoordinator}，让工具产物登记后
+     * 立即推送 {@code artifact-ref} SSE 事件给 Web 端。
+     */
+    public void setSseSessionManager(@Nullable com.lifepilot.interaction.web.sse.SseSessionManager mgr) {
+        this.toolExecutionCoordinator.setSseSessionManager(mgr);
+    }
+
     ProviderMessageBuilder.BuildResult buildProviderMessages(AssembledContext ctx, ReactAgentState state) {
         return providerMessageBuilder.build(ctx, state);
     }
@@ -414,7 +434,8 @@ public class ReactAgentLoop implements CallbackHelper {
                         messageBuildResult.hygieneReport().droppedAdditionalSystemMessages());
             }
             if (cachedToolCallbacks == null) {
-                cachedToolCallbacks = agentToolProvider.getToolCallbacks(state, loopContext.getStreamId());
+                cachedToolCallbacks = agentToolProvider.getToolCallbacks(
+                        state, loopContext.getStreamId(), loopContext::addArtifactRefsAsToolArtifacts);
             }
             var toolCallbacks = cachedToolCallbacks;
             var callPurpose = resolveLlmCallPurpose(state);

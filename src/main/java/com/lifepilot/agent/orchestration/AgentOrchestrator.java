@@ -179,7 +179,8 @@ public class AgentOrchestrator {
             var cachedTree = loopContext.getLastCollectedA2uiTree();
             var a2uiComponents = cachedTree != null ? cachedTree.components() : null;
 
-            return buildAgentResponse(state, assistantEntryId, a2uiComponents, tokenUsage);
+            return buildAgentResponse(state, assistantEntryId, a2uiComponents, tokenUsage,
+                    loopContext.getCollectedArtifactRefs());
 
         } catch (Throwable e) {
             // ── 阶段 6: 异常路径 — 可降级异常走 DEGRADED，不可恢复走 FAILED ─
@@ -195,7 +196,8 @@ public class AgentOrchestrator {
                     assistantEntryId = executionPersistence.persistAssistantSync(state, reactStepsJson, loopContext);
                 }
                 executionPersistence.markTurnCompleted(state, assistantEntryId, resolveTurnStatus(state));
-                return buildAgentResponse(state, assistantEntryId, null, aggregateTokenUsage(traceContext));
+                return buildAgentResponse(state, assistantEntryId, null, aggregateTokenUsage(traceContext),
+                        loopContext.getCollectedArtifactRefs());
             }
             error = e;
             Exception wrapped = e instanceof Exception ex ? ex : new RuntimeException(e);
@@ -929,7 +931,8 @@ public class AgentOrchestrator {
                 serializeReactStepsJson(suspendedState.steps()),
                 loopContext);
         executionPersistence.markTurnCompleted(suspendedState, assistantEntryId, ChatTurnStatus.SUSPENDED);
-        return buildAgentResponse(suspendedState, assistantEntryId, null, aggregateTokenUsage(traceContext));
+        return buildAgentResponse(suspendedState, assistantEntryId, null, aggregateTokenUsage(traceContext),
+                loopContext.getCollectedArtifactRefs());
     }
 
     /**
@@ -1098,6 +1101,15 @@ public class AgentOrchestrator {
                                              @Nullable String assistantEntryId,
                                              @Nullable List<com.lifepilot.interaction.web.model.A2uiComponent> a2uiComponents,
                                              @Nullable TokenUsage tokenUsage) {
+        return buildAgentResponse(state, assistantEntryId, a2uiComponents, tokenUsage, java.util.List.of());
+    }
+
+    /** 构建最终的 Agent 响应对象，含本轮工具产生的文件产物引用列表。 */
+    private AgentResponse buildAgentResponse(ReactAgentState state,
+                                             @Nullable String assistantEntryId,
+                                             @Nullable List<com.lifepilot.interaction.web.model.A2uiComponent> a2uiComponents,
+                                             @Nullable TokenUsage tokenUsage,
+                                             java.util.List<com.lifepilot.interaction.model.ArtifactRef> artifactRefs) {
         return new AgentResponse(
                 state.traceId(),
                 state.sessionId(),
@@ -1113,7 +1125,8 @@ public class AgentOrchestrator {
                 tokenUsage,
                 state.completionMode(),
                 state.resumedFromTraceId(),
-                resolveTurnStatus(state)
+                resolveTurnStatus(state),
+                artifactRefs
         );
     }
 

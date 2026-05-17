@@ -30,6 +30,28 @@ public interface AgentToolProvider {
     List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId);
 
     /**
+     * 获取工具回调列表（携带产物 sink）。
+     *
+     * <p>{@link #getToolCallbacks(ReactAgentState, String)} 的扩展重载，让 Agent 主循环
+     * 把 {@code AgentLoopContext::addArtifactRefs} 之类的 Consumer 透传给工具桥接层，
+     * 让工具执行后产生的 {@code ToolResult.artifacts()} 经 sink 流回主循环，
+     * 升级为会话产物并通过渠道分发。</p>
+     *
+     * <p>默认实现忽略 sink 调用基础重载，保持向后兼容。</p>
+     *
+     * @param state        当前 ReAct Agent 状态
+     * @param streamId     SSE 流标识
+     * @param artifactSink 产物 sink，工具执行后由桥接层 push artifacts；为 null 时关闭旁路
+     * @return 工具回调列表
+     */
+    default List<ToolCallback> getToolCallbacks(
+            ReactAgentState state,
+            @Nullable String streamId,
+            @Nullable java.util.function.Consumer<java.util.List<com.lifepilot.tool.model.ToolArtifact>> artifactSink) {
+        return getToolCallbacks(state, streamId);
+    }
+
+    /**
      * 根据工具 ID 解析用户可读的显示名称。
      *
      * <p>用于前端展示场景（推理时间线、工具确认卡片等），

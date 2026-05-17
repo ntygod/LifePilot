@@ -347,6 +347,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                 .responseId(agentResponse.assistantEntryId())
                 .tokenUsage(tokenUsage)
                 .metadata(metadata)
+                .artifactRefs(agentResponse.artifactRefs())
                 .build();
     }
 

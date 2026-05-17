@@ -1,5 +1,6 @@
 package com.lifepilot.agent.model;
 
+import com.lifepilot.interaction.model.ArtifactRef;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.A2uiComponent;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
@@ -9,6 +10,10 @@ import java.util.List;
 
 /**
  * Agent 同步执行路径返回的响应载荷。
+ *
+ * <p>{@code artifactRefs} 字段（2026-05-17 引入）承载本轮 Agent 主循环工具调用产生的
+ * 文件产物引用。{@code ExecutionMiddleware} 在构造 {@code GatewayResponse} 时把它
+ * 透传到协议层，最终由 {@code ChannelDeliveryDispatcher} 按渠道差异化分发。</p>
  *
  * @author zsg
  * @since 2026-03-25
@@ -28,11 +33,13 @@ public record AgentResponse(
         @Nullable TokenUsage tokenUsage,
         CompletionMode completionMode,
         @Nullable String resumedFromTraceId,
-        ChatTurnStatus turnStatus
+        ChatTurnStatus turnStatus,
+        List<ArtifactRef> artifactRefs
 ) {
     public AgentResponse {
         taskMode = taskMode != null ? taskMode : AgentTaskMode.AUTO;
         completionMode = completionMode != null ? completionMode : CompletionMode.NORMAL;
+        artifactRefs = artifactRefs != null ? List.copyOf(artifactRefs) : List.of();
     }
 
     public AgentResponse(String traceId,
@@ -45,7 +52,8 @@ public record AgentResponse(
                 null, null, null, null, CompletionMode.NORMAL, null,
                 terminationReason != null && !terminationReason.isBlank()
                         ? ChatTurnStatus.FAILED
-                        : ChatTurnStatus.SUCCESS);
+                        : ChatTurnStatus.SUCCESS,
+                List.of());
     }
 
     public AgentResponse(String traceId,
@@ -67,7 +75,8 @@ public record AgentResponse(
                         ? ChatTurnStatus.DEGRADED
                         : (terminationReason != null && !terminationReason.isBlank()
                         ? ChatTurnStatus.FAILED
-                        : ChatTurnStatus.SUCCESS));
+                        : ChatTurnStatus.SUCCESS),
+                List.of());
     }
 
     public AgentResponse(String traceId,
@@ -78,7 +87,7 @@ public record AgentResponse(
                          int stepCount,
                          @Nullable String terminationReason) {
         this(traceId, sessionId, turnId, AgentTaskMode.AUTO, content, tokensUsed, stepCount, terminationReason,
-                null, null, null, null, CompletionMode.NORMAL, null, ChatTurnStatus.FAILED);
+                null, null, null, null, CompletionMode.NORMAL, null, ChatTurnStatus.FAILED, List.of());
     }
 
     /**
@@ -100,7 +109,18 @@ public record AgentResponse(
                 null,
                 CompletionMode.NORMAL,
                 state.resumedFromTraceId(),
-                ChatTurnStatus.FAILED
+                ChatTurnStatus.FAILED,
+                List.of()
+        );
+    }
+
+    /** 派生新实例：替换 artifactRefs 字段；其他字段保持不变。 */
+    public AgentResponse withArtifactRefs(List<ArtifactRef> refs) {
+        return new AgentResponse(
+                traceId, sessionId, turnId, taskMode, content, tokensUsed, stepCount,
+                terminationReason, completionReason, assistantEntryId, a2uiComponents,
+                tokenUsage, completionMode, resumedFromTraceId, turnStatus,
+                refs != null ? List.copyOf(refs) : List.of()
         );
     }
 }

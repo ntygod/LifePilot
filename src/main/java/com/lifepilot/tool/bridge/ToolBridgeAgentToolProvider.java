@@ -114,6 +114,14 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
     @Override
     public List<ToolCallback> getToolCallbacks(ReactAgentState state, @Nullable String streamId) {
+        return getToolCallbacks(state, streamId, null);
+    }
+
+    @Override
+    public List<ToolCallback> getToolCallbacks(
+            ReactAgentState state,
+            @Nullable String streamId,
+            @Nullable java.util.function.Consumer<java.util.List<com.lifepilot.tool.model.ToolArtifact>> artifactSink) {
         List<ToolContract> all = toolRegistry.getToolSnapshot();
         var allowed = state.allowedToolIds();
 
@@ -134,7 +142,7 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
 
         refreshToolNameMappings(tools);
         return tools.stream()
-                .map(t -> toToolCallback(t, streamId, state))
+                .map(t -> toToolCallback(t, streamId, state, artifactSink))
                 .toList();
     }
 
@@ -155,7 +163,8 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
      * @param streamId SSE 流标识（用于精确推送授权审批请求，可选）
      * @return Spring AI ToolCallback
      */
-    private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId, ReactAgentState state) {
+    private ToolCallback toToolCallback(ToolContract tool, @Nullable String streamId, ReactAgentState state,
+                                         @Nullable java.util.function.Consumer<java.util.List<com.lifepilot.tool.model.ToolArtifact>> artifactSink) {
         // 构建请求级上下文，传递会话、预算和委托链元数据给工具执行器
         Map<String, Object> context = new LinkedHashMap<>();
         if (state.sessionId() != null) {
@@ -188,6 +197,10 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
         context.put(ToolContextKeys.CALLER_BUDGET, state.budget());
         // 把 state 直接放进 context，供 meta 工具（tool.search）的 executor 读取
         context.put(ToolContextKeys.CALLER_STATE, state);
+        // 注入产物 sink — 工具执行结束后 ToolBridge 会把 ToolResult.artifacts 推回此 Consumer
+        if (artifactSink != null) {
+            context.put(ToolContextKeys.ARTIFACT_SINK, artifactSink);
+        }
 
         ToolDefinition definition = DefaultToolDefinition.builder()
                 .name(resolveModelToolName(tool.id()))
@@ -219,6 +232,12 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
                         streamId,
                         Map.copyOf(context)
                 );
+
+                // 旁路：把 ToolResult.artifacts 推送给 Agent 主循环（如已注入 sink）。
+                // 用 Consumer 而非直接返回是因为 ToolCallback.call 签名固定返回字符串，
+                // 没法把 ToolArtifact 列表带回 ToolExecutionCoordinator。
+                publishArtifactsIfPresent(result, context);
+
                 String output = formatOutput(result);
 
                 return output;
@@ -510,6 +529,34 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
     private record ToolInputEnvelope(Map<String, Object> parameters) {
         private ToolInputEnvelope {
             parameters = parameters != null ? Map.copyOf(parameters) : Map.of();
+        }
+    }
+
+    /**
+     * 把 {@code ToolResult.artifacts()} 推送给 Agent 主循环 —— 走 context 中预置的
+     * {@link ToolContextKeys#ARTIFACT_SINK} Consumer。
+     *
+     * <p>实现要点：</p>
+     * <ul>
+     *   <li>sink 缺失时静默跳过（CLI / 直接调用工具的场景没有 sink）</li>
+     *   <li>artifacts 为空时不调用 sink，避免无意义噪声</li>
+     *   <li>sink 内部抛异常不阻塞 ToolResult 流转</li>
+     * </ul>
+     */
+    @SuppressWarnings("unchecked")
+    private static void publishArtifactsIfPresent(ToolResult result, Map<String, Object> context) {
+        if (result == null || result.artifacts() == null || result.artifacts().isEmpty()) {
+            return;
+        }
+        Object sink = context.get(ToolContextKeys.ARTIFACT_SINK);
+        if (!(sink instanceof java.util.function.Consumer)) {
+            return;
+        }
+        try {
+            ((java.util.function.Consumer<java.util.List<com.lifepilot.tool.model.ToolArtifact>>) sink)
+                    .accept(result.artifacts());
+        } catch (Exception e) {
+            log.warn("artifact sink 调用失败: error={}", e.getMessage());
         }
     }
 }

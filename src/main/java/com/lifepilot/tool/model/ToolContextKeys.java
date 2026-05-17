@@ -45,6 +45,12 @@ public final class ToolContextKeys {
     /** 调用方 ReactAgentState 引用（{@link com.lifepilot.agent.model.ReactAgentState}）—
      * 供 meta 工具（{@code tool.search}）访问 discoveredToolIds / allowedToolIds 等当轮状态。 */
     public static final String CALLER_STATE = "callerState";
+    /**
+     * 工具产物 sink（{@link java.util.function.Consumer}{@code <java.util.List<com.lifepilot.tool.model.ToolArtifact>>}）—
+     * Agent 主循环传入，让 ToolBridge 在工具执行结束后把 {@code ToolResult.artifacts()} 推回。
+     * 用于绕过"ToolCallback 只能返回字符串"的限制，让 ArtifactRef 流入 GatewayResponse。
+     */
+    public static final String ARTIFACT_SINK = "artifactSink";
 
     private ToolContextKeys() {
     }
