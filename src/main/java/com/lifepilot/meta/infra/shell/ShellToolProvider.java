@@ -112,6 +112,12 @@ public class ShellToolProvider {
         properties.put("env", Map.of("type", "object",
                 "description", "额外环境变量键值对，合并到子进程环境",
                 "additionalProperties", Map.of("type", "string")));
+        properties.put("expectedOutputs", Map.of(
+                "type", "array",
+                "items", Map.of("type", "string"),
+                "description", "可选：本次命令预期产生的文件路径列表（绝对路径或相对 workingDirectory）。" +
+                        "声明后，工具不再 diff 整个工作目录，只检查列表中的文件是否真实产生并登记为产物。" +
+                        "适合精确控制场景（如确切知道命令会产出 report.docx）；不传时默认 diff 工作目录识别新增/修改文件"));
 
         return Map.of(
                 "type", "object",

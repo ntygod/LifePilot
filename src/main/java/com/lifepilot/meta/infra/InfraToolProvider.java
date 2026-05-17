@@ -211,6 +211,9 @@ public class InfraToolProvider {
 
         // Shell 工具（shell.exec + shell.process）— 注入 commandGuard 让 shell.exec 也走 HARDLINE/DANGEROUS 护栏
         var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, pathAccessControl, commandGuard);
+        if (gatewayDeliveryProperties != null) {
+            shellExecExecutor.setArtifactFilterConfig(gatewayDeliveryProperties.toFilterConfig());
+        }
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 
@@ -229,6 +232,11 @@ public class InfraToolProvider {
             var codeToolProvider = new CodeToolProvider(
                     properties, sandboxSessionManager, codeValidator, sandboxRepository,
                     kernelManager, pythonRuntimeManager, commandGuard);
+            if (gatewayDeliveryProperties != null) {
+                codeToolProvider.setArtifactDelivery(
+                        gatewayDeliveryProperties.toFilterConfig(),
+                        workspaceResolver.resolve());
+            }
             totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
 
         } else {

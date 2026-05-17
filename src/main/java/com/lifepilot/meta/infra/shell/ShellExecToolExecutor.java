@@ -6,6 +6,8 @@ import com.lifepilot.config.workspace.WorkspaceResolver.NormalizedPath;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.sandbox.guard.CommandGuard;
 import com.lifepilot.sandbox.guard.GuardResult;
+import com.lifepilot.tool.artifact.ArtifactFilter;
+import com.lifepilot.tool.model.ToolArtifact;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import com.lifepilot.tool.model.ToolResultMeta;
@@ -18,6 +20,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,6 +75,12 @@ public class ShellExecToolExecutor {
     private final PathAccessControl pathAccessControl;
     @Nullable
     private final CommandGuard commandGuard;
+    /**
+     * Artifact 过滤配置，由 {@code InfraToolProvider} 通过 setter 注入。
+     * 为 null 时（旧调用点）shell.exec 不登记任何产物，保持向后兼容。
+     */
+    @Nullable
+    private com.lifepilot.tool.artifact.ArtifactFilterConfig artifactFilterConfig;
 
     public ShellExecToolExecutor(MetaProperties properties,
                                   @Nullable BackgroundProcessManager backgroundProcessManager,
@@ -93,6 +105,45 @@ public class ShellExecToolExecutor {
      * @return 包含 stdout、stderr、exitCode 的结构化结果
      */
     public ToolResult execute(ToolInput input) {
+        // 解析 expectedOutputs（可选）—— 若声明则跳过 cwd diff，仅检查指定路径
+        @SuppressWarnings("unchecked")
+        List<String> expectedOutputs = input.getOptionalParam("expectedOutputs", List.class)
+                .map(list -> ((List<?>) list).stream().map(Object::toString).toList())
+                .orElse(null);
+
+        // 工作目录解析（与 doExecute 内部保持一致）
+        NormalizedPath workDirInfo = workspaceResolver.normalizeWithInfo(
+                input.getOptionalParam("workingDirectory", String.class).orElse(null));
+        Path workDirResolved = workDirInfo.path();
+
+        // 产物探测准备：仅当配置已注入且未指定 expectedOutputs 时，对 cwd 在执行前快照
+        Path workspaceRoot = workspaceResolver.resolve();
+        Map<Path, WorkspaceDiffSnapshot.FileSnapshot> beforeSnapshot = Map.of();
+        boolean diffEnabled = artifactFilterConfig != null
+                && expectedOutputs == null
+                && ArtifactFilter.isInWorkspaceRoot(workDirResolved, workspaceRoot);
+        if (diffEnabled) {
+            beforeSnapshot = WorkspaceDiffSnapshot.take(workDirResolved, artifactFilterConfig);
+        } else if (expectedOutputs == null && artifactFilterConfig != null) {
+            log.info("shell.exec cwd 不在 workspace 白名单内，跳过 artifact 登记: {}", workDirResolved);
+        }
+
+        // 执行命令主流程
+        ToolResult result = doExecute(input);
+
+        // 执行后产物探测：合并到 ToolResult.artifacts
+        List<ToolArtifact> artifacts = collectArtifacts(
+                workDirResolved, workspaceRoot, beforeSnapshot, expectedOutputs, result.isSuccess());
+        if (artifacts.isEmpty()) {
+            return result;
+        }
+        return result.toBuilder().artifacts(artifacts).build();
+    }
+
+    /**
+     * 命令执行主流程；与原 execute 等价，仅去掉签名上的 ToolInput 直接返回 ToolResult。
+     */
+    private ToolResult doExecute(ToolInput input) {
         // 提取参数
         String command;
         try {
@@ -562,6 +613,120 @@ public class ShellExecToolExecutor {
             case APPROVED -> throw new IllegalStateException(
                     "buildGuardErrorMessage 不应处理 APPROVED 结果（仅在 isBlocked() 后调用）: " + guardResult);
         };
+    }
+
+    /**
+     * 注入产物过滤配置，由 {@code InfraToolProvider} 通过 setter 调用。
+     * 为 null 时关闭 artifact 登记，保持向后兼容（CLI / 单测场景 InfraToolProvider 未注入）。
+     */
+    public void setArtifactFilterConfig(@Nullable com.lifepilot.tool.artifact.ArtifactFilterConfig config) {
+        this.artifactFilterConfig = config;
+    }
+
+    /**
+     * 执行后产物探测：根据 expectedOutputs / cwd diff 收集本次命令产生的文件产物。
+     *
+     * <p>分两条路径：</p>
+     * <ul>
+     *   <li>{@code expectedOutputs} 显式声明：仅检查指定路径；存在 + 通过过滤则登记</li>
+     *   <li>cwd diff（默认）：take 后快照 + diff 出新增/修改的文件；按 mtime 倒序截取
+     *       {@code maxCountPerTool}</li>
+     * </ul>
+     *
+     * <p>命令失败（exitCode != 0）也会尝试登记 diff 产物（部分失败场景下也可能产出
+     * 有价值的中间文件），日志降级为 DEBUG。</p>
+     *
+     * @return 产物列表；任意环节失败都返回空列表，不阻塞 ToolResult 主路径
+     */
+    private List<ToolArtifact> collectArtifacts(Path workDirResolved,
+                                                 Path workspaceRoot,
+                                                 Map<Path, WorkspaceDiffSnapshot.FileSnapshot> beforeSnapshot,
+                                                 @Nullable List<String> expectedOutputs,
+                                                 boolean commandSucceeded) {
+        if (artifactFilterConfig == null) {
+            return List.of();
+        }
+        try {
+            if (expectedOutputs != null) {
+                return collectFromExpected(expectedOutputs, workDirResolved, workspaceRoot);
+            }
+            // 没启用 diff（cwd 越界或没快照）
+            if (beforeSnapshot == null) {
+                return List.of();
+            }
+            return collectFromDiff(workDirResolved, beforeSnapshot, commandSucceeded);
+        } catch (Exception e) {
+            log.warn("shell.exec 产物探测失败: error={}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<ToolArtifact> collectFromExpected(List<String> expectedOutputs,
+                                                    Path cwd, Path workspaceRoot) {
+        List<ToolArtifact> artifacts = new ArrayList<>();
+        for (String relOrAbs : expectedOutputs) {
+            Path candidate = Paths.get(relOrAbs).isAbsolute()
+                    ? Paths.get(relOrAbs).toAbsolutePath().normalize()
+                    : cwd.resolve(relOrAbs).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(candidate)) {
+                log.debug("expectedOutput 文件未产生，跳过: {}", candidate);
+                continue;
+            }
+            if (!ArtifactFilter.isInWorkspaceRoot(candidate, workspaceRoot)) {
+                log.debug("expectedOutput 路径越界，跳过: {}", candidate);
+                continue;
+            }
+            try {
+                long size = Files.size(candidate);
+                if (!ArtifactFilter.accept(candidate, size, artifactFilterConfig)) {
+                    log.debug("expectedOutput 过滤命中，跳过: {}", candidate);
+                    continue;
+                }
+                artifacts.add(ToolArtifact.fromFile(candidate));
+            } catch (IOException e) {
+                log.warn("expectedOutput 读取失败: path={}, error={}", candidate, e.getMessage());
+            }
+        }
+        return artifacts;
+    }
+
+    private List<ToolArtifact> collectFromDiff(Path cwd,
+                                                Map<Path, WorkspaceDiffSnapshot.FileSnapshot> beforeSnapshot,
+                                                boolean commandSucceeded) {
+        Map<Path, WorkspaceDiffSnapshot.FileSnapshot> after =
+                WorkspaceDiffSnapshot.take(cwd, artifactFilterConfig);
+        List<Path> changed = new ArrayList<>(WorkspaceDiffSnapshot.diff(beforeSnapshot, after));
+
+        // 按 mtime 倒序、截断 maxCountPerTool
+        changed.sort(Comparator.comparing(this::safeMtime, Comparator.reverseOrder()));
+        int limit = artifactFilterConfig.maxCountPerTool();
+        if (changed.size() > limit) {
+            String logMsg = "shell.exec 产物超过上限 {}，已截断为最近 mtime 的 {}";
+            if (commandSucceeded) {
+                log.warn(logMsg, changed.size(), limit);
+            } else {
+                log.debug(logMsg, changed.size(), limit);
+            }
+            changed = changed.subList(0, limit);
+        }
+
+        List<ToolArtifact> artifacts = new ArrayList<>(changed.size());
+        for (Path p : changed) {
+            try {
+                artifacts.add(ToolArtifact.fromFile(p));
+            } catch (IOException e) {
+                log.warn("artifact 读取失败: path={}, error={}", p, e.getMessage());
+            }
+        }
+        return artifacts;
+    }
+
+    private Instant safeMtime(Path p) {
+        try {
+            return Files.getLastModifiedTime(p).toInstant();
+        } catch (IOException e) {
+            return Instant.EPOCH;
+        }
     }
 
 }

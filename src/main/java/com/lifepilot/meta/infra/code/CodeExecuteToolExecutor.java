@@ -57,6 +57,17 @@ public class CodeExecuteToolExecutor {
     private final PythonRuntimeManager runtimeManager;
     @Nullable
     private final CommandGuard commandGuard;
+    /**
+     * Artifact 过滤配置，由 {@code InfraToolProvider} 通过 setter 注入。
+     * 为 null 时（旧调用点 / CLI 模式）code 工具不登记任何产物，保持向后兼容。
+     */
+    @Nullable
+    private com.lifepilot.tool.artifact.ArtifactFilterConfig artifactFilterConfig;
+    /**
+     * Workspace 白名单根目录；为 null 时关闭 artifact 登记。
+     */
+    @Nullable
+    private java.nio.file.Path workspaceRoot;
 
     public CodeExecuteToolExecutor(MetaProperties properties,
                                    @Nullable SandboxSessionManager sessionManager,
@@ -248,6 +259,13 @@ public class CodeExecuteToolExecutor {
                 booter.workingDirectory()
         );
 
+        // 执行前：对 booter.workingDirectory() 做产物快照（仅当配置已注入）
+        java.util.Map<java.nio.file.Path, com.lifepilot.meta.infra.shell.WorkspaceDiffSnapshot.FileSnapshot> beforeSnapshot = java.util.Map.of();
+        if (artifactFilterConfig != null && booter.workingDirectory() != null) {
+            beforeSnapshot = com.lifepilot.meta.infra.shell.WorkspaceDiffSnapshot.take(
+                    booter.workingDirectory(), artifactFilterConfig);
+        }
+
         try {
             var result = booter.execute(request);
 
@@ -270,13 +288,17 @@ public class CodeExecuteToolExecutor {
             log.debug("代码执行完成: sessionId={}, language={}, exitCode={}, durationMs={}",
                     sessionId, languageStr, result.exitCode(), result.durationMs());
 
-            // exitCode 非零视为执行失败
+            // 执行后产物探测
+            java.util.List<com.lifepilot.tool.model.ToolArtifact> artifacts =
+                    collectArtifacts(booter.workingDirectory(), beforeSnapshot);
+
+            // exitCode 非零视为执行失败 —— 即使失败也保留 diff 产物（中间产物对调试有价值）
             if (result.exitCode() != 0) {
                 return new ToolResult(ToolResultStatus.ERROR, Map.copyOf(data),
                         "代码执行失败: exitCode=" + result.exitCode(), ToolResultMeta.empty(),
-                        java.util.List.of());
+                        artifacts);
             }
-            return ToolResult.success(Map.copyOf(data));
+            return ToolResult.success(Map.copyOf(data), ToolResultMeta.empty(), artifacts);
         } catch (Exception e) {
             log.error("代码执行失败: sessionId={}, language={}, error={}", sessionId, languageStr, e.getMessage(), e);
             persistRecord(sessionId, language, codeHash, code.length(),
@@ -430,6 +452,59 @@ public class CodeExecuteToolExecutor {
             return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 算法不可用", e);
+        }
+    }
+
+    /**
+     * 注入产物过滤配置，由 {@code InfraToolProvider} 通过 setter 调用。
+     */
+    public void setArtifactFilterConfig(@Nullable com.lifepilot.tool.artifact.ArtifactFilterConfig config) {
+        this.artifactFilterConfig = config;
+    }
+
+    /**
+     * 注入 workspace 白名单根目录，由 {@code InfraToolProvider} 通过 setter 调用。
+     */
+    public void setWorkspaceRoot(@Nullable java.nio.file.Path workspaceRoot) {
+        this.workspaceRoot = workspaceRoot;
+    }
+
+    /**
+     * 探测 code 执行后产生的文件产物。
+     *
+     * <p>实现复用 {@link com.lifepilot.meta.infra.shell.WorkspaceDiffSnapshot}；
+     * 沙箱后端的 working directory 在主机文件系统上时做 cwd diff，否则跳过。
+     * 任意环节失败都返回空列表，不阻塞 ToolResult 主路径。</p>
+     */
+    private java.util.List<com.lifepilot.tool.model.ToolArtifact> collectArtifacts(
+            @Nullable java.nio.file.Path workingDirectory,
+            java.util.Map<java.nio.file.Path, com.lifepilot.meta.infra.shell.WorkspaceDiffSnapshot.FileSnapshot> beforeSnapshot) {
+        if (artifactFilterConfig == null || workspaceRoot == null || workingDirectory == null) {
+            return java.util.List.of();
+        }
+        if (!com.lifepilot.tool.artifact.ArtifactFilter.isInWorkspaceRoot(workingDirectory, workspaceRoot)) {
+            return java.util.List.of();
+        }
+        try {
+            var after = com.lifepilot.meta.infra.shell.WorkspaceDiffSnapshot.take(workingDirectory, artifactFilterConfig);
+            var changed = com.lifepilot.meta.infra.shell.WorkspaceDiffSnapshot.diff(beforeSnapshot, after);
+            int limit = artifactFilterConfig.maxCountPerTool();
+            if (changed.size() > limit) {
+                log.warn("code 产物超过上限 {}，已截断为 {}", changed.size(), limit);
+                changed = changed.subList(0, limit);
+            }
+            java.util.List<com.lifepilot.tool.model.ToolArtifact> artifacts = new java.util.ArrayList<>();
+            for (java.nio.file.Path p : changed) {
+                try {
+                    artifacts.add(com.lifepilot.tool.model.ToolArtifact.fromFile(p));
+                } catch (java.io.IOException e) {
+                    log.debug("code artifact 读取失败: path={}, error={}", p, e.getMessage());
+                }
+            }
+            return artifacts;
+        } catch (Exception e) {
+            log.debug("code 产物探测失败: error={}", e.getMessage());
+            return java.util.List.of();
         }
     }
 }
