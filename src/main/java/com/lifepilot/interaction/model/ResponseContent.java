@@ -22,7 +22,6 @@ import org.springframework.lang.Nullable;
         @JsonSubTypes.Type(value = ResponseContent.MarkdownContent.class, name = "MARKDOWN"),
         @JsonSubTypes.Type(value = ResponseContent.CardContent.class, name = "CARD"),
         @JsonSubTypes.Type(value = ResponseContent.ImageContent.class, name = "IMAGE"),
-        @JsonSubTypes.Type(value = ResponseContent.FileContent.class, name = "FILE"),
         @JsonSubTypes.Type(value = ResponseContent.StreamingContent.class, name = "STREAMING"),
 })
 public sealed interface ResponseContent
@@ -30,7 +29,6 @@ public sealed interface ResponseContent
                 ResponseContent.MarkdownContent,
                 ResponseContent.CardContent,
                 ResponseContent.ImageContent,
-                ResponseContent.FileContent,
                 ResponseContent.StreamingContent {
 
     /**
@@ -131,28 +129,6 @@ public sealed interface ResponseContent
             return caption != null
                 ? "[图片: %s] %s".formatted(altText, caption)
                 : "[图片: %s]".formatted(altText);
-        }
-    }
-
-    /**
-     * 文件响应 —— 引用已落盘的 document/attachment，让 channel 层发成"文件消息"
-     * （飞书 msg_type=file、企微 file 等）。仅含引用不含字节，delivery 层按需读物理文件。
-     *
-     * @param documentId 关联的 document id（来自 session_documents）
-     * @param fileName   文件名（含扩展名）
-     * @param mimeType   MIME
-     * @param caption    可选的附随文字说明
-     * @author zsg
-     * @since 2026-04-22
-     */
-    record FileContent(String documentId, String fileName, String mimeType, @Nullable String caption)
-            implements ResponseContent {
-
-        @Override
-        public String toPlainText() {
-            return caption != null
-                    ? "[文件: %s] %s".formatted(fileName, caption)
-                    : "[文件: %s]".formatted(fileName);
         }
     }
 
