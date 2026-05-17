@@ -56,8 +56,6 @@ lifepilot:
       heartbeat-core-pool-size: 1
   prompt:
     base-path: "classpath:prompts/"
-  document:
-    # 文档产物落盘目录由 ZhiweiPaths.home("documents") 提供
   agent:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
