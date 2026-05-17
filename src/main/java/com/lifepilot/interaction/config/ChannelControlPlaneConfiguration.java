@@ -131,13 +131,22 @@ public class ChannelControlPlaneConfiguration {
                                                               ChannelInstanceEventService channelInstanceEventService,
                                                               RestClient channelControlPlaneRestClient,
                                                               ConnectorManager connectorManager,
-                                                              @Nullable SseSessionManager sseSessionManager) {
+                                                              @Nullable SseSessionManager sseSessionManager,
+                                                              @Nullable com.lifepilot.conversation.artifact.SessionArtifactRepository artifactRepository,
+                                                              @Nullable GatewayDeliveryProperties deliveryProperties,
+                                                              @Nullable ZhiweiPaths zhiweiPaths) {
+        java.nio.file.Path workspaceRoot = zhiweiPaths != null
+                ? zhiweiPaths.workspace()
+                : null;
         return new ChannelDeliveryDispatcher(
                 channelRegistry,
                 channelInstanceEventService,
                 channelControlPlaneRestClient,
                 connectorManager,
-                sseSessionManager
+                sseSessionManager,
+                artifactRepository,
+                deliveryProperties,
+                workspaceRoot
         );
     }
 

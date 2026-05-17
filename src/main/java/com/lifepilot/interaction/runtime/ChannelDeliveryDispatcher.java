@@ -1,5 +1,9 @@
 package com.lifepilot.interaction.runtime;
 
+import com.lifepilot.config.path.ZhiweiPaths;
+import com.lifepilot.conversation.artifact.SessionArtifactRepository;
+import com.lifepilot.interaction.config.GatewayDeliveryProperties;
+import com.lifepilot.interaction.model.ArtifactRef;
 import com.lifepilot.interaction.model.ChannelInstance;
 import com.lifepilot.interaction.model.ConnectorMode;
 import com.lifepilot.interaction.model.DeliveryMode;
@@ -12,16 +16,23 @@ import com.lifepilot.interaction.runtime.model.ChannelRuntimeEventRequest;
 import com.lifepilot.interaction.runtime.model.ChannelRuntimeEventResponse;
 import com.lifepilot.interaction.service.ChannelInstanceEventService;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
+import com.lifepilot.tool.artifact.ArtifactFilter;
+import com.lifepilot.tool.model.ArtifactKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -46,49 +57,235 @@ public class ChannelDeliveryDispatcher {
     private final ConnectorManager connectorManager;
     @Nullable
     private final SseSessionManager sseSessionManager;
+    /** 会话产物仓库 — 按 ArtifactRef 拉文件元信息和路径；为 null 时关闭文件下发。 */
+    @Nullable
+    private final SessionArtifactRepository artifactRepository;
+    /** 渠道分发配置 — 提供平台大小上限、过滤规则等。 */
+    @Nullable
+    private final GatewayDeliveryProperties deliveryProperties;
+    /** workspace 白名单根目录 — 二次校验，防 artifact 写入后被恶意覆盖路径。 */
+    @Nullable
+    private final Path workspaceRoot;
 
+    /** 历史 5 参构造器 — 关闭 artifact 文件下发链路，保持向后兼容。 */
     public ChannelDeliveryDispatcher(ChannelRegistry channelRegistry,
                                      ChannelInstanceEventService channelInstanceEventService,
                                      RestClient restClient,
                                      ConnectorManager connectorManager,
                                      @Nullable SseSessionManager sseSessionManager) {
+        this(channelRegistry, channelInstanceEventService, restClient,
+                connectorManager, sseSessionManager, null, null, null);
+    }
+
+    /** 完整 8 参构造器 — 启用 artifact 文件下发链路。 */
+    public ChannelDeliveryDispatcher(ChannelRegistry channelRegistry,
+                                     ChannelInstanceEventService channelInstanceEventService,
+                                     RestClient restClient,
+                                     ConnectorManager connectorManager,
+                                     @Nullable SseSessionManager sseSessionManager,
+                                     @Nullable SessionArtifactRepository artifactRepository,
+                                     @Nullable GatewayDeliveryProperties deliveryProperties,
+                                     @Nullable Path workspaceRoot) {
         this.channelRegistry = channelRegistry;
         this.channelInstanceEventService = channelInstanceEventService;
         this.restClient = restClient;
         this.connectorManager = connectorManager;
         this.sseSessionManager = sseSessionManager;
+        this.artifactRepository = artifactRepository;
+        this.deliveryProperties = deliveryProperties;
+        this.workspaceRoot = workspaceRoot;
     }
 
     public ChannelRuntimeEventResponse buildEventResponse(ChannelInstance instance,
                                                           ChannelRuntimeEventRequest request,
                                                           GatewayResponse response) {
-        // 文档工作区下架后不再拆分 /api/documents/<id>/download 链接：直接以单条 delivery 投递，
-        // 链接保留在原始文本中（下游渠道按普通文本渲染）。
-        if (log.isDebugEnabled()) {
-            log.debug("[dispatcher] buildEventResponse: instanceId={}, platform={}, contentType={}",
-                    instance.instanceId(), instance.platform(),
-                    response.content() != null ? response.content().getClass().getSimpleName() : "null");
-        }
         DeliveryMode mode = resolveDeliveryMode(request);
         ChannelRuntimeDeliveryRequest.Target target = buildTarget(request);
+        String platform = instance.platform();
+        long platformLimitBytes = resolvePlatformMaxSizeBytes(platform);
 
-        ChannelRuntimeDeliveryRequest delivery = new ChannelRuntimeDeliveryRequest(
+        // 1. 大小预检：超限的 artifact 不投递，主消息追加路径降级提示
+        List<ArtifactRef> deliverableRefs = new ArrayList<>();
+        StringBuilder oversizedNotices = new StringBuilder();
+        for (ArtifactRef ref : response.artifactRefs()) {
+            if (ref.size() > platformLimitBytes) {
+                String absPath = resolveAbsolutePath(ref);
+                long sizeMb = Math.max(1, ref.size() / 1024L / 1024L);
+                long limitMb = Math.max(1, platformLimitBytes / 1024L / 1024L);
+                oversizedNotices.append("\n\n📎 文件 ").append(ref.fileName())
+                        .append(" (").append(sizeMb).append("MB) 超过 ")
+                        .append(platform).append(" ").append(limitMb).append("MB 上限");
+                if (absPath != null) {
+                    oversizedNotices.append("，本地路径：").append(absPath);
+                }
+                log.warn("artifact 大小超限，跳过投递: platform={}, fileName={}, size={}, limit={}",
+                        platform, ref.fileName(), ref.size(), platformLimitBytes);
+            } else {
+                deliverableRefs.add(ref);
+            }
+        }
+
+        // 2. 主消息（含降级提示追加）
+        ResponseContent mainContent = oversizedNotices.length() > 0
+                ? appendNoticeToContent(response.content(), oversizedNotices.toString())
+                : response.content();
+
+        if (log.isDebugEnabled()) {
+            log.debug("[dispatcher] buildEventResponse: instanceId={}, platform={}, contentType={}, artifactRefs={}, deliverable={}",
+                    instance.instanceId(), platform,
+                    mainContent != null ? mainContent.getClass().getSimpleName() : "null",
+                    response.artifactRefs().size(), deliverableRefs.size());
+        }
+
+        ChannelRuntimeDeliveryRequest mainDelivery = new ChannelRuntimeDeliveryRequest(
                 instance.instanceId(),
                 response.responseId(),
                 mode,
                 target,
-                buildContent(response.content()),
+                buildContent(mainContent),
                 buildAttachments(response.attachments()),
                 response.metadata()
         );
+
+        // 3. 每个可投递 artifact 拆成独立 delivery（responseId 加 :partN 后缀）
+        List<ChannelRuntimeDeliveryRequest> deliveries = new ArrayList<>();
+        deliveries.add(mainDelivery);
+        int partIdx = 1;
+        for (ArtifactRef ref : deliverableRefs) {
+            String partResponseId = response.responseId() != null
+                    ? response.responseId() + ":part" + partIdx
+                    : null;
+            ChannelRuntimeDeliveryRequest artifactDelivery = buildArtifactDelivery(
+                    instance, partResponseId, ref, target, mode, response.metadata());
+            if (artifactDelivery != null) {
+                deliveries.add(artifactDelivery);
+            }
+            partIdx++;
+        }
 
         return new ChannelRuntimeEventResponse(
                 true,
                 response.responseId(),
                 response.statusCode(),
                 response.errorMessage(),
-                List.of(delivery)
+                List.copyOf(deliveries)
         );
+    }
+
+    /**
+     * 把单个 ArtifactRef 拼成一条 file/image content 的 delivery，含 base64 字节附件。
+     *
+     * <p>失败路径全部返回 null + WARN 日志，让主消息正常投递不阻塞响应链路。</p>
+     */
+    @Nullable
+    private ChannelRuntimeDeliveryRequest buildArtifactDelivery(
+            ChannelInstance instance,
+            @Nullable String responseId,
+            ArtifactRef ref,
+            ChannelRuntimeDeliveryRequest.Target target,
+            DeliveryMode mode,
+            Map<String, Object> metadata) {
+        if (artifactRepository == null) {
+            return null;
+        }
+        var rowOpt = artifactRepository.findById(ref.artifactId());
+        if (rowOpt.isEmpty()) {
+            log.warn("artifact 不存在: id={}", ref.artifactId());
+            return null;
+        }
+        Map<String, Object> payload = artifactRepository.readPayload(ref.artifactId());
+        Object pathObj = payload.get("path");
+        if (!(pathObj instanceof String pathStr) || pathStr.isBlank()) {
+            log.warn("artifact 缺少 path 字段: id={}", ref.artifactId());
+            return null;
+        }
+        Path path = Paths.get(pathStr);
+
+        // 二次校验 workspace 白名单
+        if (workspaceRoot != null && !ArtifactFilter.isInWorkspaceRoot(path, workspaceRoot)) {
+            log.warn("artifact 路径越界，跳过投递: id={}, path={}", ref.artifactId(), path);
+            return null;
+        }
+        if (!Files.isRegularFile(path)) {
+            log.warn("artifact 物理文件丢失: id={}, path={}", ref.artifactId(), path);
+            return null;
+        }
+
+        byte[] data;
+        try {
+            data = Files.readAllBytes(path);
+        } catch (IOException e) {
+            log.warn("artifact 字节读取失败: id={}, path={}, error={}",
+                    ref.artifactId(), path, e.getMessage());
+            return null;
+        }
+
+        var attachment = new ChannelRuntimeDeliveryRequest.Attachment(
+                ref.artifactId(),
+                ref.fileName(),
+                ref.mimeType(),
+                Base64.getEncoder().encodeToString(data),
+                data.length
+        );
+
+        String contentType = ref.kind() == ArtifactKind.IMAGE ? "image" : "file";
+        Map<String, Object> contentPayload = new LinkedHashMap<>();
+        contentPayload.put("artifactId", ref.artifactId());
+        contentPayload.put("fileName", ref.fileName());
+        contentPayload.put("mimeType", ref.mimeType());
+        contentPayload.put("kind", ref.kind().name());
+        contentPayload.put("size", ref.size());
+
+        return new ChannelRuntimeDeliveryRequest(
+                instance.instanceId(),
+                responseId,
+                mode,
+                target,
+                new ChannelRuntimeDeliveryRequest.Content(contentType, "[" + ref.fileName() + "]",
+                        Map.copyOf(contentPayload)),
+                List.of(attachment),
+                metadata
+        );
+    }
+
+    /** 查询指定平台的单文件大小上限（字节）；未配置时回落 50MB。 */
+    private long resolvePlatformMaxSizeBytes(String platform) {
+        int mb = (deliveryProperties != null)
+                ? deliveryProperties.resolvePlatformMaxSizeMb(platform)
+                : GatewayDeliveryProperties.FALLBACK_PLATFORM_MAX_SIZE_MB;
+        return mb * 1024L * 1024L;
+    }
+
+    /** 通过 SessionArtifactRepository 反查 artifact 物理路径，用于降级提示文本。 */
+    @Nullable
+    private String resolveAbsolutePath(ArtifactRef ref) {
+        if (artifactRepository == null) {
+            return null;
+        }
+        try {
+            Map<String, Object> payload = artifactRepository.readPayload(ref.artifactId());
+            Object p = payload.get("path");
+            return p instanceof String s ? s : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 在主消息内容末尾追加降级提示文本；TextContent / MarkdownContent 各自处理，
+     * 其他 sealed 分支保持不变（notice 只对文本类型生效）。
+     */
+    private ResponseContent appendNoticeToContent(ResponseContent content, String notice) {
+        if (content == null) {
+            return new ResponseContent.MarkdownContent(notice.strip());
+        }
+        return switch (content) {
+            case ResponseContent.TextContent t ->
+                    new ResponseContent.TextContent((t.text() != null ? t.text() : "") + notice);
+            case ResponseContent.MarkdownContent m ->
+                    new ResponseContent.MarkdownContent((m.markdown() != null ? m.markdown() : "") + notice);
+            default -> content;
+        };
     }
 
     public void deliver(ChannelInstance instance, ChannelRuntimeDeliveryRequest request) {
