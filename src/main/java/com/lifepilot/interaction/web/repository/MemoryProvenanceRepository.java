@@ -329,8 +329,10 @@ public class MemoryProvenanceRepository {
 
     /**
      * 列出 memory_entity_provenances 中当前仍 {@code VALID} 状态行引用过的所有
-     * document ID（去重），供 Task 27 {@code OrphanProvenanceScanner} 与
-     * {@code session_documents} 对照检测孤儿引用。
+     * document ID（去重）。
+     *
+     * <p>历史用途：曾供 {@code OrphanProvenanceScanner}（已随 remove-document-workspace
+     * 一并下架）与文档工作区表对照检测孤儿引用。当前为预留 API，无活跃调用方。</p>
      *
      * <p>只扫 {@code status = 'VALID'}：已由 {@code ProvenanceStaleListener} 标为
      * STALE 的行不再重复发 {@link com.lifepilot.memory.lifecycle.events.SourceInvalidated}
