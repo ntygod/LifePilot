@@ -113,6 +113,8 @@ export interface Message {
   highlightedContent?: string
   /** 附件列表 */
   attachments?: ChatAttachment[]
+  /** 文件产物引用列表 — 工具调用产生的 ToolArtifact 对应的 SessionArtifact 引用 */
+  artifactRefs?: import('@/api/artifacts').ArtifactRefPayload[]
   /** Token 使用情况（从 DONE 事件中获取） */
   tokenUsage?: TokenUsage
   modelId?: string

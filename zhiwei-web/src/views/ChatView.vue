@@ -52,6 +52,7 @@ const {
   reasoningEvents,
   streamingReactSteps,
   streamingA2uiComponents,
+  streamingArtifactRefs,
   pendingPermissionApprovals,
   pendingPermissionApprovalResolutions,
   resolvePermissionApproval,
@@ -719,6 +720,7 @@ const shouldShowContinuationHint = computed(() =>
               :streaming-a2ui-components="streamingA2uiComponents"
               :streaming-permission-approvals="pendingPermissionApprovals"
               :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
+              :streaming-artifact-refs="streamingArtifactRefs"
               :query="searchQuery"
               @retry="handleRetry"
               @edit="handleEdit"

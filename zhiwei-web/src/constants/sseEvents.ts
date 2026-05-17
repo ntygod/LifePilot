@@ -12,6 +12,7 @@ export const SSE_EVENT_TYPES = {
   ERROR: 'error',
   HEARTBEAT: 'heartbeat',
   MEDIA: 'media',
+  ARTIFACT_REF: 'artifact-ref',
 
   TRACE_START: 'trace-start',
   TRACE_STEP: 'trace-step',

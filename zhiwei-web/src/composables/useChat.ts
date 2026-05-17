@@ -64,6 +64,7 @@ export function useChat() {
   let reasoningStartedAt: number | null = null
   const streamingReactSteps = ref<ReactStepDto[]>([])
   const streamingMedia = ref<SseMediaEvent[]>([])
+  const streamingArtifactRefs = ref<import('@/api/artifacts').ArtifactRefPayload[]>([])
   const pendingPermissionApprovals = ref<Map<string, PermissionApprovalRequest>>(new Map())
   const pendingPermissionApprovalResolutions = ref<Map<string, 'approved' | 'rejected' | 'expired'>>(new Map())
   /** 浏览器人工接管 modal 状态：非空表示需要展示 HumanTakeoverModal */
@@ -288,6 +289,7 @@ export function useChat() {
     reasoningStartedAt = null
     streamingReactSteps.value = []
     streamingMedia.value = []
+    streamingArtifactRefs.value = []
     pendingPermissionApprovals.value = new Map()
     pendingPermissionApprovalResolutions.value = new Map()
     a2uiStore.clearComponents()
@@ -464,6 +466,14 @@ export function useChat() {
           streamingMedia.value.push(event)
           break
         }
+        case SSE_EVENT_TYPES.ARTIFACT_REF: {
+          const ref: import('@/api/artifacts').ArtifactRefPayload = JSON.parse(data)
+          // 后端按工具调用顺序推送，前端按 artifactId 去重防重复
+          if (!streamingArtifactRefs.value.some(x => x.artifactId === ref.artifactId)) {
+            streamingArtifactRefs.value.push(ref)
+          }
+          break
+        }
         case SSE_EVENT_TYPES.DONE: {
           const event: SseDoneEvent = JSON.parse(data)
           const turnId = event.turnId ?? currentTurnId ?? undefined
@@ -500,6 +510,9 @@ export function useChat() {
             resumedFromTraceId: event.resumedFromTraceId,
             turnStatus: event.turnStatus,
             attachments: attachments.length > 0 ? attachments : undefined,
+            artifactRefs: streamingArtifactRefs.value.length > 0
+              ? [...streamingArtifactRefs.value]
+              : undefined,
             tokenUsage: event.tokenUsage,
             modelId: event.tokenUsage?.modelId,
             sources: event.sources,
@@ -1119,6 +1132,7 @@ export function useChat() {
     reasoningDurationMs,
     streamingReactSteps,
     streamingMedia,
+    streamingArtifactRefs,
     streamingA2uiComponents: a2uiStore.components,
     pendingPermissionApprovals: computed(() => mapToRecord(pendingPermissionApprovals.value)),
     pendingPermissionApprovalResolutions: computed(() => mapToRecord(pendingPermissionApprovalResolutions.value)),

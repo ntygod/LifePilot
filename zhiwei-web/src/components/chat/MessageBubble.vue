@@ -25,6 +25,7 @@ import ThinkingIndicator from './ThinkingIndicator.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
+import ArtifactCard from './ArtifactCard.vue'
 
 const props = defineProps<{
   message: Message
@@ -258,6 +259,7 @@ const hasNonApprovalAssistantBody = computed(() => (
   || imageAttachments.value.length > 0
   || fileAttachments.value.length > 0
   || audioAttachments.value.length > 0
+  || (props.message.artifactRefs?.length ?? 0) > 0
   || visibleA2uiComponents.value.length > 0
   || !!props.message.toolsSummary?.length
   || kbSources.value.length > 0
@@ -525,6 +527,23 @@ function approvalLogTone(log: PermissionApprovalLog) {
                 >下载</a>
               </div>
             </template>
+          </div>
+
+          <!-- 文件产物（来自工具调用产生的 ArtifactRef，或流式 SSE artifact-ref 推送） -->
+          <div
+            v-if="(props.message.artifactRefs?.length ?? 0) > 0"
+            class="mt-md flex flex-col gap-sm"
+          >
+            <ArtifactCard
+              v-for="ref in props.message.artifactRefs"
+              :key="ref.artifactId"
+              :artifact-id="ref.artifactId"
+              :file-name="ref.fileName"
+              :mime-type="ref.mimeType"
+              :kind="ref.kind"
+              :size="ref.size"
+              :download-url="ref.downloadUrl"
+            />
           </div>
         </div>
       </div>
