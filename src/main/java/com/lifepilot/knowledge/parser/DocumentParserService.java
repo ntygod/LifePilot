@@ -1,14 +1,5 @@
-package com.lifepilot.document.parser;
+package com.lifepilot.knowledge.parser;
 
-import com.lifepilot.knowledge.parser.DocumentParseException;
-import com.lifepilot.knowledge.parser.DocumentParser;
-import com.lifepilot.knowledge.parser.ExcelParser;
-import com.lifepilot.knowledge.parser.MarkdownParser;
-import com.lifepilot.knowledge.parser.ParseResult;
-import com.lifepilot.knowledge.parser.PdfParser;
-import com.lifepilot.knowledge.parser.PlainTextParser;
-import com.lifepilot.knowledge.parser.PowerpointParser;
-import com.lifepilot.knowledge.parser.WordParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
