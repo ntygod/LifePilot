@@ -227,7 +227,14 @@ public class SandboxSessionManager {
     }
 
     /**
-     * 销毁单个会话 entry：shutdown booter + 删除工作目录。
+     * 销毁单个会话 entry：shutdown booter，保留工作目录（含用户产物）。
+     *
+     * <p>sandbox TTL 清理的目的是释放进程资源，不是清磁盘。工作目录下可能包含
+     * 已登记到 session_artifacts 的用户产物（chart.png / report.docx 等），
+     * 删除会导致历史会话中的 ArtifactCard 图片/下载链接失效。</p>
+     *
+     * <p>磁盘清理由独立的 WorkspaceCleanupJob 按更长周期策略执行（如 30 天无活动），
+     * 或用户在设置页主动触发。</p>
      */
     private void destroyEntry(String sessionId, SandboxEntry entry) {
         try {
@@ -236,13 +243,7 @@ public class SandboxSessionManager {
             log.warn("关闭 booter 失败: sessionId={}, error={}", sessionId, e.getMessage());
         }
 
-        try {
-            SandboxUtils.deleteDirectoryRecursively(entry.workingDirectory());
-        } catch (IOException e) {
-            log.warn("删除工作目录失败: sessionId={}, path={}, error={}",
-                    sessionId, entry.workingDirectory(), e.getMessage());
-        }
-
-        log.info("会话已销毁: sessionId={}", sessionId);
+        // 不删除工作目录 —— 保留用户产物文件
+        log.info("会话已销毁（工作目录保留）: sessionId={}, path={}", sessionId, entry.workingDirectory());
     }
 }

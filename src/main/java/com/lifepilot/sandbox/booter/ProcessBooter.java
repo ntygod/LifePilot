@@ -177,14 +177,8 @@ public final class ProcessBooter implements SandboxBooter {
     @Override
     public void shutdown() {
         virtualThreadExecutor.close();
-        if (workingDirectory != null) {
-            try {
-                SandboxUtils.deleteDirectoryRecursively(workingDirectory);
-                log.info("ProcessBooter 已关闭，工作目录已清理: path={}", workingDirectory);
-            } catch (IOException e) {
-                log.warn("清理工作目录失败: path={}, error={}", workingDirectory, e.getMessage());
-            }
-        }
+        // 不删除工作目录 —— 保留用户产物文件（chart.png 等已登记到 session_artifacts）
+        log.info("ProcessBooter 已关闭（工作目录保留）: path={}", workingDirectory);
     }
 
     @Override
