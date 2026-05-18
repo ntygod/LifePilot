@@ -84,6 +84,8 @@ public final class ArtifactFilter {
      *   <li>{@code candidate} 与 {@code workspaceRoot} 都做
      *       {@code toAbsolutePath().normalize()} —— 解析 {@code ..} / {@code .}
      *       并消除相对引用，防止路径攻击</li>
+     *   <li>拒绝符号链接 —— 防止攻击者在 workspace 内创建 symlink 指向外部敏感文件，
+     *       绕过 {@code startsWith} 白名单校验后通过 {@code readAllBytes} 读取外部内容</li>
      *   <li>使用 {@link Path#startsWith(Path)} 而非字符串前缀比对，避免
      *       {@code /workspace/} 与 {@code /workspace_evil/} 误命中</li>
      * </ul>
@@ -98,6 +100,13 @@ public final class ArtifactFilter {
         }
         Path canonical = candidate.toAbsolutePath().normalize();
         Path root = workspaceRoot.toAbsolutePath().normalize();
-        return canonical.startsWith(root);
+        if (!canonical.startsWith(root)) {
+            return false;
+        }
+        // 拒绝符号链接：防止 workspace 内 symlink 指向外部文件的路径穿越攻击
+        if (java.nio.file.Files.isSymbolicLink(canonical)) {
+            return false;
+        }
+        return true;
     }
 }

@@ -785,12 +785,15 @@ lifepilot:
       shell: "bash"
     # 会话配置
     session:
-      # 会话 TTL（秒）
+      # 会话 TTL（秒）— 仅释放进程资源，不删除工作目录
       ttl-seconds: 600
       # 最大活跃会话数
       max-active-sessions: 5
       # 过期清理间隔（秒）
       cleanup-interval-seconds: 60
+      # TODO: 会话工作目录物理保留天数（超期后由 SessionDirectoryCleanupJob 清理）
+      # 当前未实现清理 Job，目录永久保留；后续 spec 实现时启用此配置
+      # directory-retention-days: 30
     # 代码预检配置
     validator:
       # 是否启用预检
