@@ -81,6 +81,7 @@ public class WebFetchToolExecutor {
     private final BrowserSessionManager browserSessionManager;
     private final SsrfGuard ssrfGuard;
     private final HttpClient httpClient;
+    private final DomainRateLimiter rateLimiter;
 
     /**
      * 测试便利构造器 — 默认禁用 SSRF 防护，用于本地 127.0.0.1 测试服务器场景。
@@ -111,6 +112,7 @@ public class WebFetchToolExecutor {
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+        this.rateLimiter = new DomainRateLimiter(1000);
     }
 
     /**
@@ -140,6 +142,9 @@ public class WebFetchToolExecutor {
                 log.warn("SSRF 策略拦截 web.fetch 请求: url={}, reason={}", url, e.getReason());
                 return ToolResult.error("目标地址被 SSRF 策略拦截: " + e.getReason());
             }
+
+            // 域名级限流 — 防止对同一站点的高频请求触发 429
+            rateLimiter.acquirePermit(url);
 
             // 读取可选 headers / body / timeoutSeconds
             @SuppressWarnings("unchecked")
@@ -532,10 +537,13 @@ public class WebFetchToolExecutor {
     }
 
     /**
-     * 为每次浏览器抓取生成唯一会话 ID，避免并发请求共享 Page 导致竞态。
+     * 为每次浏览器抓取生成唯一会话 ID。
+     *
+     * <p>使用固定前缀 {@code "web-fetch-shared"} 使所有 web.fetch 浏览器回退共享同一个
+     * BrowserContext（复用登录态 Cookie），但每次抓取仍创建独立 Page 避免并发竞态。</p>
      */
     private String fetchSessionId() {
-        return "web-fetch-" + UUID.randomUUID().toString().substring(0, 12);
+        return "web-fetch-shared-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     /**

@@ -207,6 +207,40 @@ final class PlaywrightBridge {
                 });
                 observer.observe(document.documentElement, {childList: true, subtree: true});
                 """);
+
+        // 清理 Playwright/Selenium 在 document 上注入的内部属性
+        // bot.sannysoft.com 的 "WebDriver (New)" 检测会扫描这些属性
+        ctx.addInitScript("""
+                // 延迟清理：等 document 就绪后删除 Playwright 注入的内部属性
+                const cleanupWebdriverArtifacts = () => {
+                    const props = Object.getOwnPropertyNames(document);
+                    for (const prop of props) {
+                        if (prop.startsWith('__webdriver_') || prop.startsWith('__selenium_') ||
+                            prop.startsWith('__fxdriver_') || prop.startsWith('__driver_') ||
+                            prop === '$cdc_asdjflasutopfhvcZLmcfl_' || prop.startsWith('$chrome_asyncScriptInfo')) {
+                            try { delete document[prop]; } catch(e) {}
+                        }
+                    }
+                    // 同时清理 window 上的自动化痕迹
+                    const winProps = ['__webdriver_evaluate', '__selenium_evaluate',
+                                      '__webdriver_script_function', '__webdriver_script_func',
+                                      '__webdriver_script_fn', '__fxdriver_evaluate',
+                                      '__driver_evaluate', '__driver_unwrap',
+                                      '__selenium_unwrap', '__fxdriver_unwrap',
+                                      'callSelenium', '_selenium', 'calledSelenium',
+                                      '_Selenium_IDE_Recorder', '__$webdriverAsyncExecutor'];
+                    for (const prop of winProps) {
+                        if (prop in window) {
+                            try { delete window[prop]; } catch(e) {}
+                        }
+                    }
+                };
+                // 立即执行一次 + DOMContentLoaded 后再执行一次（覆盖延迟注入的属性）
+                cleanupWebdriverArtifacts();
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', cleanupWebdriverArtifacts);
+                }
+                """);
     }
 
     /**

@@ -82,7 +82,10 @@ public class WebSearchConfigProvider {
     }
 
     private static String normalizeProvider(String provider) {
-        return "tavily";
+        if (provider == null || provider.isBlank()) {
+            return "tavily";
+        }
+        return provider.trim().toLowerCase();
     }
 
     private static String normalizeApiKey(String apiKey) {
