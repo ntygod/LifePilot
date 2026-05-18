@@ -51,6 +51,8 @@ const ui = useUiStore()
 const tauriAvailable = ref(isTauriEnv())
 const absolutePath = ref<string | null>(null)
 const downloadUrl = computed(() => props.downloadUrl ?? buildArtifactDownloadUrl(props.artifactId))
+// 安全说明：downloadUrl 指向同源后端 /api/artifacts/{id}/download，id 经 encodeURIComponent 编码。
+// 若未来支持外部 CDN URL，需在 CSP 中限制 img-src 白名单。
 
 /** 拉取 artifact 的本地绝对路径（仅 Tauri 端按需展示）。 */
 async function loadAbsolutePath() {

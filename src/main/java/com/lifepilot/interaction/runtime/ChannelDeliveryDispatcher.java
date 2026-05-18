@@ -213,6 +213,14 @@ public class ChannelDeliveryDispatcher {
 
         byte[] data;
         try {
+            long actualSize = Files.size(path);
+            // 防御性校验：文件可能在预检后增大（竞态），或 ref.size 与实际不一致
+            long hardLimit = 50L * 1024 * 1024; // 50MB 绝对上限，防止 OOM
+            if (actualSize > hardLimit) {
+                log.warn("artifact 文件超过内存读取上限（{}MB），跳过投递: id={}, path={}, actualSize={}",
+                        hardLimit / 1024 / 1024, ref.artifactId(), path, actualSize);
+                return null;
+            }
             data = Files.readAllBytes(path);
         } catch (IOException e) {
             log.warn("artifact 字节读取失败: id={}, path={}, error={}",

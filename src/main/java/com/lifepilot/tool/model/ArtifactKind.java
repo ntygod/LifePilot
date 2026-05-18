@@ -12,6 +12,15 @@ import java.util.Locale;
  * 一律为 {@link #FILE}。本枚举不为 video / audio 单独建分类，因为 IM 平台对
  * 这些类型的处理与文件消息差异不显著，避免引入过多分支。</p>
  *
+ * <h3>扩展指南</h3>
+ * <p>若未来需要区分 AUDIO / VIDEO / DOCUMENT 等类型（用于前端差异化渲染或
+ * 渠道投递走不同 API），在此枚举新增 permit 并同步修改：</p>
+ * <ul>
+ *   <li>{@link #fromMimeType(String)} 推断逻辑</li>
+ *   <li>前端 {@code ArtifactCard.vue} 的 kind 分支渲染</li>
+ *   <li>{@code ChannelDeliveryDispatcher.buildArtifactDelivery()} 的 contentType 映射</li>
+ * </ul>
+ *
  * @author zsg
  * @since 2026-05-17
  */

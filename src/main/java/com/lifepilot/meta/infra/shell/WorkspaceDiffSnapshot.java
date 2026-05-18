@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 import com.lifepilot.tool.artifact.ArtifactFilter;
 import com.lifepilot.tool.artifact.ArtifactFilterConfig;
@@ -53,6 +52,9 @@ public final class WorkspaceDiffSnapshot {
     /**
      * 对 cwd 递归生成文件快照，应用 {@link ArtifactFilter} 过滤规则。
      *
+     * <p>使用 {@link java.nio.file.FileVisitor} + {@code SKIP_SUBTREE} 在进入排除目录前
+     * 直接跳过子树遍历，避免 {@code node_modules} / {@code .git} 等大目录的无谓 I/O。</p>
+     *
      * @param cwd    工作目录；非目录或不存在时返回空 Map
      * @param filter 过滤配置
      * @return path → FileSnapshot 映射；调用方应保留引用用于 diff 对比
@@ -62,21 +64,50 @@ public final class WorkspaceDiffSnapshot {
             return Map.of();
         }
         Map<Path, FileSnapshot> snapshot = new LinkedHashMap<>();
-        try (Stream<Path> stream = Files.walk(cwd)) {
-            stream.filter(Files::isRegularFile)
-                    .forEach(path -> {
-                        try {
-                            long size = Files.size(path);
-                            Path normalized = path.toAbsolutePath().normalize();
-                            if (!ArtifactFilter.accept(normalized, size, filter)) {
-                                return;
-                            }
-                            Instant mtime = Files.getLastModifiedTime(path).toInstant();
-                            snapshot.put(normalized, new FileSnapshot(mtime, size));
-                        } catch (IOException ignored) {
-                            // 单文件读取失败不影响整体快照
+        try {
+            Files.walkFileTree(cwd, new java.nio.file.SimpleFileVisitor<>() {
+                @Override
+                public java.nio.file.FileVisitResult preVisitDirectory(Path dir, java.nio.file.attribute.BasicFileAttributes attrs) {
+                    // 根目录始终进入
+                    if (dir.equals(cwd)) {
+                        return java.nio.file.FileVisitResult.CONTINUE;
+                    }
+                    // 排除目录：直接跳过子树，避免无谓 I/O
+                    Path dirName = dir.getFileName();
+                    if (dirName != null && filter.excludedDirs().contains(dirName.toString())) {
+                        return java.nio.file.FileVisitResult.SKIP_SUBTREE;
+                    }
+                    // 隐藏目录也跳过
+                    if (dirName != null && dirName.toString().startsWith(".")) {
+                        return java.nio.file.FileVisitResult.SKIP_SUBTREE;
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFile(Path path, java.nio.file.attribute.BasicFileAttributes attrs) {
+                    if (!attrs.isRegularFile()) {
+                        return java.nio.file.FileVisitResult.CONTINUE;
+                    }
+                    try {
+                        long size = attrs.size();
+                        Path normalized = path.toAbsolutePath().normalize();
+                        if (!ArtifactFilter.accept(normalized, size, filter)) {
+                            return java.nio.file.FileVisitResult.CONTINUE;
                         }
-                    });
+                        Instant mtime = attrs.lastModifiedTime().toInstant();
+                        snapshot.put(normalized, new FileSnapshot(mtime, size));
+                    } catch (Exception ignored) {
+                        // 单文件读取失败不影响整体快照
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
         } catch (IOException e) {
             log.debug("workspace 快照失败: cwd={}, error={}", cwd, e.getMessage());
             return Map.of();

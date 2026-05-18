@@ -126,4 +126,25 @@ class ArtifactFilter_规则测试 {
         assertThat(ArtifactFilter.accept(null, 1, ArtifactFilterConfig.defaultConfig())).isFalse();
         assertThat(ArtifactFilter.accept(workspace.resolve("x.txt"), 1, null)).isFalse();
     }
+
+    @Test
+    @DisplayName("isInWorkspaceRoot：符号链接指向 workspace 外部时拒绝")
+    void workspace_白名单_符号链接拒绝(@TempDir Path tmp) throws IOException {
+        Path workspace = tmp.resolve("workspace");
+        Files.createDirectories(workspace);
+        // 在 workspace 外创建一个敏感文件
+        Path external = tmp.resolve("secret.txt");
+        Files.writeString(external, "sensitive data");
+        // 在 workspace 内创建指向外部文件的符号链接
+        Path symlink = workspace.resolve("link.txt");
+        try {
+            Files.createSymbolicLink(symlink, external);
+        } catch (UnsupportedOperationException | IOException e) {
+            // Windows 非管理员可能无法创建符号链接，跳过测试
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "符号链接不可用: " + e.getMessage());
+            return;
+        }
+        // 符号链接应被拒绝
+        assertThat(ArtifactFilter.isInWorkspaceRoot(symlink, workspace)).isFalse();
+    }
 }

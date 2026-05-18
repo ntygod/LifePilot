@@ -6,5 +6,11 @@
 -- 关联 spec：.kiro/specs/remove-document-workspace
 -- ============================================================
 
+-- 清理 session_artifacts 中可能指向已删除 transcript entry 的悬空 FK
+-- （source_entry_id 列 ON DELETE SET NULL，但历史数据可能残留无效引用）
+UPDATE session_artifacts SET source_entry_id = NULL
+WHERE source_entry_id IS NOT NULL
+  AND source_entry_id NOT IN (SELECT id FROM session_transcript_entries);
+
 DROP TABLE IF EXISTS document_versions;
 DROP TABLE IF EXISTS session_documents;
