@@ -246,6 +246,11 @@ public class WebFetchToolExecutor {
                 return ToolResult.transientError(
                         "HTTP %d: %s".formatted(statusCode, truncateForError(responseBody)));
             }
+            if (statusCode == 429) {
+                rateLimiter.recordRateLimited(url);
+                return ToolResult.transientError(
+                        "HTTP 429 限流: %s".formatted(url));
+            }
             if (statusCode >= 400) {
                 return ToolResult.error(
                         "HTTP %d: %s".formatted(statusCode, truncateForError(responseBody)));
@@ -355,6 +360,14 @@ public class WebFetchToolExecutor {
             var response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 400) {
+                // 403/429 等状态码 → 尝试浏览器回退
+                if (BROWSER_FALLBACK_STATUS_CODES.contains(response.statusCode()) && isBrowserAvailable()) {
+                    log.info("HttpClient 直连收到 HTTP {} 拒绝，尝试浏览器渲染回退: url={}", response.statusCode(), url);
+                    return fetchWithBrowser(url, selector, config);
+                }
+                if (response.statusCode() == 429) {
+                    rateLimiter.recordRateLimited(url);
+                }
                 return ToolResult.error("HTTP %d: %s".formatted(response.statusCode(), url));
             }
 
@@ -400,6 +413,14 @@ public class WebFetchToolExecutor {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolResult.error("请求被中断");
+        } catch (IOException e) {
+            // 连接级失败（GOAWAY、TLS 握手失败等）→ 尝试浏览器回退
+            if (isBrowserAvailable()) {
+                log.info("HttpClient 直连失败，尝试浏览器渲染回退: url={}, error={}", url, e.getMessage());
+                return fetchWithBrowser(url, selector, config);
+            }
+            log.warn("HttpClient 直连抓取失败: url={}, error={}", url, e.getMessage());
+            return ToolResult.transientError("抓取失败: " + e.getMessage());
         } catch (Exception e) {
             log.warn("HttpClient 直连抓取失败: url={}, error={}", url, e.getMessage());
             return ToolResult.error("抓取失败: " + e.getMessage());
