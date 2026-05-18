@@ -121,7 +121,8 @@ public class SessionTitleGenerator {
             ));
             var response = generationRouter.call(
                     LLM_SCENE, prompt, null, null, null,
-                    GenerationCapability.CHAT, timeout);
+                    GenerationCapability.CHAT, timeout,
+                    true);  // skipCache: 每个会话标题必须独立生成，不能因 prompt 模板相似而复用旧标题
             String title = cleanTitle(response.content());
             if (title.isEmpty() || DEFAULT_TITLES.contains(title)) {
                 return;
