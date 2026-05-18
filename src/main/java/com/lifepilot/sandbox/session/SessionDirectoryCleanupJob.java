@@ -1,7 +1,6 @@
 package com.lifepilot.sandbox.session;
 
 import com.lifepilot.config.workspace.WorkspaceResolver;
-import com.lifepilot.sandbox.util.SandboxUtils;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +49,9 @@ public class SessionDirectoryCleanupJob {
 
     /**
      * 每天凌晨 4 点执行清理。
+     *
+     * <p>只清理临时文件（脚本、缓存等），保留已登记为 session_artifacts 的用户产物。
+     * 如果清理后目录为空则删除目录本身。</p>
      */
     @Scheduled(cron = "0 0 4 * * *")
     public void cleanup() {
@@ -67,18 +69,28 @@ public class SessionDirectoryCleanupJob {
                 String sessionId = dir.getFileName().toString();
                 Instant lastActivity = queryLastActivity(sessionId);
 
-                // 孤儿目录（session_store 中不存在）或超期目录 → 清理
-                if (lastActivity == null || lastActivity.isBefore(threshold)) {
-                    try {
-                        SandboxUtils.deleteDirectoryRecursively(dir);
-                        cleaned++;
-                        log.debug("清理过期会话目录: sessionId={}, lastActivity={}",
-                                sessionId, lastActivity);
-                    } catch (IOException e) {
-                        log.warn("清理会话目录失败: sessionId={}, error={}", sessionId, e.getMessage());
-                    }
-                } else {
+                // 仅清理超期或孤儿目录
+                if (lastActivity != null && !lastActivity.isBefore(threshold)) {
                     skipped++;
+                    continue;
+                }
+
+                // 查询该 session 已登记的产物文件路径（这些不能删）
+                var preservedPaths = queryArtifactPaths(sessionId);
+
+                try {
+                    int filesRemoved = cleanDirectoryPreservingArtifacts(dir, preservedPaths);
+                    if (filesRemoved > 0) {
+                        cleaned++;
+                        log.debug("清理过期会话临时文件: sessionId={}, filesRemoved={}, preserved={}",
+                                sessionId, filesRemoved, preservedPaths.size());
+                    }
+                    // 如果目录为空（所有文件都是临时的已删完），删除目录本身
+                    if (isDirectoryEmpty(dir)) {
+                        Files.deleteIfExists(dir);
+                    }
+                } catch (IOException e) {
+                    log.warn("清理会话目录失败: sessionId={}, error={}", sessionId, e.getMessage());
                 }
             }
         } catch (IOException e) {
@@ -88,6 +100,73 @@ public class SessionDirectoryCleanupJob {
         if (cleaned > 0) {
             log.info("会话目录清理完成: cleaned={}, skipped={}, retentionDays={}",
                     cleaned, skipped, retentionDays);
+        }
+    }
+
+    /**
+     * 清理目录中的临时文件，保留已登记为 artifact 的文件。
+     *
+     * @return 删除的文件数
+     */
+    private int cleanDirectoryPreservingArtifacts(Path dir, java.util.Set<Path> preservedPaths) throws IOException {
+        int removed = 0;
+        try (Stream<Path> files = Files.walk(dir)) {
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                Path normalized = file.toAbsolutePath().normalize();
+                if (preservedPaths.contains(normalized)) {
+                    continue; // 用户产物，保留
+                }
+                Files.deleteIfExists(file);
+                removed++;
+            }
+        }
+        // 清理空子目录（自底向上）
+        try (Stream<Path> dirs = Files.walk(dir)) {
+            dirs.filter(Files::isDirectory)
+                    .filter(d -> !d.equals(dir))
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .forEach(d -> {
+                        try {
+                            if (isDirectoryEmpty(d)) Files.deleteIfExists(d);
+                        } catch (IOException ignored) {}
+                    });
+        }
+        return removed;
+    }
+
+    private boolean isDirectoryEmpty(Path dir) throws IOException {
+        try (Stream<Path> entries = Files.list(dir)) {
+            return entries.findFirst().isEmpty();
+        }
+    }
+
+    /**
+     * 查询该 session 已登记的产物文件绝对路径集合。
+     */
+    private java.util.Set<Path> queryArtifactPaths(String sessionId) {
+        try {
+            var paths = jdbcTemplate.queryForList(
+                    "SELECT payload_json FROM session_artifacts WHERE session_id = ? AND status = 'ACTIVE'",
+                    String.class,
+                    sessionId);
+            var result = new java.util.HashSet<Path>();
+            for (String json : paths) {
+                // payload_json 中 "path" 字段存储绝对路径
+                int idx = json.indexOf("\"path\"");
+                if (idx < 0) continue;
+                int colonIdx = json.indexOf(':', idx);
+                int quoteStart = json.indexOf('"', colonIdx + 1);
+                int quoteEnd = json.indexOf('"', quoteStart + 1);
+                if (quoteStart >= 0 && quoteEnd > quoteStart) {
+                    String path = json.substring(quoteStart + 1, quoteEnd)
+                            .replace("\\\\", "\\"); // JSON 转义
+                    result.add(Path.of(path).toAbsolutePath().normalize());
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.debug("查询 artifact 路径失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return java.util.Set.of();
         }
     }
 
