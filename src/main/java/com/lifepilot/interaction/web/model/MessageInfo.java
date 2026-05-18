@@ -46,7 +46,8 @@ public record MessageInfo(
         @Nullable ChatTurnStatus turnStatus,
         @Nullable String errorMessage,
         @Nullable String reasoningContent,
-        @Nullable Long reasoningDurationMs
+        @Nullable Long reasoningDurationMs,
+        @Nullable List<ArtifactRefInfo> artifactRefs
 ) {
     public MessageInfo(
             String id,
@@ -62,6 +63,6 @@ public record MessageInfo(
             @Nullable String resumedFromTraceId
     ) {
         this(id, null, role, content, a2uiComponents, timestamp, reasoningSummary, traceId,
-                attachments, reactSteps, completionMode, resumedFromTraceId, null, null, null, null);
+                attachments, reactSteps, completionMode, resumedFromTraceId, null, null, null, null, null);
     }
 }

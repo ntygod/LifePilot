@@ -41,6 +41,10 @@ interface Props {
   downloadUrl?: string
 }
 
+const emit = defineEmits<{
+  (e: 'preview', url: string): void
+}>()
+
 const props = defineProps<Props>()
 const ui = useUiStore()
 
@@ -128,15 +132,19 @@ async function handleReveal() {
 <template>
   <!-- IMAGE 类型：inline 渲染大图，直接嵌入消息流 -->
   <figure v-if="kind === 'IMAGE'" class="artifact-image my-sm">
-    <a :href="downloadUrl" :download="fileName" target="_blank" class="block">
+    <button
+      type="button"
+      class="block cursor-zoom-in"
+      @click="emit('preview', downloadUrl)"
+    >
       <img
         :src="downloadUrl"
         :alt="fileName"
-        class="max-w-full rounded-lg border border-border shadow-sm"
+        class="max-w-full rounded-lg border border-border shadow-sm transition-shadow hover:shadow-md"
         style="max-height: 400px; object-fit: contain;"
         loading="lazy"
       />
-    </a>
+    </button>
     <figcaption class="mt-xs flex items-center gap-sm text-xs text-muted-foreground">
       <span class="truncate">{{ fileName }}</span>
       <span>{{ formatSize(size) }}</span>

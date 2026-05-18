@@ -165,6 +165,16 @@ const kbSources = computed(() =>
   props.message.sources?.filter(source => source.type === 'knowledgeBase') ?? [],
 )
 
+/** 图片类型 artifact —— 内嵌消息流 */
+const imageArtifactRefs = computed(() =>
+  props.message.artifactRefs?.filter(ref => ref.kind === 'IMAGE') ?? [],
+)
+
+/** 非图片 artifact —— 尾部附件卡片 */
+const fileArtifactRefs = computed(() =>
+  props.message.artifactRefs?.filter(ref => ref.kind !== 'IMAGE') ?? [],
+)
+
 const visibleA2uiComponents = computed(() => {
   if (props.streaming) {
     return props.streamingA2uiComponents ?? props.message.a2uiComponents ?? []
@@ -259,7 +269,7 @@ const hasNonApprovalAssistantBody = computed(() => (
   || imageAttachments.value.length > 0
   || fileAttachments.value.length > 0
   || audioAttachments.value.length > 0
-  || (props.message.artifactRefs?.length ?? 0) > 0
+  || (imageArtifactRefs.value.length + fileArtifactRefs.value.length) > 0
   || visibleA2uiComponents.value.length > 0
   || !!props.message.toolsSummary?.length
   || kbSources.value.length > 0
@@ -407,6 +417,24 @@ function approvalLogTone(log: PermissionApprovalLog) {
               :streaming="streaming"
             />
 
+            <!-- 图片产物：内嵌消息流，点击 lightbox 预览 -->
+            <div
+              v-if="imageArtifactRefs.length > 0"
+              class="mt-3 flex flex-col gap-sm"
+            >
+              <ArtifactCard
+                v-for="ref in imageArtifactRefs"
+                :key="ref.artifactId"
+                :artifact-id="ref.artifactId"
+                :file-name="ref.fileName"
+                :mime-type="ref.mimeType"
+                :kind="ref.kind"
+                :size="ref.size"
+                :download-url="ref.downloadUrl"
+                @preview="(url: string) => { previewImageUrl = url; showImagePreview = true }"
+              />
+            </div>
+
             <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
               <button
                 v-for="attachment in imageAttachments"
@@ -529,13 +557,13 @@ function approvalLogTone(log: PermissionApprovalLog) {
             </template>
           </div>
 
-          <!-- 文件产物（来自工具调用产生的 ArtifactRef，或流式 SSE artifact-ref 推送） -->
+          <!-- 非图片产物（附件卡片） -->
           <div
-            v-if="(props.message.artifactRefs?.length ?? 0) > 0"
+            v-if="fileArtifactRefs.length > 0"
             class="mt-md flex flex-col gap-sm"
           >
             <ArtifactCard
-              v-for="ref in props.message.artifactRefs"
+              v-for="ref in fileArtifactRefs"
               :key="ref.artifactId"
               :artifact-id="ref.artifactId"
               :file-name="ref.fileName"
@@ -543,6 +571,7 @@ function approvalLogTone(log: PermissionApprovalLog) {
               :kind="ref.kind"
               :size="ref.size"
               :download-url="ref.downloadUrl"
+              @preview="(url: string) => { previewImageUrl = url; showImagePreview = true }"
             />
           </div>
         </div>

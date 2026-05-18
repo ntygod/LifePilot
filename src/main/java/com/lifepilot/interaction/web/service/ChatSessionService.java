@@ -56,6 +56,9 @@ public class ChatSessionService {
     @Nullable
     private final ProjectService projectService;
 
+    @Nullable
+    private final com.lifepilot.conversation.artifact.SessionArtifactRepository sessionArtifactRepository;
+
     public ChatSessionService(ChatSessionRepository sessionRepository,
                               SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
                               AttachmentRepository attachmentRepository,
@@ -66,7 +69,8 @@ public class ChatSessionService {
                               @Nullable TranscriptCompactionBoundaryResolver compactionBoundaryResolver,
                               @Nullable GenerationRouter generationRouter,
                               @Nullable ChatTurnService chatTurnService,
-                              @Nullable ProjectService projectService) {
+                              @Nullable ProjectService projectService,
+                              @Nullable com.lifepilot.conversation.artifact.SessionArtifactRepository sessionArtifactRepository) {
         this.sessionRepository = sessionRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.attachmentRepository = attachmentRepository;
@@ -78,6 +82,7 @@ public class ChatSessionService {
         this.generationRouter = generationRouter;
         this.chatTurnService = chatTurnService;
         this.projectService = projectService;
+        this.sessionArtifactRepository = sessionArtifactRepository;
     }
 
     @Transactional
@@ -225,7 +230,8 @@ public class ChatSessionService {
 
     public List<MessageInfo> getSessionMessages(String id) {
         requireWebSession(id);
-        return withAttachments(loadTranscriptMessages(id));
+        var messages = withAttachments(loadTranscriptMessages(id));
+        return withArtifactRefs(id, messages);
     }
 
     @Transactional
@@ -356,7 +362,8 @@ public class ChatSessionService {
                 effectiveTurnStatus,
                 resolveMessageErrorMessage(turn, currentAttemptMessage),
                 row.reasoningContent(),
-                row.reasoningDurationMs()
+                row.reasoningDurationMs(),
+                null
         );
     }
 
@@ -460,9 +467,68 @@ public class ChatSessionService {
                     msg.turnStatus(),
                     msg.errorMessage(),
                     msg.reasoningContent(),
-                    msg.reasoningDurationMs()
+                    msg.reasoningDurationMs(),
+                    msg.artifactRefs()
             );
         }).toList();
+    }
+
+    /**
+     * 批量回填历史消息的 artifactRefs —— 按 session_id 查 session_artifacts，
+     * 按 trace_id 分组挂到对应的 assistant 消息上。
+     */
+    private List<MessageInfo> withArtifactRefs(String sessionId, List<MessageInfo> messages) {
+        if (sessionArtifactRepository == null || messages.isEmpty()) {
+            return messages;
+        }
+        var rows = sessionArtifactRepository.findBySessionId(sessionId);
+        if (rows.isEmpty()) {
+            return messages;
+        }
+        // 按 traceId 分组（一个 trace 对应一条 assistant 消息）
+        var refsByTraceId = new java.util.HashMap<String, java.util.List<ArtifactRefInfo>>();
+        for (var row : rows) {
+            if (row.traceId() == null) continue;
+            var payload = parseArtifactPayload(row.payloadJson());
+            if (payload == null) continue;
+            String downloadUrl = "/api/artifacts/" + row.id() + "/download";
+            var refInfo = new ArtifactRefInfo(
+                    row.id(),
+                    payload.getOrDefault("fileName", row.title() != null ? row.title() : "file").toString(),
+                    payload.getOrDefault("mimeType", "application/octet-stream").toString(),
+                    payload.getOrDefault("kind", "FILE").toString(),
+                    payload.containsKey("size") ? ((Number) payload.get("size")).longValue() : 0L,
+                    downloadUrl
+            );
+            refsByTraceId.computeIfAbsent(row.traceId(), _ -> new java.util.ArrayList<>()).add(refInfo);
+        }
+        if (refsByTraceId.isEmpty()) {
+            return messages;
+        }
+        return messages.stream().map(msg -> {
+            if (!"assistant".equals(msg.role()) || msg.traceId() == null) return msg;
+            var refs = refsByTraceId.get(msg.traceId());
+            if (refs == null || refs.isEmpty()) return msg;
+            return new MessageInfo(
+                    msg.id(), msg.turnId(), msg.role(), msg.content(), msg.a2uiComponents(),
+                    msg.timestamp(), msg.reasoningSummary(), msg.traceId(), msg.attachments(),
+                    msg.reactSteps(), msg.completionMode(), msg.resumedFromTraceId(),
+                    msg.turnStatus(), msg.errorMessage(), msg.reasoningContent(),
+                    msg.reasoningDurationMs(), refs
+            );
+        }).toList();
+    }
+
+    @Nullable
+    @SuppressWarnings("unchecked")
+    private java.util.Map<String, Object> parseArtifactPayload(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank()) return null;
+        try {
+            return objectMapper.readValue(payloadJson, java.util.Map.class);
+        } catch (Exception e) {
+            log.debug("artifact payload 解析失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     private SessionInfo forkFromTranscript(ChatSession originalSession,
