@@ -113,7 +113,7 @@ public class SandboxSessionManager {
             }
 
             SandboxBooter newBooter = createBooter();
-            Path workingDirectory = createWorkingDirectory();
+            Path workingDirectory = createWorkingDirectory(id);
             newBooter.boot(workingDirectory).join();
 
             log.info("创建新会话: sessionId={}, booterType={}, workingDirectory={}",
@@ -209,15 +209,20 @@ public class SandboxSessionManager {
     }
 
     /**
-     * 在统一工作目录下创建沙箱子目录。
+     * 在统一工作目录下创建会话级子目录。
+     *
+     * <p>路径格式：{@code {workspace}/sessions/{sessionId}/}，按会话隔离产物，
+     * 避免不同对话间文件互覆盖。目录已存在时直接复用（同一 session 重连场景）。</p>
      */
-    private Path createWorkingDirectory() {
+    private Path createWorkingDirectory(String sessionId) {
         try {
-            Path sandboxBase = workspaceResolver.resolveAndCreate().resolve("sandbox");
-            Files.createDirectories(sandboxBase);
-            return Files.createTempDirectory(sandboxBase, "session-");
+            Path sessionsBase = workspaceResolver.resolveAndCreate().resolve("sessions");
+            // sessionId 可能含 UUID 格式，直接用作目录名（安全：不含路径分隔符）
+            Path sessionDir = sessionsBase.resolve(sessionId);
+            Files.createDirectories(sessionDir);
+            return sessionDir;
         } catch (IOException e) {
-            throw new IllegalStateException("创建沙箱工作目录失败", e);
+            throw new IllegalStateException("创建会话工作目录失败", e);
         }
     }
 

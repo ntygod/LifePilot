@@ -110,11 +110,10 @@ public final class ProcessBooter implements SandboxBooter {
             if (request.language() == Language.PYTHON) {
                 pb.environment().put("PYTHONUTF8", "1");
                 pb.environment().put("PYTHONIOENCODING", "utf-8");
-                // 6. 给 matplotlib 一个可写配置目录 —— 捆绑 Python 默认 HOME 在沙箱目录，
-                //    matplotlib 启动时 _rc_params_in_file 读 matplotlibrc 失败会直接抛 import error。
-                //    显式设为 sandbox 工作目录下的 .mplconfig 子目录，让 matplotlib 落到这里写缓存。
+                // 6. matplotlib 配置目录 —— 放全局 cache 而非 sandbox cwd，
+                //    避免字体缓存被 cwd diff 误登记为产物，且跨 session 复用加速首次 import。
                 pb.environment().put("MPLCONFIGDIR",
-                        request.workingDirectory().resolve(".mplconfig").toString());
+                        runtimeManager.getPythonCacheDir().resolve("mpl").toString());
             }
 
             // 5. 启动进程

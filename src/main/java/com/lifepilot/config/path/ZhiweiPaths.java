@@ -46,12 +46,12 @@ public class ZhiweiPaths {
     public static final String DIR_CHANNELS = "channels";
     /** 知识库数据目录 */
     public static final String DIR_KNOWLEDGE = "knowledge";
-    /** 文档产物目录 */
-    public static final String DIR_DOCUMENTS = "documents";
     /** 缓存目录 */
     public static final String DIR_CACHE = "cache";
     /** 浏览器缓存目录 */
     public static final String DIR_CACHE_BROWSER = "cache/browser";
+    /** Python 运行时缓存目录（matplotlib/pip wheel 等，跨 session 共享） */
+    public static final String DIR_CACHE_PYTHON = "cache/python";
     /** 运行时目录 */
     public static final String DIR_RUNTIME = "runtime";
     /** Python 运行时目录 */
@@ -62,7 +62,7 @@ public class ZhiweiPaths {
     /** 所有需要在初始化时创建的固定子目录 */
     private static final List<String> REQUIRED_SUBDIRS = List.of(
             DIR_DB, DIR_SKILLS, DIR_CHANNELS,
-            DIR_KNOWLEDGE, DIR_DOCUMENTS, DIR_CACHE, DIR_CACHE_BROWSER,
+            DIR_KNOWLEDGE, DIR_CACHE, DIR_CACHE_BROWSER, DIR_CACHE_PYTHON,
             DIR_RUNTIME, DIR_RUNTIME_PYTHON, DIR_LOGS
     );
 

@@ -126,26 +126,43 @@ async function handleReveal() {
 </script>
 
 <template>
-  <div class="artifact-card flex items-stretch gap-sm rounded-md border border-border bg-muted/30 p-sm">
-    <!-- IMAGE：显示缩略图 -->
-    <a
-      v-if="kind === 'IMAGE'"
-      :href="downloadUrl"
-      :download="fileName"
-      class="block shrink-0"
-      :title="fileName"
-    >
+  <!-- IMAGE 类型：inline 渲染大图，直接嵌入消息流 -->
+  <figure v-if="kind === 'IMAGE'" class="artifact-image my-sm">
+    <a :href="downloadUrl" :download="fileName" target="_blank" class="block">
       <img
         :src="downloadUrl"
         :alt="fileName"
-        class="h-16 w-16 rounded-md object-cover"
+        class="max-w-full rounded-lg border border-border shadow-sm"
+        style="max-height: 400px; object-fit: contain;"
         loading="lazy"
       />
     </a>
+    <figcaption class="mt-xs flex items-center gap-sm text-xs text-muted-foreground">
+      <span class="truncate">{{ fileName }}</span>
+      <span>{{ formatSize(size) }}</span>
+      <button
+        type="button"
+        class="ml-auto flex items-center gap-xs rounded-md px-xs py-xs hover:bg-muted"
+        :title="tauriAvailable ? '复制本地路径' : '复制下载链接'"
+        @click="handleCopyPath"
+      >
+        <Copy class="h-3 w-3" />
+      </button>
+      <a
+        :href="downloadUrl"
+        :download="fileName"
+        class="flex items-center gap-xs rounded-md px-xs py-xs hover:bg-muted"
+        title="下载"
+      >
+        <Download class="h-3 w-3" />
+      </a>
+    </figcaption>
+  </figure>
 
+  <!-- 非图片：附件卡片 -->
+  <div v-else class="artifact-card flex items-stretch gap-sm rounded-md border border-border bg-muted/30 p-sm">
     <!-- FILE：显示文件图标 -->
     <component
-      v-else
       :is="iconFor()"
       class="h-md w-md shrink-0 self-center text-muted-foreground"
     />
