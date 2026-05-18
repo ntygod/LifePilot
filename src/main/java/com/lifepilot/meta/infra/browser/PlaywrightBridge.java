@@ -123,9 +123,37 @@ final class PlaywrightBridge {
         String safeLocale = locale != null ? locale : "zh-CN";
 
         // 基础反检测：webdriver + chrome + languages（从 locale 动态构建）
+        // 注意：在 Navigator.prototype 上删除 webdriver 属性比在 navigator 实例上覆盖更可靠，
+        // 因为某些站点检测 navigator 自有属性（hasOwnProperty）来识别覆盖行为。
         ctx.addInitScript("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                window.chrome = {runtime: {}, loadTimes: () => ({}), csi: () => ({})};
+                // 方案 1：删除 Navigator.prototype 上的 webdriver getter（最彻底）
+                const proto = Navigator.prototype;
+                if (Object.getOwnPropertyDescriptor(proto, 'webdriver')) {
+                    Object.defineProperty(proto, 'webdriver', {
+                        configurable: true,
+                        enumerable: true,
+                        get: () => undefined
+                    });
+                }
+                // 方案 2：同时处理 navigator 实例上可能被注入的 own property
+                if (Object.getOwnPropertyDescriptor(navigator, 'webdriver')) {
+                    delete navigator.webdriver;
+                }
+                // 确保 navigator.webdriver 最终返回 undefined
+                Object.defineProperty(navigator, 'webdriver', {
+                    configurable: true,
+                    enumerable: true,
+                    get: () => undefined
+                });
+
+                // chrome 对象伪造（含 chrome.app，部分检测站点会检查）
+                window.chrome = {
+                    runtime: {id: undefined, connect: () => {}, sendMessage: () => {}},
+                    loadTimes: () => ({}),
+                    csi: () => ({}),
+                    app: {isInstalled: false, InstallState: {DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed'}, RunningState: {CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running'}}
+                };
+
                 Object.defineProperty(navigator, 'languages', {get: () => ['%s', '%s', 'en-US', 'en']});
                 """.formatted(safeLocale, lang));
 
@@ -160,7 +188,18 @@ final class PlaywrightBridge {
                         for (const node of mutation.addedNodes) {
                             if (node.tagName === 'IFRAME' && node.contentWindow) {
                                 try {
-                                    Object.defineProperty(node.contentWindow.navigator, 'webdriver', {get: () => undefined});
+                                    const iframeNav = node.contentWindow.navigator;
+                                    // 同时处理 prototype 和实例
+                                    const iframeProto = node.contentWindow.Navigator.prototype;
+                                    Object.defineProperty(iframeProto, 'webdriver', {
+                                        configurable: true, enumerable: true, get: () => undefined
+                                    });
+                                    if (Object.getOwnPropertyDescriptor(iframeNav, 'webdriver')) {
+                                        delete iframeNav.webdriver;
+                                    }
+                                    Object.defineProperty(iframeNav, 'webdriver', {
+                                        configurable: true, enumerable: true, get: () => undefined
+                                    });
                                 } catch(e) {}
                             }
                         }

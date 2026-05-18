@@ -120,7 +120,9 @@ public class PlaywrightPageWrapper {
     /**
      * 导航到指定 URL，返回包含部分加载信息的结构化结果。
      *
-     * <p>超时时捕获 {@link com.microsoft.playwright.TimeoutError}，标记为部分加载而非失败。</p>
+     * <p>超时时捕获 {@link com.microsoft.playwright.TimeoutError}，标记为部分加载而非失败。
+     * 导航后获取 title/url 时捕获 PlaywrightException（如 JS 重定向导致 execution context destroyed），
+     * 避免因目标站点行为导致整个工具调用崩溃。</p>
      *
      * @param url       目标 URL
      * @param timeoutMs 超时时间（毫秒）
@@ -138,7 +140,25 @@ public class PlaywrightPageWrapper {
         } catch (TimeoutError e) {
             partial = true;
         }
-        return new NavigateResult(page.title(), page.url(), partial);
+        // 导航后获取 title/url 可能因 JS 重定向导致 execution context destroyed，
+        // 需要防御性处理避免崩溃（知乎等站点会在 DOMContentLoaded 后触发 JS 跳转）
+        String title;
+        String finalUrl;
+        try {
+            title = page.title();
+        } catch (Exception e) {
+            log.debug("导航后获取 title 失败（可能 JS 重定向中）: url={}, error={}", url, e.getMessage());
+            title = "";
+            partial = true;
+        }
+        try {
+            finalUrl = page.url();
+        } catch (Exception e) {
+            log.debug("导航后获取 url 失败（可能 JS 重定向中）: url={}, error={}", url, e.getMessage());
+            finalUrl = url;
+            partial = true;
+        }
+        return new NavigateResult(title, finalUrl, partial);
     }
 
     /**
