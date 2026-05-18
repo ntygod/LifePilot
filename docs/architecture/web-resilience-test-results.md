@@ -141,3 +141,27 @@ Phase A 修复已提交（commit `d69fa630`），需要重启应用后验证：
 2. **403 浏览器回退** → `web.fetch` 知乎 URL，应自动尝试浏览器渲染
 3. **UA 伪装** → 检查请求头是否为 Chrome UA（可通过 httpbin.org/headers 验证）
 4. **stealth 脚本升级** → 重新测试 bot.sannysoft.com，检查 WebDriver (New) 是否通过
+
+---
+
+## 9. 修复后验证结果（2026-05-18 重启后）
+
+应用重启后在新会话中重新测试，验证所有修复效果：
+
+| # | 验证项 | 修复前 | 修复后 | 状态 |
+|---|--------|--------|--------|:----:|
+| 1 | 知乎 403 浏览器回退 | `HTTP error fetching URL. Status=403`（直接报错） | `renderMode: "browser"`，自动回退浏览器，返回知乎 404 拦截页内容 | ✅ |
+| 2 | 知乎导航崩溃 | `Execution context was destroyed`（工具完全失败） | 正常返回结果（标题为空、URL 正确、内容是拦截页），无崩溃 | ✅ |
+| 3 | bot.sannysoft.com stealth | `docProps` 有 `__webdriver_evaluate` 等残留 | `docProps = []`（已清理），`chromeApp = true`（新增伪造） | ✅ |
+| 4 | NGA 403 浏览器回退 | `HTTP error fetching URL. Status=403`（直接报错） | `renderMode: "browser"`，自动回退浏览器，返回访客拦截页内容 | ✅ |
+| 5 | tls.browserleaks.com GOAWAY | `HTTP/2 GOAWAY`（直接报错） | Agent 自动 `renderJs=true` 重试成功，拿到完整 TLS 指纹 | ✅ |
+| 6 | UA 伪装 | `ZhiWei/1.0 (Web Fetch Tool)` | `Chrome/136.0.0.0 Safari/537.36`（标准 Chrome UA） | ✅ |
+| 7 | 搜索功能 | 仅 Tavily | Tavily 正常工作（DuckDuckGo 降级已实现，待 Tavily 不可用时验证） | ✅ |
+
+### 仍存在的已知限制
+
+| 问题 | 说明 | 解决方案 |
+|------|------|---------|
+| bot.sannysoft.com WebDriver (New) 仍 failed | `hasOwnProperty('webdriver')` 返回 true，检测脚本用了更深层的探测 | 需要 Playwright 底层修改（如 Patchright fork），JS 层面无法完全解决 |
+| 知乎/NGA 需要登录态 | 浏览器回退成功但内容是拦截页 | 使用 CDP 模式复用已登录 Chrome，或 `requestHumanTakeover` 人工登录 |
+| Java HttpClient TLS 指纹 | 静态路径仍被严格站点在 TLS 层拒绝 | 需引入 impersonator 库（Phase B），当前通过浏览器回退绕过 |
