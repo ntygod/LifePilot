@@ -123,27 +123,21 @@ final class PlaywrightBridge {
         String safeLocale = locale != null ? locale : "zh-CN";
 
         // 基础反检测：webdriver + chrome + languages（从 locale 动态构建）
-        // 注意：在 Navigator.prototype 上删除 webdriver 属性比在 navigator 实例上覆盖更可靠，
-        // 因为某些站点检测 navigator 自有属性（hasOwnProperty）来识别覆盖行为。
+        // 核心策略：只修改 Navigator.prototype 上的 webdriver getter，
+        // 不在 navigator 实例上创建任何 own property。
+        // 正常 Chrome 中 navigator.hasOwnProperty('webdriver') === false，
+        // 只有 Navigator.prototype 上有这个属性。
         ctx.addInitScript("""
-                // 方案 1：删除 Navigator.prototype 上的 webdriver getter（最彻底）
-                const proto = Navigator.prototype;
-                if (Object.getOwnPropertyDescriptor(proto, 'webdriver')) {
-                    Object.defineProperty(proto, 'webdriver', {
-                        configurable: true,
-                        enumerable: true,
-                        get: () => undefined
-                    });
-                }
-                // 方案 2：同时处理 navigator 实例上可能被注入的 own property
+                // 删除 navigator 实例上可能被 Playwright 注入的 own property
                 if (Object.getOwnPropertyDescriptor(navigator, 'webdriver')) {
                     delete navigator.webdriver;
                 }
-                // 确保 navigator.webdriver 最终返回 undefined
-                Object.defineProperty(navigator, 'webdriver', {
+                // 修改 Navigator.prototype 上的 webdriver getter 返回 false（与正常 Chrome 一致）
+                // 注意：正常 Chrome 中 navigator.webdriver === false（不是 undefined）
+                Object.defineProperty(Navigator.prototype, 'webdriver', {
                     configurable: true,
                     enumerable: true,
-                    get: () => undefined
+                    get: () => false
                 });
 
                 // chrome 对象伪造（含 chrome.app，部分检测站点会检查）
@@ -189,16 +183,13 @@ final class PlaywrightBridge {
                             if (node.tagName === 'IFRAME' && node.contentWindow) {
                                 try {
                                     const iframeNav = node.contentWindow.navigator;
-                                    // 同时处理 prototype 和实例
                                     const iframeProto = node.contentWindow.Navigator.prototype;
-                                    Object.defineProperty(iframeProto, 'webdriver', {
-                                        configurable: true, enumerable: true, get: () => undefined
-                                    });
+                                    // 只修改 prototype，删除实例上的 own property
                                     if (Object.getOwnPropertyDescriptor(iframeNav, 'webdriver')) {
                                         delete iframeNav.webdriver;
                                     }
-                                    Object.defineProperty(iframeNav, 'webdriver', {
-                                        configurable: true, enumerable: true, get: () => undefined
+                                    Object.defineProperty(iframeProto, 'webdriver', {
+                                        configurable: true, enumerable: true, get: () => false
                                     });
                                 } catch(e) {}
                             }
