@@ -110,6 +110,10 @@ public final class ProcessBooter implements SandboxBooter {
             if (request.language() == Language.PYTHON) {
                 pb.environment().put("PYTHONUTF8", "1");
                 pb.environment().put("PYTHONIOENCODING", "utf-8");
+                // 6. matplotlib 配置目录 —— 放全局 cache 而非 sandbox cwd，
+                //    避免字体缓存被 cwd diff 误登记为产物，且跨 session 复用加速首次 import。
+                pb.environment().put("MPLCONFIGDIR",
+                        runtimeManager.getPythonCacheDir().resolve("mpl").toString());
             }
 
             // 5. 启动进程
@@ -173,14 +177,8 @@ public final class ProcessBooter implements SandboxBooter {
     @Override
     public void shutdown() {
         virtualThreadExecutor.close();
-        if (workingDirectory != null) {
-            try {
-                SandboxUtils.deleteDirectoryRecursively(workingDirectory);
-                log.info("ProcessBooter 已关闭，工作目录已清理: path={}", workingDirectory);
-            } catch (IOException e) {
-                log.warn("清理工作目录失败: path={}, error={}", workingDirectory, e.getMessage());
-            }
-        }
+        // 不删除工作目录 —— 保留用户产物文件（chart.png 等已登记到 session_artifacts）
+        log.info("ProcessBooter 已关闭（工作目录保留）: path={}", workingDirectory);
     }
 
     @Override

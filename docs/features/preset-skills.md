@@ -46,7 +46,6 @@ BUILTIN skill 安装后其 SKILL.md 文件在用户目录中。用户可以直�
 | `database-query` | 数据库查询 | SQL 查询执行与结果分析 |
 | `desktop-automation` | 桌面自动化 | 桌面应用操作自动化 |
 | `doc-processor` | 文档处理 | 文档解析、转换与摘要 |
-| `document-workspace` | 文档工作副本编辑 | 已存在的 docx / xlsx / pptx 锚点增量修改 + 版本/回滚 |
 | `feishu` | 飞书集成 | 飞书消息发送、文档操作 |
 | `file-organizer` | 文件整理 | 文件分类、重命名、目录整理 |
 | `find-skills` | 能力发现与自扩展 | 搜索外部 Skill 或自动生成缺失 Skill |

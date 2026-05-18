@@ -29,7 +29,7 @@ import org.springframework.core.annotation.Order;
  */
 @AutoConfiguration
 @ConditionalOnProperty(name = "lifepilot.gateway.enabled", matchIfMissing = true)
-@EnableConfigurationProperties(GatewayProperties.class)
+@EnableConfigurationProperties({GatewayProperties.class, GatewayDeliveryProperties.class})
 public class GatewayAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayAutoConfiguration.class);

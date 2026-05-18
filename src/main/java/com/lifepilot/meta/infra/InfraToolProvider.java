@@ -87,6 +87,13 @@ public class InfraToolProvider {
     @Nullable private final CommandGuard commandGuard;
     @Nullable private final SessionTranscriptRepository sessionTranscriptRepository;
 
+    /**
+     * 渠道分发与文件产物配置 — 通过 setter 注入，避免破坏既有构造器。
+     * 用于让 file.write 在写入成功后登记 ToolArtifact 供渠道分发。
+     */
+    @Nullable
+    private com.lifepilot.interaction.config.GatewayDeliveryProperties gatewayDeliveryProperties;
+
     public InfraToolProvider(MetaProperties properties,
                              WebSearchConfigProvider webSearchConfigProvider,
                              @Nullable SandboxSessionManager sandboxSessionManager,
@@ -159,7 +166,8 @@ public class InfraToolProvider {
                 fileEditConfig.getUndoMaxDepth(),
                 fileEditConfig.getMaxSnapshotSizeBytes());
         var lintHook = new LintHookExecutor();
-        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, pathAccessControl);
+        var fileToolProvider = new FileToolProvider(properties, editHistory, lintHook, attachmentRepository, pathAccessControl,
+                workspaceResolver, gatewayDeliveryProperties);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
         // 通知工具
@@ -203,6 +211,9 @@ public class InfraToolProvider {
 
         // Shell 工具（shell.exec + shell.process）— 注入 commandGuard 让 shell.exec 也走 HARDLINE/DANGEROUS 护栏
         var shellExecExecutor = new ShellExecToolExecutor(properties, backgroundProcessManager, workspaceResolver, pathAccessControl, commandGuard);
+        if (gatewayDeliveryProperties != null) {
+            shellExecExecutor.setArtifactFilterConfig(gatewayDeliveryProperties.toFilterConfig());
+        }
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
 
@@ -221,6 +232,11 @@ public class InfraToolProvider {
             var codeToolProvider = new CodeToolProvider(
                     properties, sandboxSessionManager, codeValidator, sandboxRepository,
                     kernelManager, pythonRuntimeManager, commandGuard);
+            if (gatewayDeliveryProperties != null) {
+                codeToolProvider.setArtifactDelivery(
+                        gatewayDeliveryProperties.toFilterConfig(),
+                        workspaceResolver.resolve());
+            }
             totalTools += registerBuiltinTools(toolRegistry, codeToolProvider.buildCodeTools());
 
         } else {
@@ -234,5 +250,16 @@ public class InfraToolProvider {
     private int registerBuiltinTools(DynamicToolRegistry toolRegistry, List<BuiltinTool> tools) {
         tools.forEach(toolRegistry::registerBuiltinTool);
         return tools.size();
+    }
+
+    /**
+     * 注入渠道分发配置 — 由 {@code MetaAutoConfiguration} 在 Bean 创建后调用。
+     *
+     * <p>用 setter 而非构造器注入，避免破坏既有 26 参构造器签名；调用时机在
+     * {@link #registerTools(DynamicToolRegistry)} 之前即可。</p>
+     */
+    public void setGatewayDeliveryProperties(
+            @Nullable com.lifepilot.interaction.config.GatewayDeliveryProperties gatewayDeliveryProperties) {
+        this.gatewayDeliveryProperties = gatewayDeliveryProperties;
     }
 }

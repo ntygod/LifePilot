@@ -2,7 +2,7 @@
  * 项目（Project）REST 封装 —— Plan 1 Task 17：列表 / 详情 / 创建 / 更新 / 删除。
  *
  * 项目现有的 API client 采用 fetch + ApiResponse 自动解包的模式（见
- * {@code src/api/documents.ts}）。本文件沿用同一模式：通过 `request<T>` 发起请求，
+ * {@code src/api/client.ts}）。本文件沿用同一模式：通过 `request<T>` 发起请求，
  * 自动解包 `{ code, message, data }` 响应结构；不新建 axios 实例。
  *
  * @author zsg

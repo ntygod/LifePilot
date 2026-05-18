@@ -11,12 +11,7 @@ import type {
 } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import { buildPermissionApprovalLog } from '@/utils/permissionApproval'
-import {
-  Dialog,
-  DialogContent,
-} from '@/components/ui/dialog'
 import { copyToClipboard } from '@/utils/clipboard'
-// messageUtils 导入已移除 — 不再折叠 AI 消息
 import KbSourceTag from './KbSourceTag.vue'
 import MessageActions from './MessageActions.vue'
 import MessageError from './MessageError.vue'
@@ -25,9 +20,8 @@ import ThinkingIndicator from './ThinkingIndicator.vue'
 import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
-import DocumentDiffCard from './DocumentDiffCard.vue'
-import DocumentXlsxDiffCard from './DocumentXlsxDiffCard.vue'
-import { useDocumentMeta } from '@/composables/useDocumentMeta'
+import ArtifactCard from './ArtifactCard.vue'
+import ImageLightbox from './ImageLightbox.vue'
 
 const props = defineProps<{
   message: Message
@@ -159,54 +153,22 @@ function documentIcon(att: { type?: string; filename: string }) {
   return FileText
 }
 
-/**
- * Phase 3A：识别「已被 document.edit 修改过的 docx」—— 需要换用 DocumentDiffCard 渲染。
- *
- * 判定条件：
- * 1. MIME 包含 `wordprocessingml.document`（docx）
- * 2. URL 形如 `/api/documents/{id}/download`，可解析出 documentId
- * 3. GET `/api/documents/{id}` 返回 `latestVersion > 0`（经历过至少一次 patch）
- *
- * 条件不满足 → 回落到既有附件卡片（非 docx / Phase 2A 产物 / 未编辑 docx）。
- */
-// 文档元数据缓存：从 composable 取模块级共享实例，所有 MessageBubble + useChat 都引用同一份。
-// useChat 在 AI 流式结束时调 invalidateAllDocumentMeta() 清空，触发下次 render 重新拉 latestVersion
-const { documentMetaCache, resolveDocumentMeta, invalidateDocumentMeta } = useDocumentMeta()
-
-/** 按 download URL 提取 documentId；不匹配则返回 null */
-function extractDocumentId(url: string | undefined): string | null {
-  if (!url) return null
-  const m = url.match(/\/api\/documents\/([^/]+)\/download/)
-  return m ? m[1] : null
-}
-
-/**
- * 判断文档附件是否已被编辑过（存在工作副本）。
- * 不限制 MIME 类型，docx/xlsx/md/txt/pptx 等所有文档类型通用。
- * 同步返回缓存结果，异步触发 meta 拉取，下次渲染自动生效。
- */
-function isEditedDocument(att: { type?: string; url?: string }): boolean {
-  const docId = extractDocumentId(att.url)
-  if (!docId) return false
-  void resolveDocumentMeta(docId)
-  const meta = documentMetaCache.value[docId]
-  return !!meta && meta.latestVersion > 0
-}
-
-/** DiffCard commit / 丢弃工作副本 → 失效缓存，下次渲染重新拉取（latestVersion 变化 or 404） */
-function onDocumentCommitted(documentId: string) {
-  invalidateDocumentMeta(documentId)
-}
-function onDocumentDiscarded(documentId: string) {
-  invalidateDocumentMeta(documentId)
-}
-
 const audioAttachments = computed(() =>
   props.message.attachments?.filter(attachment => attachment.type?.startsWith('audio/')) ?? [],
 )
 
 const kbSources = computed(() =>
   props.message.sources?.filter(source => source.type === 'knowledgeBase') ?? [],
+)
+
+/** 图片类型 artifact —— 内嵌消息流 */
+const imageArtifactRefs = computed(() =>
+  props.message.artifactRefs?.filter(ref => ref.kind === 'IMAGE') ?? [],
+)
+
+/** 非图片 artifact —— 尾部附件卡片 */
+const fileArtifactRefs = computed(() =>
+  props.message.artifactRefs?.filter(ref => ref.kind !== 'IMAGE') ?? [],
 )
 
 const visibleA2uiComponents = computed(() => {
@@ -303,6 +265,7 @@ const hasNonApprovalAssistantBody = computed(() => (
   || imageAttachments.value.length > 0
   || fileAttachments.value.length > 0
   || audioAttachments.value.length > 0
+  || (imageArtifactRefs.value.length + fileArtifactRefs.value.length) > 0
   || visibleA2uiComponents.value.length > 0
   || !!props.message.toolsSummary?.length
   || kbSources.value.length > 0
@@ -450,6 +413,24 @@ function approvalLogTone(log: PermissionApprovalLog) {
               :streaming="streaming"
             />
 
+            <!-- 图片产物：内嵌消息流，点击 lightbox 预览 -->
+            <div
+              v-if="imageArtifactRefs.length > 0"
+              class="mt-3 flex flex-col gap-sm"
+            >
+              <ArtifactCard
+                v-for="ref in imageArtifactRefs"
+                :key="ref.artifactId"
+                :artifact-id="ref.artifactId"
+                :file-name="ref.fileName"
+                :mime-type="ref.mimeType"
+                :kind="ref.kind"
+                :size="ref.size"
+                :download-url="ref.downloadUrl"
+                @preview="(url: string) => { previewImageUrl = url; showImagePreview = true }"
+              />
+            </div>
+
             <div v-if="imageAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-sm">
               <button
                 v-for="attachment in imageAttachments"
@@ -524,30 +505,9 @@ function approvalLogTone(log: PermissionApprovalLog) {
 
           <div v-if="fileAttachments.length > 0" class="mt-md flex flex-col gap-sm">
             <template v-for="attachment in fileAttachments" :key="attachment.fileId">
-              <!-- 文档被编辑过 → 按类型选 DiffCard；无专用 DiffCard 的类型显示通用「已编辑」文件卡片 -->
-              <template v-if="isEditedDocument(attachment)">
-                <DocumentDiffCard
-                  v-if="attachment.type?.includes('wordprocessingml.document')"
-                  :document-id="extractDocumentId(attachment.url)!"
-                  @committed="onDocumentCommitted"
-                  @discarded="onDocumentDiscarded"
-                />
-                <DocumentXlsxDiffCard
-                  v-else-if="attachment.type?.includes('spreadsheetml.sheet')"
-                  :document-id="extractDocumentId(attachment.url)!"
-                  @committed="onDocumentCommitted"
-                  @discarded="onDocumentDiscarded"
-                />
-                <div v-else class="flex items-center gap-sm rounded-md border border-border bg-muted/40 p-sm">
-                  <component :is="documentIcon(attachment)" class="h-md w-md shrink-0 text-primary" />
-                  <span class="truncate text-sm">{{ attachment.filename }}</span>
-                  <span class="shrink-0 rounded-md bg-primary/10 px-xs py-xs text-xs text-primary">已编辑</span>
-                </div>
-              </template>
-
               <!-- 视频附件：保留原 list-card + <video> 播放器布局 -->
               <div
-                v-else-if="attachment.type?.startsWith('video/')"
+                v-if="attachment.type?.startsWith('video/')"
                 class="list-card flex flex-col gap-sm px-md py-md text-xs text-foreground"
               >
                 <div class="flex items-center justify-between gap-sm">
@@ -591,6 +551,24 @@ function approvalLogTone(log: PermissionApprovalLog) {
                 >下载</a>
               </div>
             </template>
+          </div>
+
+          <!-- 非图片产物（附件卡片） -->
+          <div
+            v-if="fileArtifactRefs.length > 0"
+            class="mt-md flex flex-col gap-sm"
+          >
+            <ArtifactCard
+              v-for="ref in fileArtifactRefs"
+              :key="ref.artifactId"
+              :artifact-id="ref.artifactId"
+              :file-name="ref.fileName"
+              :mime-type="ref.mimeType"
+              :kind="ref.kind"
+              :size="ref.size"
+              :download-url="ref.downloadUrl"
+              @preview="(url: string) => { previewImageUrl = url; showImagePreview = true }"
+            />
           </div>
         </div>
       </div>
@@ -641,23 +619,12 @@ function approvalLogTone(log: PermissionApprovalLog) {
         @retry="(target: Message) => emit('retry', target)"
       />
 
-      <Dialog
-        v-if="previewImageUrl"
-        :open="showImagePreview"
-        @update:open="(value) => {
-          showImagePreview = value
-          if (!value) {
-            previewImageUrl = null
-          }
-        }"
-      >
-        <DialogContent
-          :show-close-button="false"
-          class="max-w-[90vw] border-border/60 bg-background/95 p-2 shadow-2xl"
-        >
-          <img :src="previewImageUrl" alt="预览图片" class="block max-h-[85vh] max-w-full rounded-xl object-contain" />
-        </DialogContent>
-      </Dialog>
+      <ImageLightbox
+        :src="previewImageUrl ?? ''"
+        :alt="'预览图片'"
+        :open="showImagePreview && !!previewImageUrl"
+        @close="showImagePreview = false; previewImageUrl = null"
+      />
     </div>
 
   </div>

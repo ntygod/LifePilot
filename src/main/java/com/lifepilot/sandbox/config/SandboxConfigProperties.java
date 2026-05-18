@@ -98,6 +98,9 @@ public class SandboxConfigProperties {
         /** 清理间隔（秒），默认 60。 */
         private int cleanupIntervalSeconds = 60;
 
+        /** 会话工作目录物理保留天数，超期后由 SessionDirectoryCleanupJob 清理。默认 30 天。 */
+        private int directoryRetentionDays = 30;
+
         public int getTtlSeconds() { return ttlSeconds; }
         public void setTtlSeconds(int ttlSeconds) { this.ttlSeconds = ttlSeconds; }
 
@@ -106,6 +109,9 @@ public class SandboxConfigProperties {
 
         public int getCleanupIntervalSeconds() { return cleanupIntervalSeconds; }
         public void setCleanupIntervalSeconds(int cleanupIntervalSeconds) { this.cleanupIntervalSeconds = cleanupIntervalSeconds; }
+
+        public int getDirectoryRetentionDays() { return directoryRetentionDays; }
+        public void setDirectoryRetentionDays(int directoryRetentionDays) { this.directoryRetentionDays = directoryRetentionDays; }
     }
 
     /**

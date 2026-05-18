@@ -1,8 +1,8 @@
 package com.lifepilot.meta.infra.file;
 
-import com.lifepilot.document.parser.DocumentParserService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.AttachmentRepository.AttachmentRecord;
+import com.lifepilot.knowledge.parser.DocumentParserService;
 import com.lifepilot.knowledge.parser.ExcelParser;
 import com.lifepilot.knowledge.parser.MarkdownParser;
 import com.lifepilot.knowledge.parser.PlainTextParser;

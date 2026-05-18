@@ -56,8 +56,6 @@ lifepilot:
       heartbeat-core-pool-size: 1
   prompt:
     base-path: "classpath:prompts/"
-  document:
-    # 文档产物落盘目录由 ZhiweiPaths.home("documents") 提供
   agent:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
@@ -540,6 +538,32 @@ lifepilot:
       streaming-enabled: true
     audit:
       enabled: true
+
+    # ===== 文件产物分发配置 =====
+    # 工具产生文件后自动登记 ToolArtifact → session_artifacts → 渠道分发，
+    # 支持飞书 / 企微 / 钉钉 / Telegram / Web / Tauri 桌面端文件投递
+    delivery:
+      # 工具执行器层硬限制
+      artifact-max-size-mb: 50
+      artifact-max-count-per-tool: 20
+      artifact-excluded-dirs:
+        - .git
+        - node_modules
+        - __pycache__
+        - .venv
+        - target
+      artifact-excluded-extensions:
+        - tmp
+        - log
+        - swp
+        - swo
+      # 各 IM 平台单产物 MB 上限（超过则不投递文件 delivery，主消息追加路径降级提示）
+      platform-max-size:
+        feishu: 30
+        wecom: 20
+        dingtalk: 30
+        telegram: 50
+        web: 200
       request-summary-max-length: 200
       response-summary-max-length: 200
       retention-days: 90
@@ -761,12 +785,14 @@ lifepilot:
       shell: "bash"
     # 会话配置
     session:
-      # 会话 TTL（秒）
+      # 会话 TTL（秒）— 仅释放进程资源，不删除工作目录
       ttl-seconds: 600
       # 最大活跃会话数
       max-active-sessions: 5
       # 过期清理间隔（秒）
       cleanup-interval-seconds: 60
+      # 会话工作目录物理保留天数（超期后由 SessionDirectoryCleanupJob 每天凌晨 4 点清理）
+      directory-retention-days: 30
     # 代码预检配置
     validator:
       # 是否启用预检

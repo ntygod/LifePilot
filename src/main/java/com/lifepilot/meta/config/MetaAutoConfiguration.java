@@ -145,13 +145,16 @@ public class MetaAutoConfiguration {
                                         InteractiveElementIndexer interactiveElementIndexer,
                                         @Nullable PythonRuntimeManager pythonRuntimeManager,
                                         @Nullable CommandGuard commandGuard,
-                                        @Nullable com.lifepilot.conversation.transcript.SessionTranscriptRepository sessionTranscriptRepository) {
-        return new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator,
+                                        @Nullable com.lifepilot.conversation.transcript.SessionTranscriptRepository sessionTranscriptRepository,
+                                        @Nullable com.lifepilot.interaction.config.GatewayDeliveryProperties gatewayDeliveryProperties) {
+        InfraToolProvider provider = new InfraToolProvider(properties, webSearchConfigProvider, sandboxSessionManager, codeValidator,
                 sandboxRepository, browserSessionManager, notificationService, cronTaskRepository, cronScheduler,
                 notificationProperties, backgroundProcessManager, channelRegistry, channelOperationDispatcher,
                 channelDeliveryDispatcher, channelInstanceService, workspaceResolver, attachmentRepository,
                 chatSessionRepository, pathAccessControl, ssrfGuard, interactiveElementIndexer,
                 pythonRuntimeManager, commandGuard, sessionTranscriptRepository);
+        provider.setGatewayDeliveryProperties(gatewayDeliveryProperties);
+        return provider;
     }
 
     /**

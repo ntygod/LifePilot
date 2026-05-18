@@ -52,23 +52,36 @@ Key source files:
 - `src/main/java/com/lifepilot/embedding/router/EmbeddingRouter.java` — embedding routing
 - `src/main/java/com/lifepilot/rerank/router/RerankRouter.java` — rerank routing
 - `src/main/resources/application.yml` — all runtime configuration
-- `src/main/resources/db/migration/` — Flyway migration scripts (V1–V27, V1 is the merged init schema; next migration starts at V28)
+- `src/main/resources/db/migration/` — Flyway migration scripts; run `scripts/harness/Get-FlywayLatest.ps1` before creating the next version
 - `src/main/resources/prompts/` — StringTemplate prompt files
 - `src/main/resources/skills/` — preset skill definitions (26 skills)
 - `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)
 
+## Agent Harness
+
+The reusable AI Coding Harness core is in `docs/harness/core/`. This repository's adapter is in `docs/harness/adapters/zhiwei/`. Claude Code compatibility files under `.claude/` are still available, but new or corrected reusable rules should go to the core, while project facts should go to the adapter.
+
+Key harness files:
+- `docs/harness/README.md` — harness map
+- `docs/harness/core/` — reusable AI coding harness pattern
+- `docs/harness/adapters/zhiwei/` — this project adapter
+- `docs/harness/rules/` — current compatibility path for Java, frontend, database, and Tauri rules
+- `docs/harness/quality-gates.md` — current compatibility path for delivery checks
+- `.agents/skills/` — canonical project skills
+- `.codex/skills/` — Codex skill entrypoints
+
 ## Coding Conventions
 
-Detailed conventions are in `.claude/rules/` (auto-loaded by file type):
-- **Java**: Java 22 features required, Chinese comments/logs, `record` over Lombok — see `java-conventions.md`
-- **Frontend**: Reka UI 2.x (not shadcn-vue), Tailwind named scales only — see `frontend-conventions.md`
-- **Database**: Flyway naming, SQLite dialect, parameterized queries — see `database-rules.md`
-- **Tauri/Rust**: Tauri 2.x API, Chinese comments, `Result` + `?` error handling — see `tauri-conventions.md`
+Detailed conventions are indexed by `docs/harness/adapters/zhiwei/rules.md`, with rule bodies currently in `docs/harness/rules/` and mirrored in `.claude/rules/` for Claude Code:
+- **Java**: Java 22 features required, Chinese comments/logs, `record` over Lombok — see `docs/harness/rules/java.md`
+- **Frontend**: Reka UI 2.x, Tailwind project scales, stable layouts — see `docs/harness/rules/frontend.md`
+- **Database**: Flyway naming, SQLite dialect, parameterized queries — see `docs/harness/rules/database.md`
+- **Tauri/Rust**: Tauri 2.x API, Chinese comments, `Result` + `?` error handling — see `docs/harness/rules/tauri.md`
 
 ## Common Workflows
 
 1. **新增 API 端点**: 在对应包下创建 `@RestController` → 编写 Service → 添加测试 → 如需建表则新建 Flyway 迁移 `V{n+1}__desc.sql`
-2. **新增 Flyway 迁移**: 查看 `db/migration/` 最新版本号 → 创建 `V{n+1}__{description}.sql` → `mvn compile` 验证
+2. **新增 Flyway 迁移**: 运行 `scripts/harness/Get-FlywayLatest.ps1` → 创建 `V{n+1}__{description}.sql` → `mvn compile` 验证
 3. **新增工具/技能**: 在 `tool/` 或 `skill/` 包下实现 → 注册到对应 Registry → 添加测试
 4. **前端新页面**: `src/views/` 下创建页面组件 → 添加路由 → 使用 Reka UI 组件 + Tailwind 命名尺度
 

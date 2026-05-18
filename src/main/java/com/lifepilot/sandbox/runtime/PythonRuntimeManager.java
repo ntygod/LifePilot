@@ -324,6 +324,15 @@ public class PythonRuntimeManager {
         log.info("Python 运行时已启用");
     }
 
+    /**
+     * 返回 Python 运行时缓存目录（matplotlib/pip wheel 等）。
+     *
+     * <p>跨 session 共享，不落在 sandbox cwd 内，避免被产物探测误登记。</p>
+     */
+    public Path getPythonCacheDir() {
+        return zhiweiPaths.home(ZhiweiPaths.DIR_CACHE_PYTHON);
+    }
+
     /** 解析 installPath 配置，替换 {@code ${user.home}} 占位符。 */
     Path resolveInstallPath() {
         return zhiweiPaths.home(ZhiweiPaths.DIR_RUNTIME_PYTHON);

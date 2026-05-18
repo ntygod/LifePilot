@@ -1,7 +1,6 @@
 package com.lifepilot.interaction.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.document.repository.SessionDocumentRepository;
 import com.lifepilot.config.path.ZhiweiPaths;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import com.lifepilot.interaction.gateway.MessageGateway;
@@ -133,14 +132,21 @@ public class ChannelControlPlaneConfiguration {
                                                               RestClient channelControlPlaneRestClient,
                                                               ConnectorManager connectorManager,
                                                               @Nullable SseSessionManager sseSessionManager,
-                                                              @Nullable SessionDocumentRepository documentRepository) {
+                                                              @Nullable com.lifepilot.conversation.artifact.SessionArtifactRepository artifactRepository,
+                                                              @Nullable GatewayDeliveryProperties deliveryProperties,
+                                                              @Nullable ZhiweiPaths zhiweiPaths) {
+        java.nio.file.Path workspaceRoot = zhiweiPaths != null
+                ? zhiweiPaths.workspace()
+                : null;
         return new ChannelDeliveryDispatcher(
                 channelRegistry,
                 channelInstanceEventService,
                 channelControlPlaneRestClient,
                 connectorManager,
                 sseSessionManager,
-                documentRepository
+                artifactRepository,
+                deliveryProperties,
+                workspaceRoot
         );
     }
 

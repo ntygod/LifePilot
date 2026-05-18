@@ -4,6 +4,9 @@ import com.lifepilot.config.path.PathResolver;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
+import com.lifepilot.tool.artifact.ArtifactFilter;
+import com.lifepilot.tool.artifact.ArtifactFilterConfig;
+import com.lifepilot.tool.model.ToolArtifact;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
 import jakarta.annotation.Nullable;
@@ -16,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -42,9 +46,14 @@ public class FileWriteToolExecutor {
     private final LintHookExecutor lintHook;
     @Nullable
     private final MetaProperties.Infra.FileEdit fileEditConfig;
+    @Nullable
+    private final Path workspaceRoot;
+    private final ArtifactFilterConfig artifactFilterConfig;
 
     /**
      * 构造函数 — 共享 PathSecurityChecker 实例。
+     *
+     * <p>历史调用方使用此构造器；artifact 登记会被关闭（workspaceRoot=null）。</p>
      *
      * @param securityChecker 路径安全检查器（共享）
      * @param editHistory     文件编辑历史（可为 null）
@@ -55,10 +64,33 @@ public class FileWriteToolExecutor {
                           @Nullable FileEditHistory editHistory,
                           @Nullable LintHookExecutor lintHook,
                           @Nullable MetaProperties.Infra.FileEdit fileEditConfig) {
+        this(securityChecker, editHistory, lintHook, fileEditConfig, null,
+                ArtifactFilterConfig.defaultConfig());
+    }
+
+    /**
+     * 完整构造函数 — 支持 artifact 登记。
+     *
+     * @param securityChecker      路径安全检查器（共享）
+     * @param editHistory          文件编辑历史（可为 null）
+     * @param lintHook             lint 钩子执行器（可为 null）
+     * @param fileEditConfig       文件编辑配置（可为 null）
+     * @param workspaceRoot        workspace 白名单根目录；为 null 时关闭 artifact 登记
+     * @param artifactFilterConfig 产物过滤配置；调用方应已应用 {@code GatewayDeliveryProperties.toFilterConfig()}
+     */
+    FileWriteToolExecutor(PathSecurityChecker securityChecker,
+                          @Nullable FileEditHistory editHistory,
+                          @Nullable LintHookExecutor lintHook,
+                          @Nullable MetaProperties.Infra.FileEdit fileEditConfig,
+                          @Nullable Path workspaceRoot,
+                          ArtifactFilterConfig artifactFilterConfig) {
         this.securityChecker = securityChecker;
         this.editHistory = editHistory;
         this.lintHook = lintHook;
         this.fileEditConfig = fileEditConfig;
+        this.workspaceRoot = workspaceRoot;
+        this.artifactFilterConfig = artifactFilterConfig != null
+                ? artifactFilterConfig : ArtifactFilterConfig.defaultConfig();
     }
 
     /**
@@ -145,11 +177,39 @@ public class FileWriteToolExecutor {
                 }
             }
 
-            return ToolResult.success(Map.copyOf(data));
+            // 写入成功后登记 ToolArtifact（仅当 workspace 白名单 + 过滤通过）
+            List<ToolArtifact> artifacts = collectArtifact(normalizedPath, bytes.length);
+
+            return ToolResult.success(Map.copyOf(data), com.lifepilot.tool.model.ToolResultMeta.empty(), artifacts);
 
         } catch (IOException e) {
             log.error("文件写入失败: path={}, error={}", pathStr, e.getMessage(), e);
             return ToolResult.error("文件写入失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 写入完成后构造 ToolArtifact；越界 / 过滤不通过时返回空列表。
+     *
+     * <p>artifact 登记失败不影响 write 操作本身的成功语义，错误降级为 DEBUG 日志。</p>
+     */
+    private List<ToolArtifact> collectArtifact(Path normalizedPath, long size) {
+        if (workspaceRoot == null) {
+            return List.of();
+        }
+        try {
+            if (!ArtifactFilter.isInWorkspaceRoot(normalizedPath, workspaceRoot)) {
+                log.debug("artifact 路径越界，跳过登记: {}", normalizedPath);
+                return List.of();
+            }
+            if (!ArtifactFilter.accept(normalizedPath, size, artifactFilterConfig)) {
+                log.debug("artifact 过滤命中，跳过登记: {} (size={})", normalizedPath, size);
+                return List.of();
+            }
+            return List.of(ToolArtifact.fromFile(normalizedPath));
+        } catch (IOException e) {
+            log.debug("artifact 元信息读取失败，跳过登记: path={}, error={}", normalizedPath, e.getMessage());
+            return List.of();
         }
     }
 }

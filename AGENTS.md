@@ -5,6 +5,15 @@ This repository contains a Spring Boot backend and a Vue frontend. Backend code 
 
 The frontend lives in `zhiwei-web/`. Put route pages in `src/views`, reusable UI in `src/components`, Pinia stores in `src/stores`, composables in `src/composables`, and API clients in `src/api`. Docs live in `docs/`.
 
+## Agent Harness
+This repo uses the AI Coding Harness pattern. Keep this file as the short entry point; reusable harness concepts live under `docs/harness/core/`, while this repository's adapter lives under `docs/harness/adapters/zhiwei/`.
+
+- Canonical project skills live in `.agents/skills/`.
+- Codex-discoverable skill wrappers live in `.codex/skills/`.
+- Claude Code compatibility assets remain in `.claude/`.
+- When working on Java, frontend, Flyway, or Tauri files, read `docs/harness/adapters/zhiwei/rules.md` and the matching rule file before editing.
+- Before delivery, follow `docs/harness/adapters/zhiwei/quality-gates.md` or the `ship` skill.
+
 ## Build, Test, and Development Commands
 Backend: `mvn spring-boot:run` starts the backend, `mvn compile` verifies cross-module compilation, `mvn test` runs JUnit/jqwik tests, and `mvn clean package -DskipTests` builds `target/zhiwei.jar`.
 

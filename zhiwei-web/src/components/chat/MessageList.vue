@@ -20,6 +20,8 @@ const props = defineProps<{
   streamingPermissionApprovals?: Record<string, PermissionApprovalRequest>
   /** 流式阶段中的权限审批结果。 */
   streamingPermissionApprovalResolutions?: Record<string, 'approved' | 'rejected' | 'expired'>
+  /** 流式阶段中已收到的文件产物引用 — 由 SSE artifact-ref 事件累积。 */
+  streamingArtifactRefs?: import('@/api/artifacts').ArtifactRefPayload[]
   /** 文本搜索关键字，用于高亮匹配内容。 */
   query?: string
 }>()
@@ -200,6 +202,9 @@ function highlight(text: string): string {
         <MessageBubble
           :message="{
             ...msg,
+            artifactRefs: (isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant')
+              ? [...(msg.artifactRefs ?? []), ...((streamingArtifactRefs ?? []).filter(r => !msg.artifactRefs?.some(x => x.artifactId === r.artifactId)))]
+              : msg.artifactRefs,
             highlightedContent: props.query ? highlight(msg.content) : undefined
           } as Message"
           :streaming="isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant'"
@@ -232,7 +237,7 @@ function highlight(text: string): string {
       :transition="{ duration: 0.34, ease: 'easeOut' }"
     >
       <MessageBubble
-        :message="{ id: 'streaming', role: 'assistant', content: '', timestamp: Date.now() }"
+        :message="{ id: 'streaming', role: 'assistant', content: '', timestamp: Date.now(), artifactRefs: streamingArtifactRefs }"
         :streaming="true"
         :streaming-content="streamingContent"
         :streaming-reasoning-events="streamingReasoningEvents"

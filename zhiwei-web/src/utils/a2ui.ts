@@ -32,6 +32,14 @@ type BackendMessageLike = {
   errorMessage?: string | null
   suspendReasonType?: string | null
   suspendReasonSourceId?: string | null
+  artifactRefs?: Array<{
+    artifactId: string
+    fileName: string
+    mimeType: string
+    kind: string
+    size: number
+    downloadUrl?: string | null
+  }> | null
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -150,5 +158,15 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     errorMessage: message.errorMessage ?? undefined,
     suspendReasonType: message.suspendReasonType ?? undefined,
     suspendReasonSourceId: message.suspendReasonSourceId ?? undefined,
+    artifactRefs: message.artifactRefs?.length
+      ? message.artifactRefs.map((ref: any) => ({
+          artifactId: ref.artifactId,
+          fileName: ref.fileName,
+          mimeType: ref.mimeType,
+          kind: ref.kind,
+          size: ref.size,
+          downloadUrl: ref.downloadUrl ?? `/api/artifacts/${ref.artifactId}/download`,
+        }))
+      : undefined,
   }
 }

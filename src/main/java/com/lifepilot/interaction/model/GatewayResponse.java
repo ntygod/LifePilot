@@ -13,7 +13,13 @@ import org.springframework.lang.Nullable;
  *
  * <p>紧凑构造器为 {@code responseId} 提供默认值（UUID），
  * 集合字段使用 {@link List#copyOf} 和 {@link Map#copyOf} 确保不可变性。
- * 提供工厂方法快速创建常见响应（成功、错误、限流、未授权）。
+ * 提供工厂方法快速创建常见响应（成功、错误、限流、未授权）。</p>
+ *
+ * <p>{@code artifactRefs} 字段（2026-05-17 引入）承载本次回复关联的会话产物
+ * 引用列表，让 {@code ChannelDeliveryDispatcher} 按渠道差异化适配（IM 渠道走
+ * connector RPC 投递文件消息、Web 端走 SSE 事件 + REST 下载端点、Tauri 桌面端
+ * 复用 Web 链路 + 本地 plugin 唤起文件）。既有工厂方法默认 {@code List.of()},
+ * 不破坏既有调用点。</p>
  *
  * @param responseId   响应唯一标识，默认 UUID
  * @param channelType  通道类型
@@ -24,6 +30,7 @@ import org.springframework.lang.Nullable;
  * @param tokenUsage   Token 消耗统计，可为 null
  * @param statusCode   HTTP 风格状态码
  * @param errorMessage 错误消息，可为 null
+ * @param artifactRefs 会话产物引用列表（无产物时为 {@link List#of()}）
  * @author zsg
  * @since 2026-02-25
  */
@@ -37,7 +44,8 @@ public record GatewayResponse(
         Duration latency,
         @Nullable TokenUsage tokenUsage,
         int statusCode,
-        @Nullable String errorMessage
+        @Nullable String errorMessage,
+        List<ArtifactRef> artifactRefs
 ) {
 
     /**
@@ -47,6 +55,7 @@ public record GatewayResponse(
         responseId = responseId != null ? responseId : UUID.randomUUID().toString();
         attachments = attachments != null ? List.copyOf(attachments) : List.of();
         metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+        artifactRefs = artifactRefs != null ? List.copyOf(artifactRefs) : List.of();
     }
 
     /**
@@ -60,7 +69,7 @@ public record GatewayResponse(
         return new GatewayResponse(
                 null, channelType, content,
                 List.of(), Map.of(), Duration.ZERO,
-                null, 200, null
+                null, 200, null, List.of()
         );
     }
 
@@ -76,7 +85,7 @@ public record GatewayResponse(
         return new GatewayResponse(
                 null, channelType, new ResponseContent.TextContent(message),
                 List.of(), Map.of(), Duration.ZERO,
-                null, code, message
+                null, code, message, List.of()
         );
     }
 

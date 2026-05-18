@@ -141,7 +141,6 @@ graph TB
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |
 | `conversation` | 对话历史存储、基于 transcript 条目读模型的最近轮次与时间线读取 | [架构](architecture/conversation.md) · [特性](features/conversation.md) |
 | `project` | 项目（领域级任务容器）CRUD、项目级 MemorySpace 联动、ProjectContext 解析、级联删除 | [架构](architecture/project.md) |
-| `document` | 文档工作空间（docx / xlsx / pptx 新建、docx / xlsx 锚点编辑、工作副本 + 版本链 + diff + commit/rollback/discard） | [API 端点](API_ENDPOINTS.md#documents文档工作空间) |
 | `workflow` | YAML 声明式工作流、触发器（manual / cron / event）、状态持久化 | [架构](architecture/workflow.md) · [特性](features/workflow.md) |
 | `sandbox` | 代码执行沙箱（Process/Docker）、会话复用、危险操作预检 | [架构](architecture/sandbox.md) · [特性](features/sandbox.md) |
 | `media` | 多模态处理（图片预处理、音频、文档格式检测） | [架构](architecture/multimodal.md) · [特性](features/multimodal.md) |
@@ -202,9 +201,9 @@ graph LR
         V9["V9: channel_user_mapping 渠道用户映射"]
         V10["V10: 删除旧评估表"]
         V11["V11: external_cli_bash_path 外部 CLI Bash 路径"]
-        V12["V12: session_documents 会话文档表（Phase 2A）"]
-        V13["V13: document_versions 文档版本链 + session_documents 扩 sourcePath/latestVersion（Phase 3A）"]
-        V14["V14: session_documents.source_path UNIQUE 索引"]
+        V12["V12: session_documents 会话文档表（已下架，见 V2 — remove-document-workspace）"]
+        V13["V13: document_versions 文档版本链 + session_documents 扩字段（已下架，见 V2 — remove-document-workspace）"]
+        V14["V14: session_documents.source_path UNIQUE 索引（已下架，见 V2 — remove-document-workspace）"]
         V15["V15: projects 项目表 + isolation CHECK + FK 到 memory_spaces（RESTRICT）"]
         V16["V16: conversations 加 project_id（死表，V17 已迁移）"]
         V17["V17: project_id 从 conversations 迁移到 session_store 并建部分索引"]

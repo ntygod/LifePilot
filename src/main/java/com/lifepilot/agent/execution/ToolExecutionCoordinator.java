@@ -69,6 +69,16 @@ public class ToolExecutionCoordinator {
     @Nullable
     private final SessionWorkspaceService workspaceService;
     private final int maxParallelToolCalls;
+    /**
+     * 会话产物持久化仓库 — 通过 setter 注入，让 ToolExecutionCoordinator 在工具执行
+     * 结束后把 ToolArtifact 写入 session_artifacts。为 null 时降级为不写入，
+     * 保持 CLI / 单测场景向后兼容。
+     */
+    @Nullable
+    private com.lifepilot.conversation.artifact.SessionArtifactRepository sessionArtifactRepository;
+    /** SSE 会话管理器 — 用于推送 artifact-ref 事件。 */
+    @Nullable
+    private com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager;
 
     /** 值得持久化到工作区的工具 ID 集合（写操作或产生结构化结果的工具）。 */
     private static final Set<String> WORKSPACE_WORTHY_TOOLS = Set.of(
@@ -566,7 +576,7 @@ public class ToolExecutionCoordinator {
                     planned.toolCall().id()
             ), loopContext);
             persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
-                    true, outcome.rawOutput(), null, outcome.startedAt());
+                    true, outcome.rawOutput(), null, outcome.startedAt(), loopContext);
             recordToolCallStep(traceContext, state.stepCount() - 1, outcome.startedAt(),
                     outcome.completedAt(), outcome.duration(), planned.toolId(),
                     planned.inputJson(), outcome.rawOutput(), true, planned.toolRiskLevel());
@@ -600,7 +610,7 @@ public class ToolExecutionCoordinator {
                 planned.toolCall().id()
         ), loopContext);
         persistTranscriptToolResult(state, planned.toolCall(), planned.toolId(),
-                outcome.success(), outcome.rawOutput(), null, outcome.startedAt());
+                outcome.success(), outcome.rawOutput(), null, outcome.startedAt(), loopContext);
 
         // 工具状态合并 — tool.search 返回 discovered_tool_ids 后进入下一轮工具列表；
         // skill.load 返回 content XML 后进入下一轮系统提示词。
@@ -981,11 +991,41 @@ public class ToolExecutionCoordinator {
                                              String toolId,
                                              boolean success,
                                              @Nullable String outputJson,
-                                             @Nullable String artifactId,
-                                             Instant createdAt) {
+                                             @Nullable String artifactIdHint,
+                                             Instant createdAt,
+                                             @Nullable AgentLoopContext loopContext) {
         if (transcriptStore == null) {
             return;
         }
+
+        // 1. 取走 ToolBridge 旁路推送的 ToolArtifact，写入 session_artifacts
+        String firstArtifactId = artifactIdHint;
+        java.util.List<com.lifepilot.tool.model.ToolArtifact> pendingArtifacts =
+                loopContext != null ? loopContext.drainPendingToolArtifacts() : java.util.List.of();
+
+        if (!pendingArtifacts.isEmpty() && sessionArtifactRepository != null) {
+            java.util.List<com.lifepilot.interaction.model.ArtifactRef> refs = new java.util.ArrayList<>();
+            for (com.lifepilot.tool.model.ToolArtifact a : pendingArtifacts) {
+                String savedId = saveSessionArtifact(state, toolCall, toolId, a);
+                if (savedId == null) {
+                    continue;
+                }
+                if (firstArtifactId == null) {
+                    firstArtifactId = savedId;
+                }
+                com.lifepilot.interaction.model.ArtifactRef ref =
+                        new com.lifepilot.interaction.model.ArtifactRef(
+                                savedId, a.fileName(), a.mimeType(), a.kind(), a.size());
+                refs.add(ref);
+                publishArtifactRefSse(state, ref);
+            }
+            if (!refs.isEmpty() && loopContext != null) {
+                loopContext.addArtifactRefs(refs);
+            }
+        }
+
+        // 2. 写 transcript
+        final String transcriptArtifactId = firstArtifactId;
         CompletableFuture.runAsync(() -> {
             try {
                 transcriptStore.appendToolResult(
@@ -996,7 +1036,7 @@ public class ToolExecutionCoordinator {
                         toolCall.id(),
                         success,
                         outputJson != null ? outputJson : "",
-                        artifactId,
+                        transcriptArtifactId,
                         true,
                         false,
                         createdAt
@@ -1006,6 +1046,88 @@ public class ToolExecutionCoordinator {
                         state.sessionId(), toolId, e.getMessage());
             }
         }, VIRTUAL_EXECUTOR);
+    }
+
+    /**
+     * 把单个 {@link com.lifepilot.tool.model.ToolArtifact} 写入 session_artifacts 表。
+     * 返回 artifactId；写入失败返回 null。
+     */
+    @Nullable
+    private String saveSessionArtifact(ReactAgentState state,
+                                        AssistantMessage.ToolCall toolCall,
+                                        String toolId,
+                                        com.lifepilot.tool.model.ToolArtifact artifact) {
+        if (sessionArtifactRepository == null) {
+            return null;
+        }
+        try {
+            java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("kind", artifact.kind().name());
+            payload.put("path", artifact.path());
+            payload.put("fileName", artifact.fileName());
+            payload.put("mimeType", artifact.mimeType());
+            payload.put("size", artifact.size());
+            payload.put("producedBy", toolId);
+            payload.put("toolCallId", toolCall.id());
+            String type = artifact.kind() == com.lifepilot.tool.model.ArtifactKind.IMAGE ? "image" : "file";
+            // sourceEntryId 传 null —— 该字段外键指向 session_transcript_entries.id（UUID），
+            // 不是 LLM 给的 toolCall.id()。在工具结果 transcript entry 落库之前，没有可用的
+            // entry_id；为避免 FK 拒绝写入导致 SSE artifact-ref 无法推送（前端 ArtifactCard 不渲染），
+            // 此处传 null 由 SET NULL 语义兜底。关联信息已通过 payload.toolCallId / producedBy / traceId
+            // 完全保留，下游可按这三者反查。
+            return sessionArtifactRepository.save(
+                    state.sessionId(),
+                    null,
+                    state.traceId(),
+                    type,
+                    artifact.fileName(),
+                    artifact.summary(),
+                    payload,
+                    "ACTIVE",
+                    null
+            );
+        } catch (Exception e) {
+            log.warn("session_artifacts 写入失败: artifact={}, error={}",
+                    artifact.fileName(), e.getMessage());
+            return null;
+        }
+    }
+
+    /** 流式模式下推送 SSE artifact-ref 事件，让 Web 端立即渲染产物卡片。 */
+    private void publishArtifactRefSse(ReactAgentState state,
+                                        com.lifepilot.interaction.model.ArtifactRef ref) {
+        if (sseSessionManager == null) {
+            return;
+        }
+        String streamId = sseSessionManager.findChatStreamId(state.sessionId());
+        if (streamId == null) {
+            return;
+        }
+        try {
+            java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("artifactId", ref.artifactId());
+            payload.put("fileName", ref.fileName());
+            payload.put("mimeType", ref.mimeType());
+            payload.put("kind", ref.kind().name());
+            payload.put("size", ref.size());
+            payload.put("downloadUrl", "/api/artifacts/" + ref.artifactId() + "/download");
+            sseSessionManager.sendEvent(streamId,
+                    com.lifepilot.interaction.web.sse.SseEventType.ARTIFACT_REF,
+                    payload);
+        } catch (Exception e) {
+            log.debug("artifact-ref SSE 推送失败: error={}", e.getMessage());
+        }
+    }
+
+    /** Spring 注入 SessionArtifactRepository（CLI 场景下可不调）。 */
+    public void setSessionArtifactRepository(
+            @Nullable com.lifepilot.conversation.artifact.SessionArtifactRepository repo) {
+        this.sessionArtifactRepository = repo;
+    }
+
+    /** Spring 注入 SseSessionManager。 */
+    public void setSseSessionManager(@Nullable com.lifepilot.interaction.web.sse.SseSessionManager mgr) {
+        this.sseSessionManager = mgr;
     }
 
     /** 将工具执行结果写入 Trace，保证后续诊断能看到输入、输出和耗时。 */

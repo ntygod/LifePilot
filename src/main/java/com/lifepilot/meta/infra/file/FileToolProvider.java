@@ -1,6 +1,8 @@
 package com.lifepilot.meta.infra.file;
 
-import com.lifepilot.document.parser.DocumentParserService;
+import com.lifepilot.config.workspace.WorkspaceResolver;
+import com.lifepilot.interaction.config.GatewayDeliveryProperties;
+import com.lifepilot.knowledge.parser.DocumentParserService;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.meta.config.MetaProperties;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
@@ -8,6 +10,7 @@ import com.lifepilot.meta.infra.file.history.LintHookExecutor;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.artifact.ArtifactFilterConfig;
 import com.lifepilot.tool.model.ToolCategory;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.model.ToolResult;
@@ -18,6 +21,7 @@ import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import com.lifepilot.config.path.PathAccessControl;
 import jakarta.annotation.Nullable;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -42,18 +46,40 @@ public class FileToolProvider {
     @Nullable
     private final PathAccessControl pathAccessControl;
     private final DocumentParserService documentParserService;
+    @Nullable
+    private final Path workspaceRoot;
+    private final ArtifactFilterConfig artifactFilterConfig;
 
     public FileToolProvider(MetaProperties properties,
                             @Nullable FileEditHistory editHistory,
                             @Nullable LintHookExecutor lintHook,
                             @Nullable AttachmentRepository attachmentRepository,
                             @Nullable PathAccessControl pathAccessControl) {
+        this(properties, editHistory, lintHook, attachmentRepository, pathAccessControl, null, null);
+    }
+
+    /**
+     * 完整构造函数 — 注入 WorkspaceResolver 与 GatewayDeliveryProperties，让 file.write
+     * 在写入成功后登记 ToolArtifact 供渠道分发。历史调用方继续使用 5 参构造器（artifact
+     * 登记会被关闭）。
+     */
+    public FileToolProvider(MetaProperties properties,
+                            @Nullable FileEditHistory editHistory,
+                            @Nullable LintHookExecutor lintHook,
+                            @Nullable AttachmentRepository attachmentRepository,
+                            @Nullable PathAccessControl pathAccessControl,
+                            @Nullable WorkspaceResolver workspaceResolver,
+                            @Nullable GatewayDeliveryProperties deliveryProperties) {
         this.properties = properties;
         this.editHistory = editHistory;
         this.lintHook = lintHook;
         this.attachmentRepository = attachmentRepository;
         this.pathAccessControl = pathAccessControl;
         this.documentParserService = DocumentParserService.buildDefault();
+        this.workspaceRoot = workspaceResolver != null ? workspaceResolver.resolve() : null;
+        this.artifactFilterConfig = deliveryProperties != null
+                ? deliveryProperties.toFilterConfig()
+                : ArtifactFilterConfig.defaultConfig();
     }
 
     public List<BuiltinTool> buildFileTools() {
@@ -209,7 +235,8 @@ public class FileToolProvider {
                     String action = input.getOptionalParam("action", String.class).orElse("write");
                     return switch (action) {
                         case "write" -> new FileWriteToolExecutor(securityChecker,
-                                editHistory, lintHook, fileEditConfig).execute(input);
+                                editHistory, lintHook, fileEditConfig,
+                                workspaceRoot, artifactFilterConfig).execute(input);
                         case "insert", "replace", "delete_line", "find_replace" ->
                                 new FilePatchToolExecutor(securityChecker,
                                         editHistory, lintHook, fileEditConfig).execute(input);

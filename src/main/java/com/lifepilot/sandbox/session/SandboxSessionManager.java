@@ -113,7 +113,7 @@ public class SandboxSessionManager {
             }
 
             SandboxBooter newBooter = createBooter();
-            Path workingDirectory = createWorkingDirectory();
+            Path workingDirectory = createWorkingDirectory(id);
             newBooter.boot(workingDirectory).join();
 
             log.info("创建新会话: sessionId={}, booterType={}, workingDirectory={}",
@@ -209,20 +209,32 @@ public class SandboxSessionManager {
     }
 
     /**
-     * 在统一工作目录下创建沙箱子目录。
+     * 在统一工作目录下创建会话级子目录。
+     *
+     * <p>路径格式：{@code {workspace}/sessions/{sessionId}/}，按会话隔离产物，
+     * 避免不同对话间文件互覆盖。目录已存在时直接复用（同一 session 重连场景）。</p>
      */
-    private Path createWorkingDirectory() {
+    private Path createWorkingDirectory(String sessionId) {
         try {
-            Path sandboxBase = workspaceResolver.resolveAndCreate().resolve("sandbox");
-            Files.createDirectories(sandboxBase);
-            return Files.createTempDirectory(sandboxBase, "session-");
+            Path sessionsBase = workspaceResolver.resolveAndCreate().resolve("sessions");
+            // sessionId 可能含 UUID 格式，直接用作目录名（安全：不含路径分隔符）
+            Path sessionDir = sessionsBase.resolve(sessionId);
+            Files.createDirectories(sessionDir);
+            return sessionDir;
         } catch (IOException e) {
-            throw new IllegalStateException("创建沙箱工作目录失败", e);
+            throw new IllegalStateException("创建会话工作目录失败", e);
         }
     }
 
     /**
-     * 销毁单个会话 entry：shutdown booter + 删除工作目录。
+     * 销毁单个会话 entry：shutdown booter，保留工作目录（含用户产物）。
+     *
+     * <p>sandbox TTL 清理的目的是释放进程资源，不是清磁盘。工作目录下可能包含
+     * 已登记到 session_artifacts 的用户产物（chart.png / report.docx 等），
+     * 删除会导致历史会话中的 ArtifactCard 图片/下载链接失效。</p>
+     *
+     * <p>磁盘清理由独立的 WorkspaceCleanupJob 按更长周期策略执行（如 30 天无活动），
+     * 或用户在设置页主动触发。</p>
      */
     private void destroyEntry(String sessionId, SandboxEntry entry) {
         try {
@@ -231,13 +243,7 @@ public class SandboxSessionManager {
             log.warn("关闭 booter 失败: sessionId={}, error={}", sessionId, e.getMessage());
         }
 
-        try {
-            SandboxUtils.deleteDirectoryRecursively(entry.workingDirectory());
-        } catch (IOException e) {
-            log.warn("删除工作目录失败: sessionId={}, path={}, error={}",
-                    sessionId, entry.workingDirectory(), e.getMessage());
-        }
-
-        log.info("会话已销毁: sessionId={}", sessionId);
+        // 不删除工作目录 —— 保留用户产物文件
+        log.info("会话已销毁（工作目录保留）: sessionId={}, path={}", sessionId, entry.workingDirectory());
     }
 }

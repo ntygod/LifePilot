@@ -185,7 +185,8 @@ class ExecutionMiddleware_单元测试 {
                         null,
                         CompletionMode.NORMAL,
                         null,
-                        com.lifepilot.interaction.web.model.ChatTurnStatus.DEGRADED
+                        com.lifepilot.interaction.web.model.ChatTurnStatus.DEGRADED,
+                        java.util.List.of()
                 ));
 
         var response = executionMiddleware.process(

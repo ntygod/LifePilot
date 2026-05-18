@@ -466,19 +466,7 @@
 
 ## Documents（文档工作空间）
 
-来源：`DocumentController`，Base Path: `/api/documents`
-
-> 仅在 `lifepilot.gateway.channels.web.enabled=true` 时启用。当前端点只服务已有 `session_documents` 工作副本，向前端提供元数据、版本链、diff 卡片数据以及 commit / rollback / 丢弃等用户侧动作。`document.create` / `document.edit` Agent 工具已下架；新的文档生成、转换和批处理走 `doc-processor` Skill + `code` / `shell.exec`。
-
-| Method | Path | Handler | 备注 |
-|--------|------|---------|------|
-| GET | `/api/documents/{id}` | `getMetadata` | 文档元数据（id / fileName / mimeType / fileSize / origin / sourcePath / latestVersion / createdAt），404 不存在 |
-| GET | `/api/documents/{id}/download` | `download` | 下载文档二进制；可选 `?version=N` 指向历史版本，缺省下载当前工作副本；404 文档或版本缺失 / 物理文件丢失 |
-| GET | `/api/documents/{id}/versions` | `listVersions` | 版本链升序列表，元素包含 `versionNo` / `source` / `patchSummary` / `createdAt` |
-| GET | `/api/documents/{id}/diff` | `diff` | 取某区间 diff JSON（当前简化语义：只返回 `to` 版本缓存的 `diffJson`），必填 `from` / `to` 查询参数 |
-| POST | `/api/documents/{id}/commit` | `commit` | 提交工作副本。请求体：`{"target":"overwrite"\|"saveAs","saveAsPath":"..."}`；overwrite 覆盖 `sourcePath` 并生成 `.bak` 备份，saveAs 另存到指定绝对路径。返回 `{committedPath, backupPath?}` |
-| POST | `/api/documents/{id}/rollback` | `rollback` | 回滚到指定版本（生成新版本而非抹除历史）。请求体：`{"version":N}`。返回 `{newVersion, summary}` |
-| DELETE | `/api/documents/{id}/working-copy` | `discardWorkingCopy` | 丢弃工作副本（删除 working 目录 + 版本链 + session_documents 行，204）；404 不存在，400 状态不允许 |
+> **已下架**：文档工作区基础设施（`DocumentController` / `session_documents` / `document_versions` / `DocumentDiffCard`）已在 `feature/remove-document-workspace` 中整体移除，`/api/documents/**` 端点不再存在。结构化文档读取仍由 `file.read` 工具走 `DocumentParserService` 处理；新建 / 转换文档请使用 `doc-processor` Skill + `code` / `shell.exec` 工具组合。详见 `.kiro/specs/remove-document-workspace`。
 
 ---
 

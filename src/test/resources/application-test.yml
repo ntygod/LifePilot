@@ -51,8 +51,6 @@ lifepilot:
     enabled: false
   meta:
     enabled: false
-  document:
-    enabled: false
   observability:
     trace:
       enabled: true

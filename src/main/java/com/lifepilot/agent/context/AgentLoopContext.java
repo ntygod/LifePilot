@@ -26,6 +26,14 @@ public class AgentLoopContext {
 
     private final List<MediaDataExtractor.MediaItem> collectedToolMedia = new ArrayList<>();
     private final List<String> injectedEntityIds = new ArrayList<>();
+    private final List<com.lifepilot.interaction.model.ArtifactRef> collectedArtifactRefs = new ArrayList<>();
+    /**
+     * 旁路收集 — 工具执行结束后由 ToolBridge 推入；ToolExecutionCoordinator 在
+     * {@code persistTranscriptToolResult(...)} 时取走，写入 session_artifacts。
+     * 由于 ToolBridge 没有持久化能力，必须经此中转才能让 artifacts 落到表上。
+     */
+    private final java.util.Queue<com.lifepilot.tool.model.ToolArtifact> pendingToolArtifacts =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final Instant requestReceivedAt;
     private volatile @Nullable A2uiComponentTree lastCollectedA2uiTree;
     private volatile boolean visibleOutputEmitted;
@@ -110,6 +118,58 @@ public class AgentLoopContext {
     /** 获取已注入的实体 ID 列表（防御性拷贝）。 */
     public List<String> getInjectedEntityIds() {
         return List.copyOf(injectedEntityIds);
+    }
+
+    /**
+     * 收集 Agent 主循环本轮产生的会话产物引用 —— 由 {@code ToolExecutionCoordinator}
+     * 在工具执行结束、写入 {@code session_artifacts} 后调用。
+     *
+     * <p>这些 ArtifactRef 最终会被 ResponseAssembler 注入到 {@code GatewayResponse.artifactRefs}，
+     * 让 {@code ChannelDeliveryDispatcher} 按渠道差异化分发文件消息。</p>
+     *
+     * @param refs 本次工具调用产生的产物引用列表
+     */
+    public void addArtifactRefs(List<com.lifepilot.interaction.model.ArtifactRef> refs) {
+        if (refs == null || refs.isEmpty()) {
+            return;
+        }
+        collectedArtifactRefs.addAll(refs);
+    }
+
+    /** 获取本轮已收集的所有 ArtifactRef（防御性拷贝）。 */
+    public List<com.lifepilot.interaction.model.ArtifactRef> getCollectedArtifactRefs() {
+        return List.copyOf(collectedArtifactRefs);
+    }
+
+    /**
+     * 接收 {@code ToolBridgeAgentToolProvider} 旁路推送的 ToolArtifact —— 由 ReactAgentLoop
+     * 通过 {@code agentToolProvider.getToolCallbacks(state, streamId, this::addArtifactRefsAsToolArtifacts)}
+     * 注入。
+     *
+     * <p>这些 ToolArtifact 会被暂存在内部队列；{@code ToolExecutionCoordinator} 在
+     * {@code persistTranscriptToolResult(...)} 时调用 {@link #drainPendingToolArtifacts()}
+     * 取走并写入 session_artifacts。</p>
+     */
+    public void addArtifactRefsAsToolArtifacts(List<com.lifepilot.tool.model.ToolArtifact> artifacts) {
+        if (artifacts == null || artifacts.isEmpty()) {
+            return;
+        }
+        pendingToolArtifacts.addAll(artifacts);
+    }
+
+    /**
+     * 取走待持久化的 ToolArtifact 列表并清空队列；调用方负责后续 session_artifacts 写入。
+     */
+    public List<com.lifepilot.tool.model.ToolArtifact> drainPendingToolArtifacts() {
+        if (pendingToolArtifacts.isEmpty()) {
+            return List.of();
+        }
+        List<com.lifepilot.tool.model.ToolArtifact> drained = new ArrayList<>(pendingToolArtifacts.size());
+        com.lifepilot.tool.model.ToolArtifact item;
+        while ((item = pendingToolArtifacts.poll()) != null) {
+            drained.add(item);
+        }
+        return drained;
     }
 
     /** 获取最近收集的 A2UI 组件树。 */

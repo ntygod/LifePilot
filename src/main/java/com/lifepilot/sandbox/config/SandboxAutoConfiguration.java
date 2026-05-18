@@ -24,6 +24,7 @@ import com.lifepilot.sandbox.runtime.PythonRuntimeManager;
 import com.lifepilot.sandbox.runtime.RuntimeInstallHistoryRepository;
 import com.lifepilot.sandbox.runtime.RuntimeInstallProgressEmitter;
 import com.lifepilot.sandbox.session.SandboxSessionManager;
+import com.lifepilot.sandbox.session.SessionDirectoryCleanupJob;
 import com.lifepilot.sandbox.validator.CodeValidator;
 
 /**
@@ -206,6 +207,24 @@ public class SandboxAutoConfiguration {
     SandboxRepository sandboxRepository(JdbcTemplate jdbcTemplate) {
         log.info("SandboxRepository 注册完成");
         return new SandboxRepository(jdbcTemplate);
+    }
+
+    /**
+     * 注册会话工作目录物理清理定时任务。
+     *
+     * <p>按 session 最后活跃时间清理过期目录，防止磁盘无限增长。
+     * 保留天数通过 {@code lifepilot.sandbox.session.directory-retention-days} 配置，默认 30 天。</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(JdbcTemplate.class)
+    SessionDirectoryCleanupJob sessionDirectoryCleanupJob(
+            WorkspaceResolver workspaceResolver,
+            JdbcTemplate jdbcTemplate,
+            SandboxConfigProperties config) {
+        int retentionDays = config.getSession().getDirectoryRetentionDays();
+        log.info("SessionDirectoryCleanupJob 注册完成: retentionDays={}", retentionDays);
+        return new SessionDirectoryCleanupJob(workspaceResolver, jdbcTemplate, retentionDays);
     }
 
 }

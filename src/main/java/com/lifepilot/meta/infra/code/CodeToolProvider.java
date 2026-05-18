@@ -52,6 +52,10 @@ public class CodeToolProvider {
     private final PythonRuntimeManager runtimeManager;
     @Nullable
     private final CommandGuard commandGuard;
+    @Nullable
+    private com.lifepilot.tool.artifact.ArtifactFilterConfig artifactFilterConfig;
+    @Nullable
+    private java.nio.file.Path workspaceRoot;
 
     public CodeToolProvider(MetaProperties properties,
                             @Nullable SandboxSessionManager sandboxSessionManager,
@@ -74,7 +78,20 @@ public class CodeToolProvider {
         var executor = new CodeExecuteToolExecutor(
                 properties, sandboxSessionManager, codeValidator, sandboxRepository,
                 kernelManager, runtimeManager, commandGuard);
+        if (artifactFilterConfig != null) {
+            executor.setArtifactFilterConfig(artifactFilterConfig);
+        }
+        if (workspaceRoot != null) {
+            executor.setWorkspaceRoot(workspaceRoot);
+        }
         return List.of(buildCodeTool(executor));
+    }
+
+    /** 由 {@code InfraToolProvider} 注入产物配置；不调用时关闭 artifact 登记。 */
+    public void setArtifactDelivery(@Nullable com.lifepilot.tool.artifact.ArtifactFilterConfig config,
+                                     @Nullable java.nio.file.Path workspaceRoot) {
+        this.artifactFilterConfig = config;
+        this.workspaceRoot = workspaceRoot;
     }
 
     /** 构建合并后的 code 工具：exec + kernel_list / kernel_inspect / kernel_reset。 */

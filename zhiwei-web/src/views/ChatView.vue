@@ -6,7 +6,6 @@ import {
 } from 'lucide-vue-next'
 import { chatApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
-import { listSessionDocuments } from '@/api/documents'
 import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig, SessionConfigOverride } from '@/types'
 import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
@@ -15,7 +14,6 @@ import ChatInput from '@/components/chat/ChatInput.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ComposerStopPill from '@/components/chat/ComposerStopPill.vue'
 import ContinuationHint from '@/components/chat/ContinuationHint.vue'
-import DocumentWorkspacePanel from '@/components/chat/DocumentWorkspacePanel.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
 import HumanTakeoverModal from '@/components/chat/HumanTakeoverModal.vue'
 import MessageList from '@/components/chat/MessageList.vue'
@@ -54,6 +52,7 @@ const {
   reasoningEvents,
   streamingReactSteps,
   streamingA2uiComponents,
+  streamingArtifactRefs,
   pendingPermissionApprovals,
   pendingPermissionApprovalResolutions,
   resolvePermissionApproval,
@@ -124,7 +123,6 @@ async function loadActiveSessionConfig(sessionId: string | null) {
   if (!sessionId) {
     currentSessionDetail.value = null
     resetActiveSessionConfig()
-    sessionDocumentCount.value = 0
     return
   }
 
@@ -145,26 +143,6 @@ async function loadActiveSessionConfig(sessionId: string | null) {
     if (chatStore.activeSessionId === sessionId) {
       currentSessionDetail.value = null
       resetActiveSessionConfig()
-    }
-  }
-
-  // 刷新文档工作副本数量（独立请求，失败不影响会话元数据）
-  void refreshSessionDocumentCount(sessionId)
-}
-
-/** 当前会话下已开始编辑的文档工作副本数量（用于头部快捷入口角标） */
-const sessionDocumentCount = ref(0)
-
-async function refreshSessionDocumentCount(sessionId: string) {
-  try {
-    const docs = await listSessionDocuments(sessionId, 'working')
-    if (chatStore.activeSessionId === sessionId) {
-      sessionDocumentCount.value = docs.length
-    }
-  } catch {
-    // 拉不到就当 0，不影响主流程
-    if (chatStore.activeSessionId === sessionId) {
-      sessionDocumentCount.value = 0
     }
   }
 }
@@ -652,10 +630,6 @@ watch(isStreaming, (streaming) => {
     const realMsg = lastAssistantMessage.value
     activeTraceMessageId.value = realMsg?.id ?? null
   }
-  // 流式结束可能产出新文档工件，刷新一次快捷入口数量
-  if (!streaming && chatStore.activeSessionId) {
-    void refreshSessionDocumentCount(chatStore.activeSessionId)
-  }
 })
 
 function handleShowTrace(messageId: string) {
@@ -673,10 +647,6 @@ function closeTracePanel() {
 /* ── Overlay 统一管理 ── */
 
 const overlays = useChatOverlays()
-
-function openDocumentOverlay() {
-  overlays.openDocument()
-}
 
 function dismissContinuationHint() {
   // 轻量忽略：只标记不同步到后端
@@ -707,13 +677,11 @@ const shouldShowContinuationHint = computed(() =>
     <ChatHeader
       :is-empty="isEmptyChat"
       :title="headerTitle"
-      :document-count="sessionDocumentCount"
       :task-count="processTaskStore.tasksOrdered.length"
       :has-active-task="processTaskStore.runningCount > 0"
       @rename="handleUpdateSessionTitle"
       @open-info="overlays.openInfo"
       @open-settings="overlays.openSettings"
-      @open-document="overlays.openDocument"
       @open-tasks="overlays.openTasks"
     />
 
@@ -752,6 +720,7 @@ const shouldShowContinuationHint = computed(() =>
               :streaming-a2ui-components="streamingA2uiComponents"
               :streaming-permission-approvals="pendingPermissionApprovals"
               :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
+              :streaming-artifact-refs="streamingArtifactRefs"
               :query="searchQuery"
               @retry="handleRetry"
               @edit="handleEdit"
@@ -848,7 +817,7 @@ const shouldShowContinuationHint = computed(() =>
       </section>
     </div>
 
-    <!-- Overlay：Trace / Document / Tasks / Settings / Info（fixed 定位，覆盖整个视口） -->
+    <!-- Overlay：Trace / Tasks / Settings / Info（fixed 定位，覆盖整个视口） -->
     <OverlayHost
       :open="overlays.activeOverlay.value === 'trace'"
       @close="closeTracePanel"
@@ -886,20 +855,6 @@ const shouldShowContinuationHint = computed(() =>
         </div>
         <ProcessTaskList v-else />
       </div>
-    </OverlayHost>
-
-    <OverlayHost
-      :open="overlays.activeOverlay.value === 'document'"
-      @close="overlays.close"
-    >
-      <DocumentWorkspacePanel
-        v-if="chatStore.activeSessionId"
-        :session-id="chatStore.activeSessionId"
-        :open="true"
-        embedded
-        @close="overlays.close"
-        @open-document="(id: string) => logger.info('切换到文档', id)"
-      />
     </OverlayHost>
 
     <OverlayHost
