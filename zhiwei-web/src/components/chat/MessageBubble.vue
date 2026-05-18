@@ -11,12 +11,7 @@ import type {
 } from '@/types'
 import A2uiRenderer from '@/components/a2ui/A2uiRenderer.vue'
 import { buildPermissionApprovalLog } from '@/utils/permissionApproval'
-import {
-  Dialog,
-  DialogContent,
-} from '@/components/ui/dialog'
 import { copyToClipboard } from '@/utils/clipboard'
-// messageUtils 导入已移除 — 不再折叠 AI 消息
 import KbSourceTag from './KbSourceTag.vue'
 import MessageActions from './MessageActions.vue'
 import MessageError from './MessageError.vue'
@@ -26,6 +21,7 @@ import StreamingText from './StreamingText.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import PermissionApprovalBubble from './PermissionApprovalBubble.vue'
 import ArtifactCard from './ArtifactCard.vue'
+import ImageLightbox from './ImageLightbox.vue'
 
 const props = defineProps<{
   message: Message
@@ -623,23 +619,12 @@ function approvalLogTone(log: PermissionApprovalLog) {
         @retry="(target: Message) => emit('retry', target)"
       />
 
-      <Dialog
-        v-if="previewImageUrl"
-        :open="showImagePreview"
-        @update:open="(value) => {
-          showImagePreview = value
-          if (!value) {
-            previewImageUrl = null
-          }
-        }"
-      >
-        <DialogContent
-          :show-close-button="false"
-          class="max-w-[90vw] border-border/60 bg-background/95 p-2 shadow-2xl"
-        >
-          <img :src="previewImageUrl" alt="预览图片" class="block max-h-[85vh] max-w-full rounded-xl object-contain" />
-        </DialogContent>
-      </Dialog>
+      <ImageLightbox
+        :src="previewImageUrl ?? ''"
+        :alt="'预览图片'"
+        :open="showImagePreview && !!previewImageUrl"
+        @close="showImagePreview = false; previewImageUrl = null"
+      />
     </div>
 
   </div>
