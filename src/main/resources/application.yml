@@ -56,6 +56,26 @@ lifepilot:
       heartbeat-core-pool-size: 1
   prompt:
     base-path: "classpath:prompts/"
+  # ===== 智能层配置 =====
+  intelligence:
+    enabled: true
+    decision-signal-enabled: true
+    min-experience-confidence: 0.6
+    capability-cache-ttl-seconds: 60
+    tool-health-window-size: 20
+  # ===== 主动引擎配置 =====
+  initiative:
+    enabled: false  # 默认关闭，稳定后开启
+    max-active-thoughts: 20
+    brewing-ttl-hours: 72
+    ready-ttl-hours: 48
+    daily-max-expressions: 3
+    min-interval-minutes: 60
+    quiet-hours-start: "23:00"
+    quiet-hours-end: "08:00"
+    idle-thinking-enabled: true
+    idle-threshold-minutes: 30
+    idle-thinking-max-daily: 4
   agent:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
