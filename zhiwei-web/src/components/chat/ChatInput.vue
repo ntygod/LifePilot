@@ -30,6 +30,7 @@ import type { ChatAttachment, KnowledgeBase, SessionConfig, SessionConfigOverrid
 
 const props = defineProps<{
   disabled?: boolean
+  streaming?: boolean
   placeholder?: string
   continuationTitle?: string | null
   continuationDetail?: string | null
@@ -45,6 +46,7 @@ const emit = defineEmits<{
     /** 单轮临时覆盖的会话配置：仅影响本轮 Agent 执行，不污染持久化 config */
     singleTurnOverride?: SessionConfigOverride | null
   }]
+  stop: []
 }>()
 
 const chatStore = useChatStore()
@@ -732,9 +734,18 @@ defineExpose({
                 <Mic class="size-[18px]" />
               </button>
 
-              <!-- 发送按钮 -->
+              <!-- 发送/停止按钮 -->
               <span class="relative inline-flex">
                 <button
+                  v-if="streaming"
+                  type="button"
+                  class="relative z-[1] flex size-8 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-all duration-150 hover:brightness-110 active:scale-95"
+                  @click="emit('stop')"
+                >
+                  <Square class="size-3.5" />
+                </button>
+                <button
+                  v-else
                   type="button"
                   :disabled="sendDisabled"
                   class="relative z-[1] flex size-8 items-center justify-center rounded-full transition-all duration-150 disabled:cursor-not-allowed"
