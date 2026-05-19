@@ -141,6 +141,9 @@ public class MetaProperties {
             /** 浏览器渲染超时（秒），默认 15。 */
             private int renderTimeoutSeconds = 15;
 
+            /** 域名级限流最小请求间隔（毫秒），默认 1000。 */
+            private long rateLimitIntervalMs = 1000;
+
             /** SSRF 防护配置。 */
             private Ssrf ssrf = new Ssrf();
 

@@ -58,7 +58,9 @@ fn try_health_check(port: u16) -> Result<bool, String> {
         .map_err(|e| format!("发送请求失败: {}", e))?;
 
     let mut response = Vec::new();
-    let _ = stream.read_to_end(&mut response);
+    if let Err(e) = stream.read_to_end(&mut response) {
+        log::trace!("读取健康检查响应失败: {}", e);
+    }
 
     let response_str = String::from_utf8_lossy(&response);
     // 检查 HTTP 状态行是否包含 "200"

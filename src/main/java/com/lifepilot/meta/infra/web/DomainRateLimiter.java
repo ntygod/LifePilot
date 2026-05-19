@@ -31,6 +31,16 @@ public class DomainRateLimiter {
     /** 退避乘数。 */
     private static final double BACKOFF_MULTIPLIER = 2.0;
 
+    /** 过期清理阈值：30 分钟未访问的域名桶将被清除。 */
+    private static final long STALE_THRESHOLD_MS = 30 * 60 * 1000L;
+
+    /** 每 N 次 acquirePermit 调用触发一次过期清理。 */
+    private static final int CLEANUP_INTERVAL = 50;
+
+    /** acquirePermit 调用计数器（用于触发定期清理）。 */
+    private final java.util.concurrent.atomic.AtomicInteger acquireCount =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
     /** 域名 → 限流桶。 */
     private final ConcurrentHashMap<String, DomainBucket> buckets = new ConcurrentHashMap<>();
 
@@ -50,6 +60,11 @@ public class DomainRateLimiter {
         if (defaultMinIntervalMs <= 0) return;
         String domain = extractDomain(url);
         if (domain == null) return;
+
+        // 每 N 次调用触发一次过期桶清理，防止内存泄漏
+        if (acquireCount.incrementAndGet() % CLEANUP_INTERVAL == 0) {
+            evictStaleBuckets();
+        }
 
         var bucket = buckets.computeIfAbsent(domain, k -> new DomainBucket(defaultMinIntervalMs));
         bucket.acquire(domain);
@@ -92,6 +107,20 @@ public class DomainRateLimiter {
         }
     }
 
+    /** 清除超过 30 分钟未访问的域名桶，防止长期运行导致内存泄漏。 */
+    private void evictStaleBuckets() {
+        long now = System.currentTimeMillis();
+        int before = buckets.size();
+        buckets.entrySet().removeIf(entry -> {
+            long lastAccess = entry.getValue().getLastRequestTimeMs();
+            return lastAccess > 0 && (now - lastAccess) > STALE_THRESHOLD_MS;
+        });
+        int evicted = before - buckets.size();
+        if (evicted > 0) {
+            log.debug("域名限流桶过期清理: 清除 {} 个过期条目，剩余 {} 个", evicted, buckets.size());
+        }
+    }
+
     /** 单域名限流桶。 */
     private static class DomainBucket {
         private long currentIntervalMs;
@@ -102,6 +131,10 @@ public class DomainRateLimiter {
             this.baseIntervalMs = baseIntervalMs;
             this.currentIntervalMs = baseIntervalMs;
             this.lastRequestTimeMs = 0;
+        }
+
+        synchronized long getLastRequestTimeMs() {
+            return lastRequestTimeMs;
         }
 
         synchronized void acquire(String domain) {

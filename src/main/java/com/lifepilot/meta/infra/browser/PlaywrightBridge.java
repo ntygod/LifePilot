@@ -122,6 +122,10 @@ final class PlaywrightBridge {
         String lang = locale != null && locale.contains("-") ? locale.split("-")[0] : "zh";
         String safeLocale = locale != null ? locale : "zh-CN";
 
+        // 转义单引号，防止 JS 字符串注入
+        safeLocale = safeLocale.replace("'", "\\'");
+        lang = lang.replace("'", "\\'");
+
         // 基础反检测：webdriver + chrome + languages（从 locale 动态构建）
         // 核心策略：只修改 Navigator.prototype 上的 webdriver getter，
         // 不在 navigator 实例上创建任何 own property。

@@ -739,6 +739,7 @@ defineExpose({
                 <button
                   v-if="streaming"
                   type="button"
+                  title="停止生成"
                   class="relative z-[1] flex size-8 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-all duration-150 hover:brightness-110 active:scale-95"
                   @click="emit('stop')"
                 >

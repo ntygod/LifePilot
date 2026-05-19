@@ -207,6 +207,11 @@ public class WebSearchToolExecutor {
             // 解析 HTML 搜索结果
             List<Map<String, Object>> results = parseDuckDuckGoHtml(html);
 
+            if (results.isEmpty()) {
+                log.warn("DuckDuckGo HTML 解析结果为空，可能页面结构已变更: query={}", query);
+                return ToolResult.transientError("DuckDuckGo 搜索未返回结果，可能页面结构已变更");
+            }
+
             int totalEstimate = results.size();
             int fromIndex = Math.min(offset, totalEstimate);
             int toIndex = Math.min(fromIndex + limit, totalEstimate);
@@ -238,9 +243,9 @@ public class WebSearchToolExecutor {
     private List<Map<String, Object>> parseDuckDuckGoHtml(String html) {
         List<Map<String, Object>> results = new ArrayList<>();
         // 使用简单的正则提取，避免引入额外 HTML 解析依赖（Jsoup 在 web 模块不一定可用）
-        // 匹配 result__a 链接和 result__snippet
+        // 匹配 result__a 链接 — 兼容 href 在 class 前或后两种属性顺序
         var linkPattern = java.util.regex.Pattern.compile(
-                "<a[^>]+class=\"result__a\"[^>]+href=\"([^\"]+)\"[^>]*>([^<]+)</a>");
+                "<a[^>]*(?:class=\"result__a\"[^>]*href=\"([^\"]+)\"|href=\"([^\"]+)\"[^>]*class=\"result__a\")[^>]*>([^<]+)</a>");
         var snippetPattern = java.util.regex.Pattern.compile(
                 "<a[^>]+class=\"result__snippet\"[^>]*>([^<]*(?:<[^>]+>[^<]*)*)</a>");
 
@@ -248,8 +253,9 @@ public class WebSearchToolExecutor {
         var snippetMatcher = snippetPattern.matcher(html);
 
         while (linkMatcher.find()) {
-            String url = linkMatcher.group(1);
-            String title = linkMatcher.group(2).trim();
+            // href 可能在 group(1)（class 在前）或 group(2)（href 在前）
+            String url = linkMatcher.group(1) != null ? linkMatcher.group(1) : linkMatcher.group(2);
+            String title = linkMatcher.group(3).trim();
 
             // 跳过 DuckDuckGo 内部链接
             if (url.startsWith("//duckduckgo.com")) continue;

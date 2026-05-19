@@ -112,7 +112,8 @@ public class WebFetchToolExecutor {
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
-        this.rateLimiter = new DomainRateLimiter(1000);
+        this.rateLimiter = new DomainRateLimiter(
+                properties.getInfra().getWebFetch().getRateLimitIntervalMs());
     }
 
     /**
@@ -256,6 +257,7 @@ public class WebFetchToolExecutor {
                         "HTTP %d: %s".formatted(statusCode, truncateForError(responseBody)));
             }
 
+            rateLimiter.recordSuccess(url);
             return ToolResult.success(Map.of(
                     "title", "",
                     "url", url,
@@ -396,6 +398,7 @@ public class WebFetchToolExecutor {
                 truncated = true;
             }
 
+            rateLimiter.recordSuccess(url);
             return ToolResult.success(Map.of(
                     "title", "",
                     "url", url,
@@ -530,6 +533,7 @@ public class WebFetchToolExecutor {
             truncated = true;
         }
 
+        rateLimiter.recordSuccess(url);
         return ToolResult.success(Map.of(
                 "title", title,
                 "url", url,
@@ -614,6 +618,7 @@ public class WebFetchToolExecutor {
             }
 
             log.info("浏览器渲染抓取完成: url={}, contentLength={}", url, content.length());
+            rateLimiter.recordSuccess(url);
             return ToolResult.success(Map.of(
                     "title", title != null ? title : "",
                     "url", url,
