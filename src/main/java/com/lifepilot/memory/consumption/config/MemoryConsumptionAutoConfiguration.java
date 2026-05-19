@@ -1,22 +1,76 @@
 package com.lifepilot.memory.consumption.config;
 
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.compression.CompressionService;
+import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.episodic.EpisodicCleanupJob;
+import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.hot.HotMemoryDigestService;
+import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
+import com.lifepilot.observability.redactor.DataRedactor;
+import com.lifepilot.prompt.PromptRegistry;
+import jakarta.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.time.Clock;
 
 /**
  * 记忆消费层自动装配 — 注册热摘要、对话压缩、情景清理等组件。
  *
- * <p>Phase A：与旧 {@code MemoryAutoConfiguration} 并存，通过 {@code @ConditionalOnMissingBean}
- * 确保不重复注册。旧配置中的同名 Bean 优先，本配置作为补充。
- * Phase B 后旧配置删除 Bean 定义，本配置接管。</p>
- *
  * @author zsg
  * @since 2026-06-01
  */
-@AutoConfiguration
-@EnableConfigurationProperties(MemoryConsumptionProperties.class)
+@AutoConfiguration(after = MemoryStoreAutoConfiguration.class)
+@EnableConfigurationProperties({MemoryConsumptionProperties.class, MemoryProperties.class})
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 public class MemoryConsumptionAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(MemoryConsumptionAutoConfiguration.class);
+
+    @Bean
+    @ConditionalOnMissingBean
+    public HotMemoryDigestService hotMemoryDigestService(SemanticMemory semanticMemory,
+                                                          MemoryProperties properties,
+                                                          @Nullable ProceduralMemory proceduralMemory,
+                                                          @Nullable DataRedactor dataRedactor,
+                                                          Clock clock) {
+        log.info("记忆模块: 注册 HotMemoryDigestService");
+        return new HotMemoryDigestService(semanticMemory, properties, proceduralMemory, dataRedactor, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(EpisodicMemory.class)
+    public CompressionService compressionService(EpisodicMemory episodicMemory,
+                                                 @Nullable GenerationRouter generationRouter,
+                                                 PromptRegistry promptRegistry,
+                                                 MemoryProperties memoryProperties) {
+        log.info("记忆模块: 注册 CompressionService, generationRouterAvailable={}",
+                generationRouter != null ? "yes" : "no");
+        return new CompressionService(generationRouter, episodicMemory, promptRegistry, memoryProperties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(EpisodicMemory.class)
+    public EpisodicCleanupJob episodicCleanupJob(
+            EpisodicMemory episodicMemory,
+            JdbcTemplate jdbcTemplate,
+            MemoryProperties properties) {
+        log.info("记忆模块: 注册 EpisodicCleanupJob, cron={}, retentionDays={}",
+                properties.getEpisodicCleanup().getCron(),
+                properties.getEpisodicCleanup().getRetentionDays());
+        return new EpisodicCleanupJob(episodicMemory, jdbcTemplate, properties);
+    }
 }

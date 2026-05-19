@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.config.SqliteVecDataSource;
+import com.lifepilot.memory.config.SqliteVecInitializer;
 import com.lifepilot.memory.episodic.EpisodicMemory;
 import com.lifepilot.memory.event.MemoryEventBus;
 import com.lifepilot.memory.event.SpringMemoryEventBus;
@@ -15,8 +17,6 @@ import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.scope.MemorySpaceRepository;
 import com.lifepilot.memory.semantic.ConflictDetector;
 import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.config.SqliteVecDataSource;
-import com.lifepilot.memory.config.SqliteVecInitializer;
 import com.lifepilot.memory.semantic.VersionMerger;
 import com.lifepilot.memory.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.workspace.WorkspaceCleanupJob;
@@ -46,18 +46,208 @@ import java.util.Objects;
 /**
  * 记忆存储层自动装配 — 注册实体 CRUD、向量数据库、投影 outbox、工作区等核心存储组件。
  *
- * <p>Phase A：与旧 {@code MemoryAutoConfiguration} 并存，通过 {@code @ConditionalOnMissingBean}
- * 确保不重复注册。旧配置中的同名 Bean 优先（因为旧配置先加载），本配置作为补充。
- * Phase B 后旧配置删除 Bean 定义，本配置接管。</p>
- *
  * @author zsg
  * @since 2026-06-01
  */
 @AutoConfiguration
-@EnableConfigurationProperties({MemoryStoreProperties.class, WorkspaceProperties.class})
+@EnableConfigurationProperties({MemoryStoreProperties.class, MemoryProperties.class, WorkspaceProperties.class})
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 public class MemoryStoreAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(MemoryStoreAutoConfiguration.class);
+
+    /**
+     * 全局时钟 —— 生命周期 Listener 与再验证 / 反馈账本等时间敏感组件注入。
+     *
+     * <p>生产环境使用 {@link Clock#systemUTC()}；场景测试可通过 {@code @Primary}
+     * 覆盖为 {@code MutableClock} 以便推进时间。</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public Clock memoryClock() {
+        log.debug("记忆模块: 注册默认 Clock (systemUTC)");
+        return Clock.systemUTC();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryEventBus memoryEventBus(ApplicationEventPublisher eventPublisher) {
+        log.info("记忆模块: 注册 MemoryEventBus");
+        return new SpringMemoryEventBus(eventPublisher);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SqliteVecInitializer sqliteVecInitializer() {
+        return new SqliteVecInitializer();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "vectorDataSource")
+    public DataSource vectorDataSource(MemoryProperties properties, SqliteVecInitializer sqliteVecInitializer) {
+        String url = properties.getVectorDbUrl();
+        if (!url.contains(":memory:") && !url.contains("mode=memory")) {
+            try {
+                var dbPath = url.replace("jdbc:sqlite:", "");
+                var parentDir = Path.of(dbPath).getParent();
+                if (parentDir != null && !Files.exists(parentDir)) {
+                    Files.createDirectories(parentDir);
+                }
+            } catch (Exception e) {
+                log.warn("记忆模块: 创建向量数据库目录失败, url={}", url, e);
+            }
+        }
+        var config = new SQLiteConfig();
+        config.setJournalMode(SQLiteConfig.JournalMode.WAL);
+        config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
+        config.setBusyTimeout(properties.getBusyTimeoutMs());
+        config.enableLoadExtension(true);
+        var dataSource = new SQLiteDataSource(config);
+        dataSource.setUrl(url);
+        log.info("记忆模块: 向量数据库已就绪, url={}", url);
+        return new SqliteVecDataSource(dataSource, sqliteVecInitializer, "vector");
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "vectorJdbcTemplate")
+    public JdbcTemplate vectorJdbcTemplate(@Qualifier("vectorDataSource") DataSource vectorDataSource) {
+        return new JdbcTemplate(Objects.requireNonNull(vectorDataSource, "vectorDataSource"));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public VectorSearcher vectorSearcher(
+            @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
+            @Nullable EmbeddingRouter embeddingRouter,
+            MemoryProperties properties) {
+        boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
+        log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, embeddingRouterAvailable={}, dimensions={}",
+                vecLoaded, embeddingRouter != null ? "yes" : "no", properties.getEmbeddingDimensions());
+        return new VectorSearcher(vectorJdbcTemplate, embeddingRouter,
+                vecLoaded, properties.getEmbeddingDimensions());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public VersionMerger versionMerger() {
+        log.info("记忆模块: 注册 VersionMerger");
+        return new VersionMerger();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(VectorSearcher.class)
+    public ConflictDetector conflictDetector(
+            JdbcTemplate jdbcTemplate,
+            VectorSearcher vectorSearcher,
+            @Nullable GenerationRouter generationRouter,
+            MemoryProperties properties,
+            PromptRegistry promptRegistry) {
+        log.info("记忆模块: 注册 ConflictDetector, semanticMatchThreshold={}",
+                properties.getSemanticMatchThreshold());
+        return new ConflictDetector(jdbcTemplate, vectorSearcher, generationRouter,
+                properties.getSemanticMatchThreshold(), promptRegistry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemorySpaceRepository memorySpaceRepository(JdbcTemplate jdbcTemplate,
+                                                       ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemorySpaceRepository");
+        return new MemorySpaceRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionOutboxRepository memoryProjectionOutboxRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryProjectionOutboxRepository");
+        return new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionOutboxProcessor memoryProjectionOutboxProcessor(
+            MemoryProjectionOutboxRepository repository,
+            VectorSearcher vectorSearcher,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 MemoryProjectionOutboxProcessor");
+        return new MemoryProjectionOutboxProcessor(repository, vectorSearcher, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionService memoryProjectionService(
+            MemoryProjectionOutboxRepository repository,
+            MemoryProjectionOutboxProcessor processor) {
+        log.info("记忆模块: 注册 MemoryProjectionService");
+        return new MemoryProjectionService(repository, processor);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({ConflictDetector.class, VectorSearcher.class})
+    public SemanticMemory semanticMemory(
+            JdbcTemplate jdbcTemplate,
+            ConflictDetector conflictDetector,
+            VersionMerger versionMerger,
+            VectorSearcher vectorSearcher,
+            MemorySpaceRepository memorySpaceRepository,
+            ApplicationEventPublisher eventPublisher,
+            @Nullable MemoryProjectionService projectionService) {
+        log.info("记忆模块: 注册 SemanticMemory");
+        var semanticMemory = new SemanticMemory(
+                jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
+        semanticMemory.setEventPublisher(eventPublisher);
+        semanticMemory.setProjectionService(projectionService);
+        return semanticMemory;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate, MemoryProperties properties) {
+        log.info("记忆模块: 注册 EpisodicMemory");
+        return new EpisodicMemory(jdbcTemplate, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(MemoryProjectionService.class)
+    public ProceduralMemory proceduralMemory(
+            JdbcTemplate jdbcTemplate,
+            MemoryProjectionService projectionService) {
+        log.info("记忆模块: 注册 ProceduralMemory");
+        return new ProceduralMemory(jdbcTemplate, projectionService);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.memory.workspace", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public SessionWorkspaceService sessionWorkspaceService(JdbcTemplate jdbcTemplate,
+                                                           ObjectMapper objectMapper,
+                                                           WorkspaceProperties workspaceProperties) {
+        log.info("记忆模块: 注册 SessionWorkspaceService");
+        return new SessionWorkspaceService(jdbcTemplate, objectMapper, workspaceProperties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(SessionWorkspaceService.class)
+    public WorkspaceCleanupJob workspaceCleanupJob(SessionWorkspaceService workspaceService) {
+        log.info("记忆模块: 注册 WorkspaceCleanupJob");
+        return new WorkspaceCleanupJob(workspaceService);
+    }
+
+    private boolean isVecExtensionLoaded(JdbcTemplate vectorJdbcTemplate) {
+        try {
+            vectorJdbcTemplate.queryForObject("SELECT vec_version()", String.class);
+            return true;
+        } catch (Exception e) {
+            log.info("记忆模块: 未加载 sqlite-vec 扩展，回退到 JVM 向量检索");
+            return false;
+        }
+    }
 }
