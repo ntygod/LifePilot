@@ -2,12 +2,16 @@ package com.lifepilot.agent.initiative.config;
 
 import com.lifepilot.agent.initiative.InitiativeEngine;
 import com.lifepilot.agent.initiative.Thinker;
+import com.lifepilot.agent.initiative.execute.ActionExecutor;
+import com.lifepilot.agent.initiative.execute.ExecutionPermissionRepository;
 import com.lifepilot.agent.initiative.express.ConversationInitiator;
 import com.lifepilot.agent.initiative.gate.Gatekeeper;
 import com.lifepilot.agent.initiative.pool.ThoughtPool;
+import com.lifepilot.agent.initiative.pool.ThoughtRepository;
 import com.lifepilot.agent.initiative.signal.InitiativeEventListener;
 import com.lifepilot.agent.initiative.thinker.DefaultThinker;
 import com.lifepilot.memory.semantic.SemanticMemory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,5 +94,30 @@ public class InitiativeAutoConfiguration {
     public InitiativeEventListener initiativeEventListener(InitiativeEngine engine) {
         log.info("主动引擎: 注册 InitiativeEventListener");
         return new InitiativeEventListener(engine);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ThoughtRepository thoughtRepository(org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+                                               ObjectMapper objectMapper) {
+        log.info("主动引擎: 注册 ThoughtRepository");
+        return new ThoughtRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ExecutionPermissionRepository executionPermissionRepository(
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        log.info("主动引擎: 注册 ExecutionPermissionRepository");
+        return new ExecutionPermissionRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ActionExecutor actionExecutor(
+            @Nullable com.lifepilot.agent.orchestration.AgentOrchestrator agentOrchestrator) {
+        log.info("主动引擎: 注册 ActionExecutor, orchestrator={}",
+                agentOrchestrator != null ? "available" : "unavailable");
+        return new ActionExecutor(agentOrchestrator);
     }
 }
