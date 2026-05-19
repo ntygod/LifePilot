@@ -2,8 +2,11 @@ package com.lifepilot.agent.initiative.config;
 
 import com.lifepilot.agent.initiative.InitiativeEngine;
 import com.lifepilot.agent.initiative.Thinker;
+import com.lifepilot.agent.initiative.express.ConversationInitiator;
 import com.lifepilot.agent.initiative.gate.Gatekeeper;
 import com.lifepilot.agent.initiative.pool.ThoughtPool;
+import com.lifepilot.agent.initiative.thinker.DefaultThinker;
+import com.lifepilot.memory.semantic.SemanticMemory;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,5 +65,20 @@ public class InitiativeAutoConfiguration {
         log.info("主动引擎: 注册 InitiativeEngine, thinker={}",
                 thinker != null ? "available" : "unavailable");
         return new InitiativeEngine(thoughtPool, gatekeeper, thinker);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DefaultThinker defaultThinker(@Nullable SemanticMemory semanticMemory) {
+        log.info("主动引擎: 注册 DefaultThinker, semanticMemory={}",
+                semanticMemory != null ? "available" : "unavailable");
+        return new DefaultThinker(semanticMemory);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ConversationInitiator conversationInitiator() {
+        log.info("主动引擎: 注册 ConversationInitiator");
+        return new ConversationInitiator();
     }
 }
