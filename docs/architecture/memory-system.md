@@ -216,41 +216,15 @@ Hindsight 0.5 的经验：把传统 BFS / 多路径传播收敛为 `LinkExpansio
 
 ## 3. 写入链路
 
+> **学习相关的写入链路**（自动对话学习、经验学习）已迁移到 [agent-learning.md](./agent-learning.md)。本节只保留记忆系统自身的写入入口。
+
 ### 3.1 自动对话学习
 
-```mermaid
-sequenceDiagram
-    participant T as session_transcript_entries
-    participant S as ChatTurnMemorySnapshot
-    participant R as RealtimeExtractor
-    participant C as memory_extraction_candidates
-    participant Q as MemoryQualityPolicy
-    participant M as SemanticMemory
-    participant O as memory_projection_outbox
-
-    T->>R: 用户可治理文本
-    S->>R: 本轮读写范围快照
-    R->>R: LLM AUDN 决策
-    R->>C: 写候选与证据
-    C->>Q: 质量门控
-    Q-->>R: VALIDATED / REJECTED
-    R->>M: governed upsert / archive
-    M->>O: after-commit projection task
-```
-
-硬规则：
-
-- 缺 `ChatTurnMemorySnapshot` 直接跳过自动学习
-- `RealtimeExtractor` 的 existing summary 可以读取继承空间，但 UPDATE / DELETE 只能命中可写空间
-- `UNKNOWN` 证据不得写主库；低质量候选必须留审计
-- `importance_score` 不是质量分；是否可写、可注入、可派生由 `trust_level` / `trust_score` / `evidence_kind` 决定
+详见 [agent-learning.md §2.1](./agent-learning.md)。学习系统通过 `SemanticMemory.upsertWithConflictDetection()` 写入记忆，记忆系统只负责存储和治理，不参与提取决策。
 
 ### 3.2 经验学习
 
-- `ExperienceSummarizer` 只写可迁移的任务级经验
-- `SubtaskReflector` 只写工具级经验，带 `toolId` 和 `granularity=TOOL_LEVEL`
-- 工具级经验不进入通用经验注入；只由 `ToolTipResolver` 在匹配工具时提供提示
-- `ContrastiveLearner` 的终态应产出独立派生洞察，而不是无血缘地原地增强
+详见 [agent-learning.md §2.2](./agent-learning.md)。经验写入同样通过 `SemanticMemory` 标准接口，记忆系统按质量门槛和项目隔离规则治理。
 
 ### 3.3 显式工具与 Web 写入
 
@@ -375,6 +349,8 @@ overlay 不改变 base 实体生命周期，不复制 base provenance 的治理�
 
 ## 6. 进阶子系统
 
+> **巩固管线、遗忘引擎、经验学习**等学习相关子系统已迁移到 [agent-learning.md](./agent-learning.md)。本节只保留记忆系统自身的进阶能力。
+
 ### 6.1 L4 程序记忆与意图匹配
 
 - `ProcedureTemplate`：操作模板，包含步骤序列（`TemplateStep`）、触发意图、成功率、执行次数；模板聚类由 `lifepilot.memory.procedural.templateEnabled` 控制，默认启用
@@ -383,35 +359,15 @@ overlay 不改变 base 实体生命周期，不复制 base provenance 的治理�
 - `IntentMatcher`：通过 VectorSearcher 进行向量相似度匹配，返回最佳匹配的 `ProcedureTemplate`；结果供 `HybridRetriever` 冷检索链路参考，**不进入 `ContextAssembler` 默认自动注入**
 - 在 `ToolExecutionCoordinator` 中以 `Thread.startVirtualThread` 异步调用，不阻塞主 Agent 循环
 
-### 6.2 记忆巩固管线
+> 注：L4 的数据（ProcedureTemplate / PreferenceRule）由学习系统的巩固管线写入，但 L4 的**存储和检索**属于记忆系统。IntentMatcher 是纯检索组件，不产出新知识。
 
-`ConsolidationPipeline` 按 Cron 触发（也提供 `consolidate()` 入口供未来 Idle-Driven 使用），顺序执行七步，故障隔离：
+### 6.2 巩固管线
 
-| 阶段 | 组件 | 职责 |
-|---|---|---|
-| 1. 语义巩固 | `EpisodicToSemanticConsolidator` | 高频提及的已有 L3 实体直接 `UPDATE importanceScore`（不创建新版本，避免与 RealtimeExtractor 并发时的唯一约束冲突） |
-| 2. 程序巩固 | `EpisodicToProceduralConsolidator` | 分析对话轨迹中工具调用序列，相似度超阈值聚类为 `ProcedureTemplate` |
-| 3. 偏好同步 | `PreferenceConsolidator` | L3 `PREFERENCE` 实体同步为 L4 `PreferenceRule`（只允许 `VERIFIED / EXPLICIT` 进入） |
-| 4. 经验合并 | `ExperienceMerger` | 向量相似度检测 + LLM 合并泛化元经验 |
-| 5. 用户画像巩固 | `UserProfileConsolidator` | 读取 L3 碎片 + L4 偏好 + 最近对话摘要，调 LLM 生成 `__consolidated_profile`；按源签名防抖（≥2h） |
-| 6. 经验提升 | `promoteHighFrequencyExperiences` | L3 `EXPERIENCE` 中 `importanceScore ≥ 0.8 且 accessCount ≥ 3` 提升为 `ProcedureTemplate`，源经验归档 |
-| 7. REM 式联想巩固 | `AssociationCandidateGenerator` + `AssociationConsolidator` | 详见 §8.5 |
-
-其中 `UserProfileConsolidator` 的实际触发由 `ConversationCompletionHook` 在对话完成后异步调用（虚拟线程），不再依赖定时到点。
+详见 [agent-learning.md §3](./agent-learning.md)。
 
 ### 6.3 MaRS 认知遗忘
 
-- 通过 sealed interface 定义 6 种策略：`FifoPolicy` / `LruPolicy` / `PriorityDecayPolicy` / `ReflectionSummaryPolicy` / `RandomDropPolicy` / `HybridPolicy`（编排四阶段遗忘流程）
-- `ForgettingEngine` 定时流程：获取当前实体 → 过滤受保护实体 → HybridPolicy 选择候选 → 执行遗忘动作 → 记录日志
-- 受保护实体（满足任一即受保护）：
-  - 受保护类型（默认 `PREFERENCE / HABIT / GOAL`）
-  - `importanceScore ≥ 保护阈值`（默认 0.9）
-  - `accessCount ≥ 高频访问保护阈值`（默认 10）
-  - 最近 `recentAccessProtectionDays` 内被访问过（默认 7 天）
-- 遗忘动作：中等重要度 + LLM 可用 → 压缩后归档；其他 → 直接归档；LLM 压缩失败降级为直接归档
-- 压缩调用走 `generationRouter.call(..., skipCache=true)` 8 参重载：每个实体的压缩 prompt 仅在 name / description 上有差异，不跳过语义缓存会张冠李戴
-- 归档动作统一走 `SemanticMemory.archive()`：事务内更新主库生命周期并登记 `memory_projection_outbox` DELETE 投影任务；保留失败补偿能力
-- 所有遗忘操作落 `forgetting_log` 表，支持事后追溯
+详见 [agent-learning.md §4](./agent-learning.md)。
 
 ### 6.4 子系统关键配置
 
@@ -560,6 +516,8 @@ Spec：`.kiro/specs/memory-mcp-server/`
 
 | 模块 | 边界 |
 |---|---|
+| `memory` | 负责存储、检索、消费视图、数据治理；不做学习决策 |
+| `agent.learning` | 负责从经历中提炼知识（提取、巩固、遗忘、经验）；通过记忆标准接口读写，见 [agent-learning.md](./agent-learning.md) |
 | `conversation` | 负责 L0 transcript 和 turn snapshot，不直接治理长期事实 |
 | `agent.context` | 负责消费记忆，不能绕过质量 / 生命周期 / 项目 filter |
 | `meta.infra.memory` | 暴露工具入口，所有写操作必须校验可写范围 |

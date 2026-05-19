@@ -86,38 +86,11 @@ Agent 能够学习和复用用户的行为模式：
 
 ### 2.7 巩固管线
 
-`ConsolidationPipeline` 按 Cron 触发（也支持 `consolidate()` 手动入口），顺序执行七个阶段，各阶段故障隔离：
-
-1. **语义巩固**：高频提及的已有 L3 实体直接提升 `importanceScore`
-2. **程序巩固**：识别重复行为模式，聚类生成操作模板
-3. **偏好同步**：L3 `PREFERENCE` 实体同步为 L4 `PreferenceRule`
-4. **经验合并**：向量相似度 + LLM 合并泛化元经验
-5. **用户画像巩固**：读取 L3 碎片 + L4 偏好 + 最近对话摘要，LLM 生成 `__consolidated_profile`（源签名防抖）
-6. **高频经验提升**：`importanceScore ≥ 0.8 且 accessCount ≥ 3` 的经验提升为 `ProcedureTemplate`，源经验归档
-7. **REM 式联想巩固**：见 §3.3
-
-返回 `ConsolidationStats`（分析对话数、提升实体数、创建模板数），支持可观测性。
+> 巩固管线已迁移到学习系统文档。详见 [agent-learning.md 特性说明](agent-learning.md)。
 
 ### 2.8 MaRS 认知遗忘
 
-基于 MaRS 论文的六策略混合遗忘模型：
-
-- FIFO / LRU / 优先级衰减 / 反思摘要 / 随机丢弃 / 混合策略
-- `HybridPolicy` 编排四阶段流程
-- 遗忘动作：中等重要度 + LLM 可用 → LLM 压缩后归档；其他 → 直接归档
-- 所有遗忘操作落 `forgetting_log` 表
-
-**受保护实体机制**（满足任一即受保护）：
-
-- 类型保护：受保护类型（默认 `PREFERENCE / HABIT / GOAL`）
-- 重要度保护：`importanceScore ≥ 0.9`
-- 高频访问保护：`accessCount ≥ 10`
-- 近期访问保护：最近 7 天内被访问过
-
-**归档一致性**：
-
-- 压缩跳过语义缓存（`skipCache=true`）：避免不同实体共享首条摘要
-- 归档级联清向量：所有归档走 `SemanticMemory.archive()`，事务提交后通过 `afterCommit` 删除向量索引
+> 认知遗忘已迁移到学习系统文档。详见 [agent-learning.md 特性说明](agent-learning.md)。
 
 ---
 
