@@ -5,6 +5,7 @@ import com.lifepilot.agent.initiative.Thinker;
 import com.lifepilot.agent.initiative.express.ConversationInitiator;
 import com.lifepilot.agent.initiative.gate.Gatekeeper;
 import com.lifepilot.agent.initiative.pool.ThoughtPool;
+import com.lifepilot.agent.initiative.signal.InitiativeEventListener;
 import com.lifepilot.agent.initiative.thinker.DefaultThinker;
 import com.lifepilot.memory.semantic.SemanticMemory;
 import jakarta.annotation.Nullable;
@@ -80,5 +81,12 @@ public class InitiativeAutoConfiguration {
     public ConversationInitiator conversationInitiator() {
         log.info("主动引擎: 注册 ConversationInitiator");
         return new ConversationInitiator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public InitiativeEventListener initiativeEventListener(InitiativeEngine engine) {
+        log.info("主动引擎: 注册 InitiativeEventListener");
+        return new InitiativeEventListener(engine);
     }
 }
