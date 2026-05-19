@@ -78,9 +78,11 @@ public class InitiativeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ConversationInitiator conversationInitiator() {
-        log.info("主动引擎: 注册 ConversationInitiator");
-        return new ConversationInitiator();
+    public ConversationInitiator conversationInitiator(
+            @Nullable com.lifepilot.agent.orchestration.AgentOrchestrator agentOrchestrator) {
+        log.info("主动引擎: 注册 ConversationInitiator, orchestrator={}",
+                agentOrchestrator != null ? "available" : "unavailable");
+        return new ConversationInitiator(agentOrchestrator);
     }
 
     @Bean
