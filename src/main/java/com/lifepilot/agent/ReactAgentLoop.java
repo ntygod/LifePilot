@@ -198,6 +198,11 @@ public class ReactAgentLoop implements CallbackHelper {
         this.toolExecutionCoordinator.setSseSessionManager(mgr);
     }
 
+    /** 注入智能层能力评估器 — 记录工具执行结果，供决策引擎使用。 */
+    public void setCapabilityAssessor(@Nullable com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor) {
+        this.toolExecutionCoordinator.setCapabilityAssessor(capabilityAssessor);
+    }
+
     ProviderMessageBuilder.BuildResult buildProviderMessages(AssembledContext ctx, ReactAgentState state) {
         return providerMessageBuilder.build(ctx, state);
     }

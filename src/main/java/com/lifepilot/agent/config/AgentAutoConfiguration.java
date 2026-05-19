@@ -200,7 +200,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SkillRequirementGate skillRequirementGate,
             @Autowired(required = false) ProjectContextResolver projectContextResolver,
             @Autowired(required = false) ChatSessionRepository chatSessionRepository,
-            @Autowired(required = false) HotMemoryDigestService hotMemoryDigestService) {
+            @Autowired(required = false) HotMemoryDigestService hotMemoryDigestService,
+            @Autowired(required = false) com.lifepilot.agent.intelligence.AdaptiveDecisionEngine adaptiveDecisionEngine) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，hotDigest={}，projectContext={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -225,6 +226,7 @@ public class AgentAutoConfiguration {
         assembler.setProjectContextResolver(projectContextResolver);
         assembler.setChatSessionRepository(chatSessionRepository);
         assembler.setHotMemoryDigestService(hotMemoryDigestService);
+        assembler.setAdaptiveDecisionEngine(adaptiveDecisionEngine);
         return assembler;
     }
 
@@ -315,7 +317,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SessionWorkspaceService workspaceService,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer,
             @Autowired(required = false) SessionArtifactRepository sessionArtifactRepository,
-            @Autowired(required = false) com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager) {
+            @Autowired(required = false) com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager,
+            @Autowired(required = false) com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor) {
         var loop = new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -338,6 +341,7 @@ public class AgentAutoConfiguration {
         // 文件产物链路：让 Agent 主循环把工具产物升级为 session_artifacts 并通过 SSE 推送
         loop.setSessionArtifactRepository(sessionArtifactRepository);
         loop.setSseSessionManager(sseSessionManager);
+        loop.setCapabilityAssessor(capabilityAssessor);
         return loop;
     }
 

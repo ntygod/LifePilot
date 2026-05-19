@@ -128,6 +128,7 @@ public class ContextAssembler {
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private volatile HotMemoryDigestService hotMemoryDigestService;
+    @Nullable private volatile com.lifepilot.agent.intelligence.AdaptiveDecisionEngine adaptiveDecisionEngine;
     @Nullable private volatile WeatherService weatherService;
     /** Skill 安装事实源 — Phase A.7 新增，driven by {@code skills} 表判断 enabled。 */
     @Nullable private volatile SkillInstallationRepository skillInstallationRepository;
@@ -260,6 +261,11 @@ public class ContextAssembler {
         this.hotMemoryDigestService = hotMemoryDigestService;
     }
 
+    /** 注入自适应决策引擎（可选，智能层 Phase 1）。 */
+    public void setAdaptiveDecisionEngine(@Nullable com.lifepilot.agent.intelligence.AdaptiveDecisionEngine adaptiveDecisionEngine) {
+        this.adaptiveDecisionEngine = adaptiveDecisionEngine;
+    }
+
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -311,6 +317,11 @@ public class ContextAssembler {
             updateInjectedAccessCounts(injectedIds);
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
+            // 智能层决策信号注入（Phase 1）
+            String decisionSignalText = buildDecisionSignalSection(state);
+            if (decisionSignalText != null && !decisionSignalText.isBlank()) {
+                systemPrompt = systemPrompt + "\n\n" + decisionSignalText;
+            }
             MemoryCounts memoryCounts = buildInjectedMemoryCounts(
                     rawProfileSection, rawExperienceSection, rawMemorySection);
             List<Message> contextMessages = buildContextMessages(
@@ -621,6 +632,31 @@ public class ContextAssembler {
                 safeReactSystemPrompt(state),
                 buildExecutionGuardPrompt(state)
         );
+    }
+
+    /**
+     * 构建决策信号文本 — 由 AdaptiveDecisionEngine 生成，注入系统提示词。
+     *
+     * <p>智能层 Phase 1：将历史经验、工具能力、环境状态等信号注入 LLM 上下文，
+     * 让 LLM 基于更丰富的信息做出更好的决策。失败时静默降级，不影响主流程。</p>
+     */
+    @Nullable
+    private String buildDecisionSignalSection(ReactAgentState state) {
+        if (adaptiveDecisionEngine == null) return null;
+        try {
+            var availableToolIds = state.discoveredToolIds() != null
+                    ? state.discoveredToolIds() : Set.<String>of();
+            var signal = adaptiveDecisionEngine.buildDecisionSignal(
+                    state.goal(), availableToolIds);
+            String formatted = adaptiveDecisionEngine.formatForPrompt(signal);
+            if (formatted != null && !formatted.isBlank()) {
+                return "<decision_context>\n" + formatted + "\n</decision_context>";
+            }
+            return null;
+        } catch (Exception e) {
+            log.debug("决策信号构建失败，静默跳过: {}", e.getMessage());
+            return null;
+        }
     }
 
     String buildUserPrompt(ReactAgentState state) {
