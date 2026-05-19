@@ -122,10 +122,36 @@ final class PlaywrightBridge {
         String lang = locale != null && locale.contains("-") ? locale.split("-")[0] : "zh";
         String safeLocale = locale != null ? locale : "zh-CN";
 
+        // 转义单引号，防止 JS 字符串注入
+        safeLocale = safeLocale.replace("'", "\\'");
+        lang = lang.replace("'", "\\'");
+
         // 基础反检测：webdriver + chrome + languages（从 locale 动态构建）
+        // 核心策略：只修改 Navigator.prototype 上的 webdriver getter，
+        // 不在 navigator 实例上创建任何 own property。
+        // 正常 Chrome 中 navigator.hasOwnProperty('webdriver') === false，
+        // 只有 Navigator.prototype 上有这个属性。
         ctx.addInitScript("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                window.chrome = {runtime: {}, loadTimes: () => ({}), csi: () => ({})};
+                // 删除 navigator 实例上可能被 Playwright 注入的 own property
+                if (Object.getOwnPropertyDescriptor(navigator, 'webdriver')) {
+                    delete navigator.webdriver;
+                }
+                // 修改 Navigator.prototype 上的 webdriver getter 返回 false（与正常 Chrome 一致）
+                // 注意：正常 Chrome 中 navigator.webdriver === false（不是 undefined）
+                Object.defineProperty(Navigator.prototype, 'webdriver', {
+                    configurable: true,
+                    enumerable: true,
+                    get: () => false
+                });
+
+                // chrome 对象伪造（含 chrome.app，部分检测站点会检查）
+                window.chrome = {
+                    runtime: {id: undefined, connect: () => {}, sendMessage: () => {}},
+                    loadTimes: () => ({}),
+                    csi: () => ({}),
+                    app: {isInstalled: false, InstallState: {DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed'}, RunningState: {CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running'}}
+                };
+
                 Object.defineProperty(navigator, 'languages', {get: () => ['%s', '%s', 'en-US', 'en']});
                 """.formatted(safeLocale, lang));
 
@@ -160,13 +186,55 @@ final class PlaywrightBridge {
                         for (const node of mutation.addedNodes) {
                             if (node.tagName === 'IFRAME' && node.contentWindow) {
                                 try {
-                                    Object.defineProperty(node.contentWindow.navigator, 'webdriver', {get: () => undefined});
+                                    const iframeNav = node.contentWindow.navigator;
+                                    const iframeProto = node.contentWindow.Navigator.prototype;
+                                    // 只修改 prototype，删除实例上的 own property
+                                    if (Object.getOwnPropertyDescriptor(iframeNav, 'webdriver')) {
+                                        delete iframeNav.webdriver;
+                                    }
+                                    Object.defineProperty(iframeProto, 'webdriver', {
+                                        configurable: true, enumerable: true, get: () => false
+                                    });
                                 } catch(e) {}
                             }
                         }
                     }
                 });
                 observer.observe(document.documentElement, {childList: true, subtree: true});
+                """);
+
+        // 清理 Playwright/Selenium 在 document 上注入的内部属性
+        // bot.sannysoft.com 的 "WebDriver (New)" 检测会扫描这些属性
+        ctx.addInitScript("""
+                // 延迟清理：等 document 就绪后删除 Playwright 注入的内部属性
+                const cleanupWebdriverArtifacts = () => {
+                    const props = Object.getOwnPropertyNames(document);
+                    for (const prop of props) {
+                        if (prop.startsWith('__webdriver_') || prop.startsWith('__selenium_') ||
+                            prop.startsWith('__fxdriver_') || prop.startsWith('__driver_') ||
+                            prop === '$cdc_asdjflasutopfhvcZLmcfl_' || prop.startsWith('$chrome_asyncScriptInfo')) {
+                            try { delete document[prop]; } catch(e) {}
+                        }
+                    }
+                    // 同时清理 window 上的自动化痕迹
+                    const winProps = ['__webdriver_evaluate', '__selenium_evaluate',
+                                      '__webdriver_script_function', '__webdriver_script_func',
+                                      '__webdriver_script_fn', '__fxdriver_evaluate',
+                                      '__driver_evaluate', '__driver_unwrap',
+                                      '__selenium_unwrap', '__fxdriver_unwrap',
+                                      'callSelenium', '_selenium', 'calledSelenium',
+                                      '_Selenium_IDE_Recorder', '__$webdriverAsyncExecutor'];
+                    for (const prop of winProps) {
+                        if (prop in window) {
+                            try { delete window[prop]; } catch(e) {}
+                        }
+                    }
+                };
+                // 立即执行一次 + DOMContentLoaded 后再执行一次（覆盖延迟注入的属性）
+                cleanupWebdriverArtifacts();
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', cleanupWebdriverArtifacts);
+                }
                 """);
     }
 

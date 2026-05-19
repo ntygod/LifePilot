@@ -12,7 +12,6 @@ import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
-import ComposerStopPill from '@/components/chat/ComposerStopPill.vue'
 import ContinuationHint from '@/components/chat/ContinuationHint.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
 import HumanTakeoverModal from '@/components/chat/HumanTakeoverModal.vue'
@@ -745,18 +744,8 @@ const shouldShowContinuationHint = computed(() =>
         >
           <div v-if="!isEmptyChat" class="chat-composer-wrap">
             <div class="chat-composer-wrap__inner">
-              <!-- 右下角悬浮集群：停止 + 回到底部（竖排，对话区右下角） -->
+              <!-- 悬浮：回到底部按钮（居中） -->
               <div class="chat-floating-cluster">
-                <Transition
-                  enter-active-class="transition-all duration-200 ease-out"
-                  enter-from-class="translate-y-2 opacity-0"
-                  enter-to-class="translate-y-0 opacity-100"
-                  leave-active-class="transition-all duration-150 ease-in"
-                  leave-from-class="translate-y-0 opacity-100"
-                  leave-to-class="translate-y-2 opacity-0"
-                >
-                  <ComposerStopPill v-if="isStreaming" @abort="abort" />
-                </Transition>
                 <Transition
                   enter-active-class="transition-all duration-200 ease-out"
                   enter-from-class="translate-y-2 opacity-0"
@@ -804,12 +793,14 @@ const shouldShowContinuationHint = computed(() =>
 
               <ChatInput
                 :disabled="isStreaming"
+                :streaming="isStreaming"
                 :placeholder="inputPlaceholder"
                 :continuation-title="null"
                 :continuation-detail="null"
                 :knowledge-bases="kbStore.list"
                 :base-session-config="activeSessionConfig"
                 @send="handleSend"
+                @stop="abort"
               />
             </div>
           </div>
@@ -1013,14 +1004,15 @@ const shouldShowContinuationHint = computed(() =>
   margin-bottom: 8px;
 }
 
-/* 右下角悬浮集群：停止生成 + 回到底部，竖排 */
+/* 悬浮集群：停止生成 + 回到底部，竖排居中 */
 .chat-floating-cluster {
   position: absolute;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: calc(100% + 12px);
   display: flex;
   flex-direction: column-reverse;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   z-index: 10;
   pointer-events: none;

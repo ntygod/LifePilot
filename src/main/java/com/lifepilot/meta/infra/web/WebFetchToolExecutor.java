@@ -24,6 +24,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import javax.net.ssl.SSLException;
+
 /**
  * Web 抓取工具执行器 — 支持 HTML/JSON/XML/纯文本多种响应类型。
  *
@@ -61,11 +63,25 @@ public class WebFetchToolExecutor {
     private static final Set<String> ALLOWED_METHODS =
             Set.of("GET", "POST", "PUT", "DELETE", "PATCH");
 
+    /**
+     * 静态抓取路径的默认 User-Agent — 模拟标准 Chrome 浏览器。
+     *
+     * <p>替代原来的 {@code "ZhiWei/1.0 (Web Fetch Tool)"} 硬编码，
+     * 避免被反爬系统在 HTTP 层直接拒绝。版本号定期跟随 Chrome 稳定版更新。</p>
+     */
+    private static final String DEFAULT_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
+
+    /** 需要触发浏览器回退的 HTTP 状态码集合。 */
+    private static final Set<Integer> BROWSER_FALLBACK_STATUS_CODES = Set.of(403, 429, 451);
+
     private final MetaProperties properties;
     @Nullable
     private final BrowserSessionManager browserSessionManager;
     private final SsrfGuard ssrfGuard;
     private final HttpClient httpClient;
+    private final DomainRateLimiter rateLimiter;
 
     /**
      * 测试便利构造器 — 默认禁用 SSRF 防护，用于本地 127.0.0.1 测试服务器场景。
@@ -96,6 +112,8 @@ public class WebFetchToolExecutor {
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+        this.rateLimiter = new DomainRateLimiter(
+                properties.getInfra().getWebFetch().getRateLimitIntervalMs());
     }
 
     /**
@@ -125,6 +143,9 @@ public class WebFetchToolExecutor {
                 log.warn("SSRF 策略拦截 web.fetch 请求: url={}, reason={}", url, e.getReason());
                 return ToolResult.error("目标地址被 SSRF 策略拦截: " + e.getReason());
             }
+
+            // 域名级限流 — 防止对同一站点的高频请求触发 429
+            rateLimiter.acquirePermit(url);
 
             // 读取可选 headers / body / timeoutSeconds
             @SuppressWarnings("unchecked")
@@ -204,8 +225,10 @@ public class WebFetchToolExecutor {
                     .timeout(Duration.ofSeconds(timeoutSec));
             // 默认 User-Agent 可被自定义 headers 覆盖
             if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("User-Agent"))) {
-                requestBuilder.header("User-Agent", "ZhiWei/1.0 (Web Fetch Tool)");
+                requestBuilder.header("User-Agent", DEFAULT_USER_AGENT);
             }
+            // 补充标准浏览器请求头，降低被反爬系统识别的概率
+            applyStandardHeaders(requestBuilder, headers, url);
             headers.forEach(requestBuilder::header);
 
             var response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
@@ -224,11 +247,17 @@ public class WebFetchToolExecutor {
                 return ToolResult.transientError(
                         "HTTP %d: %s".formatted(statusCode, truncateForError(responseBody)));
             }
+            if (statusCode == 429) {
+                rateLimiter.recordRateLimited(url);
+                return ToolResult.transientError(
+                        "HTTP 429 限流: %s".formatted(url));
+            }
             if (statusCode >= 400) {
                 return ToolResult.error(
                         "HTTP %d: %s".formatted(statusCode, truncateForError(responseBody)));
             }
 
+            rateLimiter.recordSuccess(url);
             return ToolResult.success(Map.of(
                     "title", "",
                     "url", url,
@@ -276,7 +305,7 @@ public class WebFetchToolExecutor {
                     .method("HEAD", HttpRequest.BodyPublishers.noBody())
                     .timeout(Duration.ofSeconds(Math.min(timeoutSec, 5)));
             if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("User-Agent"))) {
-                builder.header("User-Agent", "ZhiWei/1.0 (Web Fetch Tool)");
+                builder.header("User-Agent", DEFAULT_USER_AGENT);
             }
             headers.forEach(builder::header);
             var response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.discarding());
@@ -324,7 +353,7 @@ public class WebFetchToolExecutor {
                     .GET()
                     .timeout(Duration.ofSeconds(timeoutSec));
             if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("User-Agent"))) {
-                builder.header("User-Agent", "ZhiWei/1.0 (Web Fetch Tool)");
+                builder.header("User-Agent", DEFAULT_USER_AGENT);
             }
             if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("Accept"))) {
                 builder.header("Accept", contentType + ", */*");
@@ -333,6 +362,14 @@ public class WebFetchToolExecutor {
             var response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 400) {
+                // 403/429 等状态码 → 尝试浏览器回退
+                if (BROWSER_FALLBACK_STATUS_CODES.contains(response.statusCode()) && isBrowserAvailable()) {
+                    log.info("HttpClient 直连收到 HTTP {} 拒绝，尝试浏览器渲染回退: url={}", response.statusCode(), url);
+                    return fetchWithBrowser(url, selector, config);
+                }
+                if (response.statusCode() == 429) {
+                    rateLimiter.recordRateLimited(url);
+                }
                 return ToolResult.error("HTTP %d: %s".formatted(response.statusCode(), url));
             }
 
@@ -361,6 +398,7 @@ public class WebFetchToolExecutor {
                 truncated = true;
             }
 
+            rateLimiter.recordSuccess(url);
             return ToolResult.success(Map.of(
                     "title", "",
                     "url", url,
@@ -378,6 +416,14 @@ public class WebFetchToolExecutor {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ToolResult.error("请求被中断");
+        } catch (IOException e) {
+            // 连接级失败（GOAWAY、TLS 握手失败等）→ 尝试浏览器回退
+            if (isBrowserAvailable()) {
+                log.info("HttpClient 直连失败，尝试浏览器渲染回退: url={}, error={}", url, e.getMessage());
+                return fetchWithBrowser(url, selector, config);
+            }
+            log.warn("HttpClient 直连抓取失败: url={}, error={}", url, e.getMessage());
+            return ToolResult.transientError("抓取失败: " + e.getMessage());
         } catch (Exception e) {
             log.warn("HttpClient 直连抓取失败: url={}, error={}", url, e.getMessage());
             return ToolResult.error("抓取失败: " + e.getMessage());
@@ -393,7 +439,10 @@ public class WebFetchToolExecutor {
     }
 
     /**
-     * 使用 Jsoup 进行静态抓取。内容过短且 Content-Type 为 HTML 时自动尝试浏览器回退。
+     * 使用 Jsoup 进行静态抓取。
+     *
+     * <p>增强：HTTP 403/429/451 时自动尝试浏览器回退，而非直接报错。
+     * 内容过短且 Content-Type 为 HTML 时也自动尝试浏览器回退。</p>
      *
      * @param headers 透传的自定义请求头
      * @param timeoutSec 请求超时秒数
@@ -409,10 +458,29 @@ public class WebFetchToolExecutor {
         try {
             var connection = Jsoup.connect(url)
                     .timeout(timeoutMillis)
-                    .userAgent("ZhiWei/1.0 (Web Fetch Tool)")
+                    .userAgent(DEFAULT_USER_AGENT)
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                    .header("Accept-Encoding", "gzip, deflate, br")
+                    .header("Sec-Fetch-Dest", "document")
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .header("Sec-Fetch-Site", "none")
+                    .header("Sec-Fetch-User", "?1")
+                    .header("Upgrade-Insecure-Requests", "1")
                     .followRedirects(true);
             headers.forEach(connection::header);
             doc = connection.get();
+        } catch (org.jsoup.HttpStatusException e) {
+            // 403/429/451 等状态码 → 尝试浏览器回退
+            if (BROWSER_FALLBACK_STATUS_CODES.contains(e.getStatusCode()) && isBrowserAvailable()) {
+                log.info("Jsoup 收到 HTTP {} 拒绝，尝试浏览器渲染回退: url={}", e.getStatusCode(), url);
+                return fetchWithBrowser(url, selector, config);
+            }
+            // 其他 4xx/5xx：5xx 标记为 transient（可重试），4xx 标记为 error
+            if (e.getStatusCode() >= 500) {
+                return ToolResult.transientError("HTTP %d: %s".formatted(e.getStatusCode(), url));
+            }
+            return ToolResult.error("HTTP %d: %s".formatted(e.getStatusCode(), url));
         } catch (org.jsoup.UnsupportedMimeTypeException e) {
             // Jsoup 不支持此 Content-Type（如 application/json），回退到直连
             log.debug("Jsoup 不支持的 MIME 类型，回退 HttpClient 直连: url={}, mimeType={}", url, e.getMimeType());
@@ -421,6 +489,13 @@ public class WebFetchToolExecutor {
             log.warn("Web 抓取超时: {}", e.getMessage());
             return ToolResult.transientError("请求超时（%d 秒）"
                     .formatted(timeoutSec));
+        } catch (SSLException e) {
+            // TLS 握手失败 → 尝试浏览器回退（浏览器有独立的 TLS 栈）
+            if (isBrowserAvailable()) {
+                log.info("TLS 握手失败，尝试浏览器渲染回退: url={}, error={}", url, e.getMessage());
+                return fetchWithBrowser(url, selector, config);
+            }
+            return ToolResult.transientError("TLS 握手失败: " + e.getMessage());
         }
 
         String title = doc.title();
@@ -458,6 +533,7 @@ public class WebFetchToolExecutor {
             truncated = true;
         }
 
+        rateLimiter.recordSuccess(url);
         return ToolResult.success(Map.of(
                 "title", title,
                 "url", url,
@@ -486,10 +562,13 @@ public class WebFetchToolExecutor {
     }
 
     /**
-     * 为每次浏览器抓取生成唯一会话 ID，避免并发请求共享 Page 导致竞态。
+     * 为每次浏览器抓取生成唯一会话 ID。
+     *
+     * <p>使用固定前缀 {@code "web-fetch-shared"} 使所有 web.fetch 浏览器回退共享同一个
+     * BrowserContext（复用登录态 Cookie），但每次抓取仍创建独立 Page 避免并发竞态。</p>
      */
     private String fetchSessionId() {
-        return "web-fetch-" + UUID.randomUUID().toString().substring(0, 12);
+        return "web-fetch-shared-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     /**
@@ -539,6 +618,7 @@ public class WebFetchToolExecutor {
             }
 
             log.info("浏览器渲染抓取完成: url={}, contentLength={}", url, content.length());
+            rateLimiter.recordSuccess(url);
             return ToolResult.success(Map.of(
                     "title", title != null ? title : "",
                     "url", url,
@@ -575,6 +655,36 @@ public class WebFetchToolExecutor {
 
     private boolean isBrowserAvailable() {
         return browserSessionManager != null && browserSessionManager.isAvailable();
+    }
+
+    /**
+     * 为 HttpRequest.Builder 补充标准浏览器请求头 — 降低被反爬系统识别的概率。
+     *
+     * <p>仅在用户未通过 headers 参数显式覆盖时才补充，避免干扰自定义请求。</p>
+     *
+     * @param builder HttpRequest.Builder
+     * @param headers 用户自定义请求头（用于检查是否已覆盖）
+     * @param url     目标 URL（用于生成 Referer）
+     */
+    private void applyStandardHeaders(HttpRequest.Builder builder, Map<String, String> headers, String url) {
+        if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("Accept"))) {
+            builder.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+        }
+        if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("Accept-Language"))) {
+            builder.header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        }
+        if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("Sec-Fetch-Dest"))) {
+            builder.header("Sec-Fetch-Dest", "document");
+        }
+        if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("Sec-Fetch-Mode"))) {
+            builder.header("Sec-Fetch-Mode", "navigate");
+        }
+        if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("Sec-Fetch-Site"))) {
+            builder.header("Sec-Fetch-Site", "none");
+        }
+        if (headers.keySet().stream().noneMatch(k -> k.equalsIgnoreCase("Upgrade-Insecure-Requests"))) {
+            builder.header("Upgrade-Insecure-Requests", "1");
+        }
     }
 
     /**

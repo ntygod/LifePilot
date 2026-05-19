@@ -42,6 +42,9 @@ public class WebSearchToolExecutor {
     /**
      * 执行 Web 搜索。
      *
+     * <p>搜索降级链：Tavily（主） → DuckDuckGo HTML（兜底）。
+     * Tavily 不可用（无 API key 或请求失败）时自动降级到 DuckDuckGo。</p>
+     *
      * @param input 工具输入，必须包含 query，可选 maxResults / offset / limit
      * @return 结构化搜索结果
      */
@@ -66,7 +69,20 @@ public class WebSearchToolExecutor {
                     .orElse(maxResults);
             int requestSize = clamp(Math.max(maxResults, offset + limit), 1, 20);
 
-            return searchTavily(query.trim(), config, requestSize, offset, limit);
+            // 尝试 Tavily
+            if (config.apiKey() != null && !config.apiKey().isBlank()) {
+                ToolResult tavilyResult = searchTavily(query.trim(), config, requestSize, offset, limit);
+                if (tavilyResult.isSuccess()) {
+                    return tavilyResult;
+                }
+                // Tavily 失败，降级到 DuckDuckGo
+                log.warn("Tavily 搜索失败，降级到 DuckDuckGo: query={}, error={}", query, tavilyResult.error());
+            } else {
+                log.info("Tavily API Key 未配置，使用 DuckDuckGo 搜索: query={}", query);
+            }
+
+            // 降级：DuckDuckGo HTML 搜索
+            return searchDuckDuckGo(query.trim(), requestSize, offset, limit);
         } catch (IllegalArgumentException e) {
             return ToolResult.error("参数错误: " + e.getMessage());
         } catch (Exception e) {
@@ -81,10 +97,6 @@ public class WebSearchToolExecutor {
                                     int requestSize,
                                     int offset,
                                     int limit) {
-        if (config.apiKey() == null || config.apiKey().isBlank()) {
-            return ToolResult.error("Web 搜索未配置 API Key, 改用 web.fetch 直接抓取目标页面");
-        }
-
         Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("query", query);
         requestBody.put("search_depth", config.searchDepth());
@@ -161,6 +173,117 @@ public class WebSearchToolExecutor {
 
         payload.put("results", pagedResults);
         return ToolResult.success(payload);
+    }
+
+    /**
+     * DuckDuckGo HTML 搜索 — 零 API key 兜底方案。
+     *
+     * <p>通过 DuckDuckGo 的 HTML 版本（html.duckduckgo.com）获取搜索结果，
+     * 解析 HTML 提取标题、摘要和 URL。不需要 API key，但质量略低于 Tavily。</p>
+     */
+    private ToolResult searchDuckDuckGo(String query, int requestSize, int offset, int limit) {
+        try {
+            String searchUrl = "https://html.duckduckgo.com/html/?q=" +
+                    java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
+
+            var requestFactory = new SimpleClientHttpRequestFactory();
+            requestFactory.setConnectTimeout(10_000);
+            requestFactory.setReadTimeout(15_000);
+            var client = RestClient.builder().requestFactory(requestFactory).build();
+
+            String html = client.get()
+                    .uri(searchUrl)
+                    .header(HttpHeaders.USER_AGENT,
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
+                    .header(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN,zh;q=0.9,en;q=0.8")
+                    .retrieve()
+                    .body(String.class);
+
+            if (html == null || html.isBlank()) {
+                return ToolResult.transientError("DuckDuckGo 返回空响应");
+            }
+
+            // 解析 HTML 搜索结果
+            List<Map<String, Object>> results = parseDuckDuckGoHtml(html);
+
+            if (results.isEmpty()) {
+                log.warn("DuckDuckGo HTML 解析结果为空，可能页面结构已变更: query={}", query);
+                return ToolResult.transientError("DuckDuckGo 搜索未返回结果，可能页面结构已变更");
+            }
+
+            int totalEstimate = results.size();
+            int fromIndex = Math.min(offset, totalEstimate);
+            int toIndex = Math.min(fromIndex + limit, totalEstimate);
+            List<Map<String, Object>> pagedResults = List.copyOf(results.subList(fromIndex, toIndex));
+
+            var payload = new LinkedHashMap<String, Object>();
+            payload.put("provider", "duckduckgo");
+            payload.put("query", query);
+            payload.put("resultCount", pagedResults.size());
+            payload.put("totalEstimate", totalEstimate);
+            payload.put("hasMore", toIndex < totalEstimate);
+            payload.put("results", pagedResults);
+
+            log.info("DuckDuckGo 搜索完成: query={}, resultCount={}", query, pagedResults.size());
+            return ToolResult.success(payload);
+        } catch (Exception e) {
+            log.error("DuckDuckGo 搜索失败: query={}, error={}", query, e.getMessage());
+            return ToolResult.transientError("搜索失败（Tavily 和 DuckDuckGo 均不可用）: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 解析 DuckDuckGo HTML 搜索结果页。
+     *
+     * <p>DuckDuckGo HTML 版的结果结构：
+     * {@code <div class="result"> <a class="result__a" href="...">title</a> <a class="result__snippet">snippet</a> </div>}
+     * </p>
+     */
+    private List<Map<String, Object>> parseDuckDuckGoHtml(String html) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        // 使用简单的正则提取，避免引入额外 HTML 解析依赖（Jsoup 在 web 模块不一定可用）
+        // 匹配 result__a 链接 — 兼容 href 在 class 前或后两种属性顺序
+        var linkPattern = java.util.regex.Pattern.compile(
+                "<a[^>]*(?:class=\"result__a\"[^>]*href=\"([^\"]+)\"|href=\"([^\"]+)\"[^>]*class=\"result__a\")[^>]*>([^<]+)</a>");
+        var snippetPattern = java.util.regex.Pattern.compile(
+                "<a[^>]+class=\"result__snippet\"[^>]*>([^<]*(?:<[^>]+>[^<]*)*)</a>");
+
+        var linkMatcher = linkPattern.matcher(html);
+        var snippetMatcher = snippetPattern.matcher(html);
+
+        while (linkMatcher.find()) {
+            // href 可能在 group(1)（class 在前）或 group(2)（href 在前）
+            String url = linkMatcher.group(1) != null ? linkMatcher.group(1) : linkMatcher.group(2);
+            String title = linkMatcher.group(3).trim();
+
+            // 跳过 DuckDuckGo 内部链接
+            if (url.startsWith("//duckduckgo.com")) continue;
+
+            String snippet = "";
+            if (snippetMatcher.find()) {
+                snippet = snippetMatcher.group(1)
+                        .replaceAll("<[^>]+>", "") // 去除 HTML 标签
+                        .trim();
+            }
+
+            var result = new LinkedHashMap<String, Object>();
+            result.put("title", unescapeHtml(title));
+            result.put("snippet", unescapeHtml(snippet));
+            result.put("url", url);
+            results.add(result);
+        }
+        return results;
+    }
+
+    /** 简单 HTML 实体反转义。 */
+    private static String unescapeHtml(String text) {
+        return text.replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&#x27;", "'");
     }
 
     private static RestClient createRestClient(WebSearchConfig config) {
