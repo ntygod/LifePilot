@@ -9,6 +9,12 @@ import java.util.Set;
 /**
  * 记忆系统配置属性。
  *
+ * @deprecated 已拆分为子模块 Properties：
+ * {@code MemoryStoreProperties}、{@code MemoryRetrievalProperties}、
+ * {@code MemoryConsumptionProperties}、{@code MemoryGovernanceProperties}、
+ * {@code AgentLearningProperties}。新代码应使用对应子模块 Properties。
+ * 本类将在后续版本删除。
+ *
  * <p>绑定 {@code lifepilot.memory} 配置前缀。使用 JavaBean 风格以兼容 Spring Boot 配置绑定。</p>
  *
  * @author zsg
