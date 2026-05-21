@@ -10,7 +10,7 @@ import com.lifepilot.agent.initiative.pool.ThoughtPool;
 import com.lifepilot.agent.initiative.pool.ThoughtRepository;
 import com.lifepilot.agent.initiative.signal.InitiativeEventListener;
 import com.lifepilot.agent.initiative.thinker.DefaultThinker;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;

@@ -3,7 +3,7 @@ package com.lifepilot.agent.intelligence;
 import com.lifepilot.agent.intelligence.model.DecisionSignal;
 import com.lifepilot.agent.intelligence.model.EnvironmentState;
 import com.lifepilot.agent.intelligence.model.ToolHealth;
-import com.lifepilot.memory.procedural.IntentMatcher;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;

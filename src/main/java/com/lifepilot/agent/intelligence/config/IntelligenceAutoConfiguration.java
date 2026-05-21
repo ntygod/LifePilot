@@ -3,7 +3,7 @@ package com.lifepilot.agent.intelligence.config;
 import com.lifepilot.agent.intelligence.AdaptiveDecisionEngine;
 import com.lifepilot.agent.intelligence.CapabilityAssessor;
 import com.lifepilot.agent.intelligence.EnvironmentPerceptor;
-import com.lifepilot.memory.procedural.IntentMatcher;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

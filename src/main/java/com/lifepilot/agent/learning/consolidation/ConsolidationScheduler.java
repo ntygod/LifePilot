@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.consolidation;
 
-import com.lifepilot.memory.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
