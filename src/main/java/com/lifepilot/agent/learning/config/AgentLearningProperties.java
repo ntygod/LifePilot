@@ -12,8 +12,6 @@ import java.util.Set;
  * <p>绑定 {@code lifepilot.agent.learning} 配置前缀。涵盖巩固管线、遗忘引擎、
  * 实体提取、经验总结、反馈闭环、老化检测和 REM 联想巩固等学习相关配置。</p>
  *
- * <p>Phase A 阶段与旧 {@code MemoryProperties} 并存，后续 Phase D 删除旧配置后独立生效。</p>
- *
  * @author zsg
  * @since 2026-06-01
  */
@@ -120,6 +118,9 @@ public class AgentLearningProperties {
 
         /** 用户画像巩固 LLM 调用超时（秒），默认 120。 */
         private int userProfileLlmTimeoutSeconds = 120;
+
+        /** 是否启用操作模板聚类（从 MemoryStoreProperties.Procedural 迁移），默认启用。 */
+        private boolean proceduralTemplateEnabled = true;
     }
 
     /**

@@ -4,7 +4,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -38,18 +38,18 @@ public class ContrastiveLearner {
     @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
-    private final MemoryProperties.Experience.Contrastive config;
+    private final AgentLearningProperties.Experience.Contrastive config;
 
     public ContrastiveLearner(SemanticMemory semanticMemory,
                                VectorSearcher vectorSearcher,
                                @Nullable GenerationRouter generationRouter,
                                PromptRegistry promptRegistry,
-                               MemoryProperties memoryProperties) {
+                               AgentLearningProperties AgentLearningProperties) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
-        this.config = memoryProperties.getExperience().getContrastive();
+        this.config = AgentLearningProperties.getExperience().getContrastive();
     }
 
     /**

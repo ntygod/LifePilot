@@ -2,7 +2,6 @@ package com.lifepilot.memory.consumption.config;
 
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.consumption.compression.CompressionService;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.consumption.EpisodicCleanupJob;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
@@ -31,7 +30,7 @@ import java.time.Clock;
  * @since 2026-06-01
  */
 @AutoConfiguration(after = MemoryStoreAutoConfiguration.class)
-@EnableConfigurationProperties({MemoryConsumptionProperties.class, MemoryProperties.class})
+@EnableConfigurationProperties(MemoryConsumptionProperties.class)
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 public class MemoryConsumptionAutoConfiguration {
@@ -41,7 +40,7 @@ public class MemoryConsumptionAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public HotMemoryDigestService hotMemoryDigestService(SemanticMemory semanticMemory,
-                                                          MemoryProperties properties,
+                                                          MemoryConsumptionProperties properties,
                                                           @Nullable ProceduralMemory proceduralMemory,
                                                           @Nullable DataRedactor dataRedactor,
                                                           Clock clock) {
@@ -55,10 +54,10 @@ public class MemoryConsumptionAutoConfiguration {
     public CompressionService compressionService(EpisodicMemory episodicMemory,
                                                  @Nullable GenerationRouter generationRouter,
                                                  PromptRegistry promptRegistry,
-                                                 MemoryProperties memoryProperties) {
+                                                 MemoryConsumptionProperties properties) {
         log.info("记忆模块: 注册 CompressionService, generationRouterAvailable={}",
                 generationRouter != null ? "yes" : "no");
-        return new CompressionService(generationRouter, episodicMemory, promptRegistry, memoryProperties);
+        return new CompressionService(generationRouter, episodicMemory, promptRegistry, properties);
     }
 
     @Bean
@@ -67,7 +66,7 @@ public class MemoryConsumptionAutoConfiguration {
     public EpisodicCleanupJob episodicCleanupJob(
             EpisodicMemory episodicMemory,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties) {
+            MemoryConsumptionProperties properties) {
         log.info("记忆模块: 注册 EpisodicCleanupJob, cron={}, retentionDays={}",
                 properties.getEpisodicCleanup().getCron(),
                 properties.getEpisodicCleanup().getRetentionDays());

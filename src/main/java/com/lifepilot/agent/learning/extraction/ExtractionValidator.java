@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.extraction;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.semantic.AudnDecision;
@@ -38,7 +38,7 @@ public class ExtractionValidator {
     private final int maxEntityNameLength;
     private final int minDescriptionLength;
 
-    public ExtractionValidator(MemoryProperties properties) {
+    public ExtractionValidator(AgentLearningProperties properties) {
         var ext = properties.getExtraction();
         this.maxEntitiesPerExtraction = ext.getMaxEntitiesPerExtraction();
         this.minExtractionConfidence = ext.getMinExtractionConfidence();

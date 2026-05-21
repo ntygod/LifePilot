@@ -1,6 +1,6 @@
-package com.lifepilot.memory.retrieval.orchestrator;
+﻿package com.lifepilot.memory.retrieval.orchestrator;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -29,7 +29,7 @@ class RetrievalOrchestrator_单元测试 {
 
     @Test
     void 空查询返回空bundle() {
-        var props = new MemoryProperties();
+        var props = new MemoryRetrievalProperties();
         var planner = new QueryPlanner(null, null, new KnowledgeBaseSource());
         var orchestrator = new RetrievalOrchestrator(planner, props);
 
@@ -48,7 +48,7 @@ class RetrievalOrchestrator_单元测试 {
                 ));
         var hybridSource = new HybridRetrievalSource(hybridRetriever);
         var planner = new QueryPlanner(hybridSource, null, new KnowledgeBaseSource());
-        var props = new MemoryProperties();
+        var props = new MemoryRetrievalProperties();
         var orchestrator = new RetrievalOrchestrator(planner, props);
 
         var bundle = orchestrator.retrieve("test", RetrievalIntent.FACT, 3);
@@ -70,7 +70,7 @@ class RetrievalOrchestrator_单元测试 {
                 ));
         var expSource = new ExperienceRetrievalSource(semanticMemory);
         var planner = new QueryPlanner(null, expSource, new KnowledgeBaseSource());
-        var orchestrator = new RetrievalOrchestrator(planner, new MemoryProperties());
+        var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("Rust", RetrievalIntent.EXPERIENCE, 10);
 
@@ -82,7 +82,7 @@ class RetrievalOrchestrator_单元测试 {
     @Test
     void 不可用的source被跳过() {
         var planner = new QueryPlanner(null, null, new KnowledgeBaseSource());  // 全不可用
-        var orchestrator = new RetrievalOrchestrator(planner, new MemoryProperties());
+        var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("test", RetrievalIntent.GENERAL, 10);
 
@@ -108,7 +108,7 @@ class RetrievalOrchestrator_单元测试 {
                 new HybridRetrievalSource(hybrid),
                 new ExperienceRetrievalSource(sem),
                 new KnowledgeBaseSource());
-        var orchestrator = new RetrievalOrchestrator(planner, new MemoryProperties());
+        var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("test", RetrievalIntent.GENERAL, 2);
 
@@ -129,7 +129,7 @@ class RetrievalOrchestrator_单元测试 {
                 new HybridRetrievalSource(hybrid),
                 new ExperienceRetrievalSource(sem),
                 new KnowledgeBaseSource());
-        var orchestrator = new RetrievalOrchestrator(planner, new MemoryProperties());
+        var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("Rust", RetrievalIntent.GENERAL, 10);
         assertThat(bundle.items()).hasSize(1);

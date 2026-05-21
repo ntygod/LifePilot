@@ -5,7 +5,7 @@ import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.KnowledgeSearchScope;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
@@ -66,7 +66,7 @@ public class MemoryToolProvider {
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKbRepo;
     @Nullable private final SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver;
-    @Nullable private final MemoryProperties memoryProperties;
+    @Nullable private final MemoryRetrievalProperties memoryProperties;
     @Nullable private final ProjectContextResolver projectContextResolver;
     @Nullable private final ChatSessionRepository chatSessionRepository;
     private final MemoryAccessPolicy memoryAccessPolicy;
@@ -77,7 +77,7 @@ public class MemoryToolProvider {
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryProperties memoryProperties) {
+                              @Nullable MemoryRetrievalProperties memoryProperties) {
         this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
                 sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties, null, null, null);
     }
@@ -88,7 +88,7 @@ public class MemoryToolProvider {
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryProperties memoryProperties,
+                              @Nullable MemoryRetrievalProperties memoryProperties,
                               @Nullable ProjectContextResolver projectContextResolver,
                               @Nullable ChatSessionRepository chatSessionRepository) {
         this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
@@ -102,7 +102,7 @@ public class MemoryToolProvider {
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryProperties memoryProperties,
+                              @Nullable MemoryRetrievalProperties memoryProperties,
                               @Nullable ProjectContextResolver projectContextResolver,
                               @Nullable ChatSessionRepository chatSessionRepository,
                               @Nullable MemoryAccessPolicy memoryAccessPolicy) {
@@ -964,7 +964,7 @@ public class MemoryToolProvider {
 
             // 按检索排序保留语义相关性，过滤后截取 topK
             boolean crossContext = memoryProperties != null
-                    && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();
+                    && memoryProperties.getAgenticTool().isCrossContextRetrieval();
             var results = ranked.stream()
                     .map(r -> entityMap.get(r.entityId()))
                     .filter(Objects::nonNull)

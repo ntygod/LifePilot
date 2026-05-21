@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.forgetting;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 
 import java.time.Duration;
@@ -20,9 +20,9 @@ import java.util.List;
  */
 public final class PriorityDecayPolicy implements ForgettingPolicy {
 
-    private final MemoryProperties.Forgetting config;
+    private final AgentLearningProperties.Forgetting config;
 
-    public PriorityDecayPolicy(MemoryProperties.Forgetting config) {
+    public PriorityDecayPolicy(AgentLearningProperties.Forgetting config) {
         this.config = config;
     }
 

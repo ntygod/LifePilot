@@ -2,7 +2,7 @@ package com.lifepilot.agent.learning.experience;
 
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -26,14 +26,14 @@ public class EffectivenessTracker {
 
     private final SemanticMemory semanticMemory;
     private final InjectionRecordRepository injectionRecordRepository;
-    private final MemoryProperties.Experience.Effectiveness config;
+    private final AgentLearningProperties.Experience.Effectiveness config;
 
     public EffectivenessTracker(SemanticMemory semanticMemory,
                                  InjectionRecordRepository injectionRecordRepository,
-                                 MemoryProperties memoryProperties) {
+                                 AgentLearningProperties AgentLearningProperties) {
         this.semanticMemory = semanticMemory;
         this.injectionRecordRepository = injectionRecordRepository;
-        this.config = memoryProperties.getExperience().getEffectiveness();
+        this.config = AgentLearningProperties.getExperience().getEffectiveness();
     }
 
     /**

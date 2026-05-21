@@ -102,13 +102,13 @@ Agent 第一次帮用户抓取知乎内容时发现需要浏览器渲染，经�
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.experience.enabled` | true | 经验总结总开关 |
-| `lifepilot.memory.consolidation.cron` | `0 0 3 * * *` | 巩固定时 Cron |
-| `lifepilot.memory.consolidation.trigger-mode` | CRON | CRON / IDLE / HYBRID |
-| `lifepilot.memory.forgetting.cron` | `0 0 4 * * SUN` | 遗忘定时 Cron |
-| `lifepilot.memory.forgetting.max-forget-per-run` | 100 | 每次最大遗忘数 |
-| `lifepilot.memory.staleness.enabled` | true | 老化检测开关 |
-| `lifepilot.memory.rem.enabled` | false | REM 联想开关 |
+| `lifepilot.agent.learning.experience.enabled` | true | 经验总结总开关 |
+| `lifepilot.agent.learning.consolidation.cron` | `0 0 3 * * *` | 巩固定时 Cron |
+| `lifepilot.agent.learning.consolidation.trigger-mode` | CRON | CRON / IDLE / HYBRID |
+| `lifepilot.agent.learning.forgetting.cron` | `0 0 4 * * SUN` | 遗忘定时 Cron |
+| `lifepilot.agent.learning.forgetting.max-forget-per-run` | 100 | 每次最大遗忘数 |
+| `lifepilot.agent.learning.staleness.enabled` | true | 老化检测开关 |
+| `lifepilot.agent.learning.rem.enabled` | true | REM 联想开关 |
 
 完整配置列表见 [架构文档 §8](../architecture/agent-learning.md)。
 

@@ -1,4 +1,4 @@
-package com.lifepilot.memory.experience;
+﻿package com.lifepilot.memory.experience;
 
 import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
 import com.lifepilot.agent.learning.experience.TrajectoryQualityAssessor;
@@ -9,7 +9,7 @@ import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.modelservice.model.GenerationCapability;
@@ -44,7 +44,7 @@ class ExperienceSummarizerTest {
         var promptRegistry = mock(PromptRegistry.class);
         var qualityAssessor = mock(TrajectoryQualityAssessor.class);
 
-        var properties = new MemoryProperties();
+        var properties = new AgentLearningProperties();
         properties.getExperience().setLlmTimeoutSeconds(120);
 
         when(qualityAssessor.assess(eq(buildState())))

@@ -7,8 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * 记忆检索层配置属性。
  *
- * <p>绑定 {@code lifepilot.memory.retrieval} 配置前缀。Phase A 阶段与旧
- * {@code MemoryProperties} 并存，后续 Phase D 删除旧配置后独立生效。</p>
+ * <p>绑定 {@code lifepilot.memory.retrieval} 配置前缀。</p>
  *
  * @author zsg
  * @since 2026-06-01
@@ -71,6 +70,14 @@ public class MemoryRetrievalProperties {
     /** COMPLETED 历史结果的生命周期扣分，默认 0.02。 */
     private float historicalLifecyclePenalty = 0.02f;
 
+    /** STALE_CANDIDATE 结果的检索惩罚比例（0~1），默认 0.35，得分乘 0.65。 */
+    private float stalenessRetrievalPenalty = 0.35f;
+
+    // ─── AgenticTool 配置 ───
+
+    /** Agentic Tool 配置 — 控制记忆 tool 的默认检索参数。 */
+    private AgenticTool agenticTool = new AgenticTool();
+
     // ─── Reranker 精排配置 ───
 
     /** 精排配置。 */
@@ -110,5 +117,22 @@ public class MemoryRetrievalProperties {
 
         /** 每个 source 单独调用的 topK。 */
         private int perSourceTopK = 5;
+    }
+
+    /**
+     * Agentic Tool 配置 — 控制记忆 tool 的默认检索参数。
+     */
+    @Setter
+    @Getter
+    public static class AgenticTool {
+
+        /** 知识实体 / 跨会话检索默认返回数量。 */
+        private int defaultTopK = 10;
+
+        /** 知识库文档检索默认返回数量。 */
+        private int docsDefaultTopK = 5;
+
+        /** 是否允许跨执行上下文检索经验，默认 false。 */
+        private boolean crossContextRetrieval = false;
     }
 }

@@ -1,7 +1,7 @@
-package com.lifepilot.memory.semantic;
+﻿package com.lifepilot.memory.semantic;
 
 import com.lifepilot.agent.learning.extraction.ExtractionValidator;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.EntityType;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
@@ -31,15 +31,15 @@ class ExtractionValidator_单元测试 {
     /** 默认配置：maxEntities=10, minConfidence=0.3, maxNameLength=100, minDescLength=2 */
     private ExtractionValidator validator;
 
-    /** 构建默认配置的 MemoryProperties */
-    private static MemoryProperties defaultProperties() {
-        return new MemoryProperties();
+    /** 构建默认配置的 AgentLearningProperties */
+    private static AgentLearningProperties defaultProperties() {
+        return new AgentLearningProperties();
     }
 
-    /** 构建自定义配置的 MemoryProperties */
-    private static MemoryProperties customProperties(int maxEntities, float minConfidence,
+    /** 构建自定义配置的 AgentLearningProperties */
+    private static AgentLearningProperties customProperties(int maxEntities, float minConfidence,
                                                       int maxNameLength, int minDescLength) {
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         var ext = props.getExtraction();
         ext.setMaxEntitiesPerExtraction(maxEntities);
         ext.setMinExtractionConfidence(minConfidence);

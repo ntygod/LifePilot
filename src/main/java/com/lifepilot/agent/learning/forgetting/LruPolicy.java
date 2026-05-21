@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.forgetting;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 
 import java.time.Duration;
@@ -19,9 +19,9 @@ import java.util.List;
  */
 public final class LruPolicy implements ForgettingPolicy {
 
-    private final MemoryProperties.Forgetting config;
+    private final AgentLearningProperties.Forgetting config;
 
-    public LruPolicy(MemoryProperties.Forgetting config) {
+    public LruPolicy(AgentLearningProperties.Forgetting config) {
         this.config = config;
     }
 

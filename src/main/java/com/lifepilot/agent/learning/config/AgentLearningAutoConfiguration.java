@@ -5,7 +5,7 @@ import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
@@ -44,6 +44,7 @@ import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateReposito
 import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
+import com.lifepilot.memory.store.config.MemoryStoreProperties;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
 import jakarta.annotation.Nullable;
@@ -73,7 +74,7 @@ import java.time.Instant;
  * @since 2026-06-01
  */
 @AutoConfiguration(after = MemoryStoreAutoConfiguration.class)
-@EnableConfigurationProperties({AgentLearningProperties.class, MemoryProperties.class})
+@EnableConfigurationProperties(AgentLearningProperties.class)
 @EnableScheduling
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
@@ -81,13 +82,13 @@ public class AgentLearningAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(AgentLearningAutoConfiguration.class);
 
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider;
 
     private volatile Instant lastIdleConsolidationTime;
 
-    public AgentLearningAutoConfiguration(MemoryProperties properties,
+    public AgentLearningAutoConfiguration(AgentLearningProperties properties,
                                           @Lazy JdbcTemplate jdbcTemplate,
                                           ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider) {
         this.properties = properties;
@@ -99,7 +100,7 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ExtractionValidator extractionValidator(MemoryProperties properties) {
+    public ExtractionValidator extractionValidator(AgentLearningProperties properties) {
         log.info("记忆模块: 注册 ExtractionValidator");
         return new ExtractionValidator(properties);
     }
@@ -175,7 +176,7 @@ public class AgentLearningAutoConfiguration {
     public StaleConflictDetector staleConflictDetector(
             VectorSearcher vectorSearcher,
             SemanticMemory semanticMemory,
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         log.info("记忆模块: 注册 StaleConflictDetector (staleness.enabled={})",
                 properties.getStaleness().isEnabled());
         return new VectorBasedStaleConflictDetector(
@@ -193,7 +194,7 @@ public class AgentLearningAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public NeighborRefreshService neighborRefreshService(
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         return new NeighborRefreshService(
                 properties.getStaleness());
     }
@@ -211,7 +212,7 @@ public class AgentLearningAutoConfiguration {
             StaleConflictDetector detector,
             StalenessMarker marker,
             NeighborRefreshService refreshService,
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             SemanticMemory semanticMemory) {
         var coordinator = new StalenessCoordinator(
                 detector, marker, refreshService, properties.getStaleness());
@@ -229,7 +230,7 @@ public class AgentLearningAutoConfiguration {
             EpisodicMemory episodicMemory,
             SemanticMemory semanticMemory,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         log.info("记忆模块: 注册 EpisodicToSemanticConsolidator");
         return new EpisodicToSemanticConsolidator(episodicMemory, semanticMemory, jdbcTemplate, properties);
     }
@@ -242,7 +243,7 @@ public class AgentLearningAutoConfiguration {
             ProceduralMemory proceduralMemory,
             @Nullable GenerationRouter generationRouter,
             @Nullable EmbeddingRouter embeddingRouter,
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             PromptRegistry promptRegistry) {
         if (generationRouter == null || embeddingRouter == null) {
             log.warn("记忆模块: GenerationRouter 或 EmbeddingRouter 不可用，EpisodicToProceduralConsolidator 将无法执行巩固");
@@ -286,7 +287,7 @@ public class AgentLearningAutoConfiguration {
     public ConsolidationPipeline consolidationPipeline(
             EpisodicToSemanticConsolidator semanticConsolidator,
             @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             @Nullable PreferenceConsolidator preferenceConsolidator,
             @Nullable SemanticMemory semanticMemory,
             @Nullable ProceduralMemory proceduralMemory,
@@ -321,7 +322,7 @@ public class AgentLearningAutoConfiguration {
             SemanticMemory semanticMemory,
             @Nullable HybridRetriever hybridRetriever,
             @Nullable GenerationRouter generationRouter,
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         return new AssociationCandidateGenerator(
                 semanticMemory, hybridRetriever, generationRouter, properties);
     }
@@ -331,7 +332,7 @@ public class AgentLearningAutoConfiguration {
     @ConditionalOnProperty(
             name = "lifepilot.memory.rem.enabled", havingValue = "true")
     public AssociationConsolidator associationConsolidator(
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             AssociationCandidateStore store) {
         return new AssociationConsolidator(properties, store);
     }
@@ -346,7 +347,7 @@ public class AgentLearningAutoConfiguration {
             VectorSearcher vectorSearcher,
             @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         log.info("记忆模块: 注册 ExperienceMerger, generationRouterAvailable={}",
                 generationRouter != null ? "yes" : "no");
         return new ExperienceMerger(
@@ -360,7 +361,7 @@ public class AgentLearningAutoConfiguration {
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             PlatformTransactionManager transactionManager) {
         log.info("记忆模块: 注册 EntityDeduplicator");
         return new EntityDeduplicator(semanticMemory, vectorSearcher, jdbcTemplate, properties, transactionManager);
@@ -373,7 +374,7 @@ public class AgentLearningAutoConfiguration {
             SemanticMemory semanticMemory,
             @Nullable GenerationRouter generationRouter,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 ForgettingEngine, generationRouterAvailable={}",
                 generationRouter != null ? "yes" : "no");
@@ -395,7 +396,7 @@ public class AgentLearningAutoConfiguration {
             InjectionRecordRepository injectionRecordRepository,
             SemanticMemory semanticMemory,
             MessageFeedbackRepository feedbackRepository,
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         log.info("记忆模块: 注册 FeedbackProcessor");
         return new FeedbackProcessor(injectionRecordRepository, semanticMemory,
                 feedbackRepository, properties);
@@ -403,7 +404,7 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public TrajectoryQualityAssessor trajectoryQualityAssessor(MemoryProperties properties) {
+    public TrajectoryQualityAssessor trajectoryQualityAssessor(AgentLearningProperties properties) {
         log.info("记忆模块: 注册 TrajectoryQualityAssessor");
         return new TrajectoryQualityAssessor(properties);
     }
@@ -416,7 +417,7 @@ public class AgentLearningAutoConfiguration {
             VectorSearcher vectorSearcher,
             @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             TrajectoryQualityAssessor qualityAssessor,
             @Nullable ChatSessionRepository chatSessionRepository,
             @Nullable ProjectContextResolver projectContextResolver) {
@@ -434,7 +435,7 @@ public class AgentLearningAutoConfiguration {
     public EffectivenessTracker effectivenessTracker(
             SemanticMemory semanticMemory,
             InjectionRecordRepository injectionRecordRepository,
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         log.info("记忆模块: 注册 EffectivenessTracker");
         return new EffectivenessTracker(
                 semanticMemory, injectionRecordRepository, properties);
@@ -448,7 +449,7 @@ public class AgentLearningAutoConfiguration {
             VectorSearcher vectorSearcher,
             @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
-            MemoryProperties properties) {
+            AgentLearningProperties properties) {
         log.info("记忆模块: 注册 ContrastiveLearner, generationRouterAvailable={}",
                 generationRouter != null ? "yes" : "no");
         return new ContrastiveLearner(
@@ -463,7 +464,7 @@ public class AgentLearningAutoConfiguration {
             VectorSearcher vectorSearcher,
             @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
-            MemoryProperties properties,
+            AgentLearningProperties properties,
             @Nullable ChatSessionRepository chatSessionRepository,
             @Nullable ProjectContextResolver projectContextResolver) {
         log.info("记忆模块: 注册 SubtaskReflector, generationRouterAvailable={}, projectAware={}",
@@ -483,9 +484,9 @@ public class AgentLearningAutoConfiguration {
             ProceduralMemory proceduralMemory,
             VectorSearcher vectorSearcher,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties) {
+            MemoryStoreProperties storeProperties) {
         log.info("记忆模块: 注册 IntentMatcher");
-        return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, properties);
+        return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, storeProperties);
     }
 
     // ── 空闲巩固调度 ──

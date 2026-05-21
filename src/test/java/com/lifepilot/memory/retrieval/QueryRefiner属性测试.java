@@ -1,6 +1,6 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import net.jqwik.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -140,8 +140,8 @@ class QueryRefiner属性测试 {
     //  辅助方法
     // ─────────────────────────────────────────────
 
-    private MemoryProperties buildProperties(int queryMaxLength) {
-        var properties = new MemoryProperties();
+    private MemoryRetrievalProperties buildProperties(int queryMaxLength) {
+        var properties = new MemoryRetrievalProperties();
         properties.getRetrieval().setQueryMaxLength(queryMaxLength);
         properties.getRetrieval().setQueryMinLength(10);
         return properties;

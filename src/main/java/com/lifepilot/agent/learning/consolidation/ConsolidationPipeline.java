@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.consolidation;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateGenerator;
 import com.lifepilot.agent.learning.consolidation.association.AssociationConsolidator;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
@@ -36,7 +36,7 @@ public class ConsolidationPipeline {
     private final EpisodicToSemanticConsolidator semanticConsolidator;
     @Nullable
     private final EpisodicToProceduralConsolidator proceduralConsolidator;
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
     @Nullable
     private final PreferenceConsolidator preferenceConsolidator;
     @Nullable
@@ -57,7 +57,7 @@ public class ConsolidationPipeline {
      */
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
                                   @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
-                                  MemoryProperties properties,
+                                  AgentLearningProperties properties,
                                   @Nullable PreferenceConsolidator preferenceConsolidator,
                                   @Nullable SemanticMemory semanticMemory,
                                   @Nullable ProceduralMemory proceduralMemory,

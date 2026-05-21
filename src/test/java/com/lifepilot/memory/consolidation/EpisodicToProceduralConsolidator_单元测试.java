@@ -1,4 +1,4 @@
-package com.lifepilot.memory.consolidation;
+﻿package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.agent.learning.consolidation.ConsolidationStats;
 import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
@@ -8,7 +8,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import com.lifepilot.modelservice.model.GenerationCapability;
@@ -56,12 +56,12 @@ class EpisodicToProceduralConsolidator_单元测试 {
     @Mock
     private PromptRegistry promptRegistry;
 
-    private MemoryProperties properties;
+    private AgentLearningProperties properties;
     private EpisodicToProceduralConsolidator consolidator;
 
     @BeforeEach
     void 初始化() {
-        properties = new MemoryProperties();
+        properties = new AgentLearningProperties();
         properties.getConsolidation().setLookbackDays(7);
         properties.getConsolidation().setMinExecutionSteps(2);
         properties.getConsolidation().setMinClusterSize(2);

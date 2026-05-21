@@ -7,7 +7,7 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
@@ -48,7 +48,7 @@ public class ExperienceSummarizer {
     @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
-    private final MemoryProperties.Experience config;
+    private final AgentLearningProperties.Experience config;
     private final TrajectoryQualityAssessor qualityAssessor;
     @Nullable
     private final ChatSessionRepository chatSessionRepository;
@@ -59,7 +59,7 @@ public class ExperienceSummarizer {
                                 VectorSearcher vectorSearcher,
                                 @Nullable GenerationRouter generationRouter,
                                 PromptRegistry promptRegistry,
-                                MemoryProperties properties,
+                                AgentLearningProperties properties,
                                 TrajectoryQualityAssessor qualityAssessor) {
         this(semanticMemory, vectorSearcher, generationRouter, promptRegistry,
                 properties, qualityAssessor, null, null);
@@ -69,7 +69,7 @@ public class ExperienceSummarizer {
                                 VectorSearcher vectorSearcher,
                                 @Nullable GenerationRouter generationRouter,
                                 PromptRegistry promptRegistry,
-                                MemoryProperties properties,
+                                AgentLearningProperties properties,
                                 TrajectoryQualityAssessor qualityAssessor,
                                 @Nullable ChatSessionRepository chatSessionRepository,
                                 @Nullable ProjectContextResolver projectContextResolver) {

@@ -1,10 +1,10 @@
-package com.lifepilot.memory.semantic;
+﻿package com.lifepilot.memory.semantic;
 
 import com.lifepilot.agent.learning.extraction.ExtractionValidator;
 import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
@@ -73,7 +73,7 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
         when(generationRouter.call(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(new LlmResponse(audnJson, null, null, List.of(), Map.of(), 1, 1, null, 0, "mock", "mock", 1L, false));
 
-        MemoryProperties props = new MemoryProperties();
+        AgentLearningProperties props = new AgentLearningProperties();
         extractor = new RealtimeExtractor(
                 generationRouter, semanticMemory, props, validator,
                 jdbcTemplate, promptRegistry, snapshotRepository);

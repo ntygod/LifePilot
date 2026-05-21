@@ -1,7 +1,7 @@
 package com.lifepilot.memory.governance.server;
 
 import com.lifepilot.mcp.protocol.JsonRpcMessage;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.governance.config.MemoryGovernanceProperties;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -44,13 +44,13 @@ public class MemoryMcpHandler {
     private static final String MCP_PROTOCOL_VERSION = "2025-03-26";
 
     private final MemoryMcpToolRegistry toolRegistry;
-    private final MemoryProperties properties;
+    private final MemoryGovernanceProperties properties;
     @Nullable private final HybridRetriever hybridRetriever;
     @Nullable private final EpisodicMemory episodicMemory;
     @Nullable private final SemanticMemory semanticMemory;
 
     public MemoryMcpHandler(MemoryMcpToolRegistry toolRegistry,
-                             MemoryProperties properties,
+                             MemoryGovernanceProperties properties,
                              @Nullable HybridRetriever hybridRetriever,
                              @Nullable EpisodicMemory episodicMemory,
                              @Nullable SemanticMemory semanticMemory) {

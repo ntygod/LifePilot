@@ -1,11 +1,11 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,14 +29,14 @@ class QueryRewriter测试 {
     private GenerationRouter generationRouter;
     private EmbeddingRouter embeddingRouter;
     private PromptRegistry promptRegistry;
-    private MemoryProperties properties;
+    private MemoryRetrievalProperties properties;
 
     @BeforeEach
     void setUp() {
         generationRouter = mock(GenerationRouter.class);
         embeddingRouter = mock(EmbeddingRouter.class);
         promptRegistry = mock(PromptRegistry.class);
-        properties = new MemoryProperties();
+        properties = new MemoryRetrievalProperties();
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
     }
 

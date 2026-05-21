@@ -3,7 +3,7 @@ package com.lifepilot.agent.learning.extraction;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmScene;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
@@ -76,7 +76,7 @@ public class RealtimeExtractor {
 
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
-                             MemoryProperties properties,
+                             AgentLearningProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
@@ -91,7 +91,7 @@ public class RealtimeExtractor {
      */
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
-                             MemoryProperties properties,
+                             AgentLearningProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
@@ -103,7 +103,7 @@ public class RealtimeExtractor {
 
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
-                             MemoryProperties properties,
+                             AgentLearningProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
@@ -116,7 +116,7 @@ public class RealtimeExtractor {
 
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
-                             MemoryProperties properties,
+                             AgentLearningProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
@@ -130,7 +130,7 @@ public class RealtimeExtractor {
 
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
-                             MemoryProperties properties,
+                             AgentLearningProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,

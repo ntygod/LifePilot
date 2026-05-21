@@ -1,9 +1,9 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import net.jqwik.api.Arbitraries;
@@ -81,8 +81,8 @@ class QueryRewriter属性测试 {
                 .filter(s -> !s.isBlank());
     }
 
-    private MemoryProperties buildProperties(String mode) {
-        var properties = new MemoryProperties();
+    private MemoryRetrievalProperties buildProperties(String mode) {
+        var properties = new MemoryRetrievalProperties();
         properties.getRetrieval().setQueryRewriteMode(mode);
         properties.getRetrieval().setMaxRewrites(3);
         properties.getRetrieval().setRewriteTimeoutMs(5000);

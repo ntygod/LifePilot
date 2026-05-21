@@ -1,9 +1,9 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -45,7 +45,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
     private GenerationRouter generationRouter;
     private EmbeddingRouter embeddingRouter;
     private PromptRegistry promptRegistry;
-    private MemoryProperties properties;
+    private MemoryRetrievalProperties properties;
     private QueryRefiner queryRefiner;
     private QueryRewriter queryRewriter;
 
@@ -61,7 +61,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
         generationRouter = mock(GenerationRouter.class);
         embeddingRouter = mock(EmbeddingRouter.class);
         promptRegistry = mock(PromptRegistry.class);
-        properties = new MemoryProperties();
+        properties = new MemoryRetrievalProperties();
 
         properties.getRetrieval().setQueryRewriteMode("rewrite");
         properties.getRetrieval().setMaxRewrites(2);

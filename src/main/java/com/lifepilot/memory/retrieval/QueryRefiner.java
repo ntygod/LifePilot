@@ -1,6 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,10 +28,10 @@ public class QueryRefiner {
             "|public\\s+|private\\s+|static\\s+|void\\s+|int\\s+|String\\s+" +
             "|System\\.out|println|printf|console\\.log|print\\()");
 
-    private final MemoryProperties.Retrieval retrievalConfig;
+    private final MemoryRetrievalProperties properties;
 
-    public QueryRefiner(MemoryProperties memoryProperties) {
-        this.retrievalConfig = memoryProperties.getRetrieval();
+    public QueryRefiner(MemoryRetrievalProperties properties) {
+        this.properties = properties;
     }
 
     /**
@@ -49,7 +49,7 @@ public class QueryRefiner {
         String trimmed = rawInput.trim();
 
         // 短于 queryMinLength → 直接返回原文
-        if (trimmed.length() < retrievalConfig.getQueryMinLength()) {
+        if (trimmed.length() < properties.getQueryMinLength()) {
             return trimmed;
         }
 
@@ -77,7 +77,7 @@ public class QueryRefiner {
         }
 
         // 超过 queryMaxLength → 截断
-        int maxLen = retrievalConfig.getQueryMaxLength();
+        int maxLen = properties.getQueryMaxLength();
         if (refined.length() > maxLen) {
             refined = refined.substring(0, maxLen);
             log.debug("查询精炼: 截断至 {} 字符", maxLen);

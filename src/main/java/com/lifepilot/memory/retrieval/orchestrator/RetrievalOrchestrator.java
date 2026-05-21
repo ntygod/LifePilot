@@ -1,6 +1,6 @@
 package com.lifepilot.memory.retrieval.orchestrator;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -33,15 +33,15 @@ public class RetrievalOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(RetrievalOrchestrator.class);
 
     private final QueryPlanner planner;
-    private final MemoryProperties properties;
+    private final MemoryRetrievalProperties properties;
 
-    public RetrievalOrchestrator(QueryPlanner planner, MemoryProperties properties) {
+    public RetrievalOrchestrator(QueryPlanner planner, MemoryRetrievalProperties properties) {
         this.planner = Objects.requireNonNull(planner);
         this.properties = Objects.requireNonNull(properties);
     }
 
     public EvidenceBundle retrieve(String query) {
-        return retrieve(query, null, properties.getRetrievalOrchestrator().getDefaultTopK());
+        return retrieve(query, null, properties.getOrchestrator().getDefaultTopK());
     }
 
     public EvidenceBundle retrieve(String query, @Nullable RetrievalIntent intent, int topK) {
@@ -51,7 +51,7 @@ public class RetrievalOrchestrator {
         long startNanos = System.nanoTime();
         RetrievalIntent effective = intent != null ? intent : RetrievalIntent.GENERAL;
         List<SourceAdapter> adapters = planner.plan(query, effective);
-        int perSourceTopK = Math.max(1, properties.getRetrievalOrchestrator().getPerSourceTopK());
+        int perSourceTopK = Math.max(1, properties.getOrchestrator().getPerSourceTopK());
 
         List<EvidenceItem> all = new ArrayList<>();
         Set<String> sources = new LinkedHashSet<>();

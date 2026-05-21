@@ -3,7 +3,6 @@ package com.lifepilot.memory.store.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.store.vector.SqliteVecDataSource;
 import com.lifepilot.memory.store.vector.SqliteVecInitializer;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
@@ -50,7 +49,7 @@ import java.util.Objects;
  * @since 2026-06-01
  */
 @AutoConfiguration
-@EnableConfigurationProperties({MemoryStoreProperties.class, MemoryProperties.class, WorkspaceProperties.class})
+@EnableConfigurationProperties({MemoryStoreProperties.class, WorkspaceProperties.class})
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 public class MemoryStoreAutoConfiguration {
@@ -85,7 +84,7 @@ public class MemoryStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(name = "vectorDataSource")
-    public DataSource vectorDataSource(MemoryProperties properties, SqliteVecInitializer sqliteVecInitializer) {
+    public DataSource vectorDataSource(MemoryStoreProperties properties, SqliteVecInitializer sqliteVecInitializer) {
         String url = properties.getVectorDbUrl();
         if (!url.contains(":memory:") && !url.contains("mode=memory")) {
             try {
@@ -120,7 +119,7 @@ public class MemoryStoreAutoConfiguration {
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
             @Nullable EmbeddingRouter embeddingRouter,
-            MemoryProperties properties) {
+            MemoryStoreProperties properties) {
         boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
         log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, embeddingRouterAvailable={}, dimensions={}",
                 vecLoaded, embeddingRouter != null ? "yes" : "no", properties.getEmbeddingDimensions());
@@ -142,7 +141,7 @@ public class MemoryStoreAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             VectorSearcher vectorSearcher,
             @Nullable GenerationRouter generationRouter,
-            MemoryProperties properties,
+            MemoryStoreProperties properties,
             PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 ConflictDetector, semanticMatchThreshold={}",
                 properties.getSemanticMatchThreshold());
@@ -207,9 +206,9 @@ public class MemoryStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate, MemoryProperties properties) {
+    public EpisodicMemory episodicMemory(JdbcTemplate jdbcTemplate) {
         log.info("记忆模块: 注册 EpisodicMemory");
-        return new EpisodicMemory(jdbcTemplate, properties);
+        return new EpisodicMemory(jdbcTemplate);
     }
 
     @Bean

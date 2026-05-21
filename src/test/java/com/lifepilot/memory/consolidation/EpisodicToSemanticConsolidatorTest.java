@@ -1,7 +1,7 @@
-package com.lifepilot.memory.consolidation;
+﻿package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
@@ -39,7 +39,7 @@ class EpisodicToSemanticConsolidatorTest {
         var episodicMemory = mock(EpisodicMemory.class);
         var semanticMemory = mock(SemanticMemory.class);
         var jdbcTemplate = mock(JdbcTemplate.class);
-        var properties = new MemoryProperties();
+        var properties = new AgentLearningProperties();
         properties.getConsolidation().setLookbackDays(7);
         properties.getConsolidation().setHighFrequencyThreshold(2);
         properties.getConsolidation().setImportanceBoostStep(0.1f);

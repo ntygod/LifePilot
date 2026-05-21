@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.forgetting;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 
 import java.time.Duration;
@@ -24,9 +24,9 @@ import java.time.Instant;
  */
 public class ForgettingPriority {
 
-    private final MemoryProperties.Forgetting config;
+    private final AgentLearningProperties.Forgetting config;
 
-    public ForgettingPriority(MemoryProperties.Forgetting config) {
+    public ForgettingPriority(AgentLearningProperties.Forgetting config) {
         this.config = config;
     }
 

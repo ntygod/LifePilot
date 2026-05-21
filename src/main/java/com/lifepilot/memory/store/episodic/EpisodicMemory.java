@@ -1,7 +1,6 @@
 package com.lifepilot.memory.store.episodic;
 
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
@@ -41,14 +40,12 @@ public class EpisodicMemory {
     private static final int RECALL_CANDIDATE_MULTIPLIER = 6;
 
     private final JdbcTemplate jdbcTemplate;
-    private final MemoryProperties properties;
 
     @Nullable
     private Runnable writeCallback;
 
-    public EpisodicMemory(JdbcTemplate jdbcTemplate, MemoryProperties properties) {
+    public EpisodicMemory(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-        this.properties = properties;
     }
 
     public void setWriteCallback(@Nullable Runnable writeCallback) {

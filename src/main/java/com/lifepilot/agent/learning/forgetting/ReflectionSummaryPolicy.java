@@ -1,7 +1,7 @@
 package com.lifepilot.agent.learning.forgetting;
 
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
@@ -28,9 +28,9 @@ public final class ReflectionSummaryPolicy implements ForgettingPolicy {
 
     @Nullable
     private final GenerationRouter generationRouter;
-    private final MemoryProperties.Forgetting config;
+    private final AgentLearningProperties.Forgetting config;
 
-    public ReflectionSummaryPolicy(@Nullable GenerationRouter generationRouter, MemoryProperties.Forgetting config) {
+    public ReflectionSummaryPolicy(@Nullable GenerationRouter generationRouter, AgentLearningProperties.Forgetting config) {
         this.generationRouter = generationRouter;
         this.config = config;
     }

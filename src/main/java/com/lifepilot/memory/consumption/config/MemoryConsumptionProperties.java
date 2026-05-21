@@ -7,8 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * 记忆消费层配置属性。
  *
- * <p>绑定 {@code lifepilot.memory.consumption} 配置前缀。Phase A 阶段与旧
- * {@code MemoryProperties} 并存，后续 Phase D 删除旧配置后独立生效。</p>
+ * <p>绑定 {@code lifepilot.memory.consumption} 配置前缀。</p>
  *
  * @author zsg
  * @since 2026-06-01

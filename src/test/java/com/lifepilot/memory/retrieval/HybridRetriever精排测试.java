@@ -1,7 +1,7 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.knowledge.rerank.RerankCandidate;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -43,7 +43,7 @@ class HybridRetriever精排测试 {
     private GraphTraverser graphTraverser;
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
-    private MemoryProperties properties;
+    private MemoryRetrievalProperties properties;
 
     @BeforeEach
     void setUp() {
@@ -52,7 +52,7 @@ class HybridRetriever精排测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
-        properties = new MemoryProperties();
+        properties = new MemoryRetrievalProperties();
         properties.getRetrieval().setMinVectorSimilarity(0.0f);
         properties.getRetrieval().setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);

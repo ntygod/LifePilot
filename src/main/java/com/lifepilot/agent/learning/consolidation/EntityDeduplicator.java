@@ -1,7 +1,7 @@
 package com.lifepilot.agent.learning.consolidation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -36,13 +36,13 @@ public class EntityDeduplicator {
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
     private final JdbcTemplate jdbcTemplate;
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
     private final TransactionTemplate transactionTemplate;
 
     public EntityDeduplicator(SemanticMemory semanticMemory,
                               VectorSearcher vectorSearcher,
                               JdbcTemplate jdbcTemplate,
-                              MemoryProperties properties,
+                              AgentLearningProperties properties,
                               PlatformTransactionManager transactionManager) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;

@@ -2,7 +2,7 @@ package com.lifepilot.agent.learning.experience;
 
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,9 +19,9 @@ public class TrajectoryQualityAssessor {
 
     private static final Logger log = LoggerFactory.getLogger(TrajectoryQualityAssessor.class);
 
-    private final MemoryProperties.Experience config;
+    private final AgentLearningProperties.Experience config;
 
-    public TrajectoryQualityAssessor(MemoryProperties properties) {
+    public TrajectoryQualityAssessor(AgentLearningProperties properties) {
         this.config = properties.getExperience();
     }
 

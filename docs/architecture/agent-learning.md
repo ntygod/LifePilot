@@ -1,7 +1,7 @@
 # 学习系统 — 架构设计
 
 > **文档性质**：学习系统整体架构、子系统设计与演进路线
-> **模块归属**：`com.lifepilot.agent.learning`（规划中）+ 当前散落在 `com.lifepilot.memory.{experience,consolidation,forgetting,semantic}`
+> **模块归属**：`com.lifepilot.agent.learning`
 > **最后更新**：2026-06-01（从 memory-system.md / memory-data-flow.md 拆出）
 > **配套文档**：[memory-system.md](./memory-system.md)（记忆系统 — 学习的存储与检索基座）
 >
@@ -346,15 +346,15 @@ sequenceDiagram
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.forgetting.cron` | `0 0 4 * * SUN` | 遗忘定时 Cron |
-| `lifepilot.memory.forgetting.max-retention-days` | 365 | FIFO 阈值 |
-| `lifepilot.memory.forgetting.lru-threshold-days` | 90 | LRU 未访问天数 |
-| `lifepilot.memory.forgetting.priority-decay-rate` | 0.02 | 衰减率 λ |
-| `lifepilot.memory.forgetting.max-forget-per-run` | 100 | 每次最大遗忘数 |
-| `lifepilot.memory.forgetting.protection-threshold` | 0.9 | 受保护重要度阈值 |
-| `lifepilot.memory.forgetting.protected-types` | PREFERENCE,HABIT,GOAL | 受保护类型 |
-| `lifepilot.memory.forgetting.recent-access-protection-days` | 7 | 近期访问保护天数 |
-| `lifepilot.memory.forgetting.high-access-count-protection` | 10 | 高频访问保护阈值 |
+| `lifepilot.agent.learning.forgetting.cron` | `0 0 4 * * SUN` | 遗忘定时 Cron |
+| `lifepilot.agent.learning.forgetting.max-retention-days` | 365 | FIFO 阈值 |
+| `lifepilot.agent.learning.forgetting.lru-threshold-days` | 90 | LRU 未访问天数 |
+| `lifepilot.agent.learning.forgetting.priority-decay-rate` | 0.02 | 衰减率 λ |
+| `lifepilot.agent.learning.forgetting.max-forget-per-run` | 100 | 每次最大遗忘数 |
+| `lifepilot.agent.learning.forgetting.protection-threshold` | 0.9 | 受保护重要度阈值 |
+| `lifepilot.agent.learning.forgetting.protected-types` | PREFERENCE,HABIT,GOAL | 受保护类型 |
+| `lifepilot.agent.learning.forgetting.recent-access-protection-days` | 7 | 近期访问保护天数 |
+| `lifepilot.agent.learning.forgetting.high-access-count-protection` | 10 | 高频访问保护阈值 |
 
 ---
 
@@ -428,53 +428,53 @@ sequenceDiagram
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.experience.enabled` | true | 经验总结总开关 |
-| `lifepilot.memory.experience.max-input-tokens` | 4000 | LLM 输入截断上限 |
-| `lifepilot.memory.experience.dedup-similarity-threshold` | 0.90 | 去重语义相似度阈值 |
-| `lifepilot.memory.experience.max-retention-days` | 90 | 经验最大保留天数 |
-| `lifepilot.memory.experience.llm-timeout-seconds` | 120 | LLM 调用超时 |
-| `lifepilot.memory.experience.min-tool-success-ratio` | 0.3 | 工具调用有效率门控 |
+| `lifepilot.agent.learning.experience.enabled` | true | 经验总结总开关 |
+| `lifepilot.agent.learning.experience.max-input-tokens` | 4000 | LLM 输入截断上限 |
+| `lifepilot.agent.learning.experience.dedup-similarity-threshold` | 0.90 | 去重语义相似度阈值 |
+| `lifepilot.agent.learning.experience.max-retention-days` | 90 | 经验最大保留天数 |
+| `lifepilot.agent.learning.experience.llm-timeout-seconds` | 120 | LLM 调用超时 |
+| `lifepilot.agent.learning.experience.min-tool-success-ratio` | 0.3 | 工具调用有效率门控 |
 
 ### 8.2 巩固管线
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.consolidation.cron` | `0 0 3 * * *` | 巩固定时 Cron |
-| `lifepilot.memory.consolidation.trigger-mode` | CRON | CRON / IDLE / HYBRID |
-| `lifepilot.memory.consolidation.lookback-days` | 7 | 回溯天数 |
-| `lifepilot.memory.consolidation.high-frequency-threshold` | 3 | 高频提及阈值 |
-| `lifepilot.memory.consolidation.cluster-similarity-threshold` | 0.85 | 聚类余弦相似度 |
-| `lifepilot.memory.consolidation.max-templates-per-run` | 10 | 每次最大新模板数 |
-| `lifepilot.memory.consolidation.experience-promote-min-importance` | 0.8 | 经验提升最低重要度 |
-| `lifepilot.memory.consolidation.experience-promote-min-access-count` | 3 | 经验提升最低访问次数 |
-| `lifepilot.memory.consolidation.user-profile-llm-timeout-seconds` | 120 | 画像巩固 LLM 超时 |
+| `lifepilot.agent.learning.consolidation.cron` | `0 0 3 * * *` | 巩固定时 Cron |
+| `lifepilot.agent.learning.consolidation.trigger-mode` | CRON | CRON / IDLE / HYBRID |
+| `lifepilot.agent.learning.consolidation.lookback-days` | 7 | 回溯天数 |
+| `lifepilot.agent.learning.consolidation.high-frequency-threshold` | 3 | 高频提及阈值 |
+| `lifepilot.agent.learning.consolidation.cluster-similarity-threshold` | 0.85 | 聚类余弦相似度 |
+| `lifepilot.agent.learning.consolidation.max-templates-per-run` | 10 | 每次最大新模板数 |
+| `lifepilot.agent.learning.consolidation.experience-promote-min-importance` | 0.8 | 经验提升最低重要度 |
+| `lifepilot.agent.learning.consolidation.experience-promote-min-access-count` | 3 | 经验提升最低访问次数 |
+| `lifepilot.agent.learning.consolidation.user-profile-llm-timeout-seconds` | 120 | 画像巩固 LLM 超时 |
 
 ### 8.3 提取
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.extraction.timeout-seconds` | 60 | AUDN 提取 LLM 超时 |
-| `lifepilot.memory.extraction.max-entities-per-extraction` | 10 | 单次最大提取实体数 |
-| `lifepilot.memory.extraction.min-extraction-confidence` | 0.3 | 最小提取置信度 |
-| `lifepilot.memory.extraction.existing-entity-summary-limit` | 50 | 注入提示词的已有实体摘要上限 |
+| `lifepilot.agent.learning.extraction.timeout-seconds` | 60 | AUDN 提取 LLM 超时 |
+| `lifepilot.agent.learning.extraction.max-entities-per-extraction` | 10 | 单次最大提取实体数 |
+| `lifepilot.agent.learning.extraction.min-extraction-confidence` | 0.3 | 最小提取置信度 |
+| `lifepilot.agent.learning.extraction.existing-entity-summary-limit` | 50 | 注入提示词的已有实体摘要上限 |
 
 ### 8.4 老化检测
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.staleness.enabled` | true | 老化检测开关 |
-| `lifepilot.memory.staleness.detection-similarity-threshold` | 0.85 | 邻居识别最低语义相似度 |
-| `lifepilot.memory.staleness.max-neighbors-per-detection` | 3 | 单次最多标记邻居数 |
-| `lifepilot.memory.staleness.retrieval-penalty` | 0.35 | 召回惩罚比例 |
+| `lifepilot.agent.learning.staleness.enabled` | true | 老化检测开关 |
+| `lifepilot.agent.learning.staleness.detection-similarity-threshold` | 0.85 | 邻居识别最低语义相似度 |
+| `lifepilot.agent.learning.staleness.max-neighbors-per-detection` | 3 | 单次最多标记邻居数 |
+| `lifepilot.agent.learning.staleness.retrieval-penalty` | 0.35 | 召回惩罚比例 |
 
 ### 8.5 REM 联想
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.rem.enabled` | false | REM 联想开关 |
-| `lifepilot.memory.rem.seed-limit` | 10 | seed 实体数量上限 |
-| `lifepilot.memory.rem.neighbor-limit` | 5 | 每个 seed 邻居上限 |
-| `lifepilot.memory.rem.min-confidence` | 0.65 | 最小置信度 |
+| `lifepilot.agent.learning.rem.enabled` | true | REM 联想开关 |
+| `lifepilot.agent.learning.rem.seed-limit` | 10 | seed 实体数量上限 |
+| `lifepilot.agent.learning.rem.neighbor-limit` | 5 | 每个 seed 邻居上限 |
+| `lifepilot.agent.learning.rem.min-confidence` | 0.65 | 最小置信度 |
 
 ---
 
@@ -497,7 +497,7 @@ sequenceDiagram
 |------|------|
 | 巩固调度解耦 | 7 阶段独立调度（EVENT / CRON / IDLE），见 memory-refactoring spec |
 | 学习闭环打通 | 经验写入即时索引、IntentMatcher 结果注入决策上下文 |
-| 学习模块独立包 | 从 `com.lifepilot.memory.*` 迁移到 `com.lifepilot.agent.learning`，见 memory-refactoring spec |
+| 学习模块独立包 | 已完成：从 `com.lifepilot.memory.*` 迁移到 `com.lifepilot.agent.learning`，配置前缀 `lifepilot.agent.learning.*` |
 | 对比学习产出独立实体 | ContrastiveLearner 产出 `CONTRASTIVE_INSIGHT` 实体，带 derivation_sources |
 | REM 候选应用器 | 文件候选 → 审阅 → L3 relations 主库 |
 | 经验有效性多维评估 | 不仅看 toolSuccessRatio，还看用户满意度、任务完成度 |

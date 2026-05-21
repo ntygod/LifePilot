@@ -3,7 +3,6 @@ package com.lifepilot.memory.retrieval.config;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.retrieval.FtsSearcher;
@@ -39,7 +38,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * @since 2026-06-01
  */
 @AutoConfiguration(after = MemoryStoreAutoConfiguration.class)
-@EnableConfigurationProperties({MemoryRetrievalProperties.class, MemoryProperties.class})
+@EnableConfigurationProperties(MemoryRetrievalProperties.class)
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 public class MemoryRetrievalAutoConfiguration {
@@ -48,7 +47,7 @@ public class MemoryRetrievalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public QueryRefiner queryRefiner(MemoryProperties properties) {
+    public QueryRefiner queryRefiner(MemoryRetrievalProperties properties) {
         log.info("记忆模块: 注册 QueryRefiner");
         return new QueryRefiner(properties);
     }
@@ -57,10 +56,10 @@ public class MemoryRetrievalAutoConfiguration {
     @ConditionalOnMissingBean
     public QueryRewriter queryRewriter(@Nullable GenerationRouter generationRouter,
                                        @Nullable EmbeddingRouter embeddingRouter,
-                                       MemoryProperties properties,
+                                       MemoryRetrievalProperties properties,
                                        PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 QueryRewriter, mode={}, generationRouterAvailable={}, embeddingRouterAvailable={}",
-                properties.getRetrieval().getQueryRewriteMode(),
+                properties.getQueryRewriteMode(),
                 generationRouter != null ? "yes" : "no",
                 embeddingRouter != null ? "yes" : "no");
         return new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
@@ -92,7 +91,7 @@ public class MemoryRetrievalAutoConfiguration {
             @Nullable IntentMatcher intentMatcher,
             @Nullable RerankRouter rerankRouter,
             JdbcTemplate jdbcTemplate,
-            MemoryProperties properties,
+            MemoryRetrievalProperties properties,
             @Nullable MemoryProvenanceRepository provenanceRepository) {
         log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}, provenance={}",
                 intentMatcher != null ? "enabled" : "disabled",
@@ -112,7 +111,7 @@ public class MemoryRetrievalAutoConfiguration {
             name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
     public RetrievalOrchestrator retrievalOrchestrator(
             QueryPlanner planner,
-            MemoryProperties properties) {
+            MemoryRetrievalProperties properties) {
         return new RetrievalOrchestrator(planner, properties);
     }
 

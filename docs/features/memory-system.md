@@ -133,7 +133,7 @@ retrieval: STALE_CANDIDATE 降权 entity=yyy penalty=0.35
 
 **依赖**：`EmbeddingRouter` 可用；`VectorSearcher.searchEntities` 不可用时 staleness 静默失效。
 
-**回退**：`lifepilot.memory.staleness.enabled: false`。关闭后旧有写入路径完全不变。
+**回退**：`lifepilot.agent.learning.staleness.enabled: false`。关闭后旧有写入路径完全不变。
 
 ### 3.2 统一检索编排层（retrieval-orchestrator）
 
@@ -171,7 +171,7 @@ for (EvidenceItem item : bundle.items()) {
 - `EXPERIENCE` → experience + hybrid
 - `GENERAL` → 三路全走
 
-**回退**：`lifepilot.memory.retrieval-orchestrator.enabled: false`。关闭后所有 orchestrator Bean 不装配，`HybridRetriever` / 工具链不受影响。
+**回退**：`lifepilot.memory.retrieval.orchestrator.enabled: false`。关闭后所有 orchestrator Bean 不装配，`HybridRetriever` / 工具链不受影响。
 
 ### 3.3 记忆 REM 式联想巩固（memory-rem-consolidation）
 
@@ -214,12 +214,12 @@ pipeline.consolidate(true);  // manualTrigger=true
 
 **调试提示**：
 
-- 开启 DEBUG：`logging.level.com.lifepilot.memory.consolidation.association=DEBUG`
+- 开启 DEBUG：`logging.level.com.lifepilot.agent.learning.consolidation.association=DEBUG`
 - 看不到候选时确认：`enabled=true` / 有满足条件的 seed（类型属于 `seed-types`、description 非空、importance ≥ 其他实体）/ HybridRetriever 能返回邻居 / LLM 可用 / confidence 未被过滤
 
 **成本提示**：默认 `10 seed × 5 neighbor = 50 次检索 + 10 次 LLM`；开启前确认成本可接受。
 
-**回退**：`lifepilot.memory.rem.enabled: false`，REM 相关 Bean 不装配，第 7 步直接跳过。
+**回退**：`lifepilot.agent.learning.rem.enabled: false`，REM 相关 Bean 不装配，第 7 步直接跳过。
 
 ### 3.5 记忆安全加固（memory-security-polish）
 
@@ -256,7 +256,7 @@ if (result.isBlocked()) {
 
 其他情况 → `PASS(CLEAN)` 并 `distribution.observe()` 记录样本。
 
-**回退**：`lifepilot.memory.security.injection-detection-enabled: false`。关闭后 `detector.detect()` 直接返回 PASS。
+**回退**：`lifepilot.memory.governance.security.injection-detection-enabled: false`。关闭后 `detector.detect()` 直接返回 PASS。
 
 **M-P2-7 前端血缘展示**：后端 API 已就绪（`MemoryController.findRelations` / `findProvenance`），前端可直接对接实现血缘时间线与关系图。
 
@@ -354,37 +354,37 @@ curl -X POST http://localhost:8080/api/mcp/memory \
 | `lifepilot.memory.workspace.task-state-ttl-hours` | 任务状态保留时长 |
 | `lifepilot.memory.workspace.working-set-ttl-hours` | 工作集保留时长 |
 | `lifepilot.memory.workspace.cleanup-cron` | 工作区清理调度 |
-| `lifepilot.memory.hot-digest.*` | L3.5 热摘要开关、分区预算和最大条目数 |
-| `lifepilot.memory.agentic-tool.*` | 记忆工具默认 TopK 等参数 |
+| `lifepilot.memory.consumption.hot-digest.*` | L3.5 热摘要开关、分区预算和最大条目数 |
+| `lifepilot.memory.retrieval.agentic-tool.*` | 记忆工具默认 TopK 等参数 |
 | `lifepilot.memory.retrieval.*` | `HybridRetriever` 与记忆搜索工具参数 |
 
 ### 5.2 进阶子系统
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.procedural.templateEnabled` | true | 操作模板聚类开关 |
-| `lifepilot.memory.procedural.match-threshold` | — | 意图匹配相似度阈值 |
-| `lifepilot.memory.consolidation.cron` | — | 巩固管线 Cron |
-| `lifepilot.memory.consolidation.trigger-mode` | cron | `cron` / `idle` |
-| `lifepilot.memory.consolidation.lookback-days` | — | 回溯天数 |
-| `lifepilot.memory.forgetting.cron` | — | 遗忘引擎 Cron |
-| `lifepilot.memory.forgetting.max-forget-per-run` | — | 每次运行最大遗忘数 |
-| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 7 | 近期访问保护天数 |
-| `lifepilot.memory.forgetting.highAccessCountProtection` | 10 | 高频访问保护阈值 |
-| `lifepilot.memory.experience.*` | — | 经验注入、反馈、合并与隔离参数 |
+| `lifepilot.memory.store.procedural.template-enabled` | true | 操作模板聚类开关 |
+| `lifepilot.memory.store.procedural.match-threshold` | 0.6 | 意图匹配相似度阈值 |
+| `lifepilot.agent.learning.consolidation.cron` | `0 0 3 * * *` | 巩固管线 Cron |
+| `lifepilot.agent.learning.consolidation.trigger-mode` | CRON | `CRON` / `IDLE` / `HYBRID` |
+| `lifepilot.agent.learning.consolidation.lookback-days` | 7 | 回溯天数 |
+| `lifepilot.agent.learning.forgetting.cron` | `0 0 4 * * SUN` | 遗忘引擎 Cron |
+| `lifepilot.agent.learning.forgetting.max-forget-per-run` | 100 | 每次运行最大遗忘数 |
+| `lifepilot.agent.learning.forgetting.recent-access-protection-days` | 7 | 近期访问保护天数 |
+| `lifepilot.agent.learning.forgetting.high-access-count-protection` | 10 | 高频访问保护阈值 |
+| `lifepilot.agent.learning.experience.*` | — | 经验注入、反馈、合并与隔离参数 |
 
 ### 5.3 本轮新能力
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.staleness.enabled` | true | 记忆老化检测开关 |
-| `lifepilot.memory.staleness.retrieval-penalty` | 0.35 | `STALE_CANDIDATE` 召回惩罚比例 |
-| `lifepilot.memory.retrieval-orchestrator.enabled` | false | 统一检索编排开关 |
-| `lifepilot.memory.rem.enabled` | false | REM 式联想巩固开关 |
-| `lifepilot.memory.rem.min-confidence` | 0.65 | 联想候选最低置信 |
-| `lifepilot.memory.security.injection-detection-enabled` | false | 记忆注入检测开关 |
-| `lifepilot.memory.security.block-on-suspicious` | false | SUSPICIOUS 是否按 BLOCKED 处理 |
-| `lifepilot.memory.mcp-server.enabled` | false | Memory MCP Server 开关 |
+| `lifepilot.agent.learning.staleness.enabled` | true | 记忆老化检测开关 |
+| `lifepilot.memory.retrieval.staleness-retrieval-penalty` | 0.35 | `STALE_CANDIDATE` 召回惩罚比例 |
+| `lifepilot.memory.retrieval.orchestrator.enabled` | false | 统一检索编排开关 |
+| `lifepilot.agent.learning.rem.enabled` | true | REM 式联想巩固开关 |
+| `lifepilot.agent.learning.rem.min-confidence` | 0.65 | 联想候选最低置信 |
+| `lifepilot.memory.governance.security.injection-detection-enabled` | false | 记忆注入检测开关 |
+| `lifepilot.memory.governance.security.block-on-suspicious` | false | SUSPICIOUS 是否按 BLOCKED 处理 |
+| `lifepilot.memory.governance.mcp-server.enabled` | true | Memory MCP Server 开关 |
 | `lifepilot.memory.eval.enabled` | false | Eval harness 总开关（profile 启用时覆盖） |
 
 ---

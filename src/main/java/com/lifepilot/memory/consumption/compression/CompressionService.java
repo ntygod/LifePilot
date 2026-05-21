@@ -2,7 +2,7 @@ package com.lifepilot.memory.consumption.compression;
 
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
@@ -40,12 +40,12 @@ public class CompressionService {
     private final GenerationRouter generationRouter;
     private final EpisodicMemory episodicMemory;
     private final PromptRegistry promptRegistry;
-    private final MemoryProperties properties;
+    private final MemoryConsumptionProperties properties;
 
     public CompressionService(@Nullable GenerationRouter generationRouter,
                               EpisodicMemory episodicMemory,
                               PromptRegistry promptRegistry,
-                              MemoryProperties properties) {
+                              MemoryConsumptionProperties properties) {
         this.generationRouter = generationRouter;
         this.episodicMemory = episodicMemory;
         this.promptRegistry = promptRegistry;

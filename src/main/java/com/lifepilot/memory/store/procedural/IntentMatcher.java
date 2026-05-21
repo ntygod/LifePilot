@@ -1,6 +1,6 @@
 package com.lifepilot.memory.store.procedural;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.store.config.MemoryStoreProperties;
 import com.lifepilot.memory.retrieval.SQLiteFtsQueryNormalizer;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -37,13 +37,13 @@ public class IntentMatcher {
     private final ProceduralMemory proceduralMemory;
     private final VectorSearcher vectorSearcher;
     private final JdbcTemplate jdbcTemplate;
-    private final MemoryProperties properties;
+    private final MemoryStoreProperties properties;
     private final ExecutorService executor;
 
     public IntentMatcher(ProceduralMemory proceduralMemory,
                          VectorSearcher vectorSearcher,
                          JdbcTemplate jdbcTemplate,
-                         MemoryProperties properties) {
+                         MemoryStoreProperties properties) {
         this.proceduralMemory = proceduralMemory;
         this.vectorSearcher = vectorSearcher;
         this.jdbcTemplate = jdbcTemplate;

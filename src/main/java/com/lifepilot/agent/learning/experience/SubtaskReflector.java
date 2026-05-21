@@ -7,7 +7,7 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
@@ -50,7 +50,7 @@ public class SubtaskReflector {
     @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
-    private final MemoryProperties.Experience.Subtask config;
+    private final AgentLearningProperties.Experience.Subtask config;
     private final float dedupThreshold;
     @Nullable
     private final ChatSessionRepository chatSessionRepository;
@@ -61,24 +61,24 @@ public class SubtaskReflector {
                             VectorSearcher vectorSearcher,
                             @Nullable GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
-                            MemoryProperties memoryProperties) {
+                            AgentLearningProperties AgentLearningProperties) {
         this(semanticMemory, vectorSearcher, generationRouter, promptRegistry,
-                memoryProperties, null, null);
+                AgentLearningProperties, null, null);
     }
 
     public SubtaskReflector(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
                             @Nullable GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
-                            MemoryProperties memoryProperties,
+                            AgentLearningProperties AgentLearningProperties,
                             @Nullable ChatSessionRepository chatSessionRepository,
                             @Nullable ProjectContextResolver projectContextResolver) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
-        this.config = memoryProperties.getExperience().getSubtask();
-        this.dedupThreshold = memoryProperties.getExperience().getDedupSimilarityThreshold();
+        this.config = AgentLearningProperties.getExperience().getSubtask();
+        this.dedupThreshold = AgentLearningProperties.getExperience().getDedupSimilarityThreshold();
         this.chatSessionRepository = chatSessionRepository;
         this.projectContextResolver = projectContextResolver;
     }

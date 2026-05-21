@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.staleness;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,12 +23,12 @@ public final class StalenessCoordinator {
     private final StaleConflictDetector detector;
     private final StalenessMarker marker;
     private final NeighborRefreshService refreshService;
-    private final MemoryProperties.Staleness config;
+    private final AgentLearningProperties.Staleness config;
 
     public StalenessCoordinator(StaleConflictDetector detector,
                                 StalenessMarker marker,
                                 NeighborRefreshService refreshService,
-                                MemoryProperties.Staleness config) {
+                                AgentLearningProperties.Staleness config) {
         this.detector = detector;
         this.marker = marker;
         this.refreshService = refreshService;

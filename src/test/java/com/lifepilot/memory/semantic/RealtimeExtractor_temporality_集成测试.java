@@ -1,10 +1,10 @@
-package com.lifepilot.memory.semantic;
+﻿package com.lifepilot.memory.semantic;
 
 import com.lifepilot.agent.learning.extraction.ExtractionValidator;
 import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -77,7 +77,7 @@ class RealtimeExtractor_temporality_集成测试 {
         when(snapshotRepo.findByTurnId(anyString()))
                 .thenAnswer(inv -> Optional.of(快照(inv.getArgument(0))));
 
-        var properties = new MemoryProperties();
+        var properties = new AgentLearningProperties();
         var extractionValidator = new ExtractionValidator(properties);
 
         extractor = new RealtimeExtractor(

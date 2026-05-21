@@ -1,10 +1,10 @@
-package com.lifepilot.memory.forgetting;
+﻿package com.lifepilot.memory.forgetting;
 
 import com.lifepilot.agent.learning.forgetting.*;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -51,15 +51,15 @@ class ForgettingEngine_单元测试 {
     @Mock
     private PromptRegistry promptRegistry;
 
-    private MemoryProperties properties;
-    private MemoryProperties.Forgetting forgettingConfig;
+    private AgentLearningProperties properties;
+    private AgentLearningProperties.Forgetting forgettingConfig;
 
     private ForgettingEngine engine;
 
     @BeforeEach
     void 初始化() {
-        properties = new MemoryProperties();
-        forgettingConfig = new MemoryProperties.Forgetting();
+        properties = new AgentLearningProperties();
+        forgettingConfig = new AgentLearningProperties.Forgetting();
         // 设置合理的默认值用于测试
         forgettingConfig.setMaxRetentionDays(365);
         forgettingConfig.setLruThresholdDays(90);

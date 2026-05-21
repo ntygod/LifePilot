@@ -15,7 +15,7 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -250,7 +250,7 @@ public class MetaAutoConfiguration {
      * 注册记忆管理工具提供者。
      *
      * <p>仅在 HybridRetriever 和 SemanticMemory Bean 可用时注册。
-     * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryProperties 为可选依赖。</p>
+     * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryRetrievalProperties 为可选依赖。</p>
      */
     @Bean
     @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class})
@@ -260,7 +260,7 @@ public class MetaAutoConfiguration {
                                           @Nullable DocumentRetriever documentRetriever,
                                           @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                                           @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                                          @Nullable MemoryProperties memoryProperties,
+                                          @Nullable MemoryRetrievalProperties memoryProperties,
                                           @Nullable ProjectContextResolver projectContextResolver,
                                           @Nullable ChatSessionRepository chatSessionRepository,
                                           @Nullable MemoryAccessPolicy memoryAccessPolicy) {

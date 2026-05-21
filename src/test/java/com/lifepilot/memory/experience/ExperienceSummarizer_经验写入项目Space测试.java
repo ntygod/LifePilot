@@ -1,4 +1,4 @@
-package com.lifepilot.memory.experience;
+﻿package com.lifepilot.memory.experience;
 
 import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
 import com.lifepilot.agent.learning.experience.TrajectoryQualityAssessor;
@@ -10,7 +10,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -53,7 +53,7 @@ class ExperienceSummarizer_经验写入项目Space测试 {
     private TrajectoryQualityAssessor qualityAssessor;
     private ChatSessionRepository chatSessionRepository;
     private ProjectContextResolver projectContextResolver;
-    private MemoryProperties properties;
+    private AgentLearningProperties properties;
 
     @BeforeEach
     void setUp() {
@@ -64,7 +64,7 @@ class ExperienceSummarizer_经验写入项目Space测试 {
         qualityAssessor = mock(TrajectoryQualityAssessor.class);
         chatSessionRepository = mock(ChatSessionRepository.class);
         projectContextResolver = mock(ProjectContextResolver.class);
-        properties = new MemoryProperties();
+        properties = new AgentLearningProperties();
 
         when(qualityAssessor.assess(any()))
                 .thenReturn(new TrajectoryQualityReport(true, true, 1.0f, true, 2, true));

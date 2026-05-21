@@ -1,6 +1,6 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -85,7 +85,7 @@ class HybridRetriever属性测试 {
             return entityIdsArb.flatMap(entityIds -> {
                 if (entityIds.isEmpty()) {
                     return Arbitraries.just(new QueryWithMockResults(
-                            "test query", List.of(), List.of(), List.of(), Map.of(), new MemoryProperties()
+                            "test query", List.of(), List.of(), List.of(), Map.of(), new MemoryRetrievalProperties()
                     ));
                 }
 
@@ -97,7 +97,7 @@ class HybridRetriever属性测试 {
                 return Combinators.combine(queryArb, vectorArb, ftsArb, graphArb)
                         .as((query, vecResults, ftsResults, graphResults) -> {
                             var entities = buildEntityMap(entityIds);
-                            var properties = new MemoryProperties();
+                            var properties = new MemoryRetrievalProperties();
                             properties.getRetrieval().setMinFusedScore(0.0f);
                             properties.getRetrieval().setMinVectorSimilarity(0.0f);
                             return new QueryWithMockResults(
@@ -118,7 +118,7 @@ class HybridRetriever属性测试 {
             return entityIdsArb.flatMap(entityIds -> {
                 if (entityIds.isEmpty()) {
                     return Arbitraries.just(new QueryWithMockResults(
-                            "test query", List.of(), List.of(), List.of(), Map.of(), new MemoryProperties()
+                            "test query", List.of(), List.of(), List.of(), Map.of(), new MemoryRetrievalProperties()
                     ));
                 }
 
@@ -131,7 +131,7 @@ class HybridRetriever属性测试 {
                 return Combinators.combine(queryArb, vectorArb, ftsArb, graphArb, thresholdArb)
                         .as((query, vecResults, ftsResults, graphResults, threshold) -> {
                             var entities = buildEntityMap(entityIds);
-                            var properties = new MemoryProperties();
+                            var properties = new MemoryRetrievalProperties();
                             properties.getRetrieval().setMinFusedScore(threshold);
                             properties.getRetrieval().setMinVectorSimilarity(0.0f);
                             return new QueryWithMockResults(
@@ -189,7 +189,7 @@ class HybridRetriever属性测试 {
                                            List<RankedItem> graphResults,
                                            Map<String, TemporalEntity> entities,
                                            @Nullable RerankRouter rerankRouter,
-                                           MemoryProperties properties) {
+                                           MemoryRetrievalProperties properties) {
         var vectorSearcher = mock(VectorSearcher.class);
         var ftsSearcher = mock(FtsSearcher.class);
         var graphTraverser = mock(GraphTraverser.class);
@@ -215,7 +215,7 @@ class HybridRetriever属性测试 {
             List<RankedItem> ftsResults,
             List<RankedItem> graphResults,
             Map<String, TemporalEntity> entities,
-            MemoryProperties properties
+            MemoryRetrievalProperties properties
     ) {
     }
 }

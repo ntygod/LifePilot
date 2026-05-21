@@ -1,7 +1,7 @@
 package com.lifepilot.agent.learning.feedback;
 
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -29,12 +29,12 @@ public class FeedbackProcessor {
     private final InjectionRecordRepository injectionRecordRepository;
     private final SemanticMemory semanticMemory;
     private final MessageFeedbackRepository feedbackRepository;
-    private final MemoryProperties.Feedback feedbackConfig;
+    private final AgentLearningProperties.Feedback feedbackConfig;
 
     public FeedbackProcessor(InjectionRecordRepository injectionRecordRepository,
                              SemanticMemory semanticMemory,
                              MessageFeedbackRepository feedbackRepository,
-                             MemoryProperties properties) {
+                             AgentLearningProperties properties) {
         this.injectionRecordRepository = injectionRecordRepository;
         this.semanticMemory = semanticMemory;
         this.feedbackRepository = feedbackRepository;

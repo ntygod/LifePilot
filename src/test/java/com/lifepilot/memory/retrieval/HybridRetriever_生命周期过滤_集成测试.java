@@ -1,7 +1,7 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -95,7 +95,7 @@ class HybridRetriever_生命周期过滤_集成测试 {
         graphTraverser = new GraphTraverser(jdbcTemplate);
         provenanceRepository = new MemoryProvenanceRepository(jdbcTemplate);
 
-        var properties = new MemoryProperties();
+        var properties = new MemoryRetrievalProperties();
         properties.getRetrieval().setMinVectorSimilarity(0.0f);
         properties.getRetrieval().setMinFusedScore(0.0f);
 

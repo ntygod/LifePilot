@@ -1,7 +1,7 @@
 package com.lifepilot.memory.mcp.server;
 
 import com.lifepilot.mcp.protocol.JsonRpcMessage;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.governance.config.MemoryGovernanceProperties;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.governance.server.MemoryMcpHandler;
 import com.lifepilot.memory.governance.server.MemoryMcpToolRegistry;
@@ -34,7 +34,7 @@ import static org.mockito.Mockito.when;
  */
 class MemoryMcpHandler_单元测试 {
 
-    private final MemoryProperties properties = new MemoryProperties();
+    private final MemoryGovernanceProperties properties = new MemoryGovernanceProperties();
     private final MemoryMcpToolRegistry registry = new MemoryMcpToolRegistry();
 
     @Test

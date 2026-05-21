@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.consolidation.association;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,13 +31,13 @@ public class AssociationConsolidator {
 
     private static final Logger log = LoggerFactory.getLogger(AssociationConsolidator.class);
 
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
     private final AssociationCandidateStore store;
 
     /** dedup 键 → 最近入库时间（内存，线程安全）。 */
     private final Map<String, Instant> dedup = new ConcurrentHashMap<>();
 
-    public AssociationConsolidator(MemoryProperties properties, AssociationCandidateStore store) {
+    public AssociationConsolidator(AgentLearningProperties properties, AssociationCandidateStore store) {
         this.properties = Objects.requireNonNull(properties);
         this.store = Objects.requireNonNull(store);
     }

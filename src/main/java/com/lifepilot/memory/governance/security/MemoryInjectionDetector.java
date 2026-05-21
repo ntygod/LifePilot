@@ -1,6 +1,6 @@
 package com.lifepilot.memory.governance.security;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.governance.config.MemoryGovernanceProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -29,11 +29,11 @@ public class MemoryInjectionDetector {
 
     private final PromptInjectionPatternScanner scanner;
     private final SpaceTrustDistribution distribution;
-    private final MemoryProperties properties;
+    private final MemoryGovernanceProperties properties;
 
     public MemoryInjectionDetector(PromptInjectionPatternScanner scanner,
                                     SpaceTrustDistribution distribution,
-                                    MemoryProperties properties) {
+                                    MemoryGovernanceProperties properties) {
         this.scanner = Objects.requireNonNull(scanner);
         this.distribution = Objects.requireNonNull(distribution);
         this.properties = Objects.requireNonNull(properties);

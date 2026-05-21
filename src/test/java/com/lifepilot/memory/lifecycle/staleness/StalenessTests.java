@@ -1,7 +1,7 @@
-package com.lifepilot.memory.lifecycle.staleness;
+﻿package com.lifepilot.memory.lifecycle.staleness;
 
 import com.lifepilot.agent.learning.staleness.*;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.Temporality;
@@ -52,7 +52,7 @@ class StalenessTests {
         @Test
         @DisplayName("类型白名单外 → 空列表")
         void 类型白名单外_跳过() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             VectorSearcher vec = mock(VectorSearcher.class);
             SemanticMemory mem = mock(SemanticMemory.class);
             VectorBasedStaleConflictDetector det =
@@ -67,7 +67,7 @@ class StalenessTests {
         @Test
         @DisplayName("描述过短 → 空列表")
         void 描述过短_跳过() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setDetectableTypes(Set.of("PREFERENCE"));
             VectorSearcher vec = mock(VectorSearcher.class);
             SemanticMemory mem = mock(SemanticMemory.class);
@@ -82,7 +82,7 @@ class StalenessTests {
         @Test
         @DisplayName("UNVERIFIED 邻居被过滤")
         void UNVERIFIED_邻居过滤() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setDetectableTypes(Set.of("PREFERENCE"));
             cfg.setMaxNeighborsPerDetection(3);
             VectorSearcher vec = mock(VectorSearcher.class);
@@ -113,7 +113,7 @@ class StalenessTests {
         @Test
         @DisplayName("自身 ID 排除")
         void 自身ID_排除() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setDetectableTypes(Set.of("PREFERENCE"));
             VectorSearcher vec = mock(VectorSearcher.class);
             SemanticMemory mem = mock(SemanticMemory.class);
@@ -132,7 +132,7 @@ class StalenessTests {
         @Test
         @DisplayName("max-neighbors 截断")
         void max截断() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setDetectableTypes(Set.of("PREFERENCE"));
             cfg.setMaxNeighborsPerDetection(1);
             VectorSearcher vec = mock(VectorSearcher.class);
@@ -214,7 +214,7 @@ class StalenessTests {
         @Test
         @DisplayName("开关关闭 → 不触发")
         void 关闭_不触发() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setNeighborRefreshEnabled(false);
             NeighborRefreshService svc = new NeighborRefreshService(cfg);
 
@@ -227,7 +227,7 @@ class StalenessTests {
         @Test
         @DisplayName("开启 + 非空邻居 → 对每个邻居记数")
         void 开启_计数正确() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setNeighborRefreshEnabled(true);
             NeighborRefreshService svc = new NeighborRefreshService(cfg);
 
@@ -248,7 +248,7 @@ class StalenessTests {
         @Test
         @DisplayName("enabled=false → 不调用 detector")
         void 关闭_不执行() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setEnabled(false);
             AtomicInteger detectCalls = new AtomicInteger();
             StaleConflictDetector detector = e -> { detectCalls.incrementAndGet(); return List.of(); };
@@ -263,7 +263,7 @@ class StalenessTests {
         @Test
         @DisplayName("detector 返回空 → 不调用 marker 和 refresh")
         void 空邻居_跳过后续() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             StaleConflictDetector detector = e -> List.of();
             StalenessMarker marker = mock(StalenessMarker.class);
             NeighborRefreshService refresh = mock(NeighborRefreshService.class);
@@ -277,7 +277,7 @@ class StalenessTests {
         @Test
         @DisplayName("detector 抛异常 → 不调用 marker")
         void detector异常_隔离() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             StaleConflictDetector detector = e -> { throw new RuntimeException("boom"); };
             StalenessMarker marker = mock(StalenessMarker.class);
             NeighborRefreshService refresh = mock(NeighborRefreshService.class);
@@ -291,7 +291,7 @@ class StalenessTests {
         @Test
         @DisplayName("marker 异常 → refresh 不触发")
         void marker异常_refresh不触发() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             TemporalEntity nb = newEntity("nb", EntityType.PREFERENCE, "x", LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
             StaleConflictDetector detector = e -> List.of(nb);
             StalenessMarker marker = mock(StalenessMarker.class);
@@ -306,7 +306,7 @@ class StalenessTests {
         @Test
         @DisplayName("全流程成功")
         void 流程成功() {
-            MemoryProperties.Staleness cfg = new MemoryProperties.Staleness();
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             cfg.setNeighborRefreshEnabled(true);
             TemporalEntity nb = newEntity("nb", EntityType.PREFERENCE, "x", LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
             StaleConflictDetector detector = e -> List.of(nb);

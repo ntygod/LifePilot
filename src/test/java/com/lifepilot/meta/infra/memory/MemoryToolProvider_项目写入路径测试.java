@@ -1,11 +1,11 @@
-package com.lifepilot.meta.infra.memory;
+﻿package com.lifepilot.meta.infra.memory;
 
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
@@ -61,7 +61,7 @@ class MemoryToolProvider_项目写入路径测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryProperties(),
+                new MemoryRetrievalProperties(),
                 projectContextResolver,
                 chatSessionRepository
         );
@@ -165,7 +165,7 @@ class MemoryToolProvider_项目写入路径测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryProperties()
+                new MemoryRetrievalProperties()
         );
         var fallbackRegistry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         providerWithoutResolver.registerTools(fallbackRegistry);

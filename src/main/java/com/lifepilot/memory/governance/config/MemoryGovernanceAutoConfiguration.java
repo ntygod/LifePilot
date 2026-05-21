@@ -1,6 +1,5 @@
 package com.lifepilot.memory.governance.config;
 
-import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.governance.server.MemoryMcpHandler;
@@ -29,7 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * @since 2026-06-01
  */
 @AutoConfiguration(after = MemoryStoreAutoConfiguration.class)
-@EnableConfigurationProperties({MemoryGovernanceProperties.class, MemoryProperties.class})
+@EnableConfigurationProperties(MemoryGovernanceProperties.class)
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
         havingValue = "true", matchIfMissing = true)
 public class MemoryGovernanceAutoConfiguration {
@@ -58,7 +57,7 @@ public class MemoryGovernanceAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public SpaceTrustDistribution spaceTrustDistribution(MemoryProperties properties) {
+    public SpaceTrustDistribution spaceTrustDistribution(MemoryGovernanceProperties properties) {
         return new SpaceTrustDistribution(
                 properties.getSecurity().getSampleWindowSize());
     }
@@ -68,7 +67,7 @@ public class MemoryGovernanceAutoConfiguration {
     public MemoryInjectionDetector memoryInjectionDetector(
             PromptInjectionPatternScanner scanner,
             SpaceTrustDistribution distribution,
-            MemoryProperties properties) {
+            MemoryGovernanceProperties properties) {
         return new MemoryInjectionDetector(scanner, distribution, properties);
     }
 
@@ -86,7 +85,7 @@ public class MemoryGovernanceAutoConfiguration {
             name = "lifepilot.memory.mcp-server.enabled", havingValue = "true")
     public MemoryMcpHandler memoryMcpHandler(
             MemoryMcpToolRegistry toolRegistry,
-            MemoryProperties properties,
+            MemoryGovernanceProperties properties,
             @Nullable HybridRetriever hybridRetriever,
             @Nullable EpisodicMemory episodicMemory,
             @Nullable SemanticMemory semanticMemory) {

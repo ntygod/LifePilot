@@ -7,7 +7,7 @@ import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.procedural.TemplateStep;
@@ -55,7 +55,7 @@ public class EpisodicToProceduralConsolidator {
     private final GenerationRouter generationRouter;
     @Nullable
     private final EmbeddingRouter embeddingRouter;
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
     private final PromptRegistry promptRegistry;
 
     /**
@@ -71,7 +71,7 @@ public class EpisodicToProceduralConsolidator {
                                             ProceduralMemory proceduralMemory,
                                             @Nullable GenerationRouter generationRouter,
                                             @Nullable EmbeddingRouter embeddingRouter,
-                                            MemoryProperties properties,
+                                            AgentLearningProperties properties,
                                             PromptRegistry promptRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.proceduralMemory = proceduralMemory;
@@ -89,7 +89,7 @@ public class EpisodicToProceduralConsolidator {
      */
     public ConsolidationStats consolidate() {
         // 操作模板聚类开关（可通过配置关闭以节省 LLM 成本）
-        if (!properties.getProcedural().isTemplateEnabled()) {
+        if (!properties.getConsolidation().isProceduralTemplateEnabled()) {
             log.debug("程序巩固: 操作模板聚类已关闭，跳过");
             return new ConsolidationStats(CONSOLIDATION_TYPE, 0, 0, 0, 0, 0, 0, 0);
         }

@@ -1,8 +1,8 @@
-package com.lifepilot.memory.consolidation;
+﻿package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.agent.learning.consolidation.*;
 import com.lifepilot.memory.config.MemoryAutoConfiguration;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 @SuppressWarnings("unchecked")
 class ConsolidationPipelineModeTest {
 
-    private MemoryProperties properties;
+    private AgentLearningProperties properties;
     private ConsolidationPipeline pipeline;
     private EpisodicToSemanticConsolidator semanticConsolidator;
     private EpisodicToProceduralConsolidator proceduralConsolidator;
@@ -39,7 +39,7 @@ class ConsolidationPipelineModeTest {
 
     @BeforeEach
     void setUp() {
-        properties = new MemoryProperties();
+        properties = new AgentLearningProperties();
         semanticConsolidator = mock(EpisodicToSemanticConsolidator.class);
         proceduralConsolidator = mock(EpisodicToProceduralConsolidator.class);
 

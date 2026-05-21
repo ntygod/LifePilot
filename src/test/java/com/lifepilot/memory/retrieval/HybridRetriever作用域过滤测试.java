@@ -1,6 +1,6 @@
-package com.lifepilot.memory.retrieval;
+﻿package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryScope;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -37,7 +37,7 @@ class HybridRetriever作用域过滤测试 {
     private GraphTraverser graphTraverser;
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
-    private MemoryProperties properties;
+    private MemoryRetrievalProperties properties;
 
     @BeforeEach
     void setUp() {
@@ -46,7 +46,7 @@ class HybridRetriever作用域过滤测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
-        properties = new MemoryProperties();
+        properties = new MemoryRetrievalProperties();
         properties.getRetrieval().setMinVectorSimilarity(0.0f);
         properties.getRetrieval().setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);

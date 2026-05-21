@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.staleness;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,9 +26,9 @@ public final class NeighborRefreshService {
 
     private static final Logger log = LoggerFactory.getLogger(NeighborRefreshService.class);
 
-    private final MemoryProperties.Staleness config;
+    private final AgentLearningProperties.Staleness config;
 
-    public NeighborRefreshService(MemoryProperties.Staleness config) {
+    public NeighborRefreshService(AgentLearningProperties.Staleness config) {
         this.config = config;
     }
 

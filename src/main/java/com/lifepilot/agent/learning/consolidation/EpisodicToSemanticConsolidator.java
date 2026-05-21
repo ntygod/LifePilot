@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.consolidation;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
@@ -38,7 +38,7 @@ public class EpisodicToSemanticConsolidator {
     private final EpisodicMemory episodicMemory;
     private final SemanticMemory semanticMemory;
     private final JdbcTemplate jdbcTemplate;
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
 
     /**
      * 构造情景→语义巩固器。
@@ -51,7 +51,7 @@ public class EpisodicToSemanticConsolidator {
     public EpisodicToSemanticConsolidator(EpisodicMemory episodicMemory,
                                           SemanticMemory semanticMemory,
                                           JdbcTemplate jdbcTemplate,
-                                          MemoryProperties properties) {
+                                          AgentLearningProperties properties) {
         this.episodicMemory = episodicMemory;
         this.semanticMemory = semanticMemory;
         this.jdbcTemplate = jdbcTemplate;
@@ -183,7 +183,7 @@ public class EpisodicToSemanticConsolidator {
      */
     private int boostHighFrequencyEntities(List<TemporalEntity> entities,
                                             Map<String, Integer> mentionCounts,
-                                            MemoryProperties.Consolidation config) {
+                                            AgentLearningProperties.Consolidation config) {
         int boosted = 0;
         for (var entity : entities) {
             int mentions = mentionCounts.getOrDefault(entity.id(), 0);

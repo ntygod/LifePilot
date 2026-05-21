@@ -1,6 +1,6 @@
 package com.lifepilot.agent.learning.staleness;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -31,11 +31,11 @@ public final class VectorBasedStaleConflictDetector implements StaleConflictDete
 
     private final VectorSearcher vectorSearcher;
     private final SemanticMemory semanticMemory;
-    private final MemoryProperties.Staleness config;
+    private final AgentLearningProperties.Staleness config;
 
     public VectorBasedStaleConflictDetector(VectorSearcher vectorSearcher,
                                             SemanticMemory semanticMemory,
-                                            MemoryProperties.Staleness config) {
+                                            AgentLearningProperties.Staleness config) {
         this.vectorSearcher = vectorSearcher;
         this.semanticMemory = semanticMemory;
         this.config = config;

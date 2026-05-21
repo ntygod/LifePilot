@@ -3,7 +3,7 @@ package com.lifepilot.agent.learning.forgetting;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.modelservice.model.GenerationCapability;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -39,7 +39,7 @@ public class ForgettingEngine {
     @Nullable
     private final GenerationRouter generationRouter;
     private final JdbcTemplate jdbcTemplate;
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
     private final PromptRegistry promptRegistry;
     private final HybridPolicy hybridPolicy;
     private final ForgettingPriority priorityCalculator;
@@ -47,7 +47,7 @@ public class ForgettingEngine {
     public ForgettingEngine(SemanticMemory semanticMemory,
                             @Nullable GenerationRouter generationRouter,
                             JdbcTemplate jdbcTemplate,
-                            MemoryProperties properties,
+                            AgentLearningProperties properties,
                             PromptRegistry promptRegistry) {
         this.semanticMemory = semanticMemory;
         this.generationRouter = generationRouter;
@@ -187,7 +187,7 @@ public class ForgettingEngine {
      * @param config 遗忘配置
      * @return 遗忘动作结果（含动作名称和可选压缩摘要）
      */
-    private ForgetActionResult executeForgetAction(TemporalEntity entity, MemoryProperties.Forgetting config) {
+    private ForgetActionResult executeForgetAction(TemporalEntity entity, AgentLearningProperties.Forgetting config) {
         var minImportance = config.getReflectionSummaryMinImportance();
         var maxImportance = config.getReflectionSummaryMaxImportance();
 

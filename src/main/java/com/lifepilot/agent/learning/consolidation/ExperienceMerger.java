@@ -4,7 +4,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.experience.ExperienceRecord;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -42,18 +42,18 @@ public class ExperienceMerger {
     @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
-    private final MemoryProperties.Experience.Merge config;
+    private final AgentLearningProperties.Experience.Merge config;
 
     public ExperienceMerger(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
                             @Nullable GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
-                            MemoryProperties memoryProperties) {
+                            AgentLearningProperties AgentLearningProperties) {
         this.semanticMemory = semanticMemory;
         this.vectorSearcher = vectorSearcher;
         this.generationRouter = generationRouter;
         this.promptRegistry = promptRegistry;
-        this.config = memoryProperties.getExperience().getMerge();
+        this.config = AgentLearningProperties.getExperience().getMerge();
     }
 
     /**

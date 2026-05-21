@@ -1,11 +1,11 @@
-package com.lifepilot.memory.consolidation;
+﻿package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.agent.learning.consolidation.ConsolidationStats;
 import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.config.MemoryAutoConfiguration;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
 @DisplayName("MemoryAutoConfiguration idle consolidation integration tests")
 class ConsolidationPipelineIdleTriggerIntegrationTest {
 
-    private MemoryProperties properties;
+    private AgentLearningProperties properties;
     private EpisodicToSemanticConsolidator semanticConsolidator;
     private EpisodicToProceduralConsolidator proceduralConsolidator;
     private ConsolidationPipeline pipeline;
@@ -35,7 +35,7 @@ class ConsolidationPipelineIdleTriggerIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        properties = new MemoryProperties();
+        properties = new AgentLearningProperties();
         semanticConsolidator = mock(EpisodicToSemanticConsolidator.class);
         proceduralConsolidator = mock(EpisodicToProceduralConsolidator.class);
 

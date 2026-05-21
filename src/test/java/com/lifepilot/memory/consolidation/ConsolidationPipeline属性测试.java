@@ -1,8 +1,8 @@
-package com.lifepilot.memory.consolidation;
+﻿package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.config.MemoryAutoConfiguration;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import net.jqwik.api.Arbitraries;
 import net.jqwik.api.Arbitrary;
 import net.jqwik.api.ForAll;
@@ -28,7 +28,7 @@ class ConsolidationPipelinePropertiesTest {
             @ForAll("idleThresholds") int idleThreshold,
             @ForAll("cooldowns") int cooldown) {
 
-        var properties = new MemoryProperties();
+        var properties = new AgentLearningProperties();
         properties.getConsolidation().setTriggerMode("CRON");
         properties.getConsolidation().setIdleThresholdMinutes(idleThreshold);
         properties.getConsolidation().setIdleCooldownMinutes(cooldown);

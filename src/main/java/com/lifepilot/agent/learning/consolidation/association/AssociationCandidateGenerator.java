@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
@@ -56,13 +56,13 @@ public class AssociationCandidateGenerator {
     private final SemanticMemory semanticMemory;
     @Nullable private final HybridRetriever hybridRetriever;
     @Nullable private final GenerationRouter generationRouter;
-    private final MemoryProperties properties;
+    private final AgentLearningProperties properties;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public AssociationCandidateGenerator(SemanticMemory semanticMemory,
                                           @Nullable HybridRetriever hybridRetriever,
                                           @Nullable GenerationRouter generationRouter,
-                                          MemoryProperties properties) {
+                                          AgentLearningProperties properties) {
         this.semanticMemory = Objects.requireNonNull(semanticMemory);
         this.hybridRetriever = hybridRetriever;
         this.generationRouter = generationRouter;

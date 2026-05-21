@@ -4,7 +4,7 @@ import com.lifepilot.agent.learning.consolidation.association.AssociationCandida
 import com.lifepilot.agent.learning.consolidation.association.AssociationType;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -39,7 +39,7 @@ class AssociationCandidateGenerator_单元测试 {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setEnabled(false);
 
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
@@ -49,7 +49,7 @@ class AssociationCandidateGenerator_单元测试 {
     @Test
     void 缺依赖时返回空() {
         var sem = mock(SemanticMemory.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setEnabled(true);
 
         var gen = new AssociationCandidateGenerator(sem, null, null, props);
@@ -59,7 +59,7 @@ class AssociationCandidateGenerator_单元测试 {
     @Test
     void seed按importance降序选top_K() {
         var sem = mock(SemanticMemory.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setSeedLimit(2);
         props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
 
@@ -80,7 +80,7 @@ class AssociationCandidateGenerator_单元测试 {
     @Test
     void 描述为空的seed被过滤() {
         var sem = mock(SemanticMemory.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
 
         when(sem.findCurrentByType(EntityType.GOAL))
@@ -100,7 +100,7 @@ class AssociationCandidateGenerator_单元测试 {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setEnabled(true);
         props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
         props.getRem().setSeedLimit(1);
@@ -131,7 +131,7 @@ class AssociationCandidateGenerator_单元测试 {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setEnabled(true);
         props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
 
@@ -152,7 +152,7 @@ class AssociationCandidateGenerator_单元测试 {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setEnabled(true);
         props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
 
@@ -173,7 +173,7 @@ class AssociationCandidateGenerator_单元测试 {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setEnabled(true);
         props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
 

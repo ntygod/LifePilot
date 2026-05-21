@@ -1,8 +1,8 @@
 # 记忆系统 — 架构设计
 
 > **文档性质**：记忆模块整体心智模型、分层模型、子系统设计与演进路线
-> **模块归属**：`com.lifepilot.memory` + `com.lifepilot.agent.context` + `com.lifepilot.meta.infra.memory`
-> **最后更新**：2026-05-10（合并 memory-advanced / memory-domain-isolation 以及本轮 8 个 spec 的架构说明）
+> **模块归属**：`com.lifepilot.memory.{store,retrieval,consumption,governance}` + `com.lifepilot.agent.learning` + `com.lifepilot.meta.infra.memory`
+> **最后更新**：2026-05-21（MemoryProperties 拆分完成，配置前缀迁移至子模块）
 > **配套数据流契约**：[memory-data-flow.md](./memory-data-flow.md) 是写入链路、事件契约、Schema、生命周期、项目隔离、质量门槛和消费边界的 **source of truth**
 >
 > 涉及这些治理契约的改动，必须先更新 `memory-data-flow.md`，再更新本文档的心智模型或路线，最后改代码。
@@ -353,7 +353,7 @@ overlay 不改变 base 实体生命周期，不复制 base provenance 的治理�
 
 ### 6.1 L4 程序记忆与意图匹配
 
-- `ProcedureTemplate`：操作模板，包含步骤序列（`TemplateStep`）、触发意图、成功率、执行次数；模板聚类由 `lifepilot.memory.procedural.templateEnabled` 控制，默认启用
+- `ProcedureTemplate`：操作模板，包含步骤序列（`TemplateStep`）、触发意图、成功率、执行次数；模板聚类由 `lifepilot.memory.store.procedural.template-enabled` 控制，默认启用
 - `PreferenceRule`：偏好规则，按 category + key 组织，支持强化（reinforcement）
 - 使用 sqlite-vec 建立意图向量索引（`procedure_intent_embeddings`），记录每次模板执行的成功 / 失败，动态更新成功率
 - `IntentMatcher`：通过 VectorSearcher 进行向量相似度匹配，返回最佳匹配的 `ProcedureTemplate`；结果供 `HybridRetriever` 冷检索链路参考，**不进入 `ContextAssembler` 默认自动注入**
@@ -373,14 +373,14 @@ overlay 不改变 base 实体生命周期，不复制 base provenance 的治理�
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.procedural.templateEnabled` | true | 操作模板聚类开关 |
-| `lifepilot.memory.procedural.match-threshold` | — | 意图匹配相似度阈值 |
-| `lifepilot.memory.consolidation.cron` | — | 巩固管线 Cron |
-| `lifepilot.memory.consolidation.trigger-mode` | cron | `cron` / `idle` |
-| `lifepilot.memory.forgetting.cron` | — | 遗忘引擎 Cron |
-| `lifepilot.memory.forgetting.max-forget-per-run` | — | 每次运行最大遗忘数 |
-| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 7 | 近期访问保护天数 |
-| `lifepilot.memory.forgetting.highAccessCountProtection` | 10 | 高频访问保护阈值 |
+| `lifepilot.memory.store.procedural.template-enabled` | true | 操作模板聚类开关 |
+| `lifepilot.memory.store.procedural.match-threshold` | 0.6 | 意图匹配相似度阈值 |
+| `lifepilot.agent.learning.consolidation.cron` | `0 0 3 * * *` | 巩固管线 Cron |
+| `lifepilot.agent.learning.consolidation.trigger-mode` | CRON | `CRON` / `IDLE` / `HYBRID` |
+| `lifepilot.agent.learning.forgetting.cron` | `0 0 4 * * SUN` | 遗忘引擎 Cron |
+| `lifepilot.agent.learning.forgetting.max-forget-per-run` | 100 | 每次运行最大遗忘数 |
+| `lifepilot.agent.learning.forgetting.recent-access-protection-days` | 7 | 近期访问保护天数 |
+| `lifepilot.agent.learning.forgetting.high-access-count-protection` | 10 | 高频访问保护阈值 |
 
 ---
 
@@ -429,7 +429,7 @@ overlay 不改变 base 实体生命周期，不复制 base provenance 的治理�
 
 - `SourceAdapter` sealed interface：`HybridRetrievalSource` / `ExperienceRetrievalSource` / `KnowledgeBaseSource` 占位
 - `QueryPlanner` 按 `RetrievalIntent(FACT / EXPERIENCE / GENERAL)` 选 source，过滤 `isAvailable=false` 的 adapter
-- 本期为上层可选接口，默认 `lifepilot.memory.retrieval-orchestrator.enabled=false`，不替换既有 `memory.search / recall` 工具链路
+- 本期为上层可选接口，默认 `lifepilot.memory.retrieval.orchestrator.enabled=false`，不替换既有 `memory.search / recall` 工具链路
 - 后续演进：`QueryDecomposer`（复杂问题改写为子查询）、图扩展（GraphRAG / DRIFT）、`KnowledgeBaseSource` 真实实现、Agent 工具化 `memory.retrieve`
 
 Spec：`.kiro/specs/retrieval-orchestrator/`
@@ -473,7 +473,7 @@ Spec：`.kiro/specs/memory-eval-harness/`
 - 本 spec 只落地可用组件，**不强制注入到 RealtimeExtractor 等写入链路**；接入节奏由未来 spec 按实际风险场景推进
 - M-P2-7 前端血缘展示（EntityDetailDrawer 血缘 Tab / Provenance 时间线 / Overlay 关系图 / HotDigest 命中统计）作为前端独立迭代，后端 API 已就绪
 
-默认 `lifepilot.memory.security.injection-detection-enabled=false`。
+默认 `lifepilot.memory.governance.security.injection-detection-enabled=false`。
 
 Spec：`.kiro/specs/memory-security-polish/`
 

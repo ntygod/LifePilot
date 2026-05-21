@@ -1,6 +1,6 @@
 package com.lifepilot.memory.consumption;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +26,11 @@ public class EpisodicCleanupJob {
 
     private final EpisodicMemory episodicMemory;
     private final JdbcTemplate jdbcTemplate;
-    private final MemoryProperties properties;
+    private final MemoryConsumptionProperties properties;
 
     public EpisodicCleanupJob(EpisodicMemory episodicMemory,
                               JdbcTemplate jdbcTemplate,
-                              MemoryProperties properties) {
+                              MemoryConsumptionProperties properties) {
         this.episodicMemory = episodicMemory;
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;

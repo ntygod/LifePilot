@@ -1,7 +1,7 @@
-package com.lifepilot.memory.compression;
+﻿package com.lifepilot.memory.compression;
 
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
 import com.lifepilot.memory.consumption.compression.CompressionService;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
@@ -145,8 +145,8 @@ class CompressionService属性测试 {
         });
     }
 
-    private MemoryProperties buildProperties() {
-        var properties = new MemoryProperties();
+    private MemoryConsumptionProperties buildProperties() {
+        var properties = new MemoryConsumptionProperties();
         properties.getCompression().setWindowSize(20);
         properties.getCompression().setWindowOverlap(2);
         properties.setCompressionThresholdTokens(4000);

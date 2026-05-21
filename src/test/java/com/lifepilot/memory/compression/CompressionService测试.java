@@ -3,7 +3,7 @@ package com.lifepilot.memory.compression;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
 import com.lifepilot.memory.consumption.compression.CompressionService;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
@@ -42,7 +42,7 @@ class CompressionService测试 {
     private GenerationRouter generationRouter;
     private EpisodicMemory episodicMemory;
     private PromptRegistry promptRegistry;
-    private MemoryProperties properties;
+    private MemoryConsumptionProperties properties;
     private CompressionService service;
 
     @BeforeEach
@@ -50,7 +50,7 @@ class CompressionService测试 {
         generationRouter = mock(GenerationRouter.class);
         episodicMemory = mock(EpisodicMemory.class);
         promptRegistry = mock(PromptRegistry.class);
-        properties = new MemoryProperties();
+        properties = new MemoryConsumptionProperties();
         properties.setCompressionThresholdTokens(4000);
         properties.getCompression().setWindowSize(20);
         properties.getCompression().setWindowOverlap(2);

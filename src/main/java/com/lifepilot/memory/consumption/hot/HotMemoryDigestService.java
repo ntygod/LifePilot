@@ -1,6 +1,6 @@
 package com.lifepilot.memory.consumption.hot;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
 import com.lifepilot.agent.learning.experience.SubtaskReflector;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
@@ -46,13 +46,13 @@ public class HotMemoryDigestService {
     private static final String USER_PREFERENCE_CATEGORY = "user-preference";
 
     private final SemanticMemory semanticMemory;
-    private final MemoryProperties properties;
+    private final MemoryConsumptionProperties properties;
     private final ProceduralMemory proceduralMemory;
     private final Clock clock;
     private final DataRedactor dataRedactor;
 
     public HotMemoryDigestService(SemanticMemory semanticMemory,
-                                  MemoryProperties properties,
+                                  MemoryConsumptionProperties properties,
                                   @Nullable ProceduralMemory proceduralMemory,
                                   @Nullable DataRedactor dataRedactor,
                                   Clock clock) {
@@ -132,7 +132,7 @@ public class HotMemoryDigestService {
     private HotMemoryDigest.HotMemorySection buildUserProfileSection(
             List<TemporalEntity> entities,
             List<HotPreferenceRule> hotPreferences,
-            MemoryProperties.HotDigest config) {
+            MemoryConsumptionProperties.HotDigest config) {
         if (config.getUserProfileTokenBudget() <= 0 || config.getUserProfileMaxEntries() <= 0) {
             return null;
         }
@@ -206,7 +206,7 @@ public class HotMemoryDigestService {
     private HotMemoryDigest.HotMemorySection buildUserProfileSectionFromEntries(
             List<TemporalEntity> l3Entries,
             List<HotPreferenceRule> hotPreferences,
-            MemoryProperties.HotDigest config) {
+            MemoryConsumptionProperties.HotDigest config) {
         StringBuilder content = new StringBuilder("L3.5 热记忆 - 用户画像:\n");
         Set<String> sourceIds = new LinkedHashSet<>();
         int usedTokens = estimateTokens(content.toString());
