@@ -1,12 +1,13 @@
 package com.lifepilot.memory.feedback;
 
+import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
 import net.jqwik.api.constraints.FloatRange;

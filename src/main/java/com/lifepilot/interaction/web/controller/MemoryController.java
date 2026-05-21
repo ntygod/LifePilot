@@ -4,25 +4,26 @@ import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
-import com.lifepilot.memory.consolidation.ConsolidationPipeline;
-import com.lifepilot.memory.consolidation.EntityDeduplicator;
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.consolidation.EntityDeduplicator;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.ConversationRecord;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.forgetting.ForgettingLogRepository;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.scope.MemoryOriginType;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryRealityType;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.procedural.ProcedureTemplate;
+import com.lifepilot.memory.store.scope.MemoryOriginType;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryRealityType;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.support.SqliteBusyRetry;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.support.SqliteBusyRetry;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
@@ -31,15 +32,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 /**
  * 记忆管理 REST Controller — 暴露记忆系统的查询、搜索和管理 API。
@@ -777,10 +775,10 @@ public class MemoryController {
         }
 
         // 排序
-        Comparator<com.lifepilot.memory.procedural.ProcedureTemplate> comparator = switch (sortBy) {
-            case "successRate" -> Comparator.comparing(com.lifepilot.memory.procedural.ProcedureTemplate::successRate);
-            case "useCount" -> Comparator.comparingInt(com.lifepilot.memory.procedural.ProcedureTemplate::useCount);
-            default -> Comparator.comparing(com.lifepilot.memory.procedural.ProcedureTemplate::createdAt);
+        Comparator<ProcedureTemplate> comparator = switch (sortBy) {
+            case "successRate" -> Comparator.comparing(ProcedureTemplate::successRate);
+            case "useCount" -> Comparator.comparingInt(ProcedureTemplate::useCount);
+            default -> Comparator.comparing(ProcedureTemplate::createdAt);
         };
         if ("desc".equalsIgnoreCase(order)) {
             comparator = comparator.reversed();

@@ -18,7 +18,7 @@ import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.media.audio.SpeechSynthesizer;
 import com.lifepilot.media.config.MediaProperties;
-import com.lifepilot.memory.feedback.FeedbackProcessor;
+import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
@@ -481,7 +481,7 @@ public class ChatController {
     @PostMapping("/sessions/batch")
     public ResponseEntity<?> batchUpdateSessions(@RequestBody BatchUpdateRequest request) {
         log.debug("批量操作会话: action={}, sessionIds={}", request.action(), request.sessionIds());
-        
+
         if (request.action() == null || request.action().isBlank()) {
             log.warn("批量操作失败: 操作类型为空");
             return ResponseEntity.badRequest().body(
@@ -524,7 +524,7 @@ public class ChatController {
             @RequestBody ForkSessionRequest request) {
         log.debug("分叉会话: sessionId={}, fromEntryId={}, title={}",
                 id, request.fromEntryId(), request.title());
-        
+
         if (request.fromEntryId() == null || request.fromEntryId().isBlank()) {
             log.warn("分叉会话失败: 起始消息 ID 为空");
             return ResponseEntity.badRequest().body(
@@ -592,7 +592,7 @@ public class ChatController {
     public ResponseEntity<?> uploadAttachment(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "sessionId", required = false) String sessionId) {
-        log.debug("上传附件: fileName={}, size={}, sessionId={}", 
+        log.debug("上传附件: fileName={}, size={}, sessionId={}",
                 file.getOriginalFilename(), file.getSize(), sessionId);
 
         // 验证文件
@@ -709,7 +709,7 @@ public class ChatController {
         log.debug("更新会话配置: sessionId={}, preferredProviderId={}, temperature={}, maxSteps={}, maxDurationSeconds={}, knowledgeBaseIds={}",
                 id, request.preferredProviderId(), request.temperature(),
                 request.maxSteps(), request.maxDurationSeconds(), request.knowledgeBaseIds());
-        
+
         try {
             sessionService.updateSessionConfig(id, request);
             return ResponseEntity.noContent().build();

@@ -3,7 +3,7 @@ package com.lifepilot.agent.task.proactive.behavior;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

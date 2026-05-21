@@ -1,8 +1,9 @@
 package com.lifepilot.memory.forgetting;
 
+import com.lifepilot.agent.learning.forgetting.ForgettingPriority;
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

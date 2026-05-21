@@ -10,6 +10,7 @@ import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
 import com.lifepilot.agent.execution.ReflectContentBuilder;
 import com.lifepilot.agent.execution.ToolExecutionCoordinator;
+import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
@@ -24,11 +25,11 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
-import com.lifepilot.memory.procedural.IntentMatcher;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.workspace.SessionWorkspaceService;
-import com.lifepilot.memory.workspace.TaskStateItem;
-import com.lifepilot.memory.workspace.WorkingSetItem;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.store.workspace.TaskStateItem;
+import com.lifepilot.memory.store.workspace.WorkingSetItem;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -36,7 +37,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -107,7 +107,7 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final IntentMatcher intentMatcher;
 
     // ===== 可选依赖（即时经验补丁） =====
-    @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
+    @Nullable private final ExperienceSummarizer experienceSummarizer;
 
     // ===== 可选依赖（run(Session, UserMessage) 便捷入口依赖） =====
     // 通过 setter 注入，避免破坏既有 18 参构造器签名；生产环境由 AgentAutoConfiguration 注入，
@@ -130,7 +130,7 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Nullable SessionWorkspaceService workspaceService,
-            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
+            @Nullable ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;

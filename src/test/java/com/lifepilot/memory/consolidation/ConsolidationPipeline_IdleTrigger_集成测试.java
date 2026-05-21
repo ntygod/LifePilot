@@ -1,5 +1,9 @@
 package com.lifepilot.memory.consolidation;
 
+import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.consolidation.ConsolidationStats;
+import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
+import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.memory.config.MemoryAutoConfiguration;
 import com.lifepilot.memory.config.MemoryProperties;
 import org.junit.jupiter.api.BeforeEach;

@@ -5,6 +5,7 @@ import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.lifecycle.events.EntityWeightChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.entity.*;
 import com.lifepilot.memory.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -14,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEvent;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 

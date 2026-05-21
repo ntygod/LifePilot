@@ -1,12 +1,16 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.agent.learning.extraction.ExtractionValidator;
+import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.lifecycle.Temporality;
-import com.lifepilot.memory.scope.ChatTurnMemorySnapshot;
-import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
-import com.lifepilot.memory.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
+import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;

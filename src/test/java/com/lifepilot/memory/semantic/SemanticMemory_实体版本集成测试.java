@@ -1,11 +1,12 @@
 package com.lifepilot.memory.semantic;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.memory.projection.MemoryProjectionOutboxProcessor;
-import com.lifepilot.memory.projection.MemoryProjectionOutboxRepository;
-import com.lifepilot.memory.projection.MemoryProjectionService;
+import com.lifepilot.memory.store.entity.*;
+import com.lifepilot.memory.store.projection.MemoryProjectionOutboxProcessor;
+import com.lifepilot.memory.store.projection.MemoryProjectionOutboxRepository;
+import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

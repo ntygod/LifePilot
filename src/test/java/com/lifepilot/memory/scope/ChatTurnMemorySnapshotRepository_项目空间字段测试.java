@@ -1,6 +1,8 @@
 package com.lifepilot.memory.scope;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
+import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

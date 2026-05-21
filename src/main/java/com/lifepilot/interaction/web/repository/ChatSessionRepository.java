@@ -2,6 +2,7 @@ package com.lifepilot.interaction.web.repository;
 
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -112,7 +113,7 @@ public class ChatSessionRepository {
     }
 
     public void updateConfig(String id, Map<String, Object> config) {
-        com.lifepilot.memory.support.SqliteBusyRetry.run(() -> sessionStoreRepository.updateConfig(id, config));
+        SqliteBusyRetry.run(() -> sessionStoreRepository.updateConfig(id, config));
     }
 
     public Map<String, Object> getConfig(String id) {

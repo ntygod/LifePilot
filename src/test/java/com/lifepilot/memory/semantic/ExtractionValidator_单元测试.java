@@ -1,6 +1,8 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.agent.learning.extraction.ExtractionValidator;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.store.entity.EntityType;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
 import net.jqwik.api.constraints.FloatRange;
@@ -9,8 +11,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 

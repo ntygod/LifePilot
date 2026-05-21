@@ -6,42 +6,43 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.consolidation.ConsolidationPipeline;
-import com.lifepilot.memory.consolidation.EpisodicToProceduralConsolidator;
-import com.lifepilot.memory.consolidation.EpisodicToSemanticConsolidator;
-import com.lifepilot.memory.consolidation.PreferenceConsolidator;
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
-import com.lifepilot.memory.semantic.ConflictResolutionRepository;
-import com.lifepilot.memory.semantic.ConflictResolutionService;
-import com.lifepilot.memory.consolidation.association.AssociationCandidateGenerator;
-import com.lifepilot.memory.consolidation.association.AssociationCandidateStore;
-import com.lifepilot.memory.consolidation.association.AssociationConsolidator;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.consolidation.EntityDeduplicator;
-import com.lifepilot.memory.consolidation.ExperienceMerger;
-import com.lifepilot.memory.experience.ContrastiveLearner;
-import com.lifepilot.memory.experience.EffectivenessTracker;
-import com.lifepilot.memory.experience.ExperienceSummarizer;
-import com.lifepilot.memory.experience.SubtaskReflector;
-import com.lifepilot.memory.experience.TrajectoryQualityAssessor;
-import com.lifepilot.memory.feedback.FeedbackProcessor;
-import com.lifepilot.memory.forgetting.ForgettingEngine;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.lifecycle.staleness.NeighborRefreshService;
-import com.lifepilot.memory.lifecycle.staleness.StaleConflictDetector;
-import com.lifepilot.memory.lifecycle.staleness.StalenessCoordinator;
-import com.lifepilot.memory.lifecycle.staleness.StalenessMarker;
-import com.lifepilot.memory.lifecycle.staleness.VectorBasedStaleConflictDetector;
-import com.lifepilot.memory.procedural.IntentMatcher;
-import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
+import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
+import com.lifepilot.agent.learning.consolidation.PreferenceConsolidator;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
+import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository;
+import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateGenerator;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateStore;
+import com.lifepilot.agent.learning.consolidation.association.AssociationConsolidator;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.agent.learning.consolidation.EntityDeduplicator;
+import com.lifepilot.agent.learning.consolidation.ExperienceMerger;
+import com.lifepilot.agent.learning.experience.ContrastiveLearner;
+import com.lifepilot.agent.learning.experience.EffectivenessTracker;
+import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
+import com.lifepilot.agent.learning.experience.SubtaskReflector;
+import com.lifepilot.agent.learning.experience.TrajectoryQualityAssessor;
+import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
+import com.lifepilot.agent.learning.forgetting.ForgettingEngine;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.agent.learning.staleness.NeighborRefreshService;
+import com.lifepilot.agent.learning.staleness.StaleConflictDetector;
+import com.lifepilot.agent.learning.staleness.StalenessCoordinator;
+import com.lifepilot.agent.learning.staleness.StalenessMarker;
+import com.lifepilot.agent.learning.staleness.VectorBasedStaleConflictDetector;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.scope.ChatTurnMemorySnapshotRepository;
-import com.lifepilot.memory.semantic.ExtractionValidator;
-import com.lifepilot.memory.semantic.MemoryExtractionCandidateRepository;
-import com.lifepilot.memory.semantic.RealtimeExtractor;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
+import com.lifepilot.agent.learning.extraction.ExtractionValidator;
+import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
+import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
@@ -123,7 +124,7 @@ public class AgentLearningAutoConfiguration {
                                                Clock clock,
                                                MemoryAccessPolicy memoryAccessPolicy,
                                                @Nullable MemoryExtractionCandidateRepository candidateRepository,
-                                               @Nullable com.lifepilot.memory.security.MemoryInjectionDetector injectionDetector) {
+                                               @Nullable MemoryInjectionDetector injectionDetector) {
         if (generationRouter == null) {
             log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
         }

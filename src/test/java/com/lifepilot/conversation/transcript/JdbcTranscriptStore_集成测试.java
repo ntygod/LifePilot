@@ -2,7 +2,8 @@ package com.lifepilot.conversation.transcript;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.model.CompletionMode;
-import com.lifepilot.memory.event.MemoryEventBus;
+import com.lifepilot.memory.store.event.MemoryEvent;
+import com.lifepilot.memory.store.event.MemoryEventBus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -296,10 +297,10 @@ class JdbcTranscriptStore_集成测试 {
 
     private static final class NoopMemoryEventBus implements MemoryEventBus {
 
-        private final List<com.lifepilot.memory.event.MemoryEvent> events = new ArrayList<>();
+        private final List<MemoryEvent> events = new ArrayList<>();
 
         @Override
-        public void publish(com.lifepilot.memory.event.MemoryEvent event) {
+        public void publish(MemoryEvent event) {
             events.add(event);
         }
     }

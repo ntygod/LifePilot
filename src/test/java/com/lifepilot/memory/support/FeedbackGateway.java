@@ -1,6 +1,6 @@
 package com.lifepilot.memory.support;
 
-import com.lifepilot.memory.feedback.FeedbackProcessor;
+import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
 
 /**
  * 场景测试用反馈网关 — 绕过 HTTP Controller 直接调用 {@link FeedbackProcessor}，

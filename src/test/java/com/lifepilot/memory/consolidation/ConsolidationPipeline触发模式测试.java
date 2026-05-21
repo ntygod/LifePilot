@@ -1,12 +1,13 @@
 package com.lifepilot.memory.consolidation;
 
+import com.lifepilot.agent.learning.consolidation.*;
 import com.lifepilot.memory.config.MemoryAutoConfiguration;
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.procedural.ProcedureTemplate;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.procedural.ProcedureTemplate;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;

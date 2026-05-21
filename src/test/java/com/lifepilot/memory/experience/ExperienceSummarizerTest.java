@@ -1,5 +1,8 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
+import com.lifepilot.agent.learning.experience.TrajectoryQualityAssessor;
+import com.lifepilot.agent.learning.experience.TrajectoryQualityReport;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
@@ -8,7 +11,7 @@ import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;

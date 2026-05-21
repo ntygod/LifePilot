@@ -2,8 +2,8 @@ package com.lifepilot.interaction.web.repository;
 
 import com.lifepilot.interaction.web.model.EntityProvenanceDto;
 import com.lifepilot.interaction.web.model.MemoryProvenanceSummaryDto;
-import com.lifepilot.memory.lifecycle.SourceType;
-import com.lifepilot.memory.semantic.EntityType;
+import com.lifepilot.memory.governance.lifecycle.SourceType;
+import com.lifepilot.memory.store.entity.EntityType;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

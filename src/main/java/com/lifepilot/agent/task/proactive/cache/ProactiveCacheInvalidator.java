@@ -1,8 +1,8 @@
 package com.lifepilot.agent.task.proactive.cache;
 
 import com.lifepilot.agent.task.proactive.ProactiveMemoryBridge;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;

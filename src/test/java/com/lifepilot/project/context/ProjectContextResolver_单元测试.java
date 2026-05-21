@@ -1,8 +1,8 @@
 package com.lifepilot.project.context;
 
-import com.lifepilot.memory.scope.MemorySpace;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
-import com.lifepilot.memory.scope.MemorySpaceType;
+import com.lifepilot.memory.store.scope.MemorySpace;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceType;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;

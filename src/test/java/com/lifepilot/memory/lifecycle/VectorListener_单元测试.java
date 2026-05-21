@@ -2,7 +2,7 @@ package com.lifepilot.memory.lifecycle;
 
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.lifecycle.listeners.VectorListener;
-import com.lifepilot.memory.projection.MemoryProjectionService;
+import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;

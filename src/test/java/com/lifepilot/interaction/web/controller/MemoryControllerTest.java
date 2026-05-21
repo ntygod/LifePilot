@@ -3,21 +3,22 @@ package com.lifepilot.interaction.web.controller;
 import com.lifepilot.interaction.web.model.MemoryProvenanceSummaryDto;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
-import com.lifepilot.memory.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.episodic.ConversationRecord;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.forgetting.ForgettingLogRepository;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.scope.MemoryWriteContext;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryOriginType;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
@@ -351,7 +352,7 @@ class MemoryControllerTest {
             ArgumentCaptor<MemoryWriteContext> captor = ArgumentCaptor.forClass(MemoryWriteContext.class);
             verify(semanticMemory).upsertWithConflictDetection(
                     any(TemporalEntity.class), eq("manual-edit"), captor.capture());
-            assertThat(captor.getValue().originType()).isEqualTo(com.lifepilot.memory.scope.MemoryOriginType.MANUAL);
+            assertThat(captor.getValue().originType()).isEqualTo(MemoryOriginType.MANUAL);
         }
 
         @Test

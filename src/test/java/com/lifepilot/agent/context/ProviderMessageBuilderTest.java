@@ -6,7 +6,7 @@ import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.memory.experience.ToolTipResolver;
+import com.lifepilot.agent.learning.experience.ToolTipResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;

@@ -2,8 +2,9 @@ package com.lifepilot.memory.compression;
 
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.consumption.compression.CompressionService;
 import com.lifepilot.memory.episodic.CompressionLevel;
-import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.prompt.PromptRegistry;
 import net.jqwik.api.Arbitraries;

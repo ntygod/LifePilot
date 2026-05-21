@@ -1,7 +1,7 @@
 package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

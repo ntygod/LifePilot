@@ -1,5 +1,6 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.agent.learning.experience.EffectivenessTracker;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;
@@ -7,9 +8,9 @@ import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

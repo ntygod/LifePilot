@@ -5,6 +5,8 @@ import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
+import com.lifepilot.memory.store.event.MemoryEvent;
+import com.lifepilot.memory.store.event.MemoryEventBus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

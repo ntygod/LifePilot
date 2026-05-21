@@ -1,15 +1,15 @@
 package com.lifepilot.memory.lifecycle.scanner;
 
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.lifecycle.feedback.RegenerationQueueRepository;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.support.MemoryProjectionTestSupport;
-import com.lifepilot.memory.semantic.ConflictDetector;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.store.entity.ConflictDetector;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.VersionMerger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

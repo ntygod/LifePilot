@@ -1,13 +1,13 @@
 package com.lifepilot.memory.consumption.config;
 
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.memory.compression.CompressionService;
+import com.lifepilot.memory.consumption.compression.CompressionService;
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicCleanupJob;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.hot.HotMemoryDigestService;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.consumption.EpisodicCleanupJob;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;

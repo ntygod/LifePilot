@@ -1,6 +1,7 @@
 package com.lifepilot.memory.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.store.workspace.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;

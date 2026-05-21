@@ -1,6 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.support.MemoryQuerySignals;
+import com.lifepilot.memory.store.support.MemoryQuerySignals;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * FTS5 全文搜索器 — 基于 SQLite FTS5 + BM25 的消息和实体关键词检索。

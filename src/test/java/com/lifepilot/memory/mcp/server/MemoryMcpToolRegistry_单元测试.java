@@ -1,5 +1,6 @@
 package com.lifepilot.memory.mcp.server;
 
+import com.lifepilot.memory.governance.server.MemoryMcpToolRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

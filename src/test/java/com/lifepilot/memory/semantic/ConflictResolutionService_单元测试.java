@@ -1,5 +1,7 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository;
+import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.lifecycle.ChangeSource;
@@ -7,6 +9,9 @@ import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,8 +28,6 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyFloat;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;

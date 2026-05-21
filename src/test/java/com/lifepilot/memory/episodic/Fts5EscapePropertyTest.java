@@ -1,5 +1,6 @@
 package com.lifepilot.memory.episodic;
 
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import net.jqwik.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;

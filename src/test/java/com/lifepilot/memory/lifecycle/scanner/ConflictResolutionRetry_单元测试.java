@@ -1,12 +1,12 @@
 package com.lifepilot.memory.lifecycle.scanner;
 
 import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.semantic.ConflictResolutionRepository;
-import com.lifepilot.memory.semantic.ConflictResolutionRepository.QueueItem;
-import com.lifepilot.memory.semantic.ConflictResolutionService;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository;
+import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository.QueueItem;
+import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

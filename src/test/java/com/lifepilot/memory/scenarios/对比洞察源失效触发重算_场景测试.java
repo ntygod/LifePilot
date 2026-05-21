@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.lifecycle.ChangeSource;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
@@ -13,10 +13,11 @@ import com.lifepilot.memory.lifecycle.feedback.RegenerationQueueRepository;
 import com.lifepilot.memory.lifecycle.listeners.DerivedEntityListener;
 import com.lifepilot.memory.lifecycle.scanner.DerivationRegenerator;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.support.MemoryProjectionTestSupport;
-import com.lifepilot.memory.semantic.ConflictDetector;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.store.entity.ConflictDetector;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.VersionMerger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -48,7 +49,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *   <li>队列行状态由 {@code PENDING} → {@code DONE}。</li>
  * </ol>
  *
- * <p><b>EntityType 漂移处理</b>：真实 {@link com.lifepilot.memory.semantic.EntityType} 枚举
+ * <p><b>EntityType 漂移处理</b>：真实 {@link EntityType} 枚举
  * 不存在 {@code CONTRASTIVE_INSIGHT} 项（Phase 0 Task 14 记录），本场景用
  * {@code CUSTOM + name="contrastive-insight-*"} 近似，与 {@link DerivationRegenerator} 的
  * 真实分派路径（{@code PROFILE_ENTITY_NAME.equals(name)} 不命中 → {@code isDerived} 命中

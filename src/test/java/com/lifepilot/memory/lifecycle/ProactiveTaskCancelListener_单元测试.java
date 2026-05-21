@@ -2,9 +2,9 @@ package com.lifepilot.memory.lifecycle;
 
 import com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled;
 import com.lifepilot.memory.lifecycle.listeners.ProactiveTaskCancelListener;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

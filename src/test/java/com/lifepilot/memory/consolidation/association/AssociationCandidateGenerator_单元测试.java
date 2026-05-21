@@ -1,13 +1,15 @@
 package com.lifepilot.memory.consolidation.association;
 
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateGenerator;
+import com.lifepilot.agent.learning.consolidation.association.AssociationType;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.config.MemoryProperties;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import org.junit.jupiter.api.Test;
 

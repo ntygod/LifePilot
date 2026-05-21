@@ -1,6 +1,10 @@
 package com.lifepilot.memory.procedural;
 
-import com.lifepilot.memory.projection.MemoryProjectionService;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.procedural.ProcedureTemplate;
+import com.lifepilot.memory.store.procedural.TemplateStep;
+import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

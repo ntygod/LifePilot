@@ -1,14 +1,16 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.agent.learning.experience.SubtaskReflector;
+import com.lifepilot.agent.learning.experience.ToolTipResolver;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.quality.MemoryEvidenceKind;
-import com.lifepilot.memory.quality.MemoryTrustLevel;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
 import org.junit.jupiter.api.Test;

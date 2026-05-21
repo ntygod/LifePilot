@@ -1,5 +1,6 @@
 package com.lifepilot.memory.consolidation;
 
+import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.memory.config.MemoryAutoConfiguration;
 import com.lifepilot.memory.config.MemoryProperties;
 import net.jqwik.api.Arbitraries;

@@ -1,5 +1,6 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.agent.learning.experience.TrajectoryQualityAssessor;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;

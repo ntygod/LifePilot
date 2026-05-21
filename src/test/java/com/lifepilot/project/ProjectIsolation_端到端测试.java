@@ -2,9 +2,9 @@ package com.lifepilot.project;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemorySpace;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemorySpace;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.project.model.Project;

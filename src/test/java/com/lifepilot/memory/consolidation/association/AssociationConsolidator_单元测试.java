@@ -1,5 +1,9 @@
 package com.lifepilot.memory.consolidation.association;
 
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidate;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateStore;
+import com.lifepilot.agent.learning.consolidation.association.AssociationConsolidator;
+import com.lifepilot.agent.learning.consolidation.association.AssociationType;
 import com.lifepilot.memory.config.MemoryProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

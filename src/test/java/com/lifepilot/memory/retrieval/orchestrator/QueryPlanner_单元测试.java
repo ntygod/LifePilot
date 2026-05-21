@@ -1,7 +1,7 @@
 package com.lifepilot.memory.retrieval.orchestrator;
 
 import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

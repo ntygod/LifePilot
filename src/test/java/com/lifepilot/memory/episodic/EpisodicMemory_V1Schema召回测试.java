@@ -1,6 +1,7 @@
 package com.lifepilot.memory.episodic;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

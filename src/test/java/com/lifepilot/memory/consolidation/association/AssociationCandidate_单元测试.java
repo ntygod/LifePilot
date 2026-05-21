@@ -1,5 +1,7 @@
 package com.lifepilot.memory.consolidation.association;
 
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidate;
+import com.lifepilot.agent.learning.consolidation.association.AssociationType;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

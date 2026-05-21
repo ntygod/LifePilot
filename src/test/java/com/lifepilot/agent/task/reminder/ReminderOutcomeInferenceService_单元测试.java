@@ -3,13 +3,13 @@ package com.lifepilot.agent.task.reminder;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.ConversationRecord;
-import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.workspace.SessionWorkspaceService;
-import com.lifepilot.memory.workspace.WorkspaceItem;
-import com.lifepilot.memory.workspace.WorkspaceItemKind;
-import com.lifepilot.memory.workspace.WorkspaceStatus;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.store.workspace.WorkspaceItem;
+import com.lifepilot.memory.store.workspace.WorkspaceItemKind;
+import com.lifepilot.memory.store.workspace.WorkspaceStatus;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.ToolCallStep;
 import com.lifepilot.observability.trace.TraceQuery;
@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 

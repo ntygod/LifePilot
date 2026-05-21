@@ -1,17 +1,17 @@
 package com.lifepilot.memory.governance.config;
 
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.mcp.server.MemoryMcpHandler;
-import com.lifepilot.memory.mcp.server.MemoryMcpToolRegistry;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.governance.server.MemoryMcpHandler;
+import com.lifepilot.memory.governance.server.MemoryMcpToolRegistry;
 import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.security.MemoryInjectionDetector;
-import com.lifepilot.memory.security.PromptInjectionPatternScanner;
-import com.lifepilot.memory.security.SpaceTrustDistribution;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
+import com.lifepilot.memory.governance.security.PromptInjectionPatternScanner;
+import com.lifepilot.memory.governance.security.SpaceTrustDistribution;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
-import com.lifepilot.memory.trace.MemoryEventRecorder;
+import com.lifepilot.memory.governance.audit.MemoryEventRecorder;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

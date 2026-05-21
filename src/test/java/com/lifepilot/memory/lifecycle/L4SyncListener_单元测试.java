@@ -2,8 +2,8 @@ package com.lifepilot.memory.lifecycle;
 
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.lifecycle.listeners.L4SyncListener;
-import com.lifepilot.memory.procedural.PreferenceRuleRepository;
-import com.lifepilot.memory.procedural.ProceduralMemoryRepository;
+import com.lifepilot.memory.store.procedural.PreferenceRuleRepository;
+import com.lifepilot.memory.store.procedural.ProceduralMemoryRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;

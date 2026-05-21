@@ -1,15 +1,15 @@
 package com.lifepilot.agent.task.proactive;
 
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.procedural.PreferenceRule;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.quality.MemoryEvidenceKind;
-import com.lifepilot.memory.quality.MemoryTrustLevel;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.governance.lifecycle.events.ProactiveTaskCancelled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -163,7 +162,7 @@ public class ProactiveMemoryBridge {
     /**
      * 事务提交后发布事件；无活跃事务时立即发布（fallback，保持单测/手工装配可用）。
      *
-     * <p>与 {@link com.lifepilot.memory.semantic.SemanticMemory} 的同名方法语义一致：
+     * <p>与 {@link SemanticMemory} 的同名方法语义一致：
      * 回滚路径下不产生幻觉事件，避免下游 listener 基于幻觉事件更新派生存储。</p>
      *
      * @param event Spring ApplicationEvent

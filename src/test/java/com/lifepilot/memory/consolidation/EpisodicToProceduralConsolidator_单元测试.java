@@ -1,5 +1,7 @@
 package com.lifepilot.memory.consolidation;
 
+import com.lifepilot.agent.learning.consolidation.ConsolidationStats;
+import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -7,8 +9,8 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.procedural.ProcedureTemplate;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;

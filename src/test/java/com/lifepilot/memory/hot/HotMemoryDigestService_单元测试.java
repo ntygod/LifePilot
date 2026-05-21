@@ -1,17 +1,20 @@
 package com.lifepilot.memory.hot;
 
 import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.experience.SubtaskReflector;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigest;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
+import com.lifepilot.memory.consumption.hot.HotMemorySectionKind;
+import com.lifepilot.agent.learning.experience.SubtaskReflector;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.Temporality;
-import com.lifepilot.memory.procedural.PreferenceRule;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.quality.MemoryEvidenceKind;
-import com.lifepilot.memory.quality.MemoryTrustLevel;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.observability.redactor.DataRedactor;
 import org.junit.jupiter.api.Test;
 

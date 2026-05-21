@@ -1,11 +1,11 @@
 package com.lifepilot.memory.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.memory.projection.MemoryProjectionOutboxProcessor;
-import com.lifepilot.memory.projection.MemoryProjectionOutboxRepository;
-import com.lifepilot.memory.projection.MemoryProjectionService;
+import com.lifepilot.memory.store.projection.MemoryProjectionOutboxProcessor;
+import com.lifepilot.memory.store.projection.MemoryProjectionOutboxRepository;
+import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**

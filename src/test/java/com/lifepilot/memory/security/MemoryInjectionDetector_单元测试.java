@@ -1,6 +1,10 @@
 package com.lifepilot.memory.security;
 
 import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.governance.security.InjectionReason;
+import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
+import com.lifepilot.memory.governance.security.PromptInjectionPatternScanner;
+import com.lifepilot.memory.governance.security.SpaceTrustDistribution;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

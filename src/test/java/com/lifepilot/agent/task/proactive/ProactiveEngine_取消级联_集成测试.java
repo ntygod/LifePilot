@@ -5,11 +5,11 @@ import com.lifepilot.memory.lifecycle.Temporality;
 import com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.support.MemoryProjectionTestSupport;
-import com.lifepilot.memory.semantic.ConflictDetector;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.store.entity.ConflictDetector;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.entity.VersionMerger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +30,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * {@link ProactiveEngine#markGoalFulfilled(String)} 取消级联集成测试（Task 13）。

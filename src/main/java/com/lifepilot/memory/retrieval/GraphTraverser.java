@@ -1,6 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;

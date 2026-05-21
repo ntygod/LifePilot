@@ -2,7 +2,7 @@ package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.proactive.signal.ImplicitSignalCollector;
 import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
