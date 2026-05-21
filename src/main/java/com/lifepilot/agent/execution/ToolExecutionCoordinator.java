@@ -66,6 +66,9 @@ public class ToolExecutionCoordinator {
     private final IntentMatcher intentMatcher;
     @Nullable
     private final MultimodalRouter multimodalRouter;
+    /** 智能层能力评估器 — 记录工具执行结果，供决策引擎使用。 */
+    @Nullable
+    private volatile com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor;
     @Nullable
     private final SessionWorkspaceService workspaceService;
     private final int maxParallelToolCalls;
@@ -631,6 +634,13 @@ public class ToolExecutionCoordinator {
             });
         }
 
+        // 智能层：记录工具执行结果到 CapabilityAssessor（异步，不阻塞主链路）
+        if (capabilityAssessor != null) {
+            long latencyMs = outcome.duration().toMillis();
+            String error = outcome.success() ? null : outcome.observationOutput();
+            capabilityAssessor.recordExecution(planned.toolId(), outcome.success(), latencyMs, error);
+        }
+
         recordToolCallStep(traceContext, state.stepCount() - 1, outcome.startedAt(),
                 outcome.completedAt(), outcome.duration(), planned.toolId(),
                 planned.inputJson(), outcome.rawOutput(), outcome.success(), planned.toolRiskLevel());
@@ -1128,6 +1138,11 @@ public class ToolExecutionCoordinator {
     /** Spring 注入 SseSessionManager。 */
     public void setSseSessionManager(@Nullable com.lifepilot.interaction.web.sse.SseSessionManager mgr) {
         this.sseSessionManager = mgr;
+    }
+
+    /** 注入智能层能力评估器（可选）。 */
+    public void setCapabilityAssessor(@Nullable com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor) {
+        this.capabilityAssessor = capabilityAssessor;
     }
 
     /** 将工具执行结果写入 Trace，保证后续诊断能看到输入、输出和耗时。 */
