@@ -24,6 +24,11 @@ Java uses 4-space indentation, lowercase packages, and PascalCase types. Prefer 
 
 Follow the project's language convention: comments, Javadoc, log messages, exception messages, test names, and commit summaries should be in Chinese; identifiers, config keys, REST paths, and Skill IDs stay in English. Class-level Javadoc should include `@author zsg` and `@since yyyy-MM-dd`. Vue/TypeScript uses 2-space indentation, PascalCase component filenames, and `useX.ts` composables.
 
+## Development Phase Conventions
+The project is in active development with no released version and no production user data to protect. Favor a clean end state over backward compatibility: when refactoring, delete old classes, methods, paths, and config keys directly instead of keeping `@Deprecated` shims, dual old/new config keys, or overloads for old signatures. Unmerged Flyway migrations may be rewritten freely; migrations already merged to `develop` still follow the integration checklist.
+
+This is not a license to leave things broken: after any breaking removal, update every call site and affected test so that `mvn compile` and `mvn test` both pass and the Spring context still loads. This exemption ends at the first official release (`beta-release-readiness`), after which backward compatibility applies again. The detailed rule lives in `.kiro/steering/development-conventions.md`.
+
 ## Testing Guidelines
 Backend tests use JUnit 5, Spring Boot Test, and jqwik. Mock LLM, MCP, and network dependencies in unit tests; use Spring + SQLite for integration tests. Frontend tests use Vitest with `jsdom` and Vue Test Utils; keep specs as `*.spec.ts` beside the component or store they cover. Add regression tests for API, migration, or config changes.
 
