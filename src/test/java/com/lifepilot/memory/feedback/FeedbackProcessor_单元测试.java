@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.feedback;
+package com.lifepilot.memory.feedback;
 
 import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;

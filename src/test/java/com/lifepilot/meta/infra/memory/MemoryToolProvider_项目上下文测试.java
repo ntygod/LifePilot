@@ -1,4 +1,4 @@
-﻿package com.lifepilot.meta.infra.memory;
+package com.lifepilot.meta.infra.memory;
 
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;

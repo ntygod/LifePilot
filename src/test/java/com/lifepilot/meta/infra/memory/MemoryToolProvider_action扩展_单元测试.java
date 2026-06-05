@@ -1,4 +1,4 @@
-﻿package com.lifepilot.meta.infra.memory;
+package com.lifepilot.meta.infra.memory;
 
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;

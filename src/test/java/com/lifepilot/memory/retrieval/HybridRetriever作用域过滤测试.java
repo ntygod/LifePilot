@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.retrieval;
+package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;

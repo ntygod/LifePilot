@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.experience;
+package com.lifepilot.memory.experience;
 
 import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
 import com.lifepilot.agent.learning.experience.TrajectoryQualityAssessor;

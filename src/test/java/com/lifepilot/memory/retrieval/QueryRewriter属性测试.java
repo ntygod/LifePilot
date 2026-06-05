@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.retrieval;
+package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;

@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.compression;
+package com.lifepilot.memory.compression;
 
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;

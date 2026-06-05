@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.retrieval.orchestrator;
+package com.lifepilot.memory.retrieval.orchestrator;
 
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.retrieval.HybridRetriever;

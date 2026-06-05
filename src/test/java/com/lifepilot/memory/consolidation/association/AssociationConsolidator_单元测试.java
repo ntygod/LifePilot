@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.consolidation.association;
+package com.lifepilot.memory.consolidation.association;
 
 import com.lifepilot.agent.learning.consolidation.association.AssociationCandidate;
 import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateStore;

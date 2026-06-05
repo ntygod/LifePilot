@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.semantic;
+package com.lifepilot.memory.semantic;
 
 import com.lifepilot.agent.learning.extraction.ExtractionValidator;
 import com.lifepilot.agent.learning.extraction.RealtimeExtractor;

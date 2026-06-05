@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.consolidation;
+package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;

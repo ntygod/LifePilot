@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.hot;
+package com.lifepilot.memory.hot;
 
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigest;

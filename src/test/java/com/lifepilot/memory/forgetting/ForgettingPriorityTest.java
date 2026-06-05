@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.forgetting;
+package com.lifepilot.memory.forgetting;
 
 import com.lifepilot.agent.learning.forgetting.ForgettingPriority;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;

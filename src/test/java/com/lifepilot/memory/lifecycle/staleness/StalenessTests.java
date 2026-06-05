@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.lifecycle.staleness;
+package com.lifepilot.memory.lifecycle.staleness;
 
 import com.lifepilot.agent.learning.staleness.*;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;

@@ -1,4 +1,4 @@
-﻿package com.lifepilot.memory.forgetting;
+package com.lifepilot.memory.forgetting;
 
 import com.lifepilot.agent.learning.forgetting.*;
 import com.lifepilot.generation.router.GenerationRouter;
