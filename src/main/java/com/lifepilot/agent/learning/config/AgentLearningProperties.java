@@ -110,6 +110,9 @@ public class AgentLearningProperties {
         /** 空闲触发冷却期（分钟），默认 60。 */
         private int idleCooldownMinutes = 60;
 
+        /** 用户画像巩固防抖窗口（分钟），默认 30。对话结束后等待此窗口再触发画像巩固。 */
+        private int profileDebounceMinutes = 30;
+
         /** 经验提升最低重要度阈值 [0.0, 1.0]，默认 0.8。 */
         private float experiencePromoteMinImportance = 0.8f;
 

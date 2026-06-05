@@ -52,7 +52,7 @@ public class EntityDeduplicator {
     }
 
     /** 定时去重入口。 */
-    @Scheduled(cron = "${lifepilot.memory.consolidation.dedup-cron}")
+    @Scheduled(cron = "${lifepilot.agent.learning.consolidation.dedup-cron}")
     public void scheduledDedup() {
         try {
             var stats = dedup();

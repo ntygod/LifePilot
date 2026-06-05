@@ -173,6 +173,55 @@ lifepilot:
     task:
       ttl-minutes: 60
       max-history-length: 50
+    # ===== 学习层配置（绑定 lifepilot.agent.learning.*；consolidation-decoupling 从 lifepilot.memory.* 迁入）=====
+    learning:
+      consolidation:
+        # 每日定时阶段（偏好同步 + 经验合并 + 经验提升）
+        cron: "0 0 3 * * *"
+        trigger-mode: CRON
+        # 用户画像巩固防抖窗口（对话结束事件后等待此窗口再触发）
+        profile-debounce-minutes: 30
+        # 空闲触发 REM 联想
+        idle-threshold-minutes: 30
+        idle-cooldown-minutes: 60
+        lookback-days: 7
+        high-frequency-threshold: 3
+        importance-boost-step: 0.1
+        importance-boost-max: 0.3
+        cluster-similarity-threshold: 0.85
+        min-cluster-size: 2
+        max-templates-per-run: 10
+        min-execution-steps: 2
+        # 实体去重（EntityDeduplicator 自调度）
+        dedup-cron: "0 30 4 * * *"
+        dedup-similarity-threshold: 0.90
+        max-dedup-per-run: 50
+        short-name-threshold: 2
+        experience-promote-min-importance: 0.8
+        experience-promote-min-access-count: 3
+        user-profile-llm-timeout-seconds: 120
+      forgetting:
+        cron: "0 0 4 * * SUN"
+        max-retention-days: 365
+        lru-threshold-days: 90
+        priority-decay-rate: 0.02
+        priority-decay-threshold: 0.2
+        reflection-summary-min-importance: 0.3
+        reflection-summary-max-importance: 0.8
+        max-forget-per-run: 100
+        privacy-aware-boost: 0.3
+        protection-threshold: 0.9
+        protected-types:
+          - PREFERENCE
+          - HABIT
+          - GOAL
+      extraction:
+        timeout-seconds: 60
+        max-entities-per-extraction: 10
+        min-extraction-confidence: 0.3
+        max-entity-name-length: 100
+        min-description-length: 2
+        existing-entity-summary-limit: 50
   llm:
     # ===== LLM 路由配置 =====
     # 生成与向量服务都从 model_services 表加载，通过 Web UI 的“模型与路由”页面统一管理
@@ -256,51 +305,7 @@ lifepilot:
       stale-days: 90
       match-threshold: 0.6
       default-importance: 0.5
-    # 巩固管线
-    consolidation:
-      cron: "0 0 3 * * *"
-      trigger-mode: CRON
-      idle-threshold-minutes: 30
-      idle-cooldown-minutes: 60
-      lookback-days: 7
-      high-frequency-threshold: 3
-      importance-boost-step: 0.1
-      importance-boost-max: 0.3
-      cluster-similarity-threshold: 0.85
-      min-cluster-size: 2
-      max-templates-per-run: 10
-      min-execution-steps: 2
-      dedup-cron: "0 30 4 * * *"
-      dedup-similarity-threshold: 0.90
-      max-dedup-per-run: 50
-      short-name-threshold: 2
-      experience-promote-min-importance: 0.8
-      experience-promote-min-access-count: 3
-      user-profile-llm-timeout-seconds: 120
-    # 遗忘引擎
-    forgetting:
-      cron: "0 0 4 * * SUN"
-      max-retention-days: 365
-      lru-threshold-days: 90
-      priority-decay-rate: 0.02
-      priority-decay-threshold: 0.2
-      reflection-summary-min-importance: 0.3
-      reflection-summary-max-importance: 0.8
-      max-forget-per-run: 100
-      privacy-aware-boost: 0.3
-      protection-threshold: 0.9
-      protected-types:
-        - PREFERENCE
-        - HABIT
-        - GOAL
-    # AUDN 实体提取
-    extraction:
-      timeout-seconds: 60
-      max-entities-per-extraction: 10
-      min-extraction-confidence: 0.3
-      max-entity-name-length: 100
-      min-description-length: 2
-      existing-entity-summary-limit: 50
+    # 巩固管线 / 遗忘引擎 / 实体提取配置已迁移到 lifepilot.agent.learning.*（consolidation-decoupling）
     # 混合检索相关性过滤
     retrieval:
       min-fused-score: 0.01

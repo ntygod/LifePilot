@@ -7,10 +7,13 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.consolidation.ConsolidationScheduler;
 import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
+import com.lifepilot.agent.learning.consolidation.ExperiencePromoter;
 import com.lifepilot.agent.learning.consolidation.PreferenceConsolidator;
 import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
 import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
 import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository;
 import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
@@ -58,6 +61,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -84,16 +88,16 @@ public class AgentLearningAutoConfiguration {
 
     private final AgentLearningProperties properties;
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider;
+    private final ObjectProvider<ConsolidationScheduler> consolidationSchedulerProvider;
 
     private volatile Instant lastIdleConsolidationTime;
 
     public AgentLearningAutoConfiguration(AgentLearningProperties properties,
                                           @Lazy JdbcTemplate jdbcTemplate,
-                                          ObjectProvider<ConsolidationPipeline> consolidationPipelineProvider) {
+                                          ObjectProvider<ConsolidationScheduler> consolidationSchedulerProvider) {
         this.properties = properties;
         this.jdbcTemplate = jdbcTemplate;
-        this.consolidationPipelineProvider = consolidationPipelineProvider;
+        this.consolidationSchedulerProvider = consolidationSchedulerProvider;
     }
 
     // ── 提取 ──
@@ -283,27 +287,50 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, ProceduralMemory.class})
+    public ExperiencePromoter experiencePromoter(
+            SemanticMemory semanticMemory,
+            ProceduralMemory proceduralMemory,
+            AgentLearningProperties properties) {
+        log.info("记忆模块: 注册 ExperiencePromoter");
+        return new ExperiencePromoter(semanticMemory, proceduralMemory, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @ConditionalOnBean(EpisodicToSemanticConsolidator.class)
     public ConsolidationPipeline consolidationPipeline(
             EpisodicToSemanticConsolidator semanticConsolidator,
             @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
             AgentLearningProperties properties,
             @Nullable PreferenceConsolidator preferenceConsolidator,
-            @Nullable SemanticMemory semanticMemory,
-            @Nullable ProceduralMemory proceduralMemory,
             @Nullable ExperienceMerger experienceMerger,
             @Nullable UserProfileConsolidator userProfileConsolidator,
+            @Nullable ExperiencePromoter experiencePromoter,
             @Nullable AssociationCandidateGenerator remGenerator,
             @Nullable AssociationConsolidator remConsolidator) {
         log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}, profileConsolidate={}, remAssociation={}",
                 preferenceConsolidator != null ? "enabled" : "disabled",
-                semanticMemory != null && proceduralMemory != null ? "enabled" : "disabled",
+                experiencePromoter != null ? "enabled" : "disabled",
                 experienceMerger != null ? "enabled" : "disabled",
                 userProfileConsolidator != null ? "enabled" : "disabled",
                 (remGenerator != null && remConsolidator != null) ? "enabled" : "disabled");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
-                properties, preferenceConsolidator, semanticMemory, proceduralMemory,
-                experienceMerger, userProfileConsolidator, remGenerator, remConsolidator);
+                properties, preferenceConsolidator, experienceMerger, userProfileConsolidator,
+                experiencePromoter, remGenerator, remConsolidator);
+    }
+
+    /**
+     * 巩固调度器 — 巩固系统的唯一调度真源（事件 / cron / 空闲分流）。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(ConsolidationPipeline.class)
+    public ConsolidationScheduler consolidationScheduler(ConsolidationPipeline pipeline) {
+        Duration debounce = Duration.ofMinutes(
+                Math.max(1, properties.getConsolidation().getProfileDebounceMinutes()));
+        log.info("记忆模块: 注册 ConsolidationScheduler, profileDebounce={}min", debounce.toMinutes());
+        return new ConsolidationScheduler(pipeline, debounce);
     }
 
     // ── REM 联想 ──
@@ -489,20 +516,38 @@ public class AgentLearningAutoConfiguration {
         return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, storeProperties);
     }
 
-    // ── 空闲巩固调度 ──
+    // ── 巩固调度（唯一真源：ConsolidationScheduler）──
 
+    /** 对话结束事件 → 触发语义/程序巩固 + 登记画像防抖。 */
+    @EventListener
+    public void onConversationCompleted(ConversationCompletedEvent event) {
+        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getIfAvailable();
+        if (scheduler != null) {
+            scheduler.onConversationCompleted();
+        }
+    }
+
+    /** 每日 cron → 偏好同步 + 经验合并 + 经验提升。 */
+    @Scheduled(cron = "${lifepilot.agent.learning.consolidation.cron}")
+    public void scheduledDailyConsolidation() {
+        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getIfAvailable();
+        if (scheduler != null) {
+            scheduler.runDailyStages();
+        }
+    }
+
+    /** 每分钟轮询 → 用户画像防抖触发 + 系统空闲后触发 REM 联想。 */
     @Scheduled(fixedDelayString = "PT1M")
-    public void checkIdleConsolidation() {
-        String mode = properties.getConsolidation().getTriggerMode();
-        if ("CRON".equalsIgnoreCase(mode)) {
+    public void pollConsolidationTriggers() {
+        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getIfAvailable();
+        if (scheduler == null) {
             return;
         }
 
-        ConsolidationPipeline pipeline = consolidationPipelineProvider.getIfAvailable();
-        if (pipeline == null) {
-            return;
-        }
+        // 1. 用户画像防抖
+        scheduler.checkProfileDebounce();
 
+        // 2. 空闲 REM 联想
         Instant lastInteraction = getLastInteractionTime();
         int idleThreshold = properties.getConsolidation().getIdleThresholdMinutes();
         if (Duration.between(lastInteraction, Instant.now()).toMinutes() < idleThreshold) {
@@ -515,9 +560,8 @@ public class AgentLearningAutoConfiguration {
             return;
         }
 
-        log.info("记忆模块: 空闲巩固已触发, mode={}, idleThresholdMinutes={}",
-                mode, idleThreshold);
-        pipeline.consolidate();
+        log.info("记忆模块: 空闲触发 REM 联想, idleThresholdMinutes={}", idleThreshold);
+        scheduler.runIdleStages();
         lastIdleConsolidationTime = Instant.now();
     }
 

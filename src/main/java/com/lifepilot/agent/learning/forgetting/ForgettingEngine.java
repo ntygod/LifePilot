@@ -68,7 +68,7 @@ public class ForgettingEngine {
     /**
      * 定时遗忘入口 — 由 Spring Scheduler 按 Cron 表达式触发。
      */
-    @Scheduled(cron = "${lifepilot.memory.forgetting.cron}")
+    @Scheduled(cron = "${lifepilot.agent.learning.forgetting.cron}")
     public void scheduledForget() {
         log.info("遗忘引擎: 定时遗忘开始");
         try {
