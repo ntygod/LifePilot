@@ -80,29 +80,32 @@ graph TD
 
 ### 1.1 学习系统包含的组件
 
+> 位置已于 2026-06 模块拆分后核实更新：学习组件统一迁至 `com.lifepilot.agent.learning.*`。
+
 | 组件 | 当前位置 | 职责 |
 |------|---------|------|
-| `RealtimeExtractor` | `memory.semantic` | 对话结束后 LLM AUDN 提取事实/偏好/目标 |
-| `ExtractionValidator` | `memory.semantic` | 提取结果质量门控 |
-| `MemoryExtractionCandidateRepository` | `memory.semantic` | 候选审计持久化 |
-| `ExperienceSummarizer` | `memory.experience` | 从 ReAct 轨迹提炼结构化经验 |
-| `TrajectoryQualityAssessor` | `memory.experience` | 轨迹质量评估（门控） |
-| `EffectivenessTracker` | `memory.experience` | 经验注入后有效性反馈 |
-| `SubtaskReflector` | `memory.experience` | 工具序列级细粒度经验 |
-| `ContrastiveLearner` | `memory.experience` | 成功/失败轨迹对比学习 |
-| `ExperienceMerger` | `memory.consolidation` | 相似经验去重合并 |
-| `EpisodicToSemanticConsolidator` | `memory.consolidation` | 情景→语义巩固 |
-| `EpisodicToProceduralConsolidator` | `memory.consolidation` | 轨迹→操作模板巩固 |
-| `PreferenceConsolidator` | `memory.consolidation` | L3 偏好→L4 规则同步 |
-| `UserProfileConsolidator` | `memory.consolidation` | 画像碎片→巩固画像 |
-| `EntityDeduplicator` | `memory.consolidation` | 实体去重合并 |
-| `ConsolidationPipeline` | `memory.consolidation` | 巩固管线编排（待重构为 ConsolidationScheduler） |
-| `ForgettingEngine` | `memory.forgetting` | MaRS 六策略混合遗忘 |
-| `FeedbackProcessor` | `memory.feedback` | 用户反馈处理 |
-| `ConflictResolutionService` | `memory.semantic` | 语义冲突 LLM 裁决 |
-| `StalenessCoordinator` | `memory.lifecycle.staleness` | 新事实写入后邻居老化检测 |
-| `AssociationCandidateGenerator` | `memory.consolidation.association` | REM 式联想候选生成 |
-| `AssociationConsolidator` | `memory.consolidation.association` | 联想候选过滤与持久化 |
+| `RealtimeExtractor` | `agent.learning.extraction` | 对话结束后 LLM AUDN 提取事实/偏好/目标 |
+| `ExtractionValidator` | `agent.learning.extraction` | 提取结果质量门控 |
+| `MemoryExtractionCandidateRepository` | `agent.learning.extraction` | 候选审计持久化 |
+| `ExperienceSummarizer` | `agent.learning.experience` | 从 ReAct 轨迹提炼结构化经验 |
+| `TrajectoryQualityAssessor` | `agent.learning.experience` | 轨迹质量评估（门控） |
+| `EffectivenessTracker` | `agent.learning.experience` | 经验注入后有效性反馈 |
+| `SubtaskReflector` | `agent.learning.experience` | 工具序列级细粒度经验 |
+| `ContrastiveLearner` | `agent.learning.experience` | 成功/失败轨迹对比学习 |
+| `ExperienceMerger` | `agent.learning.consolidation` | 相似经验去重合并 |
+| `EpisodicToSemanticConsolidator` | `agent.learning.consolidation` | 情景→语义巩固 |
+| `EpisodicToProceduralConsolidator` | `agent.learning.consolidation` | 轨迹→操作模板巩固 |
+| `PreferenceConsolidator` | `agent.learning.consolidation` | L3 偏好→L4 规则同步 |
+| `UserProfileConsolidator` | `agent.learning.consolidation` | 画像碎片→巩固画像 |
+| `EntityDeduplicator` | `agent.learning.consolidation` | 实体去重合并 |
+| `ConsolidationPipeline` | `agent.learning.consolidation` | 巩固管线编排（在用，串行 7 阶段）|
+| `ConsolidationScheduler` | `agent.learning.consolidation` | 巩固调度解耦（**当前为未接线骨架**，见 §3.2）|
+| `ForgettingEngine` | `agent.learning.forgetting` | MaRS 六策略混合遗忘 |
+| `FeedbackProcessor` | `agent.learning.feedback` | 用户反馈处理 |
+| `ConflictResolutionService` | `agent.learning.conflict` | 语义冲突 LLM 裁决 |
+| `StalenessCoordinator` | `agent.learning.staleness` | 新事实写入后邻居老化检测 |
+| `AssociationCandidateGenerator` | `agent.learning.consolidation.association` | REM 式联想候选生成 |
+| `AssociationConsolidator` | `agent.learning.consolidation.association` | 联想候选过滤与持久化 |
 
 ### 1.2 学习系统不包含的组件（留在记忆）
 
@@ -157,7 +160,7 @@ sequenceDiagram
 
 **触发时机**：对话结束后，Virtual Thread 异步执行
 
-**源码位置**：`src/main/java/com/lifepilot/memory/semantic/RealtimeExtractor.java`
+**源码位置**：`src/main/java/com/lifepilot/agent/learning/extraction/RealtimeExtractor.java`
 
 ### 2.2 经验学习（ExperienceSummarizer + SubtaskReflector + ContrastiveLearner）
 
@@ -171,7 +174,7 @@ sequenceDiagram
 
 **触发时机**：对话结束后，`ReactAgentLoop.asyncPostProcess` 在 Virtual Thread 中调用
 
-**源码位置**：`src/main/java/com/lifepilot/memory/experience/ExperienceSummarizer.java`
+**源码位置**：`src/main/java/com/lifepilot/agent/learning/experience/ExperienceSummarizer.java`
 
 #### 2.2.2 SubtaskReflector — 工具级经验
 
@@ -179,7 +182,7 @@ sequenceDiagram
 - 工具级经验不进入通用经验注入；只由 `ToolTipResolver` 在匹配工具时提供提示
 - 触发条件：连续工具调用数 ≥ `minToolSequence`（默认 3）
 
-**源码位置**：`src/main/java/com/lifepilot/memory/experience/SubtaskReflector.java`
+**源码位置**：`src/main/java/com/lifepilot/agent/learning/experience/SubtaskReflector.java`
 
 #### 2.2.3 ContrastiveLearner — 对比学习
 
@@ -187,7 +190,7 @@ sequenceDiagram
 - 当前实现：对现有 EXPERIENCE 的 `properties` 增强（写入 `lessons` + `contrastiveEnriched=true`）
 - 终态应产出独立派生洞察实体，而不是无血缘地原地增强
 
-**源码位置**：`src/main/java/com/lifepilot/memory/experience/ContrastiveLearner.java`
+**源码位置**：`src/main/java/com/lifepilot/agent/learning/experience/ContrastiveLearner.java`
 
 ### 2.3 效果追踪（EffectivenessTracker）
 
@@ -198,7 +201,7 @@ sequenceDiagram
 - 无效 → importanceScore - negativeDecay（默认 0.03）
 - 低于 evictionThreshold（默认 0.1）→ 归档淘汰
 
-**源码位置**：`src/main/java/com/lifepilot/memory/experience/EffectivenessTracker.java`
+**源码位置**：`src/main/java/com/lifepilot/agent/learning/experience/EffectivenessTracker.java`
 
 ### 2.4 冲突裁决（ConflictResolutionService）
 
@@ -206,7 +209,7 @@ sequenceDiagram
 - 查 top-5 语义相似邻居 → 过滤自己 → 交 LLM 裁决
 - 裁决结果可能导致旧实体 SUPERSEDED 或新实体 COEXIST
 
-**源码位置**：`src/main/java/com/lifepilot/memory/semantic/ConflictResolutionService.java`
+**源码位置**：`src/main/java/com/lifepilot/agent/learning/conflict/ConflictResolutionService.java`
 
 ### 2.5 老化检测（StalenessCoordinator）
 
@@ -216,7 +219,7 @@ sequenceDiagram
 - 类型白名单：默认 `PREFERENCE / HABIT / LOCATION / GOAL`
 - 相似度阈值：默认 0.85
 
-**源码位置**：`src/main/java/com/lifepilot/memory/lifecycle/staleness/StalenessCoordinator.java`
+**源码位置**：`src/main/java/com/lifepilot/agent/learning/staleness/StalenessCoordinator.java`
 
 
 ---
@@ -237,9 +240,15 @@ sequenceDiagram
 | 6 | 经验提升 | `promoteHighFrequencyExperiences` | L3 `EXPERIENCE` 中 `importanceScore ≥ 0.8 且 accessCount ≥ 3` 提升为 `ProcedureTemplate`，源经验归档 |
 | 7 | REM 联想 | `AssociationCandidateGenerator` + `AssociationConsolidator` | 对 L3 高 importance seed 实体做跨实体联想，LLM 推断潜在语义关系 |
 
-### 3.2 调度解耦方向（规划中）
+### 3.2 调度解耦方向（骨架已存在，未接线）
 
-当前问题：7 阶段全部串行运行在同一个 cron job 中，无法独立调度。
+当前问题：7 阶段全部串行运行在同一个 cron job 中（`ConsolidationPipeline.consolidate()`），无法独立调度。
+
+> **2026-06 核实**：`ConsolidationScheduler` 类已存在于 `agent.learning.consolidation`，但**当前仅是转发壳** ——
+> `onConversationCompleted()` / `executeDailyCronStages()` / `executeIdleStages()` / `checkProfileDebounce()`
+> 四个方法全部转发同一句 `pipeline.consolidate(false)`，并未拆分为独立阶段；且全仓无任何
+> `new ConsolidationScheduler(...)`，即**未注册为 Bean、未被调用**。真正生效的仍是旧 `ConsolidationPipeline`。
+> 解耦工作（按下表落地独立触发策略 + 接线替换）属于待开发项。
 
 目标：每个阶段有独立的触发策略：
 
