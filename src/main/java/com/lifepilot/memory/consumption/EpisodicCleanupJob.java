@@ -39,7 +39,7 @@ public class EpisodicCleanupJob {
     /**
      * 定时清理过期对话记录。
      */
-    @Scheduled(cron = "${lifepilot.memory.episodic-cleanup.cron}")
+    @Scheduled(cron = "${lifepilot.memory.consumption.episodic-cleanup.cron}")
     public void cleanup() {
         var config = properties.getEpisodicCleanup();
         var cutoff = Instant.now().minus(Duration.ofDays(config.getRetentionDays()));

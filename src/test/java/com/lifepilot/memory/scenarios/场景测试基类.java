@@ -89,7 +89,7 @@ public abstract class 场景测试基类 {
                 .toString()
                 .replace("\\", "/");
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
-        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+        registry.add("lifepilot.memory.store.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
     }
 
     @Autowired protected ReactAgentLoop agentLoop;

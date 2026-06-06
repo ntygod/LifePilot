@@ -44,7 +44,7 @@ public class MemoryMcpServerController {
     private final String apiKey;
 
     public MemoryMcpServerController(MemoryMcpHandler handler,
-                                     @org.springframework.beans.factory.annotation.Value("${lifepilot.memory.mcp-server.api-key:}") String apiKey) {
+                                     @org.springframework.beans.factory.annotation.Value("${lifepilot.memory.governance.mcp-server.api-key:}") String apiKey) {
         this.handler = handler;
         this.apiKey = apiKey;
         log.info("Memory MCP Server 已启用, endpoint=POST /api/mcp/memory, auth={}",

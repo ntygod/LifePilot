@@ -51,7 +51,7 @@ class ModelServiceRepositoryTest {
         var dbPath = Path.of(tmpDir, "lifepilot-model-service-test-" + DB_ID).toString().replace("\\", "/") + ".db";
         var vecDbPath = Path.of(tmpDir, "lifepilot-model-service-vec-test-" + DB_ID).toString().replace("\\", "/") + ".db";
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
-        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+        registry.add("lifepilot.memory.store.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
     }
 
     @Autowired

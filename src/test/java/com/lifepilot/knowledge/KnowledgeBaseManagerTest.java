@@ -51,7 +51,7 @@ class KnowledgeBaseManagerTest {
         var dbPath = Path.of(tmpDir, "lifepilot-kb-mgr-test-" + DB_ID + ".db").toString().replace("\\", "/");
         var vecDbPath = Path.of(tmpDir, "lifepilot-kb-mgr-vec-test-" + DB_ID + ".db").toString().replace("\\", "/");
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
-        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+        registry.add("lifepilot.memory.store.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
     }
 
     @Autowired

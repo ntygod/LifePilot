@@ -222,6 +222,44 @@ lifepilot:
         max-entity-name-length: 100
         min-description-length: 2
         existing-entity-summary-limit: 50
+      # 经验总结配置（agent.learning.experience；模块拆分前误置于 lifepilot.memory.experience）
+      experience:
+        enabled: true
+        max-input-tokens: 4000
+        dedup-similarity-threshold: 0.90
+        max-retention-days: 90
+        llm-timeout-seconds: 120
+        min-tool-success-ratio: 0.3
+        effectiveness:
+          success-ratio-threshold: 0.5
+          positive-boost: 0.05
+          negative-decay: 0.03
+          eviction-threshold: 0.1
+        contrastive:
+          enabled: true
+          similarity-threshold: 0.80
+          initial-importance: 0.7
+          llm-timeout-seconds: 120
+        isolation:
+          cross-context-retrieval: false
+        merge:
+          enabled: true
+          similarity-threshold: 0.85
+          max-merges-per-run: 10
+          llm-timeout-seconds: 30
+        subtask:
+          enabled: true
+          min-tool-sequence: 3
+          initial-importance: 0.4
+          max-input-tokens: 2000
+          llm-timeout-seconds: 120
+      # 反馈闭环配置（agent.learning.feedback；模块拆分前误置于 lifepilot.memory.feedback）
+      feedback:
+        like-boost: 0.1
+        dislike-penalty: 0.05
+        expiration-cron: "0 0 * * * *"
+        negative-threshold-count: 3
+        negative-threshold-score: -1.0
   llm:
     # ===== LLM 路由配置 =====
     # 生成与向量服务都从 model_services 表加载，通过 Web UI 的“模型与路由”页面统一管理
@@ -307,6 +345,16 @@ lifepilot:
         project-memory-max-entries: 4
         experience-max-entries: 3
         facts-max-entries: 4
+      # 对话压缩配置（consumption.compression）
+      compression:
+        strategy: sliding-window
+        window-size: 20
+        window-overlap: 2
+      # L2 情景记忆自动清理（consumption.episodic-cleanup）
+      episodic-cleanup:
+        cron: "0 0 5 * * *"
+        retention-days: 90
+        max-cleanup-per-run: 500
     # 巩固管线 / 遗忘引擎 / 实体提取配置已迁移到 lifepilot.agent.learning.*（consolidation-decoupling）
     # 混合检索相关性过滤
     retrieval:
@@ -324,72 +372,20 @@ lifepilot:
       rewrite-timeout-ms: 5000
       min-vector-similarity: 0.15
       topic-switch-threshold: 0.3
-    # 记忆精排配置
-    reranker:
-      enabled: true
-      top-k: 10
-    # 对话压缩配置
-    compression:
-      strategy: sliding-window
-      window-size: 20
-      window-overlap: 2
-    # 反馈闭环配置
-    feedback:
-      like-boost: 0.1
-      dislike-penalty: 0.05
-      expiration-cron: "0 0 * * * *"
-      # 负反馈阈值：任一满足触发 SUPERSEDED 状态转换
-      negative-threshold-count: 3
-      negative-threshold-score: -1.0
-    # Agentic Tool 配置
-    agentic-tool:
-      default-top-k: 10
-      docs-default-top-k: 5
-    # L2 情景记忆自动清理
-    episodic-cleanup:
-      cron: "0 0 5 * * *"
-      retention-days: 90
-      max-cleanup-per-run: 500
-    # Memory MCP Server（暴露记忆能力给外部 Agent）
-    mcp-server:
-      enabled: true
-      api-key: ${MEMORY_MCP_API_KEY:}
-    # 经验总结配置
-    experience:
-      enabled: true
-      max-input-tokens: 4000
-      dedup-similarity-threshold: 0.90
-      max-retention-days: 90
-      llm-timeout-seconds: 120
-      min-tool-success-ratio: 0.3
-      # 效果反馈配置
-      effectiveness:
-        success-ratio-threshold: 0.5
-        positive-boost: 0.05
-        negative-decay: 0.03
-        eviction-threshold: 0.1
-      # 对比学习配置
-      contrastive:
+      # 记忆精排配置（retrieval.reranker）
+      reranker:
         enabled: true
-        similarity-threshold: 0.80
-        initial-importance: 0.7
-        llm-timeout-seconds: 120
-      # 执行上下文隔离配置
-      isolation:
-        cross-context-retrieval: false
-      # 经验合并配置
-      merge:
+        top-k: 10
+      # Agentic Tool 配置（retrieval.agentic-tool）
+      agentic-tool:
+        default-top-k: 10
+        docs-default-top-k: 5
+    # 治理层（绑定 lifepilot.memory.governance）
+    governance:
+      # Memory MCP Server（暴露记忆能力给外部 Agent）
+      mcp-server:
         enabled: true
-        similarity-threshold: 0.85
-        max-merges-per-run: 10
-        llm-timeout-seconds: 30
-      # 子任务反思配置
-      subtask:
-        enabled: true
-        min-tool-sequence: 3
-        initial-importance: 0.4
-        max-input-tokens: 2000
-        llm-timeout-seconds: 120
+        api-key: ${MEMORY_MCP_API_KEY:}
   skills:
     # ===== Skill 系统配置 =====
     # 支持 Java 原生 Skill、Markdown 声明式 Skill、MCP 外部工具
