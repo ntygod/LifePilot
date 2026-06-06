@@ -146,6 +146,32 @@ class ProceduralMemoryTest {
     }
 
     @Test
+    void findBySourceEntityId_命中活跃模板_排除已失活与不存在() {
+        var now = Instant.now();
+        // 活跃模板：templateId 独立 UUID，source_entity_id 指向源经验 exp-1
+        var active = new ProcedureTemplate(
+                UUID.randomUUID().toString(), "提升模板", "由经验提升而来",
+                "触发意图", List.of(), Map.of(), 1.0f, 3, now, List.of(), now, now,
+                "exp-1", null);
+        proceduralMemory.save(active);
+
+        // 同源但已失活的模板：findBySourceEntityId 应排除
+        var deactivated = new ProcedureTemplate(
+                UUID.randomUUID().toString(), "旧模板", "已失活",
+                "触发意图", List.of(), Map.of(), 1.0f, 3, now, List.of(), now, now,
+                "exp-1", "L3 已归档");
+        proceduralMemory.save(deactivated);
+
+        var found = proceduralMemory.findBySourceEntityId("exp-1");
+        assertThat(found).isPresent();
+        assertThat(found.get().templateId()).isEqualTo(active.templateId());
+        assertThat(found.get().sourceEntityId()).isEqualTo("exp-1");
+
+        // 无对应源实体时返回空
+        assertThat(proceduralMemory.findBySourceEntityId("exp-不存在")).isEmpty();
+    }
+
+    @Test
     void update_修改字段后_查询返回新值() {
         var now = Instant.now();
         var template = createSimpleTemplate("tpl-update", "原始名称", now);

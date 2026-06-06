@@ -60,7 +60,7 @@ class ExperiencePromoter_单元测试 {
                 now,
                 now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
-        when(proceduralMemory.findById("exp-1")).thenReturn(Optional.empty());
+        when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.empty());
 
         var promoter = new ExperiencePromoter(semanticMemory, proceduralMemory, properties);
         int promoted = promoter.promote();
@@ -82,7 +82,7 @@ class ExperiencePromoter_单元测试 {
                 "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
                 1, true, now, null, "session-1", 1.0f, 0.95f, 5, now, now, now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
-        when(proceduralMemory.findById("exp-1")).thenReturn(Optional.empty());
+        when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.empty());
 
         var promoter = new ExperiencePromoter(semanticMemory, proceduralMemory, properties);
         int promoted = promoter.promote();
@@ -99,7 +99,7 @@ class ExperiencePromoter_单元测试 {
     }
 
     @Test
-    @DisplayName("已存在同名模板时跳过提升")
+    @DisplayName("已存在同源模板时跳过提升（按 sourceEntityId 去重）")
     void 已存在模板时跳过提升() {
         var properties = new AgentLearningProperties();
         var semanticMemory = mock(SemanticMemory.class);
@@ -109,12 +109,38 @@ class ExperiencePromoter_单元测试 {
                 "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
                 1, true, now, null, "session-1", 1.0f, 0.95f, 3, now, now, now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
-        when(proceduralMemory.findById("exp-1")).thenReturn(Optional.of(mock(ProcedureTemplate.class)));
+        when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.of(mock(ProcedureTemplate.class)));
 
         var promoter = new ExperiencePromoter(semanticMemory, proceduralMemory, properties);
         int promoted = promoter.promote();
 
         assertThat(promoted).isZero();
         verify(proceduralMemory, never()).save(any(ProcedureTemplate.class));
+    }
+
+    @Test
+    @DisplayName("提升模板使用独立 templateId 且 sourceEntityId 指向源经验，避免向量串号")
+    void 提升模板templateId应独立且sourceEntityId指向源经验() {
+        var properties = new AgentLearningProperties();
+        var semanticMemory = mock(SemanticMemory.class);
+        var proceduralMemory = mock(ProceduralMemory.class);
+        var now = Instant.parse("2026-05-07T06:30:00Z");
+        var experience = new TemporalEntity(
+                "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
+                1, true, now, null, "session-1", 1.0f, 0.95f, 3, now, now, now);
+        when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
+        when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.empty());
+
+        var promoter = new ExperiencePromoter(semanticMemory, proceduralMemory, properties);
+        int promoted = promoter.promote();
+
+        assertThat(promoted).isEqualTo(1);
+        var captor = ArgumentCaptor.forClass(ProcedureTemplate.class);
+        verify(proceduralMemory).save(captor.capture());
+        var saved = captor.getValue();
+        // templateId 为独立 UUID，不复用 exp.id()，避免与源 EXPERIENCE 实体向量串号
+        assertThat(saved.templateId()).isNotEqualTo("exp-1");
+        // sourceEntityId 指向源 L3 EXPERIENCE 实体 id，供去重与 L4 级联失活
+        assertThat(saved.sourceEntityId()).isEqualTo("exp-1");
     }
 }

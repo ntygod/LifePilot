@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 经验提升器 — 巩固阶段 6：将高频经验提升为 L4 ProcedureTemplate。
@@ -58,20 +59,25 @@ public class ExperiencePromoter {
 
         for (var exp : experiences) {
             if (exp.importanceScore() >= minImportance && exp.accessCount() >= minAccessCount) {
-                // 检查是否已存在同名模板（避免重复提升）
-                var existing = proceduralMemory.findById(exp.id());
+                // 去重：templateId 改用独立 UUID 后不再复用 exp.id()，故重复提升的判定
+                // 改为按 source_entity_id 反查现存活跃模板，命中则跳过。
+                var existing = proceduralMemory.findBySourceEntityId(exp.id());
                 if (existing.isPresent()) continue;
 
                 var now = Instant.now();
-                // 经验提升为 L4 模板 — sourceEntityId 指向源 L3 EXPERIENCE 实体 id。
-                // 源实体保持 ACTIVE：后续真正失活时再由 L4SyncListener 级联模板失活。
+                // 经验提升为 L4 模板 — templateId 使用独立 UUID，sourceEntityId 指向源 L3
+                // EXPERIENCE 实体 id。两者解耦避免与源实体共用 entity_embeddings 同一 key
+                // （模板向量经 PROCEDURE_TEMPLATE_VECTOR 投影按 entityId=templateId 写入，
+                // 若复用 exp.id() 会与源 EXPERIENCE 实体向量互相覆盖串号）。
+                // 源实体保持 ACTIVE：后续真正失活时再由 L4SyncListener 经 source_entity_id
+                // 反查级联模板失活。
                 //
                 // 可靠性初始化：useCount 由源经验 accessCount 驱动，忠实反映底层经验
                 // 已被使用的次数。提升前提已要求 accessCount >= minAccessCount（默认 3），
                 // 故 useCount >= minUseCount（默认 2），配合 successRate=1.0 使提升模板
                 // 立即满足 IntentMatcher.isReliable 而可被匹配，修复 useCount=0 永不可靠的缺陷。
                 var template = new ProcedureTemplate(
-                        exp.id(),
+                        UUID.randomUUID().toString(),
                         exp.name(),
                         exp.description(),
                         exp.name(),
@@ -89,7 +95,8 @@ public class ExperiencePromoter {
                 );
                 SqliteBusyRetry.run(() -> proceduralMemory.save(template));
                 promoted++;
-                log.debug("经验提升: entityId={}, name={}", exp.id(), exp.name());
+                log.debug("经验提升: sourceEntityId={}, templateId={}, name={}",
+                        exp.id(), template.templateId(), exp.name());
             }
         }
         if (promoted > 0) {

@@ -95,6 +95,24 @@ public class ProceduralMemory {
     }
 
     /**
+     * 按源实体 ID 查询仍生效（{@code deactivated_reason IS NULL}）的操作模板。
+     *
+     * <p>经验提升（{@code ExperiencePromoter}）按此判据去重：模板 templateId 为独立 UUID，
+     * 与源 L3 EXPERIENCE 实体 id 解耦以避免向量索引串号，因此重复提升的判定改为
+     * 按 {@code source_entity_id} 反查现存模板。</p>
+     *
+     * @param sourceEntityId 源 L3 实体 ID
+     * @return 模板（如存在活跃模板）
+     */
+    public Optional<ProcedureTemplate> findBySourceEntityId(String sourceEntityId) {
+        var results = jdbcTemplate.query(
+                "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE source_entity_id = ? AND deactivated_reason IS NULL",
+                (rs, rowNum) -> mapRowToTemplate(rs),
+                sourceEntityId);
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
+    }
+
+    /**
      * 更新操作模板 — 更新所有字段并刷新 triggerIntent 向量索引。
      *
      * @param template 更新后的操作模板
