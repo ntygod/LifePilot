@@ -47,7 +47,7 @@ class ConsolidationPipeline_单元测试 {
         var userProfileConsolidator = mock(UserProfileConsolidator.class);
         var pipeline = new ConsolidationPipeline(
                 semanticConsolidator, proceduralConsolidator, properties,
-                null, null, userProfileConsolidator, null, null, null);
+                null, null, userProfileConsolidator, null, null, null, null);
 
         pipeline.consolidate(true);
 
@@ -60,7 +60,7 @@ class ConsolidationPipeline_单元测试 {
         when(semanticConsolidator.consolidate()).thenThrow(new RuntimeException("语义巩固故障"));
         var pipeline = new ConsolidationPipeline(
                 semanticConsolidator, proceduralConsolidator, properties,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
 
         // 语义巩固抛异常，但管线应继续执行程序巩固
         pipeline.consolidate();

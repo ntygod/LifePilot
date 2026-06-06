@@ -76,7 +76,8 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
         AgentLearningProperties props = new AgentLearningProperties();
         extractor = new RealtimeExtractor(
                 generationRouter, semanticMemory, props, validator,
-                jdbcTemplate, promptRegistry, snapshotRepository);
+                jdbcTemplate, promptRegistry, snapshotRepository,
+                null, null, null, null, null);
     }
 
     @Test

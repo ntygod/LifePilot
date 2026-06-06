@@ -88,7 +88,11 @@ class RealtimeExtractor_temporality_集成测试 {
                 jdbcTemplate,
                 promptRegistry,
                 snapshotRepo,
-                FIXED_CLOCK
+                FIXED_CLOCK,
+                null,
+                null,
+                null,
+                null
         );
     }
 
