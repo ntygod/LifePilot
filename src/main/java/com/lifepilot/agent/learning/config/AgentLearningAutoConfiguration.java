@@ -331,7 +331,8 @@ public class AgentLearningAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            name = "lifepilot.memory.rem.enabled", havingValue = "true")
+            prefix = "lifepilot.agent.learning.rem", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
     public AssociationCandidateGenerator associationCandidateGenerator(
             SemanticMemory semanticMemory,
             @Nullable HybridRetriever hybridRetriever,
@@ -344,7 +345,8 @@ public class AgentLearningAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            name = "lifepilot.memory.rem.enabled", havingValue = "true")
+            prefix = "lifepilot.agent.learning.rem", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
     public AssociationConsolidator associationConsolidator(
             AgentLearningProperties properties,
             AssociationCandidateStore store) {

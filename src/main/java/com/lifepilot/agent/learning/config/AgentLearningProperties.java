@@ -399,8 +399,9 @@ public class AgentLearningProperties {
         /** 最小置信度阈值；低于此值不入库。 */
         private float minConfidence = 0.65f;
 
-        /** LLM 调用超时（秒）。 */
-        private int llmTimeoutSeconds = 20;
+        /** LLM 调用超时（秒）—— REM 为空闲后台任务，deepseek 等推理模型单次联想耗时常超 20s，
+         *  默认放宽到 60s（与其他后台巩固 LLM 调用量级一致），避免联想恒超时无产出。 */
+        private int llmTimeoutSeconds = 60;
 
         /** 同 (source, target, type) 去重窗口（小时）。 */
         private int deduplicationWindowHours = 24;

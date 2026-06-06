@@ -177,19 +177,20 @@ for (EvidenceItem item : bundle.items()) {
 
 巩固管线第 7 步：基于 L3 高 importance 实体做跨实体联想，LLM 识别潜在语义关系，合格候选落文件审计。
 
-**启用**（默认关闭）：
+**启用**（默认开启；统一键 `lifepilot.agent.learning.rem.enabled`，模块拆分后从 `lifepilot.memory.rem` 迁入）：
 
 ```yaml
 lifepilot:
-  memory:
-    rem:
-      enabled: true
-      seed-limit: 10
-      neighbor-limit: 5
-      seed-types: [GOAL, TOPIC, PROJECT]
-      min-confidence: 0.65
-      llm-timeout-seconds: 20
-      deduplication-window-hours: 24
+  agent:
+    learning:
+      rem:
+        enabled: true
+        seed-limit: 10
+        neighbor-limit: 5
+        seed-types: [GOAL, TOPIC, PROJECT]
+        min-confidence: 0.65
+        llm-timeout-seconds: 60
+        deduplication-window-hours: 24
 ```
 
 启用后每次巩固管线执行（cron 或手动 `ConsolidationPipeline.consolidate()`）会额外执行一次 REM 联想。
