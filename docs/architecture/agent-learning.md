@@ -216,7 +216,7 @@ sequenceDiagram
 - 新事实写入后自动识别语义冲突的老邻居
 - 迁入 `STALE_CANDIDATE` 生命周期态
 - 召回时降权但不丢弃，Agent 命中时可自然追问确认
-- 类型白名单：默认 `PREFERENCE / HABIT / LOCATION / GOAL`
+- 类型白名单：默认 `PREFERENCE / HABIT / PLACE / GOAL`
 - 相似度阈值：默认 0.85
 
 **源码位置**：`src/main/java/com/lifepilot/agent/learning/staleness/StalenessCoordinator.java`

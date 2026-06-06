@@ -439,7 +439,7 @@ Spec：`.kiro/specs/retrieval-orchestrator/`
 新事实写入时自动识别与之语义冲突的老邻居，迁入新的 `STALE_CANDIDATE` 生命周期态；召回时降权但不丢弃，Agent 命中时可自然追问确认。
 
 - `LifecycleState` 增 `STALE_CANDIDATE`；允许 `ACTIVE → STALE_CANDIDATE`、`STALE_CANDIDATE → ACTIVE / SUPERSEDED / ARCHIVED`，其他终态禁止进入
-- `VectorBasedStaleConflictDetector`：类型白名单（默认 `PREFERENCE / HABIT / LOCATION / GOAL`）+ 相似度阈值（默认 0.85）+ UNVERIFIED 过滤
+- `VectorBasedStaleConflictDetector`：类型白名单（默认 `PREFERENCE / HABIT / PLACE / GOAL`）+ 相似度阈值（默认 0.85）+ UNVERIFIED 过滤
 - `StalenessCoordinator`：虚拟线程 afterCommit 异步调度 `Detector → StalenessMarker → NeighborRefreshService`
 - `HybridRetriever`：`STALE_CANDIDATE` 命中分数乘 0.65（默认 penalty 0.35），`scoreBreakdown.lifecycleAdjustment` 可审
 - `ProactiveCacheInvalidator` 订阅 `EntityLifecycleChanged`，让主动引擎感知 L3 失活

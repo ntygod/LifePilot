@@ -111,7 +111,7 @@ lifepilot:
       enabled: true
       detection-similarity-threshold: 0.85      # 邻居识别最低语义相似度
       max-neighbors-per-detection: 3            # 单次最多标记
-      detectable-types: [PREFERENCE, HABIT, LOCATION, GOAL]
+      detectable-types: [PREFERENCE, HABIT, PLACE, GOAL]
       retrieval-penalty: 0.35                   # 召回惩罚比例
       neighbor-refresh-enabled: false           # 邻居刷新候选开关
 ```

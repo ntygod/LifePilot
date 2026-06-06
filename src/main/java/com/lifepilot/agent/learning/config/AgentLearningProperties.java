@@ -368,7 +368,7 @@ public class AgentLearningProperties {
         private int maxNeighborsPerDetection = 3;
 
         /** 允许触发 staleness 检测的实体类型白名单。 */
-        private Set<String> detectableTypes = Set.of("PREFERENCE", "HABIT", "LOCATION", "GOAL");
+        private Set<String> detectableTypes = Set.of("PREFERENCE", "HABIT", "PLACE", "GOAL");
 
         /** 召回时对 STALE_CANDIDATE 应用的分数惩罚比例（0~1）。默认 0.35，得分乘 0.65。 */
         private float retrievalPenalty = 0.35f;
