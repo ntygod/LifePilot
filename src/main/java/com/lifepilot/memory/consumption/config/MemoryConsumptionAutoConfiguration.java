@@ -14,7 +14,6 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -50,7 +49,6 @@ public class MemoryConsumptionAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(EpisodicMemory.class)
     public CompressionService compressionService(EpisodicMemory episodicMemory,
                                                  @Nullable GenerationRouter generationRouter,
                                                  PromptRegistry promptRegistry,
@@ -62,7 +60,6 @@ public class MemoryConsumptionAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(EpisodicMemory.class)
     public EpisodicCleanupJob episodicCleanupJob(
             EpisodicMemory episodicMemory,
             JdbcTemplate jdbcTemplate,

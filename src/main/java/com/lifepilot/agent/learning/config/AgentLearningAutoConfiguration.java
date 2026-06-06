@@ -55,7 +55,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -156,7 +155,6 @@ public class AgentLearningAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public ConflictResolutionService conflictResolutionService(
             @Nullable GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
@@ -176,7 +174,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({VectorSearcher.class, SemanticMemory.class})
     public StaleConflictDetector staleConflictDetector(
             VectorSearcher vectorSearcher,
             SemanticMemory semanticMemory,
@@ -189,7 +186,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(SemanticMemory.class)
     public StalenessMarker stalenessMarker(
             SemanticMemory semanticMemory) {
         return new StalenessMarker(semanticMemory);
@@ -209,9 +205,6 @@ public class AgentLearningAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({StaleConflictDetector.class,
-                         StalenessMarker.class,
-                         SemanticMemory.class})
     public StalenessCoordinator stalenessCoordinator(
             StaleConflictDetector detector,
             StalenessMarker marker,
@@ -229,7 +222,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({EpisodicMemory.class, SemanticMemory.class})
     public EpisodicToSemanticConsolidator episodicToSemanticConsolidator(
             EpisodicMemory episodicMemory,
             SemanticMemory semanticMemory,
@@ -241,7 +233,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(ProceduralMemory.class)
     public EpisodicToProceduralConsolidator episodicToProceduralConsolidator(
             JdbcTemplate jdbcTemplate,
             ProceduralMemory proceduralMemory,
@@ -260,7 +251,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, ProceduralMemory.class})
     public PreferenceConsolidator preferenceConsolidator(
             SemanticMemory semanticMemory,
             ProceduralMemory proceduralMemory) {
@@ -287,7 +277,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, ProceduralMemory.class})
     public ExperiencePromoter experiencePromoter(
             SemanticMemory semanticMemory,
             ProceduralMemory proceduralMemory,
@@ -298,7 +287,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(EpisodicToSemanticConsolidator.class)
     public ConsolidationPipeline consolidationPipeline(
             EpisodicToSemanticConsolidator semanticConsolidator,
             @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
@@ -325,7 +313,6 @@ public class AgentLearningAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(ConsolidationPipeline.class)
     public ConsolidationScheduler consolidationScheduler(ConsolidationPipeline pipeline) {
         Duration debounce = Duration.ofMinutes(
                 Math.max(1, properties.getConsolidation().getProfileDebounceMinutes()));
@@ -368,7 +355,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public ExperienceMerger experienceMerger(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
@@ -383,7 +369,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public EntityDeduplicator entityDeduplicator(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
@@ -396,7 +381,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(SemanticMemory.class)
     public ForgettingEngine forgettingEngine(
             SemanticMemory semanticMemory,
             @Nullable GenerationRouter generationRouter,
@@ -418,7 +402,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(SemanticMemory.class)
     public FeedbackProcessor feedbackProcessor(
             InjectionRecordRepository injectionRecordRepository,
             SemanticMemory semanticMemory,
@@ -438,7 +421,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public ExperienceSummarizer experienceSummarizer(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
@@ -458,7 +440,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(SemanticMemory.class)
     public EffectivenessTracker effectivenessTracker(
             SemanticMemory semanticMemory,
             InjectionRecordRepository injectionRecordRepository,
@@ -470,7 +451,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public ContrastiveLearner contrastiveLearner(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
@@ -485,7 +465,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({SemanticMemory.class, VectorSearcher.class})
     public SubtaskReflector subtaskReflector(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
@@ -506,7 +485,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ProceduralMemory.class, VectorSearcher.class})
     public IntentMatcher intentMatcher(
             ProceduralMemory proceduralMemory,
             VectorSearcher vectorSearcher,
