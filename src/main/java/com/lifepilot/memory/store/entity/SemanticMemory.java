@@ -910,6 +910,41 @@ public class SemanticMemory {
         log.debug("语义记忆: 添加关系, id={}, type={}", relation.id(), relation.relationType());
     }
 
+    /**
+     * 判断指定 (source, target, relationType) 的 ACTIVE 关系是否已存在 —— 用于关系写入幂等守卫。
+     */
+    public boolean relationExists(String sourceId, String targetId, String relationType) {
+        if (sourceId == null || targetId == null || relationType == null) {
+            return false;
+        }
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) FROM memory_relations
+                WHERE source_entity_id = ? AND target_entity_id = ? AND relation_type = ? AND status = 'ACTIVE'
+                """,
+                Integer.class,
+                sourceId, targetId, relationType);
+        return count != null && count > 0;
+    }
+
+    /**
+     * 判断指定实体是否为当前有效实体（is_current=1 且生命周期处于可用集）—— 用于关系端点存活校验。
+     */
+    public boolean existsCurrentById(String entityId) {
+        if (entityId == null || entityId.isBlank()) {
+            return false;
+        }
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) FROM temporal_entities
+                WHERE id = ? AND is_current = 1
+                  AND lifecycle_state IN ('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')
+                """,
+                Integer.class,
+                entityId);
+        return count != null && count > 0;
+    }
+
     /** 查找所有当前实体，按 importance_score ASC, access_count ASC。 */
     public List<TemporalEntity> findAllCurrent() {
         return findAllCurrent(null);

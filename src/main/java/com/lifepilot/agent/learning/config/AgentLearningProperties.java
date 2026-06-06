@@ -197,6 +197,12 @@ public class AgentLearningProperties {
 
         /** 注入提示词的已有实体摘要上限，默认 50。 */
         private int existingEntitySummaryLimit = 50;
+
+        /** 对话期关系抽取开关 —— 实体写入后追加一次关系抽取并写入 memory_relations，默认 true。 */
+        private boolean relationExtractionEnabled = true;
+
+        /** 关系抽取 LLM 调用独立超时（秒），默认 60。 */
+        private int relationTimeoutSeconds = 60;
     }
 
     /**
@@ -405,5 +411,11 @@ public class AgentLearningProperties {
 
         /** 同 (source, target, type) 去重窗口（小时）。 */
         private int deduplicationWindowHours = 24;
+
+        /** REM 候选落库应用器开关 —— 将文件候选应用到 memory_relations 主库，默认 true。 */
+        private boolean applyEnabled = true;
+
+        /** REM 候选落库的最小置信度阈值（独立于生成阈值 minConfidence，默认更高 0.75）。 */
+        private float applyMinConfidence = 0.75f;
     }
 }

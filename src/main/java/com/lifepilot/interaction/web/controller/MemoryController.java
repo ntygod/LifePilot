@@ -67,6 +67,7 @@ public class MemoryController {
     private final MemoryProvenanceRepository provenanceRepository;
     private final @Nullable ProjectContextResolver projectContextResolver;
     private final MemoryAccessPolicy memoryAccessPolicy;
+    private final @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
     private final AtomicBoolean deduplicating = new AtomicBoolean(false);
     private final AtomicBoolean forgetting = new AtomicBoolean(false);
@@ -82,7 +83,8 @@ public class MemoryController {
                             ForgettingLogRepository forgettingLogRepository,
                             MemoryProvenanceRepository provenanceRepository,
                             @Nullable ProjectContextResolver projectContextResolver,
-                            @Nullable MemoryAccessPolicy memoryAccessPolicy) {
+                            @Nullable MemoryAccessPolicy memoryAccessPolicy,
+                            @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
@@ -95,6 +97,7 @@ public class MemoryController {
         this.provenanceRepository = provenanceRepository;
         this.projectContextResolver = projectContextResolver;
         this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
+        this.remApplier = remApplier;
     }
 
     /** 检查记忆系统是否启用，未启用时抛出 503。 */
@@ -891,6 +894,29 @@ public class MemoryController {
             }
         });
         return ApiResponse.ok(Map.of("status", "accepted", "message", "巩固任务已提交"));
+    }
+
+    /**
+     * 手动触发 REM 联想候选落库 — 开发期用于验证关系图谱写入；生产由巩固周期触发。
+     */
+    @PostMapping("/rem/apply")
+    public ApiResponse<Map<String, Object>> triggerRemApply(
+            @RequestParam(required = false) @Nullable String date) {
+        requireMemoryEnabled();
+        if (remApplier == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "REM 落库应用器未启用");
+        }
+        java.time.LocalDate target = (date != null && !date.isBlank())
+                ? java.time.LocalDate.parse(date.trim())
+                : java.time.LocalDate.now();
+        var result = remApplier.apply(target);
+        return ApiResponse.ok(Map.of(
+                "date", target.toString(),
+                "input", result.input(),
+                "applied", result.applied(),
+                "skippedLowConfidence", result.skippedLowConfidence(),
+                "skippedMissingEntity", result.skippedMissingEntity(),
+                "skippedDuplicate", result.skippedDuplicate()));
     }
 
     // ========== Req 9: 手动触发去重 ==========

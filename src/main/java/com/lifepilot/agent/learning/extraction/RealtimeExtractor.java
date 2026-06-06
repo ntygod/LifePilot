@@ -13,6 +13,8 @@ import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
 import com.lifepilot.memory.semantic.AudnDecision;
+import com.lifepilot.memory.semantic.AudnOperation;
+import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -73,21 +75,18 @@ public class RealtimeExtractor {
     private final MemoryExtractionCandidateRepository candidateRepository;
     @Nullable
     private final MemoryInjectionDetector injectionDetector;
-
-    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
-                             SemanticMemory semanticMemory,
-                             AgentLearningProperties properties,
-                             ExtractionValidator extractionValidator,
-                             JdbcTemplate jdbcTemplate,
-                             PromptRegistry promptRegistry,
-                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository) {
-        this(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, Clock.systemUTC());
-    }
+    /** 关系抽取步骤 — null 时跳过对话期关系抽取。 */
+    @Nullable
+    private final RelationExtractionStep relationExtractionStep;
+    /** 对话期关系抽取开关，来自配置。 */
+    private final boolean relationExtractionEnabled;
 
     /**
-     * 带 {@link Clock} 的扩展构造器 — 测试可注入 {@code Clock.fixed(...)} 以确定
-     * 自动推导的 {@code expires_at}。生产路径走 7 参构造器默认 {@code systemUTC}。
+     * 唯一构造器 —— 注入全部协作依赖。可选依赖允许传 null：
+     * {@code clock} 为 null 时退化为 {@link Clock#systemUTC()}，
+     * {@code memoryAccessPolicy} 为 null 时使用默认放行策略，
+     * {@code candidateRepository}/{@code injectionDetector}/{@code relationExtractionStep}
+     * 为 null 时对应能力关闭。
      */
     public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
@@ -96,49 +95,11 @@ public class RealtimeExtractor {
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
                              @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
-                             Clock clock) {
-        this(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, clock, null);
-    }
-
-    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
-                             SemanticMemory semanticMemory,
-                             AgentLearningProperties properties,
-                             ExtractionValidator extractionValidator,
-                             JdbcTemplate jdbcTemplate,
-                             PromptRegistry promptRegistry,
-                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
-                             Clock clock,
-                             @Nullable MemoryAccessPolicy memoryAccessPolicy) {
-        this(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, null);
-    }
-
-    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
-                             SemanticMemory semanticMemory,
-                             AgentLearningProperties properties,
-                             ExtractionValidator extractionValidator,
-                             JdbcTemplate jdbcTemplate,
-                             PromptRegistry promptRegistry,
-                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
-                             Clock clock,
-                             @Nullable MemoryAccessPolicy memoryAccessPolicy,
-                             @Nullable MemoryExtractionCandidateRepository candidateRepository) {
-        this(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, candidateRepository, null);
-    }
-
-    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
-                             SemanticMemory semanticMemory,
-                             AgentLearningProperties properties,
-                             ExtractionValidator extractionValidator,
-                             JdbcTemplate jdbcTemplate,
-                             PromptRegistry promptRegistry,
-                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
-                             Clock clock,
+                             @Nullable Clock clock,
                              @Nullable MemoryAccessPolicy memoryAccessPolicy,
                              @Nullable MemoryExtractionCandidateRepository candidateRepository,
-                             @Nullable MemoryInjectionDetector injectionDetector) {
+                             @Nullable MemoryInjectionDetector injectionDetector,
+                             @Nullable RelationExtractionStep relationExtractionStep) {
         this.generationRouter = generationRouter;
         this.semanticMemory = semanticMemory;
         this.extractionValidator = extractionValidator;
@@ -147,10 +108,12 @@ public class RealtimeExtractor {
         this.jdbcTemplate = jdbcTemplate;
         this.promptRegistry = promptRegistry;
         this.snapshotRepository = snapshotRepository;
-        this.clock = clock;
+        this.clock = clock != null ? clock : Clock.systemUTC();
         this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
         this.candidateRepository = candidateRepository;
         this.injectionDetector = injectionDetector;
+        this.relationExtractionStep = relationExtractionStep;
+        this.relationExtractionEnabled = properties.getExtraction().isRelationExtractionEnabled();
     }
 
     /**
@@ -234,6 +197,9 @@ public class RealtimeExtractor {
 
         // 4. 逐条执行 AUDN 操作
         int successCount = 0;
+        // 累积本轮成功写入的实体（name → id / name → 显示串），供关系抽取阶段做名称解析与端点约束
+        var turnEntityIds = new LinkedHashMap<String, String>();
+        var turnEntityDisplay = new LinkedHashMap<String, String>();
         for (var decision : validDecisions) {
             String candidateId = candidateRepository != null
                     ? candidateRepository.recordValidated(sessionId, writeContext, decision)
@@ -258,6 +224,14 @@ public class RealtimeExtractor {
                 if (candidateRepository != null) {
                     candidateRepository.markApplied(candidateId, result.persistedEntityId(), result.baseEntityId());
                 }
+                // 仅 ADD/UPDATE 产出的当前有效实体可作为关系端点；DELETE/NOOP 不纳入
+                if (result.persistedEntityId() != null
+                        && (decision.operation() == AudnOperation.ADD
+                            || decision.operation() == AudnOperation.UPDATE)) {
+                    turnEntityIds.put(decision.entityName(), result.persistedEntityId());
+                    turnEntityDisplay.put(decision.entityName(),
+                            decision.entityName() + " [" + decision.entityType().name() + "]");
+                }
                 successCount++;
             } catch (Exception e) {
                 if (candidateRepository != null) {
@@ -269,6 +243,87 @@ public class RealtimeExtractor {
         }
         log.debug("实时实体提取完成: sessionId={}, total={}, success={}",
                 sessionId, decisions.size(), successCount);
+
+        // 5. 关系抽取阶段 — 实体已持久化、ID 已知后，抽取实体间关系写入 memory_relations
+        extractAndPersistRelations(conversationText, turnEntityIds, turnEntityDisplay,
+                writeContext, sessionId, summaryReadFilter);
+    }
+
+    /**
+     * 关系抽取与写入 — 给定本轮已知实体，调用 LLM 抽取实体间关系并经唯一入口写入主库。
+     *
+     * <p>任何异常静默吞掉，不影响实体写入结果（关系抽取是增量增强，不是主流程）。</p>
+     */
+    private void extractAndPersistRelations(String conversationText,
+                                            Map<String, String> turnEntityIds,
+                                            Map<String, String> turnEntityDisplay,
+                                            MemoryWriteContext writeContext,
+                                            String sessionId,
+                                            MemoryReadFilter readFilter) {
+        if (relationExtractionStep == null || !relationExtractionEnabled) {
+            return;
+        }
+        try {
+            // 构建 name → id 解析表（本轮实体优先）与端点显示清单（带类型）
+            var nameToId = new LinkedHashMap<String, String>(turnEntityIds);
+            var displayList = new ArrayList<String>(turnEntityDisplay.values());
+            try {
+                var existing = semanticMemory.findAllCurrent(readFilter).stream()
+                        .sorted(Comparator.comparing(TemporalEntity::importanceScore).reversed())
+                        .limit(existingEntitySummaryLimit)
+                        .toList();
+                for (var entity : existing) {
+                    if (nameToId.putIfAbsent(entity.name(), entity.id()) == null) {
+                        displayList.add(entity.name() + " [" + entity.type().name() + "]");
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("关系抽取: 已有实体清单查询失败，仅用本轮实体, error={}", e.getMessage());
+            }
+            if (nameToId.size() < 2) {
+                return;
+            }
+
+            var relations = relationExtractionStep.extract(conversationText, displayList);
+            if (relations.isEmpty()) {
+                return;
+            }
+            int persisted = 0;
+            int skipped = 0;
+            for (var r : relations) {
+                String srcId = nameToId.get(r.sourceName());
+                String tgtId = nameToId.get(r.targetName());
+                String type = r.relationType();
+                if (srcId == null || tgtId == null || srcId.equals(tgtId)
+                        || type == null || type.isBlank()) {
+                    skipped++;
+                    log.debug("关系跳过: 无法解析端点或非法, source={}, target={}, type={}",
+                            r.sourceName(), r.targetName(), type);
+                    continue;
+                }
+                if (semanticMemory.relationExists(srcId, tgtId, type)) {
+                    skipped++;
+                    continue;
+                }
+                var now = Instant.now();
+                var relation = new TemporalRelation(
+                        UUID.randomUUID().toString(),
+                        srcId, tgtId, type.trim(),
+                        Math.max(0.0f, Math.min(1.0f, r.strength())),
+                        null, now, null, sessionId, now);
+                try {
+                    SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
+                    persisted++;
+                } catch (Exception e) {
+                    skipped++;
+                    log.warn("关系写入失败，跳过: type={}, error={}", type, e.getMessage());
+                }
+            }
+            log.debug("关系抽取完成: sessionId={}, candidates={}, persisted={}, skipped={}",
+                    sessionId, relations.size(), persisted, skipped);
+        } catch (Exception e) {
+            log.warn("关系抽取阶段异常，静默跳过: sessionId={}, error={}", sessionId, e.getMessage());
+        }
     }
 
     /** 拼接用户消息和 AI 响应为对话文本。 */

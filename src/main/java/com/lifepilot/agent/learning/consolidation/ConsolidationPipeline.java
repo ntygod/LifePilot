@@ -1,6 +1,7 @@
 package com.lifepilot.agent.learning.consolidation;
 
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier;
 import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateGenerator;
 import com.lifepilot.agent.learning.consolidation.association.AssociationConsolidator;
 import jakarta.annotation.Nullable;
@@ -40,6 +41,8 @@ public class ConsolidationPipeline {
     private final AssociationCandidateGenerator remGenerator;
     @Nullable
     private final AssociationConsolidator remConsolidator;
+    @Nullable
+    private final AssociationCandidateApplier remApplier;
 
     public ConsolidationPipeline(EpisodicToSemanticConsolidator semanticConsolidator,
                                   @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
@@ -49,7 +52,8 @@ public class ConsolidationPipeline {
                                   @Nullable UserProfileConsolidator userProfileConsolidator,
                                   @Nullable ExperiencePromoter experiencePromoter,
                                   @Nullable AssociationCandidateGenerator remGenerator,
-                                  @Nullable AssociationConsolidator remConsolidator) {
+                                  @Nullable AssociationConsolidator remConsolidator,
+                                  @Nullable AssociationCandidateApplier remApplier) {
         this.semanticConsolidator = semanticConsolidator;
         this.proceduralConsolidator = proceduralConsolidator;
         this.properties = properties;
@@ -59,6 +63,7 @@ public class ConsolidationPipeline {
         this.experiencePromoter = experiencePromoter;
         this.remGenerator = remGenerator;
         this.remConsolidator = remConsolidator;
+        this.remApplier = remApplier;
         log.info("ConsolidationPipeline 初始化完成, 经验合并={}, 画像巩固={}, 经验提升={}, REM 联想={}",
                 this.experienceMerger != null ? "启用" : "禁用",
                 this.userProfileConsolidator != null ? "启用" : "禁用",
@@ -176,6 +181,13 @@ public class ConsolidationPipeline {
             int saved = remConsolidator.consolidate(candidates);
             if (!candidates.isEmpty() || saved > 0) {
                 log.info("巩固管线: REM 联想完成, candidates={}, saved={}", candidates.size(), saved);
+            }
+            // 阶段 7.1：将文件候选应用到 memory_relations 主库（受 apply-enabled 门控）
+            if (remApplier != null && properties.getRem().isApplyEnabled()) {
+                var applyResult = remApplier.apply(java.time.LocalDate.now());
+                if (applyResult.applied() > 0) {
+                    log.info("巩固管线: REM 候选落库, {}", applyResult);
+                }
             }
         } catch (Exception e) {
             log.warn("巩固管线: REM 联想失败, error={}", e.getMessage(), e);

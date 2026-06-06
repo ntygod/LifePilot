@@ -223,6 +223,24 @@ lifepilot:
         max-entity-name-length: 100
         min-description-length: 2
         existing-entity-summary-limit: 50
+        # 对话期关系抽取（memory-graph-deepening）：实体写入后追加抽取实体间关系写入 memory_relations
+        relation-extraction-enabled: true
+        relation-timeout-seconds: 60
+      # REM 式联想巩固配置（agent.learning.rem）
+      rem:
+        enabled: true
+        seed-limit: 10
+        neighbor-limit: 5
+        seed-types:
+          - GOAL
+          - TOPIC
+          - PROJECT
+        min-confidence: 0.65
+        llm-timeout-seconds: 60
+        deduplication-window-hours: 24
+        # REM 候选落库应用器（memory-graph-deepening）：文件候选 → memory_relations 主库
+        apply-enabled: true
+        apply-min-confidence: 0.75
       # 经验总结配置（agent.learning.experience；模块拆分前误置于 lifepilot.memory.experience）
       experience:
         enabled: true

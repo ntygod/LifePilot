@@ -19,6 +19,7 @@ import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository;
 import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
 import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateGenerator;
 import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateStore;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier;
 import com.lifepilot.agent.learning.consolidation.association.AssociationConsolidator;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.agent.learning.consolidation.EntityDeduplicator;
@@ -45,6 +46,7 @@ import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.agent.learning.extraction.ExtractionValidator;
 import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
 import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
+import com.lifepilot.agent.learning.extraction.RelationExtractionStep;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.memory.store.config.MemoryStoreProperties;
@@ -119,6 +121,18 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public RelationExtractionStep relationExtractionStep(@Nullable GenerationRouter generationRouter,
+                                                         PromptRegistry promptRegistry) {
+        if (generationRouter == null) {
+            log.warn("记忆模块: GenerationRouter 不可用，RelationExtractionStep 将无法抽取关系");
+            return null;
+        }
+        log.info("记忆模块: 注册 RelationExtractionStep");
+        return new RelationExtractionStep(generationRouter, promptRegistry, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public RealtimeExtractor realtimeExtractor(@Nullable GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
@@ -128,13 +142,15 @@ public class AgentLearningAutoConfiguration {
                                                Clock clock,
                                                MemoryAccessPolicy memoryAccessPolicy,
                                                @Nullable MemoryExtractionCandidateRepository candidateRepository,
-                                               @Nullable MemoryInjectionDetector injectionDetector) {
+                                               @Nullable MemoryInjectionDetector injectionDetector,
+                                               @Nullable RelationExtractionStep relationExtractionStep) {
         if (generationRouter == null) {
             log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
         }
         log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
-                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy, candidateRepository, injectionDetector);
+                jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy,
+                candidateRepository, injectionDetector, relationExtractionStep);
     }
 
     // ── 冲突裁决 ──
@@ -296,7 +312,8 @@ public class AgentLearningAutoConfiguration {
             @Nullable UserProfileConsolidator userProfileConsolidator,
             @Nullable ExperiencePromoter experiencePromoter,
             @Nullable AssociationCandidateGenerator remGenerator,
-            @Nullable AssociationConsolidator remConsolidator) {
+            @Nullable AssociationConsolidator remConsolidator,
+            @Nullable AssociationCandidateApplier remApplier) {
         log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}, profileConsolidate={}, remAssociation={}",
                 preferenceConsolidator != null ? "enabled" : "disabled",
                 experiencePromoter != null ? "enabled" : "disabled",
@@ -305,7 +322,7 @@ public class AgentLearningAutoConfiguration {
                 (remGenerator != null && remConsolidator != null) ? "enabled" : "disabled");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
                 properties, preferenceConsolidator, experienceMerger, userProfileConsolidator,
-                experiencePromoter, remGenerator, remConsolidator);
+                experiencePromoter, remGenerator, remConsolidator, remApplier);
     }
 
     /**
@@ -351,6 +368,20 @@ public class AgentLearningAutoConfiguration {
             AgentLearningProperties properties,
             AssociationCandidateStore store) {
         return new AssociationConsolidator(properties, store);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "lifepilot.agent.learning.rem", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public AssociationCandidateApplier associationCandidateApplier(
+            AgentLearningProperties properties,
+            AssociationCandidateStore store,
+            SemanticMemory semanticMemory) {
+        log.info("记忆模块: 注册 AssociationCandidateApplier, applyMinConfidence={}",
+                properties.getRem().getApplyMinConfidence());
+        return new AssociationCandidateApplier(properties, store, semanticMemory);
     }
 
     // ── 经验学习 ──
