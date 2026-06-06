@@ -116,7 +116,7 @@ class ReactAgentLoop_单元测试 {
 
         @Test
         void 纯文本回复应直接完成循环() {
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("你好"));
 
             var budget = 基础预算();
@@ -141,7 +141,7 @@ class ReactAgentLoop_单元测试 {
         void Auto模式有工具时仍应以常规Agent轮携带工具调用LLM() {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("你有哪些能力"));
             var tool = 创建工具回调("memory.search", "记忆搜索", "{\"items\":[]}");
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(tool));
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(tool));
 
             var budget = 基础预算();
             var request = 简单请求("你有哪些能力", "session-auto-tools-stream", budget);
@@ -184,7 +184,7 @@ class ReactAgentLoop_单元测试 {
         void 思考后工具调用再回答应完成完整ReAct循环() {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("帮我查一下天气"));
             when(agentToolProvider.resolveToolDisplayName("weather.query")).thenReturn("天气查询");
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                     创建工具回调("weather.query", "天气查询", "{\"result\":\"北京，晴，25°C\"}")
             ));
 
@@ -230,7 +230,7 @@ class ReactAgentLoop_单元测试 {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("帮我查天气并创建待办"));
             when(agentToolProvider.resolveToolDisplayName("weather.query")).thenReturn("天气查询");
             when(agentToolProvider.resolveToolDisplayName("todo.create")).thenReturn("创建待办");
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                     创建工具回调("weather.query", "天气查询", "{\"result\":\"北京，晴\"}"),
                     创建工具回调("todo.create", "创建待办", "{\"id\":\"todo-1\"}")
             ));
@@ -302,7 +302,7 @@ class ReactAgentLoop_单元测试 {
         void 工具调用中途取消应中断后续迭代() {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("取消测试"));
             when(agentToolProvider.resolveToolDisplayName("slow.tool")).thenReturn("慢操作");
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                     创建工具回调("slow.tool", "慢操作", "{\"status\":\"done\"}")
             ));
 
@@ -387,7 +387,7 @@ class ReactAgentLoop_单元测试 {
                     null, null, null, null, null, null, sharedScheduler, null, null
             );
 
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                     创建工具回调("echo.tool", "回声", "{\"echo\":\"pong\"}")
             ));
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("无限循环测试"));
@@ -439,7 +439,7 @@ class ReactAgentLoop_单元测试 {
                     null, null, null, null, null, null, sharedScheduler, null, null
             );
 
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("失败测试"));
 
             var budget = 基础预算();
@@ -465,7 +465,7 @@ class ReactAgentLoop_单元测试 {
 
         @Test
         void 单次失败后恢复不应计入连续失败() {
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("恢复测试"));
 
             var budget = 基础预算();
@@ -510,7 +510,7 @@ class ReactAgentLoop_单元测试 {
                     null, null, null, null, null, null, sharedScheduler, null, null
             );
 
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("空响应测试"));
 
             var budget = 基础预算();
@@ -779,7 +779,7 @@ class ReactAgentLoop_单元测试 {
         @Test
         void 工具不存在应记录失败Observation并继续循环() {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("调用不存在的工具"));
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
 
             var budget = 基础预算();
             var request = 简单请求("调用不存在的工具", "session-missing-tool", budget);
@@ -815,7 +815,7 @@ class ReactAgentLoop_单元测试 {
         void 工具执行抛出异常应记录失败Observation() {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("工具执行异常"));
             when(agentToolProvider.resolveToolDisplayName("error.tool")).thenReturn("异常工具");
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                     创建异常工具回调("error.tool", "异常工具", new RuntimeException("内部错误"))
             ));
 
@@ -854,7 +854,7 @@ class ReactAgentLoop_单元测试 {
 
         @Test
         void 每轮迭代应递增步数预算() {
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("步数测试"));
 
             var budget = 基础预算();
@@ -875,7 +875,7 @@ class ReactAgentLoop_单元测试 {
 
         @Test
         void 循环结束后步骤列表应包含Progress步骤() {
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of());
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("进度测试"));
 
             var budget = 基础预算();
@@ -906,7 +906,7 @@ class ReactAgentLoop_单元测试 {
         void 多轮迭代应复用首次组装的上下文() {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("缓存复用测试"));
             when(agentToolProvider.resolveToolDisplayName("noop.tool")).thenReturn("空操作");
-            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+            when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                     创建工具回调("noop.tool", "空操作", "{}")
             ));
 
