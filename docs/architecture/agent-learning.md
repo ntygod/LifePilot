@@ -99,7 +99,7 @@ graph TD
 | `UserProfileConsolidator` | `agent.learning.consolidation` | 画像碎片→巩固画像 |
 | `EntityDeduplicator` | `agent.learning.consolidation` | 实体去重合并 |
 | `ConsolidationPipeline` | `agent.learning.consolidation` | 巩固管线编排（在用，串行 7 阶段）|
-| `ConsolidationScheduler` | `agent.learning.consolidation` | 巩固调度解耦（**当前为未接线骨架**，见 §3.2）|
+| `ConsolidationScheduler` | `agent.learning.consolidation` | 巩固分阶段调度真源（已注册为 Bean 并接线，见 §3.2）|
 | `ForgettingEngine` | `agent.learning.forgetting` | MaRS 六策略混合遗忘 |
 | `FeedbackProcessor` | `agent.learning.feedback` | 用户反馈处理 |
 | `ConflictResolutionService` | `agent.learning.conflict` | 语义冲突 LLM 裁决 |
@@ -240,17 +240,17 @@ sequenceDiagram
 | 6 | 经验提升 | `promoteHighFrequencyExperiences` | L3 `EXPERIENCE` 中 `importanceScore ≥ 0.8 且 accessCount ≥ 3` 提升为 `ProcedureTemplate`，源经验归档 |
 | 7 | REM 联想 | `AssociationCandidateGenerator` + `AssociationConsolidator` | 对 L3 高 importance seed 实体做跨实体联想，LLM 推断潜在语义关系 |
 
-### 3.2 调度解耦方向（骨架已存在，未接线）
+### 3.2 调度解耦（已落地）
 
-当前问题：7 阶段全部串行运行在同一个 cron job 中（`ConsolidationPipeline.consolidate()`），无法独立调度。
+历史问题：7 阶段曾全部串行运行在同一个 cron job 中（`ConsolidationPipeline.consolidate()`），无法独立调度。
 
-> **2026-06 核实**：`ConsolidationScheduler` 类已存在于 `agent.learning.consolidation`，但**当前仅是转发壳** ——
-> `onConversationCompleted()` / `executeDailyCronStages()` / `executeIdleStages()` / `checkProfileDebounce()`
-> 四个方法全部转发同一句 `pipeline.consolidate(false)`，并未拆分为独立阶段；且全仓无任何
-> `new ConsolidationScheduler(...)`，即**未注册为 Bean、未被调用**。真正生效的仍是旧 `ConsolidationPipeline`。
-> 解耦工作（按下表落地独立触发策略 + 接线替换）属于待开发项。
+> **2026-06 更新（consolidation-decoupling spec）**：`ConsolidationScheduler` 已注册为 Bean
+> 并接线为巩固调度的**唯一真源**。`ConsolidationPipeline` 删除了 `@Scheduled` 单 cron 入口，
+> 改为暴露各阶段方法；`AgentLearningAutoConfiguration` 接入三类触发：
+> `ConversationCompletedEvent`（事件）、每日 cron、每分钟轮询（画像防抖 + 空闲 REM）。
+> `ExperiencePromoter` 已抽为独立组件承担阶段 6。下表的目标触发策略已基本落地。
 
-目标：每个阶段有独立的触发策略：
+各阶段触发策略：
 
 | # | 阶段 | 目标触发方式 | 理由 |
 |---|------|------------|------|
@@ -504,7 +504,7 @@ sequenceDiagram
 
 | 方向 | 说明 |
 |------|------|
-| 巩固调度解耦 | 7 阶段独立调度（EVENT / CRON / IDLE），见 memory-refactoring spec |
+| 巩固调度解耦 | 已完成：7 阶段按 EVENT / CRON / IDLE 独立调度，ConsolidationScheduler 为真源（consolidation-decoupling spec）|
 | 学习闭环打通 | 经验写入即时索引、IntentMatcher 结果注入决策上下文 |
 | 学习模块独立包 | 已完成：从 `com.lifepilot.memory.*` 迁移到 `com.lifepilot.agent.learning`，配置前缀 `lifepilot.agent.learning.*` |
 | 对比学习产出独立实体 | ContrastiveLearner 产出 `CONTRASTIVE_INSIGHT` 实体，带 derivation_sources |
