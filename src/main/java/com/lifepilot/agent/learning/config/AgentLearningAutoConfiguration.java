@@ -528,7 +528,7 @@ public class AgentLearningAutoConfiguration {
     }
 
     /** 每日 cron → 偏好同步 + 经验合并 + 经验提升。 */
-    @Scheduled(cron = "${lifepilot.agent.learning.consolidation.cron}")
+    @Scheduled(cron = "${lifepilot.agent.learning.consolidation.cron:0 0 3 * * *}")
     public void scheduledDailyConsolidation() {
         ConsolidationScheduler scheduler = consolidationSchedulerProvider.getIfAvailable();
         if (scheduler != null) {
