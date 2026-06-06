@@ -71,7 +71,7 @@ import org.springframework.core.annotation.Order;
  * @author zsg
  * @since 2026-03-10
  */
-@AutoConfiguration
+@AutoConfiguration(after = com.lifepilot.memory.config.MemoryAutoConfiguration.class)
 @ConditionalOnProperty(name = "lifepilot.meta.enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(MetaProperties.class)
 public class MetaAutoConfiguration {
