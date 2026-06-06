@@ -494,6 +494,28 @@ public class AgentLearningAutoConfiguration {
         return new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, storeProperties);
     }
 
+    // ── 学习轨迹持久化（打通程序巩固数据源）──
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.agent.learning.trace.AgentTraceWriter agentTraceWriter(
+            JdbcTemplate jdbcTemplate,
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 AgentTraceWriter");
+        return new com.lifepilot.agent.learning.trace.AgentTraceWriter(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public com.lifepilot.agent.learning.trace.AgentTraceListenerRegistrar agentTraceListenerRegistrar(
+            @Nullable com.lifepilot.observability.trace.TraceRecorder traceRecorder,
+            com.lifepilot.agent.learning.trace.AgentTraceWriter agentTraceWriter) {
+        log.info("记忆模块: 注册 AgentTraceListenerRegistrar, traceRecorder={}",
+                traceRecorder != null ? "available" : "unavailable");
+        return new com.lifepilot.agent.learning.trace.AgentTraceListenerRegistrar(traceRecorder, agentTraceWriter);
+    }
+
+
     // ── 巩固调度（唯一真源：ConsolidationScheduler）──
 
     /** 对话结束事件 → 触发语义/程序巩固 + 登记画像防抖。 */
