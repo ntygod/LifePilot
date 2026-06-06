@@ -65,7 +65,8 @@ lifepilot:
     tool-health-window-size: 20
   # ===== 主动引擎配置 =====
   initiative:
-    enabled: false  # 默认关闭，稳定后开启
+    enabled: true  # 已启用：思考链路（信号→Thinker→ThoughtPool→Gatekeeper）已验证；
+                   # 表达/执行（ConversationInitiator/ActionExecutor）尚未接线，不会自主对外发消息
     max-active-thoughts: 20
     brewing-ttl-hours: 72
     ready-ttl-hours: 48

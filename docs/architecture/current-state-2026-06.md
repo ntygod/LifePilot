@@ -48,7 +48,7 @@
 | 层 | 包 | 关键类 | 默认开关 |
 |----|----|----|--------|
 | 智能层 | `agent.intelligence`（+`model`,`config`）| CapabilityAssessor, EnvironmentPerceptor, AdaptiveDecisionEngine, DecisionSignal | **enabled=true（开）** |
-| 主动发起层 | `agent.initiative.{pool,gate,thinker,express,execute,signal,model,config}` | ThoughtPool, Gatekeeper, DefaultThinker, ConversationInitiator, ActionExecutor, ExecutionPermission, InitiativeEngine | **enabled=false（关）** |
+| 主动发起层 | `agent.initiative.{pool,gate,thinker,express,execute,signal,model,config}` | ThoughtPool, Gatekeeper, DefaultThinker, ConversationInitiator, ActionExecutor, ExecutionPermission, InitiativeEngine | **enabled=true（开，思考脚手架）**；触发/表达/执行接线待灰度，见 initiative-activation spec |
 
 两层均已注册进 `META-INF/spring/...AutoConfiguration.imports`（`IntelligenceAutoConfiguration` / `InitiativeAutoConfiguration`）。
 
