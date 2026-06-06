@@ -114,7 +114,7 @@ class ReactAgentLoop_截图视觉迭代测试 {
                 "fullPage", false
         ));
 
-        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                 工具回调("browser", screenshotJson)
         ));
 
@@ -190,7 +190,7 @@ class ReactAgentLoop_截图视觉迭代测试 {
                 "screenshot", base64,
                 "url", "https://example.com/no-vision"
         ));
-        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                 工具回调("browser", screenshotJson)
         ));
 
