@@ -295,8 +295,9 @@ class EpisodicToProceduralConsolidator_单元测试 {
             assertThat(saved.triggerIntent()).isEqualTo("帮我搜索并总结");
             assertThat(saved.steps()).hasSize(2);
             assertThat(saved.sourceTraceIds()).hasSize(3);
-            assertThat(saved.successRate()).isEqualTo(0.0f);
-            assertThat(saved.useCount()).isZero();
+            // 初始可靠性来自源证据：3 条成功源轨迹 → successRate=1.0, useCount=3（可被 IntentMatcher 匹配）
+            assertThat(saved.successRate()).isEqualTo(1.0f);
+            assertThat(saved.useCount()).isEqualTo(3);
         }
 
         @Test

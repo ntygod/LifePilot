@@ -349,6 +349,14 @@ public class EpisodicToProceduralConsolidator {
         var sourceTraceIds = cluster.stream().map(TraceInfo::traceId).toList();
         Instant now = Instant.now();
 
+        // 初始可靠性来自源证据：聚类的源轨迹均为成功执行（queryEligibleTraces 已过滤 success=1），
+        // 因此模板代表一个已被观察到成功 N 次的模式。以 successRate=1.0、useCount=源轨迹数 初始化，
+        // 使其立即满足 isReliable 门槛可被 IntentMatcher 匹配注入；后续真实使用经 recordExecution
+        // 按实际成败动态修正。否则模板恒为 reliability=0/useCount=0 → 永不被匹配 → 永不积累使用 →
+        // 学习闭环（巩固→匹配注入→执行→反馈）在第二环断裂。
+        int initialUseCount = Math.max(sourceTraceIds.size(), 1);
+        float initialSuccessRate = 1.0f;
+
         var template = new ProcedureTemplate(
                 UUID.randomUUID().toString(),
                 extraction.name(),
@@ -356,8 +364,8 @@ public class EpisodicToProceduralConsolidator {
                 extraction.triggerIntent() != null ? extraction.triggerIntent() : extraction.name(),
                 steps,
                 Map.of(),
-                0.0f,
-                0,
+                initialSuccessRate,
+                initialUseCount,
                 null,
                 sourceTraceIds,
                 now,
@@ -365,8 +373,8 @@ public class EpisodicToProceduralConsolidator {
                 null, null);
 
         proceduralMemory.save(template);
-        log.info("程序巩固: 新模板已保存, name={}, steps={}, sources={}",
-                template.name(), steps.size(), sourceTraceIds.size());
+        log.info("程序巩固: 新模板已保存, name={}, steps={}, sources={}, initUseCount={}",
+                template.name(), steps.size(), sourceTraceIds.size(), initialUseCount);
 
         return TemplateResult.CREATED;
     }
