@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -66,6 +68,34 @@ class ExperiencePromoter_单元测试 {
         assertThat(promoted).isEqualTo(1);
         verify(proceduralMemory).save(any(ProcedureTemplate.class));
         verify(semanticMemory, never()).archive(any(TemporalEntity.class), any());
+    }
+
+    @Test
+    @DisplayName("提升模板的 useCount 反映源经验 accessCount 且立即可靠")
+    void 提升模板useCount应反映源经验accessCount且可靠() {
+        var properties = new AgentLearningProperties();
+        var semanticMemory = mock(SemanticMemory.class);
+        var proceduralMemory = mock(ProceduralMemory.class);
+        var now = Instant.parse("2026-05-07T06:30:00Z");
+        // accessCount=5（>= minAccessCount 默认 3），importanceScore=0.95（>= 阈值）
+        var experience = new TemporalEntity(
+                "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
+                1, true, now, null, "session-1", 1.0f, 0.95f, 5, now, now, now);
+        when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
+        when(proceduralMemory.findById("exp-1")).thenReturn(Optional.empty());
+
+        var promoter = new ExperiencePromoter(semanticMemory, proceduralMemory, properties);
+        int promoted = promoter.promote();
+
+        assertThat(promoted).isEqualTo(1);
+        var captor = ArgumentCaptor.forClass(ProcedureTemplate.class);
+        verify(proceduralMemory).save(captor.capture());
+        var saved = captor.getValue();
+        // useCount 由源经验 accessCount 驱动，successRate 维持 1.0
+        assertThat(saved.useCount()).isEqualTo(5);
+        assertThat(saved.successRate()).isEqualTo(1.0f);
+        // 配合 IntentMatcher 默认阈值（minReliability=0.7, minUseCount=2）应立即可靠
+        assertThat(saved.isReliable(0.7f, 2)).isTrue();
     }
 
     @Test

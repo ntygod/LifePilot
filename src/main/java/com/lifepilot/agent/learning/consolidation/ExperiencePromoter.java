@@ -65,6 +65,11 @@ public class ExperiencePromoter {
                 var now = Instant.now();
                 // 经验提升为 L4 模板 — sourceEntityId 指向源 L3 EXPERIENCE 实体 id。
                 // 源实体保持 ACTIVE：后续真正失活时再由 L4SyncListener 级联模板失活。
+                //
+                // 可靠性初始化：useCount 由源经验 accessCount 驱动，忠实反映底层经验
+                // 已被使用的次数。提升前提已要求 accessCount >= minAccessCount（默认 3），
+                // 故 useCount >= minUseCount（默认 2），配合 successRate=1.0 使提升模板
+                // 立即满足 IntentMatcher.isReliable 而可被匹配，修复 useCount=0 永不可靠的缺陷。
                 var template = new ProcedureTemplate(
                         exp.id(),
                         exp.name(),
@@ -74,7 +79,7 @@ public class ExperiencePromoter {
                                 Map.of("scenario", exp.name()), exp.description(), false)),
                         Map.of(),
                         1.0f,
-                        0,
+                        exp.accessCount(),
                         null,
                         List.of(exp.sourceConversationId()),
                         now,
