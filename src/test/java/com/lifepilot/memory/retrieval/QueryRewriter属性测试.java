@@ -83,9 +83,9 @@ class QueryRewriter属性测试 {
 
     private MemoryRetrievalProperties buildProperties(String mode) {
         var properties = new MemoryRetrievalProperties();
-        properties.getRetrieval().setQueryRewriteMode(mode);
-        properties.getRetrieval().setMaxRewrites(3);
-        properties.getRetrieval().setRewriteTimeoutMs(5000);
+        properties.setQueryRewriteMode(mode);
+        properties.setMaxRewrites(3);
+        properties.setRewriteTimeoutMs(5000);
         return properties;
     }
 }

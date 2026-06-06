@@ -3,7 +3,7 @@ package com.lifepilot.memory.feedback;
 import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
-import com.lifepilot.memory.lifecycle.WeightSource;
+import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;

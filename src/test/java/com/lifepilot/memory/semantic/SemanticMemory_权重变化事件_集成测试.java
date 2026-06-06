@@ -1,12 +1,12 @@
 package com.lifepilot.memory.semantic;
 
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.Temporality;
-import com.lifepilot.memory.lifecycle.WeightSource;
-import com.lifepilot.memory.lifecycle.events.EntityWeightChanged;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.governance.lifecycle.WeightSource;
+import com.lifepilot.memory.governance.lifecycle.events.EntityWeightChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
-import com.lifepilot.memory.support.MemoryProjectionTestSupport;
+import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

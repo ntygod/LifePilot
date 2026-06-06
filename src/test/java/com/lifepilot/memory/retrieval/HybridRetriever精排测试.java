@@ -53,8 +53,8 @@ class HybridRetriever精排测试 {
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         properties = new MemoryRetrievalProperties();
-        properties.getRetrieval().setMinVectorSimilarity(0.0f);
-        properties.getRetrieval().setMinFusedScore(0.0f);
+        properties.setMinVectorSimilarity(0.0f);
+        properties.setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
     }
 
@@ -125,7 +125,7 @@ class HybridRetriever精排测试 {
 
     @Test
     void fusedScore阈值会过滤低分结果() {
-        properties.getRetrieval().setMinFusedScore(0.5f);
+        properties.setMinFusedScore(0.5f);
         setupMockResults();
 
         var retriever = new HybridRetriever(

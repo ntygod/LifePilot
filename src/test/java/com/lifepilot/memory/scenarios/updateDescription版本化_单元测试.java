@@ -1,11 +1,11 @@
 package com.lifepilot.memory.scenarios;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.Temporality;
-import com.lifepilot.memory.lifecycle.query.MemoryQueryApi;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.governance.lifecycle.query.MemoryQueryApi;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.support.MemoryProjectionTestSupport;
+import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;

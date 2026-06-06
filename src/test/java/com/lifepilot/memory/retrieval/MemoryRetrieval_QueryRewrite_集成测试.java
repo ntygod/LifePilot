@@ -63,11 +63,11 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
         promptRegistry = mock(PromptRegistry.class);
         properties = new MemoryRetrievalProperties();
 
-        properties.getRetrieval().setQueryRewriteMode("rewrite");
-        properties.getRetrieval().setMaxRewrites(2);
-        properties.getRetrieval().setRewriteTimeoutMs(5000);
-        properties.getRetrieval().setMinFusedScore(0.0f);
-        properties.getRetrieval().setMinVectorSimilarity(0.0f);
+        properties.setQueryRewriteMode("rewrite");
+        properties.setMaxRewrites(2);
+        properties.setRewriteTimeoutMs(5000);
+        properties.setMinFusedScore(0.0f);
+        properties.setMinVectorSimilarity(0.0f);
 
         queryRefiner = new QueryRefiner(properties);
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
@@ -146,7 +146,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
     @Test
     @DisplayName("none 模式下 QueryRewriter 直接透传且不调用模型")
     void none模式下QueryRewriter直接透传且不调用模型() {
-        properties.getRetrieval().setQueryRewriteMode("none");
+        properties.setQueryRewriteMode("none");
         queryRewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
 
         String rawQuery = "帮我查一下之前的会议记录";

@@ -66,7 +66,7 @@ class HybridRetriever属性测试 {
                 input.properties
         );
 
-        float minFusedScore = input.properties.getRetrieval().getMinFusedScore();
+        float minFusedScore = input.properties.getMinFusedScore();
         var results = retriever.retrieve(input.query, 20, RetrievalWeights.DEFAULT);
         for (var result : results) {
             assertTrue(result.fusedScore() >= minFusedScore,
@@ -98,8 +98,8 @@ class HybridRetriever属性测试 {
                         .as((query, vecResults, ftsResults, graphResults) -> {
                             var entities = buildEntityMap(entityIds);
                             var properties = new MemoryRetrievalProperties();
-                            properties.getRetrieval().setMinFusedScore(0.0f);
-                            properties.getRetrieval().setMinVectorSimilarity(0.0f);
+                            properties.setMinFusedScore(0.0f);
+                            properties.setMinVectorSimilarity(0.0f);
                             return new QueryWithMockResults(
                                     query, vecResults, ftsResults, graphResults, entities, properties
                             );
@@ -132,8 +132,8 @@ class HybridRetriever属性测试 {
                         .as((query, vecResults, ftsResults, graphResults, threshold) -> {
                             var entities = buildEntityMap(entityIds);
                             var properties = new MemoryRetrievalProperties();
-                            properties.getRetrieval().setMinFusedScore(threshold);
-                            properties.getRetrieval().setMinVectorSimilarity(0.0f);
+                            properties.setMinFusedScore(threshold);
+                            properties.setMinVectorSimilarity(0.0f);
                             return new QueryWithMockResults(
                                     query, vecResults, ftsResults, graphResults, entities, properties
                             );

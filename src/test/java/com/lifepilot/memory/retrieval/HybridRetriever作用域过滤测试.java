@@ -47,8 +47,8 @@ class HybridRetriever作用域过滤测试 {
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         properties = new MemoryRetrievalProperties();
-        properties.getRetrieval().setMinVectorSimilarity(0.0f);
-        properties.getRetrieval().setMinFusedScore(0.0f);
+        properties.setMinVectorSimilarity(0.0f);
+        properties.setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
     }
 

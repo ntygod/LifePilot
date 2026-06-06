@@ -5,8 +5,8 @@ import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
-import com.lifepilot.memory.lifecycle.ChangeSource;
-import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -335,7 +335,7 @@ class MemoryToolProvider_action扩展_单元测试 {
                 1, true, now, null, "sess-test",
                 0.8f, 0.5f, 0, null, now, now,
                 state, null, null,
-                com.lifepilot.memory.lifecycle.Temporality.PERSISTENT,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
                 null, false, List.of());
     }
 }
