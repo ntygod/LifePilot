@@ -61,6 +61,7 @@ public class MemoryController {
     private final @Nullable HybridRetriever hybridRetriever;
     private final @Nullable ConsolidationPipeline consolidationPipeline;
     private final @Nullable EntityDeduplicator entityDeduplicator;
+    private final @Nullable com.lifepilot.agent.learning.forgetting.ForgettingEngine forgettingEngine;
     private final @Nullable UserProfileConsolidator userProfileConsolidator;
     private final ForgettingLogRepository forgettingLogRepository;
     private final MemoryProvenanceRepository provenanceRepository;
@@ -68,6 +69,7 @@ public class MemoryController {
     private final MemoryAccessPolicy memoryAccessPolicy;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
     private final AtomicBoolean deduplicating = new AtomicBoolean(false);
+    private final AtomicBoolean forgetting = new AtomicBoolean(false);
 
     public MemoryController(@Nullable SemanticMemory semanticMemory,
                             @Nullable EpisodicMemory episodicMemory,
@@ -75,6 +77,7 @@ public class MemoryController {
                             @Nullable HybridRetriever hybridRetriever,
                             @Nullable ConsolidationPipeline consolidationPipeline,
                             @Nullable EntityDeduplicator entityDeduplicator,
+                            @Nullable com.lifepilot.agent.learning.forgetting.ForgettingEngine forgettingEngine,
                             @Nullable UserProfileConsolidator userProfileConsolidator,
                             ForgettingLogRepository forgettingLogRepository,
                             MemoryProvenanceRepository provenanceRepository,
@@ -86,6 +89,7 @@ public class MemoryController {
         this.hybridRetriever = hybridRetriever;
         this.consolidationPipeline = consolidationPipeline;
         this.entityDeduplicator = entityDeduplicator;
+        this.forgettingEngine = forgettingEngine;
         this.userProfileConsolidator = userProfileConsolidator;
         this.forgettingLogRepository = forgettingLogRepository;
         this.provenanceRepository = provenanceRepository;
@@ -911,6 +915,28 @@ public class MemoryController {
             }
         });
         return ApiResponse.ok(Map.of("status", "accepted", "message", "去重任务已提交"));
+    }
+
+    // ========== 手动触发遗忘（开发期，验证 ForgettingEngine）==========
+
+    /**
+     * 手动触发一次 MaRS 遗忘流程 — 开发期用于验证遗忘引擎；生产由 Cron 触发。
+     */
+    @PostMapping("/forget")
+    public ApiResponse<Map<String, Object>> triggerForgetting() {
+        requireMemoryEnabled();
+        if (forgettingEngine == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "遗忘引擎未启用");
+        }
+        if (!forgetting.compareAndSet(false, true)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "遗忘任务正在执行中");
+        }
+        try {
+            int count = forgettingEngine.forget();
+            return ApiResponse.ok(Map.of("status", "completed", "forgottenCount", count));
+        } finally {
+            forgetting.set(false);
+        }
     }
 
     // ========== 用户画像 ==========

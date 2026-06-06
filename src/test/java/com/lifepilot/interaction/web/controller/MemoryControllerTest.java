@@ -74,7 +74,7 @@ class MemoryControllerTest {
     void setUp() {
         var controller = new MemoryController(
                 semanticMemory, episodicMemory, proceduralMemory,
-                hybridRetriever, consolidationPipeline, null, null, forgettingLogRepository,
+                hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
                 provenanceRepository, null, new MemoryAccessPolicy());
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         lenient().when(provenanceRepository.loadEntityMetadata(anyCollection()))
@@ -114,7 +114,7 @@ class MemoryControllerTest {
         @BeforeEach
         void setUp() {
             var controller = new MemoryController(
-                    null, null, null, null, null, null, null, forgettingLogRepository,
+                    null, null, null, null, null, null, null, null, forgettingLogRepository,
                     provenanceRepository, null, new MemoryAccessPolicy());
             disabledMvc = MockMvcBuilders.standaloneSetup(controller).build();
         }
@@ -204,7 +204,7 @@ class MemoryControllerTest {
                     new ProjectContext("p-1", "space-project", "space-personal", "space-experience", true));
             var controller = new MemoryController(
                     semanticMemory, episodicMemory, proceduralMemory,
-                    hybridRetriever, consolidationPipeline, null, null, forgettingLogRepository,
+                    hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
                     provenanceRepository, resolver, new MemoryAccessPolicy());
             var projectMvc = MockMvcBuilders.standaloneSetup(controller).build();
             when(hybridRetriever.retrieve(eq("咖啡"), eq(10), any(RetrievalWeights.class), any()))
@@ -388,7 +388,7 @@ class MemoryControllerTest {
                     new ProjectContext("p-1", "space-project", "space-personal", "space-experience", true));
             var controller = new MemoryController(
                     semanticMemory, episodicMemory, proceduralMemory,
-                    hybridRetriever, consolidationPipeline, null, null, forgettingLogRepository,
+                    hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
                     provenanceRepository, resolver, new MemoryAccessPolicy());
             var projectMvc = MockMvcBuilders.standaloneSetup(controller).build();
             var base = testEntity("base-1", "咖啡偏好", EntityType.PREFERENCE);
