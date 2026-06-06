@@ -300,11 +300,15 @@ sequenceDiagram
 - 产出 `__consolidated_profile` CUSTOM 实体（`isDerived=true`）
 - 最近对话摘要只作语境辅助，不允许绕过 L3 质量门控沉淀新事实
 
-#### 3.3.6 经验提升（promoteHighFrequencyExperiences）
+#### 3.3.6 经验提升（ExperiencePromoter.promote）
 
 - 条件：`importanceScore ≥ 0.8 且 accessCount ≥ 3`
-- 提升为 `ProcedureTemplate`，`sourceEntityId` 指向源 L3 EXPERIENCE
-- 源实体保持 ACTIVE（后续失活时由 L4SyncListener 级联模板失活）
+- 提升为 `ProcedureTemplate`：
+  - `templateId` 使用独立 UUID，**不复用 `exp.id()`**。模板向量经 `PROCEDURE_TEMPLATE_VECTOR` 投影按 `entityId=templateId` 写 `entity_embeddings`，复用源 EXPERIENCE 的 id 会与源实体向量共用同一 key 互相覆盖串号，故解耦
+  - `sourceEntityId` 指向源 L3 EXPERIENCE id（与 `EpisodicToProceduralConsolidator` 一致）
+  - `successRate = 1.0`，`useCount = exp.accessCount()`：useCount 由源经验 accessCount 驱动，忠实反映底层经验已被使用的次数。提升前提已要求 `accessCount ≥ minAccessCount`（默认 3），故 `useCount ≥ minUseCount`（默认 2），配合 `successRate=1.0` 使提升模板**立即满足 `IntentMatcher.isReliable` 而可被匹配**（修复早期硬编码 `useCount=0` 导致提升模板永不可靠、永不被命中的缺陷）
+- 去重：按 `source_entity_id` 反查现存活跃模板（`ProceduralMemory.findBySourceEntityId`），命中则跳过，保证重复提升幂等
+- 源实体保持 ACTIVE（后续失活时由 L4SyncListener 经 `source_entity_id` 反查级联模板失活）
 
 #### 3.3.7 REM 联想（AssociationCandidateGenerator + AssociationConsolidator）
 
@@ -419,7 +423,7 @@ sequenceDiagram
 | 环节 | 历史问题 | 现状 |
 |------|------|---------|
 | 执行轨迹 → 程序巩固 | `agent_traces`/`agent_trace_steps` 从未被写入 → 巩固恒产 0 模板 | 已修：`AgentTraceWriter` 经 `TraceRecorder.onTraceEnd` 落库（含工具 I/O） |
-| 巩固生成模板 → 可被匹配 | 模板初始 successRate=0/useCount=0，`isReliable` 永假 → 永不被匹配（鸡生蛋） | 已修：按源证据初始化 successRate=1.0/useCount=源轨迹数 |
+| 巩固生成模板 → 可被匹配 | 模板初始 successRate=0/useCount=0，`isReliable` 永假 → 永不被匹配（鸡生蛋） | 已修：两条产模板路径均按源证据初始化 successRate=1.0——程序巩固（`EpisodicToProceduralConsolidator`）useCount=源轨迹数；经验提升（`ExperiencePromoter`）useCount=源经验 accessCount（详见 §3.3.6），均 ≥ minUseCount 立即可靠 |
 | IntentMatcher → ContextAssembler | 匹配结果未注入 | 已通：`AdaptiveDecisionEngine` 命中模板后产出 experienceHint 注入 `<decision_context>`（实测 score≈0.605 命中） |
 | 经验写入 → 向量索引 | 依赖 outbox | `MemoryProjectionService.runAfterCommit` 无事务时即时执行，模板/实体向量写入即时 |
 
