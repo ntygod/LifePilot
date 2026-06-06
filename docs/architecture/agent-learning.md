@@ -412,13 +412,18 @@ sequenceDiagram
 对话执行 → 经验提取 → 巩固为模板 → 下次匹配 → 注入上下文 → 更好的执行 → 效果反馈 → 调整权重
 ```
 
-### 7.1 当前闭环断点
+### 7.1 闭环状态（2026-06 learning-loop-closure spec 打通）
 
-| 断点 | 问题 | 修复方向 |
+历史断点已基本闭合，闭环"对话执行 → 提炼 → 巩固为模板 → 匹配注入 → 执行"端到端可用：
+
+| 环节 | 历史问题 | 现状 |
 |------|------|---------|
-| 经验写入 → 向量索引 | 需等待下次 cron 才能被检索 | 写入后即时触发 ProjectionOutbox flush |
-| ProcedureTemplate → IntentMatcher | 模板保存后 FTS 索引已更新，但向量索引依赖 outbox | 保存后同步触发 outbox flush |
-| IntentMatcher → ContextAssembler | 匹配结果未被主动使用 | 通过 AdaptiveDecisionEngine 注入决策信号（见 agent-intelligence-layer spec） |
+| 执行轨迹 → 程序巩固 | `agent_traces`/`agent_trace_steps` 从未被写入 → 巩固恒产 0 模板 | 已修：`AgentTraceWriter` 经 `TraceRecorder.onTraceEnd` 落库（含工具 I/O） |
+| 巩固生成模板 → 可被匹配 | 模板初始 successRate=0/useCount=0，`isReliable` 永假 → 永不被匹配（鸡生蛋） | 已修：按源证据初始化 successRate=1.0/useCount=源轨迹数 |
+| IntentMatcher → ContextAssembler | 匹配结果未注入 | 已通：`AdaptiveDecisionEngine` 命中模板后产出 experienceHint 注入 `<decision_context>`（实测 score≈0.605 命中） |
+| 经验写入 → 向量索引 | 依赖 outbox | `MemoryProjectionService.runAfterCommit` 无事务时即时执行，模板/实体向量写入即时 |
+
+> **待调优（非断点）**：IntentMatcher 融合分（语义0.7+FTS0.3）在 0.6 阈值附近敏感，且模板语义召回与 L3 实体共用 entity_embeddings top-10 受挤压。后续可做模板召回独立通道或阈值/权重调优。
 
 ### 7.2 反馈信号
 

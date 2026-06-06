@@ -85,10 +85,17 @@ public class IntentMatcher {
         }
 
         Optional<TemplateMatch> best = Optional.empty();
+        float bestRawScore = 0.0f;
+        String bestRawId = null;
         for (String candidateId : candidateIds) {
             float semanticScore = vectorScores.getOrDefault(candidateId, 0.0f);
             float keywordScore = ftsScores.getOrDefault(candidateId, 0.0f);
             float fusedScore = SEMANTIC_WEIGHT * semanticScore + KEYWORD_WEIGHT * keywordScore;
+
+            if (fusedScore > bestRawScore) {
+                bestRawScore = fusedScore;
+                bestRawId = candidateId;
+            }
 
             if (fusedScore < config.getMatchThreshold()) {
                 continue;
@@ -109,6 +116,10 @@ public class IntentMatcher {
             }
         }
 
+        if (best.isEmpty()) {
+            log.debug("意图匹配无合格模板: intent={}, 候选数={}, 最高融合分={}, 最高候选={}, 阈值={}",
+                    intentText, candidateIds.size(), bestRawScore, bestRawId, config.getMatchThreshold());
+        }
         best.ifPresent(match -> log.info("意图匹配命中模板: templateId={}, name={}, score={}",
                 match.template().templateId(), match.template().name(), match.score()));
         return best;
