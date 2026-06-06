@@ -279,32 +279,34 @@ lifepilot:
     # 分层记忆：L0 transcript 真源 + L1 工作区 + L2 冷召回 + L3 治理主库 + L3.5 热摘要 + L4 程序记忆
     # L3 主库不依赖 LLM；向量检索、经验提炼、压缩和部分 L4 能力依赖模型路由，缺失时自动降级
     enabled: true
-    compression-threshold-tokens: 4000
-    consolidation-lookback-days: 7
-    forgetting-threshold: 0.7
-    max-retention-days: 180
-    embedding-dimensions: 1024
-    semantic-match-threshold: 0.92
-    vector-db-url: "jdbc:sqlite:${zhiwei.home}/db/vectors.db"
-    # L3.5 热记忆摘要（小预算、带来源，从 L3 可消费实体和 L4 高置信偏好实时派生）
-    hot-digest:
-      enabled: true
-      user-profile-token-budget: 500
-      project-memory-token-budget: 400
-      experience-token-budget: 500
-      facts-token-budget: 400
-      user-profile-max-entries: 6
-      project-memory-max-entries: 4
-      experience-max-entries: 3
-      facts-max-entries: 4
-    # L4 程序记忆
-    procedural:
-      max-templates: 200
-      min-reliability: 0.7
-      min-use-count: 2
-      stale-days: 90
-      match-threshold: 0.6
-      default-importance: 0.5
+    # 存储层（绑定 lifepilot.memory.store）—— 模块拆分后这些键必须置于 store 子节才能生效；
+    # 否则回退到代码默认值（vector-db-url 默认 ~/.zhiwei/vectors.db，与主库 db/ 目录分裂导致向量检索失效）
+    store:
+      embedding-dimensions: 1024
+      semantic-match-threshold: 0.92
+      vector-db-url: "jdbc:sqlite:${zhiwei.home}/db/vectors.db"
+      # L4 程序记忆
+      procedural:
+        max-templates: 200
+        min-reliability: 0.7
+        min-use-count: 2
+        stale-days: 90
+        match-threshold: 0.6
+        default-importance: 0.5
+    # 消费层（绑定 lifepilot.memory.consumption）
+    consumption:
+      compression-threshold-tokens: 4000
+      # L3.5 热记忆摘要（小预算、带来源，从 L3 可消费实体和 L4 高置信偏好实时派生）
+      hot-digest:
+        enabled: true
+        user-profile-token-budget: 500
+        project-memory-token-budget: 400
+        experience-token-budget: 500
+        facts-token-budget: 400
+        user-profile-max-entries: 6
+        project-memory-max-entries: 4
+        experience-max-entries: 3
+        facts-max-entries: 4
     # 巩固管线 / 遗忘引擎 / 实体提取配置已迁移到 lifepilot.agent.learning.*（consolidation-decoupling）
     # 混合检索相关性过滤
     retrieval:
