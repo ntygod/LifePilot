@@ -310,13 +310,23 @@ sequenceDiagram
 - 去重：按 `source_entity_id` 反查现存活跃模板（`ProceduralMemory.findBySourceEntityId`），命中则跳过，保证重复提升幂等
 - 源实体保持 ACTIVE（后续失活时由 L4SyncListener 经 `source_entity_id` 反查级联模板失活）
 
-#### 3.3.7 REM 联想（AssociationCandidateGenerator + AssociationConsolidator）
+#### 3.3.7 REM 联想（AssociationCandidateGenerator + AssociationConsolidator + AssociationCandidateApplier）
 
 - 对 L3 高 importance seed 实体（默认 `GOAL / TOPIC / PROJECT`）
 - 用 HybridRetriever 找邻居
 - LLM 推断未被显式记录的潜在语义关系
-- 合格候选落文件审计（不直写 L3 relations 主库）
+- 合格候选先落文件审计（`AssociationCandidateStore`），再由 `AssociationCandidateApplier` 应用到 `memory_relations` 主库
+  （阈值 `rem.apply-min-confidence` 默认 0.75，独立于生成阈值 0.65；端点存活校验 + `relationExists` 幂等）
 - 5 种关系枚举：`RELATED_TO / CAUSES / SIMILAR_TO / SUPPORTS / CONTRADICTS`
+
+#### 3.3.8 对话期关系抽取（RealtimeExtractor 二阶段，memory-graph-deepening）
+
+- 每轮对话 AUDN 实体写入后，`RealtimeExtractor` 追加一次关系抽取（`RelationExtractionStep` + `prompts/semantic/relation-extraction.st`）
+- 以本轮已知实体（本轮新增/更新 + 已有 top-N）为端点约束，LLM 抽取实体间关系
+- 名称解析为持久化实体 ID 后，经唯一入口 `SemanticMemory.addRelation` 写入 `memory_relations`
+- 开关 `extraction.relation-extraction-enabled`（默认 true）；超时/失败静默降级，不影响实体写入与主对话流程
+- **意义**：此前对话链路完全不产关系，`memory_relations` 长期为 0，导致 `GraphTraverser` 多跳召回恒空；
+  本链路接通后日常对话即可持续丰富关系图谱，支撑联想与多跳推理
 
 
 ---
@@ -475,6 +485,8 @@ sequenceDiagram
 | `lifepilot.agent.learning.extraction.max-entities-per-extraction` | 10 | 单次最大提取实体数 |
 | `lifepilot.agent.learning.extraction.min-extraction-confidence` | 0.3 | 最小提取置信度 |
 | `lifepilot.agent.learning.extraction.existing-entity-summary-limit` | 50 | 注入提示词的已有实体摘要上限 |
+| `lifepilot.agent.learning.extraction.relation-extraction-enabled` | true | 对话期关系抽取开关（写入 memory_relations） |
+| `lifepilot.agent.learning.extraction.relation-timeout-seconds` | 60 | 关系抽取 LLM 独立超时 |
 
 ### 8.4 老化检测
 
@@ -492,7 +504,9 @@ sequenceDiagram
 | `lifepilot.agent.learning.rem.enabled` | true | REM 联想开关 |
 | `lifepilot.agent.learning.rem.seed-limit` | 10 | seed 实体数量上限 |
 | `lifepilot.agent.learning.rem.neighbor-limit` | 5 | 每个 seed 邻居上限 |
-| `lifepilot.agent.learning.rem.min-confidence` | 0.65 | 最小置信度 |
+| `lifepilot.agent.learning.rem.min-confidence` | 0.65 | 最小置信度（候选生成入文件） |
+| `lifepilot.agent.learning.rem.apply-enabled` | true | REM 候选落库应用器开关 |
+| `lifepilot.agent.learning.rem.apply-min-confidence` | 0.75 | 候选落 memory_relations 主库的阈值 |
 
 ---
 

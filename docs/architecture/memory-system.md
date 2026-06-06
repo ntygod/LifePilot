@@ -190,7 +190,7 @@ L3.5 是从 L3 派生的**小型、可解释、带来源的 Prompt 表面**，�
 - 节点：`memory_entities` + `memory_entity_versions` + `memory_entity_provenances`
 - 边：`memory_relations` + `memory_relation_versions` + `memory_relation_provenances`
 - 读视图：`temporal_relations`
-- 入口：知识库文档提取实体/关系、`memory(action="tag")` 显式标注、`HybridRetriever` 图遍历、`GraphKnowledgeSearcher` 领域图检索
+- 入口：知识库文档提取实体/关系、对话期关系抽取（`RealtimeExtractor` 二阶段，写入 memory_relations）、`memory(action="tag")` 显式标注、`HybridRetriever` 图遍历、`GraphKnowledgeSearcher` 领域图检索
 
 终态要把图分成两类：
 
@@ -485,7 +485,7 @@ Spec：`.kiro/specs/memory-security-polish/`
 - `AssociationCandidateGenerator`：seed 选择（top-K 按 importance） + 邻居拉取 + LLM JSON 输出
 - `AssociationConsolidator`：confidence 过滤（默认 ≥0.65） + 24h 窗口去重
 - `AssociationCandidateStore`：文件持久化 `target/cache/memory-rem-associations/{yyyy-MM-dd}.json`（当天多次巩固合并到同一文件）
-- **候选落文件不直写 L3 relations**：避免与 AudnDecision 语义强绑定；未来 spec 加"关联应用器"做人工/自动审阅后再落主库
+- **候选先落文件、再由 `AssociationCandidateApplier` 应用到 L3 relations**：阈值 `apply-min-confidence`（默认 0.75）+ 端点存活校验 + `relationExists` 幂等；巩固周期 `runRemAssociation` 末尾自动触发，亦可经 `POST /api/memories/rem/apply` 手动触发
 - 默认 `enabled=false`；开启后 `seedLimit=10 × neighborLimit=5 = 50 次检索 + 10 次 LLM`
 
 Spec：`.kiro/specs/memory-rem-consolidation/`
@@ -503,9 +503,9 @@ Spec：`.kiro/specs/memory-mcp-server/`
 
 ### 8.7 剩余演进方向
 
-- **图记忆持续加固**：relation 级 `evidence_kind / trust_level / trust_score / evidence_excerpt` 补齐、对话关系自动提取候选、entity co-occurrence / semantic link / causal link 图投影 outbox
+- **图记忆持续加固**：relation 级 `evidence_kind / trust_level / trust_score / evidence_excerpt` 补齐、entity co-occurrence / semantic link / causal link 图投影 outbox（对话关系自动提取已落地，见 §3.x / agent-learning §3.3.8）
 - **统一检索编排进阶**：并行 source 调用、`QueryDecomposer`、学习型 reranker、`KnowledgeBaseSource` 真实实现、`memory.retrieve` Agent 工具化
-- **REM 候选应用器**：文件候选 → 人工/自动审阅 → L3 relations 主库
+- **REM 候选应用器**：✅ 已落地（`AssociationCandidateApplier`，文件候选 → 阈值+幂等 → L3 relations 主库）
 - **前端血缘展示**：`EntityDetailDrawer` 血缘 Tab、Provenance 时间线、overlay / derivation 关系图、HotDigest 命中次数统计
 - **Staleness 精度提升**：时间距离 + 显式否定词（"我改了"/"现在是"）融合判定
 - **记忆注入安全接入**：把 `MemoryInjectionDetector` 真正前置到 `RealtimeExtractor` / KB 抽取链路
