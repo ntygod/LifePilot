@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -116,6 +117,37 @@ class ExperiencePromoter_单元测试 {
 
         assertThat(promoted).isZero();
         verify(proceduralMemory, never()).save(any(ProcedureTemplate.class));
+    }
+
+    @Test
+    @DisplayName("连续两次提升同一经验仅保存一次（按 sourceEntityId 去重幂等）")
+    void 重复提升同一经验应幂等仅保存一次() {
+        var properties = new AgentLearningProperties();
+        var semanticMemory = mock(SemanticMemory.class);
+        var proceduralMemory = mock(ProceduralMemory.class);
+        var now = Instant.parse("2026-05-07T06:30:00Z");
+        var experience = new TemporalEntity(
+                "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
+                1, true, now, null, "session-1", 1.0f, 0.95f, 4, now, now, now);
+        when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
+
+        // 模拟去重的真实时序：首次提升前查无现存模板（保存）；保存后再次提升时
+        // findBySourceEntityId 命中现存活跃模板 → 跳过。验证 save 恰好仅执行一次。
+        var saved = new java.util.concurrent.atomic.AtomicReference<ProcedureTemplate>();
+        when(proceduralMemory.findBySourceEntityId("exp-1"))
+                .thenAnswer(invocation -> Optional.ofNullable(saved.get()));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            saved.set(invocation.getArgument(0));
+            return null;
+        }).when(proceduralMemory).save(any(ProcedureTemplate.class));
+
+        var promoter = new ExperiencePromoter(semanticMemory, proceduralMemory, properties);
+        int first = promoter.promote();
+        int second = promoter.promote();
+
+        assertThat(first).isEqualTo(1);
+        assertThat(second).isZero();
+        verify(proceduralMemory, times(1)).save(any(ProcedureTemplate.class));
     }
 
     @Test
