@@ -288,8 +288,30 @@ public class MetaAutoConfiguration {
 
         ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
         ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
-        if (ctx.containsBean("memoryToolProvider")) {
-            ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
+
+        // 记忆工具：ApplicationReady 时全部 Bean 已实例化，按依赖可用性直接构建+注册，
+        // 不依赖 @ConditionalOnBean 的自动配置处理时序（记忆模块拆分后时序变化曾导致
+        // memoryToolProvider Bean 因条件早评估为 false 而未创建 → memory 工具从未注册）。
+        var hybrid = ctx.getBeanProvider(HybridRetriever.class).getIfAvailable();
+        var semantic = ctx.getBeanProvider(SemanticMemory.class).getIfAvailable();
+        if (hybrid != null && semantic != null) {
+            MemoryToolProvider mtp = ctx.getBeanProvider(MemoryToolProvider.class).getIfAvailable();
+            if (mtp == null) {
+                mtp = new MemoryToolProvider(
+                        hybrid, semantic,
+                        ctx.getBeanProvider(EpisodicMemory.class).getIfAvailable(),
+                        ctx.getBeanProvider(DocumentRetriever.class).getIfAvailable(),
+                        ctx.getBeanProvider(SessionKnowledgeBaseRepository.class).getIfAvailable(),
+                        ctx.getBeanProvider(SessionKnowledgeScopeResolver.class).getIfAvailable(),
+                        ctx.getBeanProvider(MemoryRetrievalProperties.class).getIfAvailable(),
+                        ctx.getBeanProvider(ProjectContextResolver.class).getIfAvailable(),
+                        ctx.getBeanProvider(ChatSessionRepository.class).getIfAvailable(),
+                        ctx.getBeanProvider(MemoryAccessPolicy.class).getIfAvailable());
+                log.info("记忆工具: memoryToolProvider Bean 缺失，已在 ApplicationReady 阶段按依赖构建");
+            }
+            mtp.registerTools(toolRegistry);
+        } else {
+            log.warn("记忆工具: HybridRetriever 或 SemanticMemory 不可用，跳过 memory 工具注册");
         }
 
         log.info("元能力模块工具注册完成");

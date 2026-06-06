@@ -81,7 +81,6 @@ public class MemoryRetrievalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(SemanticMemory.class)
     public HybridRetriever hybridRetriever(
             VectorSearcher vectorSearcher,
             FtsSearcher ftsSearcher,
