@@ -48,7 +48,8 @@ class ThoughtPool_持久化集成测试 {
                     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
                     mature_at       TEXT,
                     expressed_at    TEXT,
-                    resolved_at     TEXT
+                    resolved_at     TEXT,
+                    last_reinforced_at TEXT
                 )
                 """);
         repository = new ThoughtRepository(jdbcTemplate, new ObjectMapper());
@@ -60,13 +61,17 @@ class ThoughtPool_持久化集成测试 {
     }
 
     private Thought brewing(String id, String intentKey, ThoughtKind kind, float maturity) {
+        var created = Instant.parse("2026-06-07T00:00:00Z");
         return new Thought(id, intentKey, kind, "概要-" + id, List.of(),
-                0.7f, maturity, Instant.parse("2026-06-07T00:00:00Z"), null,
-                ThoughtState.BREWING, null);
+                0.7f, maturity, created, null,
+                ThoughtState.BREWING, null, created);
     }
 
     private ThoughtPool newPool() {
-        return new ThoughtPool(10, Duration.ofHours(6), Duration.ofHours(24), repository);
+        return new ThoughtPool(10, Duration.ofHours(6), Duration.ofHours(24), repository,
+                new com.lifepilot.agent.initiative.maturity.MaturityModel(
+                        new com.lifepilot.agent.initiative.maturity.MaturityModel.Config(
+                                0.6f, 0.5f, 0.15f, 0.15f, 48.0, 24.0, 72.0)));
     }
 
     @Test
@@ -118,5 +123,23 @@ class ThoughtPool_持久化集成测试 {
         // 终态想法不在 BREWING/READY 恢复集合内
         assertThat(pool2.findById("t1")).isEmpty();
         assertThat(pool2.activeCount()).isZero();
+    }
+
+    @Test
+    void evolve改变成熟度后应持久化且新池恢复连续值() {
+        var pool1 = newPool();
+        // lastReinforcedAt = created(2026-06-07)，maturity 0.8
+        pool1.submit(brewing("t1", "intent-a", ThoughtKind.FOLLOW_UP, 0.8f));
+
+        // 演化到 created + 120h：超宽限期(24h) + 2 个半衰期(48h) → 0.8 * 0.25 = 0.2
+        Instant now = Instant.parse("2026-06-07T00:00:00Z").plus(Duration.ofHours(120));
+        int changed = pool1.evolve(now);
+        assertThat(changed).isEqualTo(1);
+
+        // 模拟重启：新池从库恢复演化后的成熟度
+        var pool2 = newPool();
+        var recovered = pool2.findById("t1").orElseThrow();
+        assertThat(recovered.maturity()).isCloseTo(0.2f, org.assertj.core.data.Offset.offset(1e-3f));
+        assertThat(recovered.state()).isEqualTo(ThoughtState.BREWING);
     }
 }
