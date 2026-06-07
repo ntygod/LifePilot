@@ -19,7 +19,7 @@ class QueryPlanner_单元测试 {
     void FACT_intent_选择hybrid_和_knowledgeBase() {
         var hybrid = new HybridRetrievalSource(mock(HybridRetriever.class));
         var exp = new ExperienceRetrievalSource(mock(SemanticMemory.class));
-        var kb = new KnowledgeBaseSource();  // isAvailable=false
+        var kb = new KnowledgeBaseSource(null, null);  // isAvailable=false
         var planner = new QueryPlanner(hybrid, exp, kb);
 
         var result = planner.plan("q", RetrievalIntent.FACT);
@@ -41,7 +41,7 @@ class QueryPlanner_单元测试 {
     void GENERAL_intent_三路全走() {
         var hybrid = new HybridRetrievalSource(mock(HybridRetriever.class));
         var exp = new ExperienceRetrievalSource(mock(SemanticMemory.class));
-        var kb = new KnowledgeBaseSource();
+        var kb = new KnowledgeBaseSource(null, null);
         var planner = new QueryPlanner(hybrid, exp, kb);
 
         var result = planner.plan("q", RetrievalIntent.GENERAL);

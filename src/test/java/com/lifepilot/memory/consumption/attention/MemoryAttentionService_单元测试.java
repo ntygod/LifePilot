@@ -1,6 +1,8 @@
 package com.lifepilot.memory.consumption.attention;
 
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -50,22 +52,36 @@ class MemoryAttentionService_单元测试 {
         when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of());
         when(semanticMemory.findCurrentByType(any(), any())).thenReturn(List.of());
         when(graphReasoner.connectionOpportunities(any(), any())).thenReturn(List.of());
+        when(semanticMemory.existsConsumableById(any())).thenReturn(true);
         service = new MemoryAttentionService(semanticMemory, graphReasoner, properties, CLOCK);
     }
 
+    /** 默认构造可消费实体（USER_CONFIRMED / EXPLICIT，trustScore 0.9，过质量门）。 */
     private TemporalEntity entity(String id, String name, EntityType type, float importance,
                                   Instant expiresAt, Instant lastAccessed, int version) {
         return new TemporalEntity(
                 id, type, name, name + "描述", Map.of(), version, true, NOW, null, "conv",
                 0.9f, importance, 0, lastAccessed, NOW, NOW,
-                LifecycleState.ACTIVE, null, expiresAt, Temporality.PERSISTENT, null, false, List.of());
+                LifecycleState.ACTIVE, null, expiresAt, Temporality.PERSISTENT, null, false, List.of())
+                .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
+    }
+
+    /** 构造不可消费实体（UNVERIFIED，trustScore 0）—— 用于验证质量门拦截。 */
+    private TemporalEntity unverifiedEntity(String id, String name, EntityType type, float importance,
+                                            Instant expiresAt, Instant lastAccessed, int version) {
+        return new TemporalEntity(
+                id, type, name, name + "描述", Map.of(), version, true, NOW, null, "conv",
+                0.3f, importance, 0, lastAccessed, NOW, NOW,
+                LifecycleState.ACTIVE, null, expiresAt, Temporality.PERSISTENT, null, false, List.of())
+                .withQuality(MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED, 0.0f, 0, null);
     }
 
     private TemporalEntity dueEntity(String id, String name, EntityType type, float importance, Object dueAt) {
         return new TemporalEntity(
                 id, type, name, name + "描述", Map.of("dueAt", dueAt), 1, true, NOW, null, "conv",
                 0.9f, importance, 0, NOW, NOW, NOW,
-                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of());
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of())
+                .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
     }
 
     @Test
@@ -184,6 +200,82 @@ class MemoryAttentionService_单元测试 {
     void 总开关关闭返回空() {
         properties.getAttention().setEnabled(false);
         assertThat(service.computeAttention(null, 10)).isEmpty();
+    }
+
+    // ── 质量门（Task 2 / 2.1）：不可信 / 已完成实体不应主动浮现 ──
+
+    @Test
+    void UNVERIFIED实体不应产出EXPIRING() {
+        when(semanticMemory.findApproachingExpiry(any(), any(), any())).thenReturn(List.of(
+                unverifiedEntity("g1", "猜测目标", EntityType.GOAL, 0.9f,
+                        NOW.plus(Duration.ofDays(2)), NOW, 1)));
+
+        var items = service.computeAttention(null, 10);
+
+        assertThat(items).noneMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.EXPIRING);
+    }
+
+    @Test
+    void UNVERIFIED实体不应产出NEGLECTED() {
+        when(semanticMemory.findNeglected(any(), any(), org.mockito.ArgumentMatchers.anyFloat(), any()))
+                .thenReturn(List.of(
+                        unverifiedEntity("p1", "猜测项目", EntityType.PROJECT, 0.9f,
+                                null, NOW.minus(Duration.ofDays(60)), 1)));
+
+        var items = service.computeAttention(null, 10);
+
+        assertThat(items).noneMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.NEGLECTED);
+    }
+
+    @Test
+    void UNVERIFIED实体不应产出DUE_SOON() {
+        var due = new TemporalEntity(
+                "g1", EntityType.GOAL, "猜测截止", "描述", Map.of("dueAt", "2026-06-10"),
+                1, true, NOW, null, "conv", 0.3f, 0.7f, 0, NOW, NOW, NOW,
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of())
+                .withQuality(MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED, 0.0f, 0, null);
+        when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of(due));
+
+        var items = service.computeAttention(null, 10);
+
+        assertThat(items).noneMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.DUE_SOON);
+    }
+
+    @Test
+    void UNVERIFIED实体不应产出EVOLVING() {
+        when(semanticMemory.findCurrentByType(eqType(EntityType.GOAL), any())).thenReturn(List.of(
+                unverifiedEntity("g2", "猜测演进", EntityType.GOAL, 0.7f, null, NOW, 3)));
+
+        var items = service.computeAttention(null, 10);
+
+        assertThat(items).noneMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.EVOLVING);
+    }
+
+    @Test
+    void COMPLETED实体不应产出EVOLVING() {
+        var completed = new TemporalEntity(
+                "g3", EntityType.GOAL, "已完成目标", "描述", Map.of(), 3, true, NOW, null, "conv",
+                0.9f, 0.7f, 0, NOW, NOW, NOW,
+                LifecycleState.COMPLETED, null, null, Temporality.PERSISTENT, null, false, List.of())
+                .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
+        when(semanticMemory.findCurrentByType(eqType(EntityType.GOAL), any())).thenReturn(List.of(completed));
+
+        var items = service.computeAttention(null, 10);
+
+        assertThat(items).noneMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.EVOLVING);
+    }
+
+    @Test
+    void CONNECTION目标实体不可消费时不应产出() {
+        when(semanticMemory.findApproachingExpiry(any(), any(), any())).thenReturn(List.of(
+                entity("g1", "学小提琴", EntityType.GOAL, 0.9f, NOW.plus(Duration.ofDays(2)), NOW, 1)));
+        when(graphReasoner.connectionOpportunities(any(), any())).thenReturn(List.of(
+                new GraphReasoner.ConnectionOpportunity("g1", "b1", "杭州", "t1", "网易", "位于", "工作于", 0.8f)));
+        when(semanticMemory.existsConsumableById("t1")).thenReturn(false);
+
+        var items = service.computeAttention(null, 10);
+
+        assertThat(items).noneMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.CONNECTION);
     }
 
     private static EntityType eqType(EntityType t) {

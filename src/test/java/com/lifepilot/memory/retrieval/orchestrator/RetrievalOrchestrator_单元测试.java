@@ -30,7 +30,7 @@ class RetrievalOrchestrator_单元测试 {
     @Test
     void 空查询返回空bundle() {
         var props = new MemoryRetrievalProperties();
-        var planner = new QueryPlanner(null, null, new KnowledgeBaseSource());
+        var planner = new QueryPlanner(null, null, new KnowledgeBaseSource(null, null));
         var orchestrator = new RetrievalOrchestrator(planner, props);
 
         assertThat(orchestrator.retrieve("").items()).isEmpty();
@@ -47,7 +47,7 @@ class RetrievalOrchestrator_单元测试 {
                         retrievalResult("e3", "C", 0.7f)
                 ));
         var hybridSource = new HybridRetrievalSource(hybridRetriever);
-        var planner = new QueryPlanner(hybridSource, null, new KnowledgeBaseSource());
+        var planner = new QueryPlanner(hybridSource, null, new KnowledgeBaseSource(null, null));
         var props = new MemoryRetrievalProperties();
         var orchestrator = new RetrievalOrchestrator(planner, props);
 
@@ -69,7 +69,7 @@ class RetrievalOrchestrator_单元测试 {
                         experienceEntity("exp-2", "Java 经验", "Java 相关")
                 ));
         var expSource = new ExperienceRetrievalSource(semanticMemory);
-        var planner = new QueryPlanner(null, expSource, new KnowledgeBaseSource());
+        var planner = new QueryPlanner(null, expSource, new KnowledgeBaseSource(null, null));
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("Rust", RetrievalIntent.EXPERIENCE, 10);
@@ -81,7 +81,7 @@ class RetrievalOrchestrator_单元测试 {
 
     @Test
     void 不可用的source被跳过() {
-        var planner = new QueryPlanner(null, null, new KnowledgeBaseSource());  // 全不可用
+        var planner = new QueryPlanner(null, null, new KnowledgeBaseSource(null, null));  // 全不可用
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("test", RetrievalIntent.GENERAL, 10);
@@ -107,7 +107,7 @@ class RetrievalOrchestrator_单元测试 {
         var planner = new QueryPlanner(
                 new HybridRetrievalSource(hybrid),
                 new ExperienceRetrievalSource(sem),
-                new KnowledgeBaseSource());
+                new KnowledgeBaseSource(null, null));
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("test", RetrievalIntent.GENERAL, 2);
@@ -128,7 +128,7 @@ class RetrievalOrchestrator_单元测试 {
         var planner = new QueryPlanner(
                 new HybridRetrievalSource(hybrid),
                 new ExperienceRetrievalSource(sem),
-                new KnowledgeBaseSource());
+                new KnowledgeBaseSource(null, null));
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("Rust", RetrievalIntent.GENERAL, 10);

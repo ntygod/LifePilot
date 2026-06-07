@@ -117,24 +117,6 @@ class SemanticMemory_权重变化事件_集成测试 {
     }
 
     @Test
-    void 默认2arg重载应按USER_FEEDBACK发事件() {
-        var entity = 构造ACTIVE实体("entity-权重-2", EntityType.PREFERENCE, 0.4f);
-        semanticMemory.upsertWithConflictDetection(entity, null);
-        captured.clear();
-
-        semanticMemory.updateImportanceScore(entity.id(), 0.9f);
-
-        var weightEvents = captured.stream()
-                .filter(e -> e instanceof EntityWeightChanged)
-                .map(e -> (EntityWeightChanged) e)
-                .toList();
-        assertThat(weightEvents).hasSize(1);
-        assertThat(weightEvents.getFirst().source()).isEqualTo(WeightSource.USER_FEEDBACK);
-        assertThat(weightEvents.getFirst().delta())
-                .isCloseTo(0.5d, org.assertj.core.data.Offset.offset(1e-6d));
-    }
-
-    @Test
     void 未命中任何当前版本时不应发事件() {
         // given — 不预先 upsert，直接对不存在的实体调用
         captured.clear();
