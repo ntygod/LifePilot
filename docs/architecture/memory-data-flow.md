@@ -1019,7 +1019,7 @@ V25 DROP + CREATE 重建视图以纳入 V24 新列（SQLite 不支持 `ALTER VIE
 | 图投影尚未 outbox 化 | 当前图遍历直接读 SQL 主库 / 视图，尚无 entity co-occurrence、semantic link、causal link 等物化投影 | 若物化图索引，必须通过 `memory_projection_outbox` UPSERT/DELETE，并保留可重建语义 | Phase F 后续 |
 | 对话自动学习尚未抽取关系 | `RealtimeExtractor` / `semantic/entity-extraction.st` 只产出 L3 实体候选，不直接产出 relation candidate | 对话关系抽取必须先落候选和质量门控，再写检索关键关系 | Phase F 后续 |
 | `ContrastiveLearner` 产出独立派生洞察 | ✅ 已落地：产出独立派生 EXPERIENCE 实体（`isDerived=true`，`derivationSources=[successExp, failureExp]`，`insightType=CONTRASTIVE`），取代原地增强 | 产出独立派生洞察，写 `derivationSources=[successExp, failureExp]` | Phase C 后 |
-| `TrustUpgradeService` 未把提醒负反馈事件化到 L3 | 主动提醒信任度仍主要写 L4 / reminder 表 | 根据 `proactive_insight_entity_id` 发 `EntityWeightChanged(USER_FEEDBACK, 负 delta)` | Phase B/C |
+| `TrustUpgradeService` 把提醒负反馈事件化到 L3 | ✅ 已落地（Task 25/解 S14）：`recordNegativeFeedback(.., notificationId)` 经 `ReminderFeedbackRepository.findInsightEntityIdsByNotification` 反查关联 insight，调 `updateImportanceScore(.., USER_FEEDBACK)` 发 `EntityWeightChanged` 负 delta | 根据 `proactive_insight_entity_id` 发 `EntityWeightChanged(USER_FEEDBACK, 负 delta)` | Phase B/C |
 
 后续代码改动必须先清本表对应文档项，再提交实现与契约测试。
 
