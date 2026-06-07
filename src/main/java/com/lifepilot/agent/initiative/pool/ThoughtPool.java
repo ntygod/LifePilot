@@ -4,6 +4,7 @@ import com.lifepilot.agent.initiative.model.Thought;
 import com.lifepilot.agent.initiative.model.ThoughtState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.util.*;
@@ -26,12 +27,50 @@ public class ThoughtPool {
     private final int maxActiveThoughts;
     private final Duration brewingTtl;
     private final Duration readyTtl;
+    /** 想法持久化仓库（initiative_thoughts）—— null 时退化为纯内存（测试/未启用持久化）。 */
+    @Nullable
+    private final ThoughtRepository repository;
     private final ConcurrentHashMap<String, Thought> thoughts = new ConcurrentHashMap<>();
 
     public ThoughtPool(int maxActiveThoughts, Duration brewingTtl, Duration readyTtl) {
+        this(maxActiveThoughts, brewingTtl, readyTtl, null);
+    }
+
+    public ThoughtPool(int maxActiveThoughts, Duration brewingTtl, Duration readyTtl,
+                       @Nullable ThoughtRepository repository) {
         this.maxActiveThoughts = maxActiveThoughts;
         this.brewingTtl = brewingTtl;
         this.readyTtl = readyTtl;
+        this.repository = repository;
+        loadActiveFromRepository();
+    }
+
+    /** 启动时从库恢复活跃想法（BREWING/READY），避免重启丢失去重/冷却状态。 */
+    private void loadActiveFromRepository() {
+        if (repository == null) return;
+        try {
+            for (var t : repository.findByState(ThoughtState.BREWING)) {
+                thoughts.put(t.id(), t);
+            }
+            for (var t : repository.findByState(ThoughtState.READY)) {
+                thoughts.put(t.id(), t);
+            }
+            if (!thoughts.isEmpty()) {
+                log.info("想法池: 从库恢复活跃想法 {} 个", thoughts.size());
+            }
+        } catch (Exception e) {
+            log.warn("想法池: 从库恢复失败，以空池启动: {}", e.getMessage());
+        }
+    }
+
+    /** 持久化想法（best-effort，失败仅 warn 不阻塞思考）。 */
+    private void persist(Thought thought) {
+        if (repository == null) return;
+        try {
+            repository.save(thought);
+        } catch (Exception e) {
+            log.warn("想法池: 持久化失败, id={}, error={}", thought.id(), e.getMessage());
+        }
     }
 
     /**
@@ -47,6 +86,7 @@ public class ThoughtPool {
             float newMaturity = Math.min(1.0f, existing.maturity() + 0.1f);
             var merged = existing.withMaturity(newMaturity);
             thoughts.put(merged.id(), merged);
+            persist(merged);
             log.debug("想法池: 合并到已有想法, intentKey={}, maturity={}", thought.intentKey(), newMaturity);
             return merged;
         }
@@ -61,6 +101,7 @@ public class ThoughtPool {
         }
 
         thoughts.put(thought.id(), thought);
+        persist(thought);
         log.debug("想法池: 新想法入池, id={}, intentKey={}, maturity={}",
                 thought.id(), thought.intentKey(), thought.maturity());
         return thought;
@@ -81,6 +122,13 @@ public class ThoughtPool {
      */
     public void transition(String thoughtId, ThoughtState newState) {
         thoughts.computeIfPresent(thoughtId, (id, thought) -> thought.withState(newState));
+        if (repository != null) {
+            try {
+                repository.updateState(thoughtId, newState);
+            } catch (Exception e) {
+                log.warn("想法池: 状态持久化失败, id={}, error={}", thoughtId, e.getMessage());
+            }
+        }
     }
 
     /**
@@ -98,6 +146,13 @@ public class ThoughtPool {
             }
             if (thought.isExpired(brewingTtl, readyTtl)) {
                 thoughts.put(entry.getKey(), thought.withState(ThoughtState.DISMISSED));
+                if (repository != null) {
+                    try {
+                        repository.updateState(entry.getKey(), ThoughtState.DISMISSED);
+                    } catch (Exception e) {
+                        log.warn("想法池: 清理状态持久化失败, id={}, error={}", entry.getKey(), e.getMessage());
+                    }
+                }
                 cleaned++;
             }
         }

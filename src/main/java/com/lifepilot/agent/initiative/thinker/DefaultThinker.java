@@ -40,10 +40,6 @@ public class DefaultThinker implements Thinker {
     @Nullable
     private final MemoryAttentionService memoryAttentionService;
 
-    public DefaultThinker(@Nullable SemanticMemory semanticMemory) {
-        this(semanticMemory, null);
-    }
-
     public DefaultThinker(@Nullable SemanticMemory semanticMemory,
                           @Nullable MemoryAttentionService memoryAttentionService) {
         this.semanticMemory = semanticMemory;

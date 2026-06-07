@@ -40,12 +40,13 @@ public class InitiativeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ThoughtPool thoughtPool(InitiativeProperties props) {
+    public ThoughtPool thoughtPool(InitiativeProperties props, ThoughtRepository thoughtRepository) {
         log.info("主动引擎: 注册 ThoughtPool, maxActive={}", props.getMaxActiveThoughts());
         return new ThoughtPool(
                 props.getMaxActiveThoughts(),
                 Duration.ofHours(props.getBrewingTtlHours()),
-                Duration.ofHours(props.getReadyTtlHours())
+                Duration.ofHours(props.getReadyTtlHours()),
+                thoughtRepository
         );
     }
 
