@@ -377,12 +377,6 @@ public class HybridRetriever {
      *
      * @return L4 程序记忆匹配的 ReasoningSlot
      */
-    /**
-     * 兼容旧写入回调入口。检索 miss 不再设置全局空库缓存，因此这里保留为空实现。
-     */
-    public void resetEmptyFlag() {
-    }
-
     // --- 内部方法 ---
 
     /** 安全获取 CompletableFuture 结果，失败时返回空列表。 */

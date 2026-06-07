@@ -22,11 +22,6 @@ public final class KnowledgeBaseSource implements SourceAdapter {
     @Nullable
     private final KnowledgeBaseRepository kbRepository;
 
-    /** 无参构造 — 保持向后兼容，{@code isAvailable()} 返回 false。 */
-    public KnowledgeBaseSource() {
-        this(null, null);
-    }
-
     public KnowledgeBaseSource(@Nullable DocumentRetriever documentRetriever,
                                @Nullable KnowledgeBaseRepository kbRepository) {
         this.documentRetriever = documentRetriever;

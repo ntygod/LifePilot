@@ -99,8 +99,6 @@ public class MemoryRetrievalAutoConfiguration {
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter,
                 provenanceRepository);
-        semanticMemory.setWriteCallback(retriever::resetEmptyFlag);
-        episodicMemory.setWriteCallback(retriever::resetEmptyFlag);
         return retriever;
     }
 
