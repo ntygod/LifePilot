@@ -510,6 +510,7 @@ Spec：`.kiro/specs/memory-mcp-server/`
 - **Staleness 精度提升**：时间距离 + 显式否定词（"我改了"/"现在是"）融合判定
 - **记忆注入安全接入**：把 `MemoryInjectionDetector` 真正前置到 `RealtimeExtractor` / KB 抽取链路
 - **记忆注意力**：✅ 已落地（`MemoryAttentionService` + `GraphReasoner`，主动浮现 EXPIRING/NEGLECTED/EVOLVING/CONNECTION，经 `GET /api/memories/attention` 与 `ProactiveMemoryBridge.getAttentionItems` 出口，见 agent-learning §3.3.9）
+- **注意力可信化质量门**：✅ 已落地（memory-trust-and-cleanup）所有注意力项过 `MemoryQualityPolicy.isPromptConsumable`，时间类信号限定 `ACTIVE`，CONNECTION 端点经 `existsConsumableById` 校验——不基于不可信/已完成记忆主动浮现
 - **目标截止日期感知**：✅ 已落地（`properties.dueAt` 独立于 `expires_at`，`DueDateExtractor` 确定性兜底覆盖 AUDN + memory 工具两条写入路径，注意力 DUE_SOON 信号，见 agent-learning §3.3.9）
 
 ---

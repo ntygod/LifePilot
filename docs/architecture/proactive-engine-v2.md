@@ -400,6 +400,10 @@ lifepilot:
 1. **意图级去重**：同一个 `intentKey` 只允许存在一个活跃想法
 2. **生命周期管理**：自动过期、自动清理
 3. **优先级排序**：当多个想法同时就绪时，决定表达顺序
+4. **持久化与重启恢复**（memory-trust-and-cleanup）：注入 `@Nullable ThoughtRepository`（`initiative_thoughts` 表）后，
+   `submit` / `transition` / `cleanup` 即写库（best-effort，失败仅 warn 不阻塞思考）；构造时 `loadActiveFromRepository`
+   从库恢复 `BREWING` / `READY` 活跃想法，避免重启丢失去重与冷却状态。未注入仓库时退化为纯内存（测试/未启用持久化）。
+   终态（`DISMISSED` / `ABSORBED`）想法不在恢复集合内。
 
 ### 8.2 intentKey 设计
 

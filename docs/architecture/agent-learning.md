@@ -338,7 +338,15 @@ sequenceDiagram
   - **NEGLECTED**：`importance ≥ 阈值` 但长期未访问的高价值实体（"重要但被冷落"）
   - **EVOLVING**：近期持续多版本演进的实体
   - **CONNECTION**：`GraphReasoner` 在关系图上发现的两跳可达但无直接边的连接机会（联想），自动排除 `__` 前缀的系统派生聚合实体（如 `__consolidated_profile`）以降噪
-- 出口：`ProactiveMemoryBridge.getAttentionItems(topN)`（主动层消费）+ `GET /api/memories/attention`（运维/UI）
+- **可信化质量门（memory-trust-and-cleanup）**：所有注意力项必须通过 `MemoryQualityPolicy.isPromptConsumable`——
+  与上下文注入、工具搜索返回等全系统消费路径同一硬门槛，避免基于 UNVERIFIED / 低 trust / 已过期记忆主动浮现：
+  - EXPIRING / DUE_SOON / NEGLECTED 候选逐条 `isPromptConsumable` 过滤
+  - EVOLVING 额外要求 `lifecycleState == ACTIVE`（已演进但完结的实体不再浮现）
+  - CONNECTION 对联想目标实体经 `SemanticMemory.existsConsumableById(toId)` 校验后才产出
+- **时间类信号限定 ACTIVE（memory-trust-and-cleanup）**：`findApproachingExpiry / findNeglected / findWithDueDate`
+  的生命周期条件由 RECALLABLE 三态（ACTIVE/COMPLETED/REGENERATION_NEEDED）收窄为**仅 `ACTIVE`**——
+  COMPLETED（已完成目标）不再触发 DUE_SOON / EXPIRING / NEGLECTED 提醒
+- 出口：`ProactiveMemoryBridge.getAttentionItems(topN)`（主动层消费，scope 用 `MemoryReadFilter.userMemory()`，与端点一致）+ `GET /api/memories/attention`（运维/UI）
 - 配置见 §8.6
 - **截止日期捕获（memory-deadline-awareness）**：硬截止日期存于 `properties.dueAt`（ISO 日期），与 `expires_at`（自动遗忘 TTL）严格区分——
   否则 `ExpirationScanner` 会在截止后误归档目标。由 `DueDateExtractor` 确定性正则从实体名/描述提取绝对日期兜底
