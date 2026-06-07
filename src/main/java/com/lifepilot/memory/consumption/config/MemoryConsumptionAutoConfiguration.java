@@ -3,6 +3,8 @@ package com.lifepilot.memory.consumption.config;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.consumption.compression.CompressionService;
 import com.lifepilot.memory.consumption.EpisodicCleanupJob;
+import com.lifepilot.memory.consumption.attention.GraphReasoner;
+import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
@@ -68,5 +70,25 @@ public class MemoryConsumptionAutoConfiguration {
                 properties.getEpisodicCleanup().getCron(),
                 properties.getEpisodicCleanup().getRetentionDays());
         return new EpisodicCleanupJob(episodicMemory, jdbcTemplate, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public GraphReasoner graphReasoner(JdbcTemplate jdbcTemplate,
+                                       MemoryConsumptionProperties properties) {
+        log.info("记忆模块: 注册 GraphReasoner, maxFanout={}",
+                properties.getAttention().getMaxFanout());
+        return new GraphReasoner(jdbcTemplate, properties.getAttention().getMaxFanout());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryAttentionService memoryAttentionService(SemanticMemory semanticMemory,
+                                                         GraphReasoner graphReasoner,
+                                                         MemoryConsumptionProperties properties,
+                                                         Clock clock) {
+        log.info("记忆模块: 注册 MemoryAttentionService, attentionEnabled={}",
+                properties.getAttention().isEnabled());
+        return new MemoryAttentionService(semanticMemory, graphReasoner, properties, clock);
     }
 }

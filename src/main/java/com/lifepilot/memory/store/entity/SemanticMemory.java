@@ -1089,6 +1089,82 @@ public class SemanticMemory {
         return avg != null ? avg.floatValue() : 0f;
     }
 
+    /** 可召回生命周期集合 —— 注意力信号只纳入这些状态的当前实体。 */
+    private static final String RECALLABLE_LIFECYCLE = "('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')";
+
+    /**
+     * 临近到期查询（memory-proactive-foundation）—— {@code expires_at} 落在 {@code (now, until]}
+     * 的当前有效、可召回实体，按到期时间升序（最紧迫在前）。
+     *
+     * @param until  到期窗口上界（含）
+     * @param types  限定的实体类型；为空表示不限类型
+     * @param filter 读取过滤（空间/scope）
+     */
+    public List<TemporalEntity> findApproachingExpiry(Instant until,
+                                                      Set<EntityType> types,
+                                                      @Nullable MemoryReadFilter filter) {
+        if (until == null) {
+            return List.of();
+        }
+        String now = Instant.now().toString();
+        StringBuilder sql = new StringBuilder(
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities"
+                        + " WHERE is_current = 1"
+                        + " AND lifecycle_state IN " + RECALLABLE_LIFECYCLE
+                        + " AND expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ?");
+        List<Object> params = new ArrayList<>();
+        params.add(now);
+        params.add(until.toString());
+        appendTypeFilter(sql, params, types);
+        appendEntityReadFilter(sql, params, filter);
+        sql.append(" ORDER BY expires_at ASC");
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> mapRowToEntity(rs), params.toArray());
+    }
+
+    /**
+     * 停滞高价值查询（memory-proactive-foundation）—— importance ≥ 阈值，且长期未被访问
+     * （{@code last_accessed_at < idleBefore}，或从未访问且 {@code created_at < idleBefore}）的
+     * 当前有效、可召回实体，按重要度降序。
+     *
+     * @param types         限定的实体类型；为空表示不限类型
+     * @param idleBefore    停滞判定时间点（早于此视为停滞）
+     * @param minImportance 最小重要度
+     * @param filter        读取过滤（空间/scope）
+     */
+    public List<TemporalEntity> findNeglected(Set<EntityType> types,
+                                              Instant idleBefore,
+                                              float minImportance,
+                                              @Nullable MemoryReadFilter filter) {
+        if (idleBefore == null) {
+            return List.of();
+        }
+        String cutoff = idleBefore.toString();
+        StringBuilder sql = new StringBuilder(
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities"
+                        + " WHERE is_current = 1"
+                        + " AND lifecycle_state IN " + RECALLABLE_LIFECYCLE
+                        + " AND importance_score >= ?"
+                        + " AND ((last_accessed_at IS NOT NULL AND last_accessed_at < ?)"
+                        + "      OR (last_accessed_at IS NULL AND created_at < ?))");
+        List<Object> params = new ArrayList<>();
+        params.add(minImportance);
+        params.add(cutoff);
+        params.add(cutoff);
+        appendTypeFilter(sql, params, types);
+        appendEntityReadFilter(sql, params, filter);
+        sql.append(" ORDER BY importance_score DESC");
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> mapRowToEntity(rs), params.toArray());
+    }
+
+    /** 拼接可选的实体类型 IN 过滤。 */
+    private void appendTypeFilter(StringBuilder sql, List<Object> params, @Nullable Set<EntityType> types) {
+        if (types == null || types.isEmpty()) {
+            return;
+        }
+        sql.append(" AND type IN (").append(buildPlaceholders(types.size())).append(")");
+        params.addAll(types.stream().map(Enum::name).toList());
+    }
+
     /**
      * 查询所有当前有效关系。
      *

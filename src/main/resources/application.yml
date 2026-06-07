@@ -374,6 +374,26 @@ lifepilot:
         cron: "0 0 5 * * *"
         retention-days: 90
         max-cleanup-per-run: 500
+      # 记忆注意力（memory-proactive-foundation）：前瞻时间信号 + 图联想，只读派生供主动层/Agent 消费
+      attention:
+        enabled: true
+        expiring-enabled: true
+        expiring-window-days: 14
+        neglected-enabled: true
+        neglect-days: 30
+        neglect-min-importance: 0.6
+        evolving-enabled: true
+        evolving-window-days: 7
+        evolving-min-versions: 2
+        connection-enabled: true
+        max-depth: 2
+        max-fanout: 25
+        max-per-kind: 10
+        top-n: 10
+        weight-expiring: 1.0
+        weight-neglected: 0.8
+        weight-evolving: 0.6
+        weight-connection: 0.7
     # 巩固管线 / 遗忘引擎 / 实体提取配置已迁移到 lifepilot.agent.learning.*（consolidation-decoupling）
     # 混合检索相关性过滤
     retrieval:

@@ -35,6 +35,11 @@ public class MemoryConsumptionProperties {
     /** 情景记忆自动清理配置。 */
     private EpisodicCleanup episodicCleanup = new EpisodicCleanup();
 
+    // ─── Attention 记忆注意力配置 ───
+
+    /** 记忆注意力（前瞻信号 + 图联想）配置。 */
+    private Attention attention = new Attention();
+
     /**
      * L3.5 热记忆摘要配置。
      *
@@ -104,5 +109,69 @@ public class MemoryConsumptionProperties {
 
         /** 单次最大清理数量，默认 500。 */
         private int maxCleanupPerRun = 500;
+    }
+
+    /**
+     * 记忆注意力配置 — 控制前瞻/时间信号与图联想推理的窗口、阈值、权重与限流。
+     *
+     * <p>由 {@code MemoryAttentionService} / {@code GraphReasoner} 消费，纯只读派生，不写主库。</p>
+     */
+    @Setter
+    @Getter
+    public static class Attention {
+
+        /** 总开关，默认 true。 */
+        private boolean enabled = true;
+
+        /** EXPIRING：临近到期窗口（天），expires_at 落在 [now, now+window] 视为临近到期，默认 14。 */
+        private int expiringWindowDays = 14;
+
+        /** 是否产出 EXPIRING 项，默认 true。 */
+        private boolean expiringEnabled = true;
+
+        /** NEGLECTED：停滞判定的未访问天数阈值，默认 30。 */
+        private int neglectDays = 30;
+
+        /** NEGLECTED：停滞高价值的最小重要度，默认 0.6。 */
+        private float neglectMinImportance = 0.6f;
+
+        /** 是否产出 NEGLECTED 项，默认 true。 */
+        private boolean neglectedEnabled = true;
+
+        /** EVOLVING：演进活跃窗口（天），默认 7。 */
+        private int evolvingWindowDays = 7;
+
+        /** EVOLVING：判定演进活跃的最小版本数，默认 2。 */
+        private int evolvingMinVersions = 2;
+
+        /** 是否产出 EVOLVING 项，默认 true。 */
+        private boolean evolvingEnabled = true;
+
+        /** 是否产出 CONNECTION 项，默认 true。 */
+        private boolean connectionEnabled = true;
+
+        /** 图遍历最大跳数，默认 2。 */
+        private int maxDepth = 2;
+
+        /** 单实体扩展的最大 fanout（边数）限流，默认 25。 */
+        private int maxFanout = 25;
+
+        /** 每类注意力的最大候选数，默认 10。 */
+        private int maxPerKind = 10;
+
+        /** 最终返回的注意力项上限，默认 10。 */
+        private int topN = 10;
+
+        /** EXPIRING 权重，默认 1.0。 */
+        private float weightExpiring = 1.0f;
+
+        /** NEGLECTED 权重，默认 0.8。 */
+        private float weightNeglected = 0.8f;
+
+        /** EVOLVING 权重，默认 0.6。 */
+        private float weightEvolving = 0.6f;
+
+        /** CONNECTION 权重，默认 0.7。 */
+        private float weightConnection = 0.7f;
     }
 }

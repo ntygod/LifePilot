@@ -50,6 +50,8 @@ public class ProactiveMemoryBridge {
     @Nullable private final JdbcTemplate jdbcTemplate;
     /** Spring 事件总线 — Task 13 发 ProactiveTaskCancelled；单测可为空。 */
     @Nullable private ApplicationEventPublisher eventPublisher;
+    /** 记忆注意力服务（memory-proactive-foundation）—— setter 注入，空时 getAttentionItems 返回空。 */
+    @Nullable private com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
 
     public ProactiveMemoryBridge(@Nullable SemanticMemory semanticMemory,
                                   @Nullable EpisodicMemory episodicMemory,
@@ -78,6 +80,37 @@ public class ProactiveMemoryBridge {
      */
     public void setEventPublisher(@Nullable ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * 注入记忆注意力服务（memory-proactive-foundation）—— setter 注入，与本类既有
+     * {@link #setEventPublisher} 同范式，避免破坏多参构造器签名与大量手工装配测试。
+     *
+     * @param memoryAttentionService 注意力服务，null 表示注意力能力关闭
+     */
+    public void setMemoryAttentionService(
+            @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
+        this.memoryAttentionService = memoryAttentionService;
+    }
+
+    /**
+     * 获取记忆主动浮现的注意力清单 —— 主动引擎消费"现在该关注什么"的统一入口。
+     *
+     * <p>按主账户画像范围读取；服务未注入时返回空列表。</p>
+     *
+     * @param topN 返回上限
+     * @return 注意力项列表（按 score 降序）
+     */
+    public List<com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionItem> getAttentionItems(int topN) {
+        if (memoryAttentionService == null) {
+            return List.of();
+        }
+        try {
+            return memoryAttentionService.computeAttention(MemoryReadFilter.userProfile(), topN);
+        } catch (Exception e) {
+            log.debug("记忆桥接: 注意力清单获取失败: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     /**

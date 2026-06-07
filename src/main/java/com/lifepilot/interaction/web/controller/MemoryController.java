@@ -68,6 +68,7 @@ public class MemoryController {
     private final @Nullable ProjectContextResolver projectContextResolver;
     private final MemoryAccessPolicy memoryAccessPolicy;
     private final @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier;
+    private final @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
     private final AtomicBoolean deduplicating = new AtomicBoolean(false);
     private final AtomicBoolean forgetting = new AtomicBoolean(false);
@@ -84,7 +85,8 @@ public class MemoryController {
                             MemoryProvenanceRepository provenanceRepository,
                             @Nullable ProjectContextResolver projectContextResolver,
                             @Nullable MemoryAccessPolicy memoryAccessPolicy,
-                            @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier) {
+                            @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier,
+                            @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
@@ -98,6 +100,7 @@ public class MemoryController {
         this.projectContextResolver = projectContextResolver;
         this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
         this.remApplier = remApplier;
+        this.memoryAttentionService = memoryAttentionService;
     }
 
     /** 检查记忆系统是否启用，未启用时抛出 503。 */
@@ -917,6 +920,41 @@ public class MemoryController {
                 "skippedLowConfidence", result.skippedLowConfidence(),
                 "skippedMissingEntity", result.skippedMissingEntity(),
                 "skippedDuplicate", result.skippedDuplicate()));
+    }
+
+    /**
+     * 记忆注意力清单（memory-proactive-foundation）—— 主动浮现"现在该关注什么、为什么"。
+     *
+     * <p>聚合临近到期 / 停滞高价值 / 演进活跃 / 图联想连接机会，按 score 降序返回。</p>
+     */
+    @GetMapping("/attention")
+    public ApiResponse<List<Map<String, Object>>> getAttention(
+            @RequestParam(required = false) @Nullable String projectId,
+            @RequestParam(defaultValue = "10") int limit) {
+        requireMemoryEnabled();
+        if (limit <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须大于 0");
+        }
+        if (memoryAttentionService == null) {
+            return ApiResponse.ok(List.of());
+        }
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var readFilter = toProjectReadFilter(projectContext, Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+        var items = memoryAttentionService.computeAttention(readFilter, limit);
+        var result = items.stream().map(item -> {
+            var map = new LinkedHashMap<String, Object>();
+            map.put("entityId", item.entityId());
+            map.put("name", item.name());
+            map.put("entityType", item.entityType());
+            map.put("kind", item.kind().name());
+            map.put("score", item.score());
+            map.put("reason", item.reason());
+            if (item.dueAt() != null) map.put("dueAt", item.dueAt().toString());
+            if (item.daysIdle() != null) map.put("daysIdle", item.daysIdle());
+            if (item.pathLabels() != null) map.put("pathLabels", item.pathLabels());
+            return (Map<String, Object>) map;
+        }).toList();
+        return ApiResponse.ok(result);
     }
 
     // ========== Req 9: 手动触发去重 ==========
