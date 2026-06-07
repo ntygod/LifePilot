@@ -74,10 +74,13 @@ public class InitiativeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public DefaultThinker defaultThinker(@Nullable SemanticMemory semanticMemory) {
-        log.info("主动引擎: 注册 DefaultThinker, semanticMemory={}",
-                semanticMemory != null ? "available" : "unavailable");
-        return new DefaultThinker(semanticMemory);
+    public DefaultThinker defaultThinker(
+            @Nullable SemanticMemory semanticMemory,
+            @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
+        log.info("主动引擎: 注册 DefaultThinker, semanticMemory={}, attention={}",
+                semanticMemory != null ? "available" : "unavailable",
+                memoryAttentionService != null ? "available" : "unavailable");
+        return new DefaultThinker(semanticMemory, memoryAttentionService);
     }
 
     @Bean

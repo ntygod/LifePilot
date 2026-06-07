@@ -61,19 +61,55 @@ public class ProactiveController {
     @Nullable
     private final AgentConfigProperties agentConfig;
 
+    /** 主动引擎（initiative）—— 仅当 lifepilot.initiative.enabled=true 时存在。 */
+    @Nullable
+    private final com.lifepilot.agent.initiative.InitiativeEngine initiativeEngine;
+
     public ProactiveController(QueuedActionRepository queuedActionRepository) {
-        this(queuedActionRepository, null, null, null);
+        this(queuedActionRepository, null, null, null, null);
     }
 
     @Autowired
     public ProactiveController(QueuedActionRepository queuedActionRepository,
                                @Autowired(required = false) @Nullable TrustUpgradeService trustUpgradeService,
                                @Autowired(required = false) @Nullable AutonomyRepository autonomyRepository,
-                               @Autowired(required = false) @Nullable AgentConfigProperties agentConfig) {
+                               @Autowired(required = false) @Nullable AgentConfigProperties agentConfig,
+                               @Autowired(required = false) @Nullable com.lifepilot.agent.initiative.InitiativeEngine initiativeEngine) {
         this.queuedActionRepository = queuedActionRepository;
         this.trustUpgradeService = trustUpgradeService;
         this.autonomyRepository = autonomyRepository;
         this.agentConfig = agentConfig;
+        this.initiativeEngine = initiativeEngine;
+    }
+
+    // ── 主动思考触发（dev / 灰度阶段一：仅思考可观测，不表达）──
+
+    /**
+     * 手动触发一次空闲思考 —— 主动引擎基于记忆注意力（DUE_SOON/NEGLECTED/CONNECTION）产生想法，
+     * 落入想法池但**不表达**（不会给用户发消息）。返回本次思考后的活跃想法快照，便于观测验证。
+     *
+     * <p>对应 initiative-activation 灰度阶段一。表达/执行链路仍未接通。</p>
+     */
+    @PostMapping("/think")
+    public ApiResponse<Map<String, Object>> triggerThink() {
+        if (initiativeEngine == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "主动引擎未启用（lifepilot.initiative.enabled=false）");
+        }
+        initiativeEngine.idleThink();
+        var thoughts = initiativeEngine.snapshotActiveThoughts();
+        var items = thoughts.stream().map(t -> {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("intentKey", t.intentKey());
+            m.put("kind", t.kind().name());
+            m.put("summary", t.summary());
+            m.put("maturity", t.maturity());
+            m.put("confidence", t.confidence());
+            m.put("state", t.state().name());
+            return m;
+        }).toList();
+        log.info("主动引擎: 手动触发空闲思考, activeThoughts={}", items.size());
+        return ApiResponse.ok(Map.of("activeThoughts", items.size(), "thoughts", items));
     }
 
     // ── 排队动作端点 ──

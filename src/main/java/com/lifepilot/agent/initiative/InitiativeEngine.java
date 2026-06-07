@@ -125,4 +125,9 @@ public class InitiativeEngine {
     public int activeThoughtCount() {
         return thoughtPool.activeCount();
     }
+
+    /** 活跃想法快照 —— 供 dev 端点观测思考产物（不表达）。 */
+    public List<Thought> snapshotActiveThoughts() {
+        return thoughtPool.activeThoughts();
+    }
 }

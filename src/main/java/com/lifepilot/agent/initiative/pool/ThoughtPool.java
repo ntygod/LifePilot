@@ -121,6 +121,14 @@ public class ThoughtPool {
         return (int) thoughts.values().stream().filter(t -> t.state().isActive()).count();
     }
 
+    /** 活跃想法快照（按成熟度降序）—— 供观测/诊断使用。 */
+    public List<Thought> activeThoughts() {
+        return thoughts.values().stream()
+                .filter(t -> t.state().isActive())
+                .sorted(Comparator.comparingDouble(Thought::maturity).reversed())
+                .collect(Collectors.toList());
+    }
+
     public Optional<Thought> findById(String id) {
         return Optional.ofNullable(thoughts.get(id));
     }

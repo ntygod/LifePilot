@@ -2,6 +2,7 @@ package com.lifepilot.agent.initiative.thinker;
 
 import com.lifepilot.agent.initiative.Thinker;
 import com.lifepilot.agent.initiative.model.*;
+import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -35,9 +36,18 @@ public class DefaultThinker implements Thinker {
 
     @Nullable
     private final SemanticMemory semanticMemory;
+    /** 记忆注意力服务（memory-proactive-foundation）—— 空闲思考的主要"该关注什么"来源。 */
+    @Nullable
+    private final MemoryAttentionService memoryAttentionService;
 
     public DefaultThinker(@Nullable SemanticMemory semanticMemory) {
+        this(semanticMemory, null);
+    }
+
+    public DefaultThinker(@Nullable SemanticMemory semanticMemory,
+                          @Nullable MemoryAttentionService memoryAttentionService) {
         this.semanticMemory = semanticMemory;
+        this.memoryAttentionService = memoryAttentionService;
     }
 
     @Override
@@ -53,6 +63,69 @@ public class DefaultThinker implements Thinker {
 
     @Override
     public List<Thought> idleThink() {
+        // 优先：基于记忆注意力信号（DUE_SOON/NEGLECTED/CONNECTION/EXPIRING）——
+        // 这是"现在该关注什么"的统一来源，远比单一停滞 GOAL 规则丰富。
+        if (memoryAttentionService != null) {
+            return idleThinkFromAttention();
+        }
+        // 兜底：注意力服务不可用时，沿用停滞 GOAL 规则
+        return idleThinkFromStaleGoals();
+    }
+
+    /** 从记忆注意力信号生成想法（主路径）。 */
+    private List<Thought> idleThinkFromAttention() {
+        var thoughts = new ArrayList<Thought>();
+        try {
+            var items = memoryAttentionService.computeAttention(
+                    MemoryReadFilter.userProfile(), MAX_IDLE_THOUGHTS * 2);
+            for (var item : items) {
+                var thought = toThought(item);
+                if (thought == null) continue;
+                thoughts.add(thought);
+                if (thoughts.size() >= MAX_IDLE_THOUGHTS) break;
+            }
+        } catch (Exception e) {
+            log.warn("空闲思考: 记忆注意力计算失败: {}", e.getMessage());
+        }
+        return thoughts;
+    }
+
+    /** 将一条注意力项转为想法；EVOLVING 可表达性低，跳过（返回 null）。 */
+    @Nullable
+    private Thought toThought(MemoryAttentionService.AttentionItem item) {
+        ThoughtKind kind;
+        String prefix;
+        switch (item.kind()) {
+            case DUE_SOON, EXPIRING -> { kind = ThoughtKind.REMINDER; prefix = "reminder"; }
+            case NEGLECTED -> { kind = ThoughtKind.FOLLOW_UP; prefix = "follow_up"; }
+            case CONNECTION -> { kind = ThoughtKind.INSIGHT; prefix = "insight"; }
+            default -> { return null; }  // EVOLVING 等：不主动成想法
+        }
+        float confidence = clamp01(item.score());
+        float maturity = clamp01(0.5f + item.score() * 0.45f);
+        var evidence = new Evidence(
+                "memory_entity", item.entityId(), null,
+                item.reason(), item.name(), Instant.now(), confidence);
+        return new Thought(
+                UUID.randomUUID().toString(),
+                prefix + ":" + item.kind().name().toLowerCase() + ":" + item.entityId(),
+                kind,
+                item.reason(),
+                List.of(evidence),
+                confidence,
+                maturity,
+                Instant.now(),
+                null,
+                maturity >= 0.6f ? ThoughtState.READY : ThoughtState.BREWING,
+                null);
+    }
+
+    private static float clamp01(float v) {
+        return Math.max(0f, Math.min(1f, v));
+    }
+
+    /** 停滞 GOAL 兜底逻辑（记忆注意力不可用时）。 */
+    private List<Thought> idleThinkFromStaleGoals() {
         if (semanticMemory == null) return List.of();
 
         var thoughts = new ArrayList<Thought>();
