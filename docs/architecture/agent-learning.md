@@ -328,6 +328,19 @@ sequenceDiagram
 - **意义**：此前对话链路完全不产关系，`memory_relations` 长期为 0，导致 `GraphTraverser` 多跳召回恒空；
   本链路接通后日常对话即可持续丰富关系图谱，支撑联想与多跳推理
 
+#### 3.3.9 记忆注意力（memory-proactive-foundation，消费侧）
+
+> 归属记忆消费层 `com.lifepilot.memory.consumption.attention`，遵循"记忆提供、主动消费"边界：只读派生，不写主库、不触发自主对外行为。
+
+- `MemoryAttentionService.computeAttention(filter, topN)` 聚合四类主动注意力信号，按可配置权重融合排序：
+  - **EXPIRING**：`expires_at` 落入窗口的实体（即将被 `ExpirationScanner` 自动遗忘的 EPHEMERAL/SHORT_TERM 记忆，提醒"短期事项即将失效"）
+  - **NEGLECTED**：`importance ≥ 阈值` 但长期未访问的高价值实体（"重要但被冷落"）
+  - **EVOLVING**：近期持续多版本演进的实体
+  - **CONNECTION**：`GraphReasoner` 在关系图上发现的两跳可达但无直接边的连接机会（联想），自动排除 `__` 前缀的系统派生聚合实体（如 `__consolidated_profile`）以降噪
+- 出口：`ProactiveMemoryBridge.getAttentionItems(topN)`（主动层消费）+ `GET /api/memories/attention`（运维/UI）
+- 配置见 §8.6
+- **deadline 语义说明**：`expires_at` 专指"自动遗忘 TTL"，非"目标截止日期"。带硬截止日期的目标提醒属独立能力（需专用 `dueAt`），不复用 `expires_at`（否则 `ExpirationScanner` 会在截止后误归档目标）
+
 
 ---
 
@@ -507,6 +520,26 @@ sequenceDiagram
 | `lifepilot.agent.learning.rem.min-confidence` | 0.65 | 最小置信度（候选生成入文件） |
 | `lifepilot.agent.learning.rem.apply-enabled` | true | REM 候选落库应用器开关 |
 | `lifepilot.agent.learning.rem.apply-min-confidence` | 0.75 | 候选落 memory_relations 主库的阈值 |
+
+### 8.6 记忆注意力（memory-proactive-foundation，消费侧 `lifepilot.memory.consumption.attention`）
+
+| 配置键 | 默认 | 说明 |
+|--------|------|------|
+| `lifepilot.memory.consumption.attention.enabled` | true | 记忆注意力总开关 |
+| `lifepilot.memory.consumption.attention.expiring-enabled` | true | 产出 EXPIRING 项 |
+| `lifepilot.memory.consumption.attention.expiring-window-days` | 14 | 临近到期窗口（天） |
+| `lifepilot.memory.consumption.attention.neglected-enabled` | true | 产出 NEGLECTED 项 |
+| `lifepilot.memory.consumption.attention.neglect-days` | 30 | 停滞判定未访问天数 |
+| `lifepilot.memory.consumption.attention.neglect-min-importance` | 0.6 | 停滞高价值最小重要度 |
+| `lifepilot.memory.consumption.attention.evolving-enabled` | true | 产出 EVOLVING 项 |
+| `lifepilot.memory.consumption.attention.evolving-window-days` | 7 | 演进活跃窗口（天） |
+| `lifepilot.memory.consumption.attention.evolving-min-versions` | 2 | 演进活跃最小版本数 |
+| `lifepilot.memory.consumption.attention.connection-enabled` | true | 产出 CONNECTION 项 |
+| `lifepilot.memory.consumption.attention.max-depth` | 2 | 图遍历最大跳数 |
+| `lifepilot.memory.consumption.attention.max-fanout` | 25 | 单实体扩展 fanout 限流 |
+| `lifepilot.memory.consumption.attention.max-per-kind` | 10 | 每类候选上限 |
+| `lifepilot.memory.consumption.attention.top-n` | 10 | 最终返回上限 |
+| `lifepilot.memory.consumption.attention.weight-*` | 1.0/0.8/0.6/0.7 | EXPIRING/NEGLECTED/EVOLVING/CONNECTION 权重 |
 
 ---
 

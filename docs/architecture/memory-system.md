@@ -509,6 +509,8 @@ Spec：`.kiro/specs/memory-mcp-server/`
 - **前端血缘展示**：`EntityDetailDrawer` 血缘 Tab、Provenance 时间线、overlay / derivation 关系图、HotDigest 命中次数统计
 - **Staleness 精度提升**：时间距离 + 显式否定词（"我改了"/"现在是"）融合判定
 - **记忆注入安全接入**：把 `MemoryInjectionDetector` 真正前置到 `RealtimeExtractor` / KB 抽取链路
+- **记忆注意力**：✅ 已落地（`MemoryAttentionService` + `GraphReasoner`，主动浮现 EXPIRING/NEGLECTED/EVOLVING/CONNECTION，经 `GET /api/memories/attention` 与 `ProactiveMemoryBridge.getAttentionItems` 出口，见 agent-learning §3.3.9）
+- **目标截止日期感知（待实现）**：带硬 deadline 的 GOAL/EVENT 需专用 `dueAt`（不复用 `expires_at`，后者是自动遗忘 TTL，复用会导致截止后误归档）+ AUDN 抽取 + 注意力 DUE_SOON 信号
 
 ---
 
