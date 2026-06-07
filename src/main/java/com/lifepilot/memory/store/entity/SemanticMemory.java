@@ -756,18 +756,6 @@ public class SemanticMemory {
     private record LifecycleRootSnapshot(String entityType, LifecycleState oldState) {}
 
     /**
-     * 更新实体的 importanceScore — 兼容旧签名，默认来源 {@link WeightSource#USER_FEEDBACK}。
-     *
-     * <p>新代码建议显式指定 {@link WeightSource} 走 3-arg 重载。</p>
-     *
-     * @param entityId 实体 ID
-     * @param newScore 新的 importanceScore（已裁剪到 [0.0, 1.0]）
-     */
-    public void updateImportanceScore(String entityId, float newScore) {
-        updateImportanceScore(entityId, newScore, WeightSource.USER_FEEDBACK);
-    }
-
-    /**
      * 更新实体的 importanceScore — Task 11（修补 B）：带来源标识并发布
      * {@link EntityWeightChanged} 事件。
      *
@@ -935,14 +923,25 @@ public class SemanticMemory {
             return false;
         }
         Integer count = jdbcTemplate.queryForObject(
-                """
-                SELECT COUNT(*) FROM temporal_entities
-                WHERE id = ? AND is_current = 1
-                  AND lifecycle_state IN ('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')
-                """,
+                "SELECT COUNT(*) FROM temporal_entities WHERE id = ? AND is_current = 1"
+                        + " AND lifecycle_state IN " + LifecycleState.recallableSqlInClause(),
                 Integer.class,
                 entityId);
         return count != null && count > 0;
+    }
+
+    /**
+     * 判断指定实体是否当前可消费（ACTIVE + 通过质量门 + 未过期）—— 供主动注意力 CONNECTION
+     * 端点校验，确保不把不可信/已完成实体作为联想目标浮现（memory-trust-and-cleanup）。
+     */
+    public boolean existsConsumableById(String entityId) {
+        if (entityId == null || entityId.isBlank()) {
+            return false;
+        }
+        return findById(entityId)
+                .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
+                .filter(MemoryQualityPolicy::isPromptConsumable)
+                .isPresent();
     }
 
     /** 查找所有当前实体，按 importance_score ASC, access_count ASC。 */
@@ -1089,12 +1088,11 @@ public class SemanticMemory {
         return avg != null ? avg.floatValue() : 0f;
     }
 
-    /** 可召回生命周期集合 —— 注意力信号只纳入这些状态的当前实体。 */
-    private static final String RECALLABLE_LIFECYCLE = "('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')";
-
     /**
      * 临近到期查询（memory-proactive-foundation）—— {@code expires_at} 落在 {@code (now, until]}
-     * 的当前有效、可召回实体，按到期时间升序（最紧迫在前）。
+     * 的 ACTIVE 实体，按到期时间升序（最紧迫在前）。
+     *
+     * <p>仅取 ACTIVE：COMPLETED/已完成的事项不应作为"临近到期"主动提醒（memory-trust-and-cleanup）。</p>
      *
      * @param until  到期窗口上界（含）
      * @param types  限定的实体类型；为空表示不限类型
@@ -1110,7 +1108,7 @@ public class SemanticMemory {
         StringBuilder sql = new StringBuilder(
                 "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities"
                         + " WHERE is_current = 1"
-                        + " AND lifecycle_state IN " + RECALLABLE_LIFECYCLE
+                        + " AND lifecycle_state = 'ACTIVE'"
                         + " AND expires_at IS NOT NULL AND expires_at > ? AND expires_at <= ?");
         List<Object> params = new ArrayList<>();
         params.add(now);
@@ -1124,7 +1122,7 @@ public class SemanticMemory {
     /**
      * 停滞高价值查询（memory-proactive-foundation）—— importance ≥ 阈值，且长期未被访问
      * （{@code last_accessed_at < idleBefore}，或从未访问且 {@code created_at < idleBefore}）的
-     * 当前有效、可召回实体，按重要度降序。
+     * ACTIVE 实体，按重要度降序。仅取 ACTIVE：已完成事项不算"停滞"。
      *
      * @param types         限定的实体类型；为空表示不限类型
      * @param idleBefore    停滞判定时间点（早于此视为停滞）
@@ -1142,7 +1140,7 @@ public class SemanticMemory {
         StringBuilder sql = new StringBuilder(
                 "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities"
                         + " WHERE is_current = 1"
-                        + " AND lifecycle_state IN " + RECALLABLE_LIFECYCLE
+                        + " AND lifecycle_state = 'ACTIVE'"
                         + " AND importance_score >= ?"
                         + " AND ((last_accessed_at IS NOT NULL AND last_accessed_at < ?)"
                         + "      OR (last_accessed_at IS NULL AND created_at < ?))");
@@ -1177,7 +1175,7 @@ public class SemanticMemory {
         StringBuilder sql = new StringBuilder(
                 "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities"
                         + " WHERE is_current = 1"
-                        + " AND lifecycle_state IN " + RECALLABLE_LIFECYCLE
+                        + " AND lifecycle_state = 'ACTIVE'"
                         + " AND json_extract(properties_json, '$.dueAt') IS NOT NULL");
         List<Object> params = new ArrayList<>();
         appendTypeFilter(sql, params, types);

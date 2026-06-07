@@ -38,4 +38,15 @@ public enum LifecycleState {
         return this == ACTIVE || this == COMPLETED
                 || this == REGENERATION_NEEDED || this == STALE_CANDIDATE;
     }
+
+    /**
+     * 召回类查询（图遍历 / REM 端点存活校验等）使用的生命周期 SQL IN 子句 —— 单一来源，
+     * 供 SemanticMemory / GraphReasoner 等复用，避免各处重复硬编码。
+     *
+     * <p>注意：此集合刻意不含 STALE_CANDIDATE（老化候选不作为图起点/端点），
+     * 与 {@link #isRetrievable()} 的更宽集合区分。</p>
+     */
+    public static String recallableSqlInClause() {
+        return "('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')";
+    }
 }

@@ -1,6 +1,8 @@
 package com.lifepilot.memory.consumption.attention;
 
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -115,7 +117,7 @@ public class MemoryAttentionService {
             try {
                 Instant until = now.plus(Duration.ofDays(cfg.getExpiringWindowDays()));
                 var list = semanticMemory.findApproachingExpiry(until, EXPIRING_TYPES, filter);
-                for (var e : capped(list, cfg.getMaxPerKind())) {
+                for (var e : capped(consumable(list), cfg.getMaxPerKind())) {
                     items.add(toExpiring(e, now, cfg));
                     expiring++;
                 }
@@ -131,6 +133,7 @@ public class MemoryAttentionService {
                 Instant until = now.plus(Duration.ofDays(cfg.getDueSoonWindowDays()));
                 for (var e : semanticMemory.findWithDueDate(DUE_TYPES, filter)) {
                     if (dueSoon >= cfg.getMaxPerKind()) break;
+                    if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
                     Instant due = parseDueAt(e.properties().get("dueAt"));
                     if (due == null) continue;
                     if (due.isAfter(until)) continue;  // 窗口外（含未来太远）；逾期(due<now)仍纳入
@@ -148,7 +151,7 @@ public class MemoryAttentionService {
                 Instant idleBefore = now.minus(Duration.ofDays(cfg.getNeglectDays()));
                 var list = semanticMemory.findNeglected(
                         NEGLECTED_TYPES, idleBefore, cfg.getNeglectMinImportance(), filter);
-                for (var e : capped(list, cfg.getMaxPerKind())) {
+                for (var e : capped(consumable(list), cfg.getMaxPerKind())) {
                     items.add(toNeglected(e, now, cfg));
                     neglected++;
                 }
@@ -166,6 +169,8 @@ public class MemoryAttentionService {
                     if (count >= cfg.getMaxPerKind()) break;
                     for (var e : semanticMemory.findCurrentByType(type, filter)) {
                         if (count >= cfg.getMaxPerKind()) break;
+                        if (e.lifecycleState() != LifecycleState.ACTIVE) continue;
+                        if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
                         if (e.version() >= cfg.getEvolvingMinVersions()
                                 && e.updatedAt() != null && e.updatedAt().isAfter(windowStart)) {
                             items.add(toEvolving(e, cfg));
@@ -190,6 +195,8 @@ public class MemoryAttentionService {
                     var opps = graphReasoner.connectionOpportunities(seed.getKey(), filter);
                     for (var opp : opps) {
                         if (connection >= cfg.getMaxPerKind()) break;
+                        // 端点必须可消费：不把不可信/已完成实体作为联想目标浮现
+                        if (!semanticMemory.existsConsumableById(opp.toId())) continue;
                         var item = toConnection(seed.getValue(), opp, cfg);
                         var existing = byTarget.get(opp.toId());
                         if (existing == null || item.score() > existing.score()) {
@@ -303,6 +310,11 @@ public class MemoryAttentionService {
 
     private static <T> List<T> capped(List<T> list, int max) {
         return list.size() > max ? list.subList(0, max) : list;
+    }
+
+    /** 质量门过滤：只保留可消费实体（与全系统消费路径一致，避免主动浮现不可信记忆）。 */
+    private static List<TemporalEntity> consumable(List<TemporalEntity> list) {
+        return list.stream().filter(MemoryQualityPolicy::isPromptConsumable).toList();
     }
 
     private static float clamp01(float v) {

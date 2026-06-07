@@ -106,7 +106,8 @@ public class ProactiveMemoryBridge {
             return List.of();
         }
         try {
-            return memoryAttentionService.computeAttention(MemoryReadFilter.userProfile(), topN);
+            // 与 /api/memories/attention 一致：{USER_PROFILE, USER_FACT}；均不含 DOMAIN_MEMORY，虚构/知识库记忆不浮现
+            return memoryAttentionService.computeAttention(MemoryReadFilter.userMemory(), topN);
         } catch (Exception e) {
             log.debug("记忆桥接: 注意力清单获取失败: {}", e.getMessage());
             return List.of();

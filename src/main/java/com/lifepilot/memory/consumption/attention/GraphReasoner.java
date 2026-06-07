@@ -29,7 +29,6 @@ import java.util.Set;
 public class GraphReasoner {
 
     private static final Logger log = LoggerFactory.getLogger(GraphReasoner.class);
-    private static final String RECALLABLE_LIFECYCLE = "('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')";
     private static final float DEFAULT_STRENGTH = 0.5f;
 
     private final JdbcTemplate jdbcTemplate;
@@ -250,7 +249,7 @@ public class GraphReasoner {
         }
         StringBuilder sql = new StringBuilder(
                 "SELECT id, name FROM temporal_entities WHERE is_current = 1"
-                        + " AND lifecycle_state IN " + RECALLABLE_LIFECYCLE
+                        + " AND lifecycle_state IN " + com.lifepilot.memory.governance.lifecycle.LifecycleState.recallableSqlInClause()
                         // 排除系统派生聚合实体（如 __consolidated_profile）——它们连接到一切，
                         // 作为桥/端点只会制造噪声而非真实联想
                         + " AND name NOT LIKE '\\_\\_%' ESCAPE '\\'"
