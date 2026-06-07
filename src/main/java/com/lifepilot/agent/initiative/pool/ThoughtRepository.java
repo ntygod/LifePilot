@@ -41,14 +41,15 @@ public class ThoughtRepository {
         jdbcTemplate.update("""
             INSERT INTO initiative_thoughts (id, intent_key, kind, summary, evidence_json,
                 confidence, maturity, state, action_pattern, conversation_id,
-                created_at, mature_at, expressed_at, resolved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, mature_at, expressed_at, resolved_at, last_reinforced_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 maturity = excluded.maturity,
                 state = excluded.state,
                 conversation_id = excluded.conversation_id,
                 expressed_at = excluded.expressed_at,
-                resolved_at = excluded.resolved_at
+                resolved_at = excluded.resolved_at,
+                last_reinforced_at = excluded.last_reinforced_at
             """,
                 thought.id(), thought.intentKey(), thought.kind().name(),
                 thought.summary(), evidenceJson,
@@ -56,7 +57,10 @@ public class ThoughtRepository {
                 null, thought.conversationId(),
                 thought.createdAt().toString(),
                 thought.matureAt() != null ? thought.matureAt().toString() : null,
-                null, null
+                null, null,
+                thought.lastReinforcedAt() != null
+                        ? thought.lastReinforcedAt().toString()
+                        : thought.createdAt().toString()
         );
     }
 
@@ -107,6 +111,8 @@ public class ThoughtRepository {
             evidence = List.of();
         }
         String matureAtStr = rs.getString("mature_at");
+        String createdAtStr = rs.getString("created_at");
+        String lastReinforcedStr = rs.getString("last_reinforced_at");
         return new Thought(
                 rs.getString("id"),
                 rs.getString("intent_key"),
@@ -115,10 +121,11 @@ public class ThoughtRepository {
                 evidence,
                 rs.getFloat("confidence"),
                 rs.getFloat("maturity"),
-                Instant.parse(rs.getString("created_at")),
+                Instant.parse(createdAtStr),
                 matureAtStr != null ? Instant.parse(matureAtStr) : null,
                 ThoughtState.valueOf(rs.getString("state")),
-                rs.getString("conversation_id")
+                rs.getString("conversation_id"),
+                lastReinforcedStr != null ? Instant.parse(lastReinforcedStr) : Instant.parse(createdAtStr)
         );
     }
 }

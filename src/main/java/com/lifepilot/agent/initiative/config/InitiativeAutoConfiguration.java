@@ -40,13 +40,28 @@ public class InitiativeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ThoughtPool thoughtPool(InitiativeProperties props, ThoughtRepository thoughtRepository) {
+    public com.lifepilot.agent.initiative.maturity.MaturityModel maturityModel(InitiativeProperties props) {
+        var m = props.getMaturity();
+        log.info("主动引擎: 注册 MaturityModel, readyThreshold={}, halfLife={}h",
+                m.getReadyThreshold(), m.getDecayHalfLifeHours());
+        return new com.lifepilot.agent.initiative.maturity.MaturityModel(
+                new com.lifepilot.agent.initiative.maturity.MaturityModel.Config(
+                        m.getReadyThreshold(), m.getDemoteThreshold(), m.getDismissFloor(),
+                        m.getReinforceBaseGain(), m.getDecayHalfLifeHours(),
+                        m.getDecayGraceHours(), m.getDeadlinePullWindowHours()));
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ThoughtPool thoughtPool(InitiativeProperties props, ThoughtRepository thoughtRepository,
+                                   com.lifepilot.agent.initiative.maturity.MaturityModel maturityModel) {
         log.info("主动引擎: 注册 ThoughtPool, maxActive={}", props.getMaxActiveThoughts());
         return new ThoughtPool(
                 props.getMaxActiveThoughts(),
                 Duration.ofHours(props.getBrewingTtlHours()),
                 Duration.ofHours(props.getReadyTtlHours()),
-                thoughtRepository
+                thoughtRepository,
+                maturityModel
         );
     }
 

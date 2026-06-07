@@ -47,4 +47,29 @@ public class InitiativeProperties {
 
     /** 每天最多空闲思考几次。 */
     private int idleThinkingMaxDaily = 4;
+
+    /** 成熟度演化模型配置（thought-maturity-evolution）。 */
+    private Maturity maturity = new Maturity();
+
+    /**
+     * 成熟度演化参数。
+     */
+    @Setter
+    @Getter
+    public static class Maturity {
+        /** 就绪阈值（≥ 则 BREWING→READY）。 */
+        private float readyThreshold = 0.6f;
+        /** 降级阈值（READY 且 &lt; 则回退 BREWING；与 readyThreshold 构成迟滞带）。 */
+        private float demoteThreshold = 0.5f;
+        /** 淘汰下限（≤ 则 DISMISSED）。 */
+        private float dismissFloor = 0.15f;
+        /** 强化基础增益（再乘证据权重与边际递减系数）。 */
+        private float reinforceBaseGain = 0.15f;
+        /** 停滞衰减半衰期（小时）。 */
+        private double decayHalfLifeHours = 48.0;
+        /** 衰减宽限期（小时，期内不衰减）。 */
+        private double decayGraceHours = 24.0;
+        /** 截止升温窗口（小时，截止前此窗口内 pull 从 0 升至 1）。 */
+        private double deadlinePullWindowHours = 72.0;
+    }
 }

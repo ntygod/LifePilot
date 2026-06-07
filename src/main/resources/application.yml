@@ -77,6 +77,15 @@ lifepilot:
     idle-thinking-enabled: true
     idle-threshold-minutes: 30
     idle-thinking-max-daily: 4
+    # 想法成熟度演化（thought-maturity-evolution）
+    maturity:
+      ready-threshold: 0.6        # ≥ 则 BREWING→READY
+      demote-threshold: 0.5       # READY 且 < 则回退 BREWING（迟滞带）
+      dismiss-floor: 0.15         # ≤ 则 DISMISSED
+      reinforce-base-gain: 0.15   # 强化基础增益（再乘证据权重与边际递减）
+      decay-half-life-hours: 48   # 停滞衰减半衰期
+      decay-grace-hours: 24       # 衰减宽限期（期内不衰减）
+      deadline-pull-window-hours: 72  # 截止升温窗口
   agent:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问

@@ -32,7 +32,9 @@ public record Thought(
     @Nullable Instant matureAt,
     ThoughtState state,
     /** 表达后关联的对话 session ID */
-    @Nullable String conversationId
+    @Nullable String conversationId,
+    /** 上次强化时间（成熟度衰减计时基准）；新建想法等于 createdAt。 */
+    @Nullable Instant lastReinforcedAt
 ) {
     public boolean isReady() {
         return state == ThoughtState.READY && maturity >= 0.6f;
@@ -51,13 +53,30 @@ public record Thought(
 
     public Thought withState(ThoughtState newState) {
         return new Thought(id, intentKey, kind, summary, evidence, confidence, maturity,
-                createdAt, matureAt, newState, conversationId);
+                createdAt, matureAt, newState, conversationId, lastReinforcedAt);
     }
 
     public Thought withMaturity(float newMaturity) {
         ThoughtState newState = newMaturity >= 0.6f && state == ThoughtState.BREWING
                 ? ThoughtState.READY : state;
         return new Thought(id, intentKey, kind, summary, evidence, confidence, newMaturity,
-                createdAt, matureAt, newState, conversationId);
+                createdAt, matureAt, newState, conversationId, lastReinforcedAt);
+    }
+
+    /**
+     * 应用一次演化结果（成熟度 + 状态），不改强化时间。
+     */
+    public Thought withEvolution(float newMaturity, ThoughtState newState) {
+        return new Thought(id, intentKey, kind, summary, evidence, confidence, newMaturity,
+                createdAt, matureAt, newState, conversationId, lastReinforcedAt);
+    }
+
+    /**
+     * 应用一次证据强化：合并证据、更新成熟度/置信度/状态，并刷新强化时间。
+     */
+    public Thought reinforcedWith(List<Evidence> mergedEvidence, float newMaturity,
+                                  float newConfidence, ThoughtState newState, Instant reinforcedAt) {
+        return new Thought(id, intentKey, kind, summary, mergedEvidence, newConfidence, newMaturity,
+                createdAt, matureAt, newState, conversationId, reinforcedAt);
     }
 }

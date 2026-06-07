@@ -99,9 +99,12 @@ public class DefaultThinker implements Thinker {
         }
         float confidence = clamp01(item.score());
         float maturity = clamp01(0.5f + item.score() * 0.45f);
+        Instant now = Instant.now();
         var evidence = new Evidence(
                 "memory_entity", item.entityId(), null,
-                item.reason(), item.name(), Instant.now(), confidence);
+                item.reason(), item.name(), now, confidence);
+        // 截止/到期类想法以 dueAt 作为成熟度截止锚点，驱动 deadline pull 自然升温
+        Instant matureAt = item.dueAt();
         return new Thought(
                 UUID.randomUUID().toString(),
                 prefix + ":" + item.kind().name().toLowerCase() + ":" + item.entityId(),
@@ -110,10 +113,11 @@ public class DefaultThinker implements Thinker {
                 List.of(evidence),
                 confidence,
                 maturity,
-                Instant.now(),
-                null,
+                now,
+                matureAt,
                 maturity >= 0.6f ? ThoughtState.READY : ThoughtState.BREWING,
-                null);
+                null,
+                now);
     }
 
     private static float clamp01(float v) {
@@ -155,6 +159,7 @@ public class DefaultThinker implements Thinker {
 
         // 取第一个即将到期的事项生成提醒想法
         String deadline = signal.upcomingDeadlines().getFirst();
+        Instant now = Instant.now();
         var evidence = new Evidence(
                 "time_elapsed",
                 "deadline:" + deadline,
@@ -173,10 +178,11 @@ public class DefaultThinker implements Thinker {
                 List.of(evidence),
                 0.7f,
                 0.7f,
-                Instant.now(),
+                now,
                 null,
                 ThoughtState.READY,
-                null
+                null,
+                now
         );
         return Optional.of(thought);
     }
@@ -210,6 +216,7 @@ public class DefaultThinker implements Thinker {
 
         // 成熟度随停滞天数增长
         float maturity = Math.min(0.9f, 0.5f + (staleDays - GOAL_STALE_DAYS) * 0.02f);
+        Instant now = Instant.now();
 
         return new Thought(
                 UUID.randomUUID().toString(),
@@ -219,10 +226,11 @@ public class DefaultThinker implements Thinker {
                 List.of(evidence),
                 0.7f,
                 maturity,
-                Instant.now(),
+                now,
                 null,
                 maturity >= 0.6f ? ThoughtState.READY : ThoughtState.BREWING,
-                null
+                null,
+                now
         );
     }
 }

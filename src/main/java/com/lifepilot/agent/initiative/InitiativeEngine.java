@@ -79,6 +79,8 @@ public class InitiativeEngine {
     public Thought tryExpress(Gatekeeper.GatekeeperContext context) {
         // 清理过期想法
         thoughtPool.cleanup();
+        // 成熟度演化：截止升温 / 停滞衰减，并应用状态迁移
+        thoughtPool.evolve(java.time.Instant.now());
 
         // 获取就绪想法
         List<Thought> ready = thoughtPool.getReadyThoughts();
@@ -114,6 +116,8 @@ public class InitiativeEngine {
             for (var thought : thoughts) {
                 thoughtPool.submit(thought);
             }
+            // 演化：让本轮新想法与旧想法的成熟度/状态在同一时点对齐
+            thoughtPool.evolve(java.time.Instant.now());
             if (!thoughts.isEmpty()) {
                 log.debug("主动引擎: 空闲思考产出 {} 个想法", thoughts.size());
             }
