@@ -187,8 +187,7 @@ sequenceDiagram
 #### 2.2.3 ContrastiveLearner — 对比学习
 
 - 对比成功/失败轨迹，提取差异化洞察
-- 当前实现：对现有 EXPERIENCE 的 `properties` 增强（写入 `lessons` + `contrastiveEnriched=true`）
-- 终态应产出独立派生洞察实体，而不是无血缘地原地增强
+- 当前实现：产出**独立派生 EXPERIENCE 实体**（`isDerived=true`，`derivationSources=[successExp.id, failureExp.id]`，`properties.insightType=CONTRASTIVE`），任一源经验失效时可经 derivation_sources 级联失活，避免无血缘的陈旧洞察残留（记忆链路 #4 已修；取代早期"原地增强 successExp.properties.lessons"做法）
 
 **源码位置**：`src/main/java/com/lifepilot/agent/learning/experience/ContrastiveLearner.java`
 

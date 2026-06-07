@@ -5,6 +5,11 @@ import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -116,8 +121,8 @@ public class ContrastiveLearner {
                 return;
             }
 
-            // 增强源经验（成功经验）
-            enrichSourceExperience(insight, successExp, failureExp);
+            // 产出独立派生洞察实体（带血缘，源失效可级联）
+            createContrastiveInsight(insight, successExp, failureExp);
 
         } catch (Exception e) {
             log.warn("对比学习失败: entityId={}, error={}", newExperience.id(), e.getMessage());
@@ -158,70 +163,62 @@ public class ContrastiveLearner {
     }
 
     /**
-     * 增强源经验 — 将对比洞察回写到成功经验的 lessons 列表中。
+     * 产出独立的对比洞察派生实体 — 取代原"原地增强成功经验"做法（thought/记忆链路 #4）。
      *
-     * <p>在成功经验的 properties 中追加带 "[对比]" 前缀的 lesson 条目，
-     * 并标记 contrastiveEnriched=true，避免创建独立的对比洞察实体。</p>
+     * <p>新建一个 {@code isDerived=true}、{@code derivationSources=[successId, failureId]} 的
+     * 派生 EXPERIENCE 实体，properties 标 {@code insightType=CONTRASTIVE}。这样任一源经验失效时，
+     * {@code DerivedEntityListener} 可经 derivation_sources 反查级联失活该洞察，避免无血缘的陈旧洞察残留。</p>
      */
-    private void enrichSourceExperience(ContrastiveInsight insight,
-                                         TemporalEntity successExp,
-                                         TemporalEntity failureExp) {
-        // 复制 properties（TemporalEntity compact constructor 会 Map.copyOf，需可变副本）
-        var updatedProps = new LinkedHashMap<>(successExp.properties());
-
-        // 读取已有 lessons 列表，可能为 null
-        @SuppressWarnings("unchecked")
-        var existingLessons = (List<String>) updatedProps.get("lessons");
-        var lessons = new ArrayList<>(existingLessons != null ? existingLessons : List.<String>of());
-
-        // 追加对比教训列表（优先使用 contrastiveLessons，内容更具操作指导性）
-        boolean hasContrastiveLessons = false;
+    private void createContrastiveInsight(ContrastiveInsight insight,
+                                          TemporalEntity successExp,
+                                          TemporalEntity failureExp) {
+        var lessons = new ArrayList<String>();
         if (insight.contrastiveLessons() != null) {
             for (String lesson : insight.contrastiveLessons()) {
                 if (lesson != null && !lesson.isBlank()) {
-                    lessons.add("[对比] " + lesson);
-                    hasContrastiveLessons = true;
+                    lessons.add(lesson);
                 }
             }
         }
-        // 兜底：仅在 contrastiveLessons 为空时追加失败根因和成功因素
-        if (!hasContrastiveLessons) {
+        if (lessons.isEmpty()) {
             if (insight.failureReason() != null && !insight.failureReason().isBlank()) {
-                lessons.add("[对比] 失败原因: " + insight.failureReason());
+                lessons.add("失败原因: " + insight.failureReason());
             }
             if (insight.successFactor() != null && !insight.successFactor().isBlank()) {
-                lessons.add("[对比] 成功因素: " + insight.successFactor());
+                lessons.add("成功因素: " + insight.successFactor());
             }
         }
 
-        updatedProps.put("lessons", lessons);
-        updatedProps.put("contrastiveEnriched", true);
+        var props = new LinkedHashMap<String, Object>();
+        props.put("insightType", "CONTRASTIVE");
+        props.put("lessons", lessons);
+        if (insight.successFactor() != null) props.put("successFactor", insight.successFactor());
+        if (insight.failureReason() != null) props.put("failureReason", insight.failureReason());
 
-        // 构建更新后的不可变实体
-        var enriched = new TemporalEntity(
-                successExp.id(),
-                successExp.type(),
-                successExp.name(),
-                successExp.description(),
-                updatedProps,
-                successExp.version(),
-                successExp.isCurrent(),
-                successExp.validFrom(),
-                successExp.validTo(),
-                successExp.sourceConversationId(),
-                successExp.extractionConfidence(),
-                successExp.importanceScore(),
-                successExp.accessCount(),
-                successExp.lastAccessedAt(),
-                successExp.createdAt(),
-                Instant.now()
-        );
+        var now = Instant.now();
+        String name = "对比洞察: " + successExp.name() + " ↔ " + failureExp.name();
+        String desc = "成功因素: " + (insight.successFactor() != null ? insight.successFactor() : "")
+                + "；失败原因: " + (insight.failureReason() != null ? insight.failureReason() : "");
+        float trustScore = MemoryQualityPolicy.trustScoreFor(MemoryEvidenceKind.DERIVED, 0.6f);
 
-        SqliteBusyRetry.run(() -> {
-            semanticMemory.upsertWithConflictDetection(enriched, "contrastive-learning");
-        });
+        var derived = new TemporalEntity(
+                UUID.randomUUID().toString(),
+                EntityType.EXPERIENCE,
+                name,
+                desc,
+                props,
+                1, true, now, null, successExp.sourceConversationId(),
+                0.6f,
+                Math.max(0.5f, successExp.importanceScore()),
+                0, null, now, now,
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
+                null, true, List.of(successExp.id(), failureExp.id()))
+                .withQuality(MemoryEvidenceKind.DERIVED, MemoryTrustLevel.DERIVED, trustScore, 1, null);
 
-        log.info("对比学习: 成功经验已增强, successId={}, failureId={}, 新增lessons={}条",
-                successExp.id(), failureExp.id(), lessons.size() - (existingLessons != null ? existingLessons.size() : 0));
+        SqliteBusyRetry.run(() ->
+                semanticMemory.upsertWithConflictDetection(derived, "contrastive-learning"));
+
+        log.info("对比学习: 产出对比洞察派生实体, id={}, sources=[{}, {}], lessons={}条",
+                derived.id(), successExp.id(), failureExp.id(), lessons.size());
     }
 }
