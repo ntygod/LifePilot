@@ -503,7 +503,7 @@ Spec：`.kiro/specs/memory-mcp-server/`
 
 ### 8.7 剩余演进方向
 
-- **图记忆持续加固**：relation 级 `evidence_kind / trust_level / trust_score / evidence_excerpt` 补齐、entity co-occurrence / semantic link / causal link 图投影 outbox（对话关系自动提取已落地，见 §3.x / agent-learning §3.3.8）
+- **图记忆持续加固**：relation 级 `evidence_kind / trust_level / trust_score` ✅ 已补齐（relation-quality-gate：按来源 CHAT_INFERRED/DERIVED/DOCUMENT_GROUNDED/USER_CONFIRMED 推导可信度，`GraphReasoner`/`GraphTraverser` 经 `lifepilot.memory.retrieval.min-relation-trust` 门控过滤低可信边，历史 NULL 边放行）；`evidence_excerpt`、entity co-occurrence / semantic link / causal link 图投影 outbox 待后续（对话关系自动提取已落地，见 §3.x / agent-learning §3.3.8）
 - **统一检索编排进阶**：并行 source 调用、`QueryDecomposer`、学习型 reranker、`KnowledgeBaseSource` 真实实现、`memory.retrieve` Agent 工具化
 - **REM 候选应用器**：✅ 已落地（`AssociationCandidateApplier`，文件候选 → 阈值+幂等 → L3 relations 主库）
 - **前端血缘展示**：`EntityDetailDrawer` 血缘 Tab、Provenance 时间线、overlay / derivation 关系图、HotDigest 命中次数统计
