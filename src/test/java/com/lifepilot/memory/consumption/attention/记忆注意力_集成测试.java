@@ -125,6 +125,53 @@ class 记忆注意力_集成测试 {
                 && i.entityId().equals("dl"));
     }
 
+    @Test
+    void findWithDueDate只返回带dueAt的实体() {
+        插入带截止实体("g-due", "季度述职报告", EntityType.GOAL, "2026-06-10");
+        插入实体("g-nodue", "无截止目标", EntityType.GOAL, 0.7f, null, NOW);
+
+        var list = semanticMemory.findWithDueDate(EnumSet.of(EntityType.GOAL), null);
+
+        assertThat(list).extracting(e -> e.id()).containsExactly("g-due");
+        assertThat(list.getFirst().properties().get("dueAt")).isEqualTo("2026-06-10");
+    }
+
+    @Test
+    void computeAttention产出DUE_SOON() {
+        插入带截止实体("g-due", "季度述职报告", EntityType.GOAL, "2026-06-10");  // NOW=06-07，3 天后
+
+        var items = attentionService.computeAttention(null, 20);
+
+        assertThat(items).anyMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.DUE_SOON
+                && i.entityId().equals("g-due") && i.reason().contains("天后到期"));
+    }
+
+    private void 插入带截止实体(String id, String name, EntityType type, String dueAtIso) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO memory_entities(
+                    id, space_id, memory_scope, entity_type, canonical_name, normalized_name,
+                    reality_type, status, access_count, last_accessed_at, first_seen_at, last_seen_at,
+                    created_at, updated_at, lifecycle_state, expires_at, temporality,
+                    evidence_kind, trust_level, trust_score, evidence_count
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                id, SPACE_ID, "USER_FACT", type.name(), name, name.toLowerCase(),
+                "UNKNOWN", "ACTIVE", 0, NOW_S, NOW_S, NOW_S, NOW_S, NOW_S,
+                LifecycleState.ACTIVE.name(), null, Temporality.PERSISTENT.name(),
+                MemoryEvidenceKind.USER_CONFIRMED.name(), MemoryTrustLevel.EXPLICIT.name(), 0.9f, 1);
+        jdbcTemplate.update(
+                """
+                INSERT INTO memory_entity_versions(
+                    id, entity_id, version_no, description, properties_json,
+                    extraction_confidence, importance_score, is_current,
+                    valid_from, valid_to, created_at, updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                id + "-v1", id, 1, name + "描述",
+                "{\"dueAt\":\"" + dueAtIso + "\"}", 0.9f, 0.7f, 1, NOW_S, null, NOW_S, NOW_S);
+    }
+
     private TemporalRelation 关系(String src, String tgt, String type) {
         return new TemporalRelation(UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, NOW, null, "test", NOW);
     }
