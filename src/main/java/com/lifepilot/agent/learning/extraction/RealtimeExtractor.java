@@ -307,11 +307,16 @@ public class RealtimeExtractor {
                     continue;
                 }
                 var now = Instant.now();
+                float relTrust = MemoryQualityPolicy.trustScoreFor(
+                        MemoryEvidenceKind.CHAT_INFERRED, Math.max(0.0f, Math.min(1.0f, r.strength())));
                 var relation = new TemporalRelation(
                         UUID.randomUUID().toString(),
                         srcId, tgtId, type.trim(),
                         Math.max(0.0f, Math.min(1.0f, r.strength())),
-                        null, now, null, sessionId, now);
+                        null, now, null, sessionId, now)
+                        .withQuality(MemoryEvidenceKind.CHAT_INFERRED,
+                                MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.CHAT_INFERRED, relTrust),
+                                relTrust);
                 try {
                     SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
                     persisted++;

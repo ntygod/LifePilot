@@ -1,6 +1,8 @@
 package com.lifepilot.agent.learning.consolidation.association;
 
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
@@ -76,6 +78,8 @@ public class AssociationCandidateApplier {
                 continue;
             }
             var now = Instant.now();
+            float relTrust = MemoryQualityPolicy.trustScoreFor(
+                    MemoryEvidenceKind.DERIVED, Math.max(0.0f, Math.min(1.0f, c.confidence())));
             var relation = new TemporalRelation(
                     UUID.randomUUID().toString(),
                     c.sourceEntityId(),
@@ -86,7 +90,10 @@ public class AssociationCandidateApplier {
                     now,
                     null,
                     "rem:" + c.seedEntityId(),
-                    now);
+                    now)
+                    .withQuality(MemoryEvidenceKind.DERIVED,
+                            MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DERIVED, relTrust),
+                            relTrust);
             try {
                 SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation));
                 applied++;

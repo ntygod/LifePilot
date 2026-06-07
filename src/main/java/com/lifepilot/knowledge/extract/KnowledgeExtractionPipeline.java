@@ -7,6 +7,8 @@ import com.lifepilot.knowledge.model.ExtractionResult;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
@@ -213,12 +215,17 @@ public class KnowledgeExtractionPipeline {
                                                 String sourceId, String targetId,
                                                 String documentId) {
         var now = Instant.now();
+        float strength = Math.max(0.0f, Math.min(1.0f, info.strength()));
+        float relTrust = MemoryQualityPolicy.trustScoreFor(MemoryEvidenceKind.DOCUMENT_GROUNDED, strength);
         return new TemporalRelation(
                 UUID.randomUUID().toString(),
                 sourceId, targetId,
                 info.relationType(),
-                Math.max(0.0f, Math.min(1.0f, info.strength())),
-                null, now, null, documentId, now);
+                strength,
+                null, now, null, documentId, now)
+                .withQuality(MemoryEvidenceKind.DOCUMENT_GROUNDED,
+                        MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DOCUMENT_GROUNDED, relTrust),
+                        relTrust);
     }
 
     @Nullable

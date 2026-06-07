@@ -33,10 +33,17 @@ public class GraphReasoner {
 
     private final JdbcTemplate jdbcTemplate;
     private final int maxFanout;
+    /** 关系最低可信分门控；trust_score < 此值的边被跳过（NULL 历史边放行）。 */
+    private final float minRelationTrust;
 
     public GraphReasoner(JdbcTemplate jdbcTemplate, int maxFanout) {
+        this(jdbcTemplate, maxFanout, 0.0f);
+    }
+
+    public GraphReasoner(JdbcTemplate jdbcTemplate, int maxFanout, float minRelationTrust) {
         this.jdbcTemplate = jdbcTemplate;
         this.maxFanout = Math.max(1, maxFanout);
+        this.minRelationTrust = Math.max(0.0f, minRelationTrust);
     }
 
     /** 一条关系边（含方向与强度）。 */
@@ -216,6 +223,9 @@ public class GraphReasoner {
             return List.of();
         }
         String placeholders = buildPlaceholders(nodeIds.size());
+        String trustClause = minRelationTrust > 0.0f
+                ? " AND (mr.trust_score IS NULL OR mr.trust_score >= ?)"
+                : "";
         String sql = """
                 SELECT tr.relation_type AS relation_type,
                        tr.source_entity_id AS source_id,
@@ -225,11 +235,14 @@ public class GraphReasoner {
                 JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
                 LEFT JOIN memory_relation_versions mrv ON mrv.relation_id = tr.id AND mrv.is_current = 1
                 WHERE tr.valid_to IS NULL
-                  AND (tr.source_entity_id IN (%s) OR tr.target_entity_id IN (%s))
-                """.formatted(placeholders, placeholders);
+                  AND (tr.source_entity_id IN (%s) OR tr.target_entity_id IN (%s))%s
+                """.formatted(placeholders, placeholders, trustClause);
         List<Object> params = new ArrayList<>();
         params.addAll(nodeIds);
         params.addAll(nodeIds);
+        if (minRelationTrust > 0.0f) {
+            params.add(minRelationTrust);
+        }
         try {
             return jdbcTemplate.query(sql, (rs, n) -> {
                 float strength = rs.getObject("strength") != null ? rs.getFloat("strength") : DEFAULT_STRENGTH;

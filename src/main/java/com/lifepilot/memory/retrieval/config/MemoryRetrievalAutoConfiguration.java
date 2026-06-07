@@ -74,9 +74,9 @@ public class MemoryRetrievalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public GraphTraverser graphTraverser(JdbcTemplate jdbcTemplate) {
-        log.info("记忆模块: 注册 GraphTraverser");
-        return new GraphTraverser(jdbcTemplate);
+    public GraphTraverser graphTraverser(JdbcTemplate jdbcTemplate, MemoryRetrievalProperties properties) {
+        log.info("记忆模块: 注册 GraphTraverser, minRelationTrust={}", properties.getMinRelationTrust());
+        return new GraphTraverser(jdbcTemplate, properties.getMinRelationTrust());
     }
 
     @Bean

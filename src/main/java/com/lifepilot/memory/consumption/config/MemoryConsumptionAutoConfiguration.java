@@ -75,10 +75,12 @@ public class MemoryConsumptionAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public GraphReasoner graphReasoner(JdbcTemplate jdbcTemplate,
-                                       MemoryConsumptionProperties properties) {
-        log.info("记忆模块: 注册 GraphReasoner, maxFanout={}",
-                properties.getAttention().getMaxFanout());
-        return new GraphReasoner(jdbcTemplate, properties.getAttention().getMaxFanout());
+                                       MemoryConsumptionProperties properties,
+                                       com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties retrievalProperties) {
+        log.info("记忆模块: 注册 GraphReasoner, maxFanout={}, minRelationTrust={}",
+                properties.getAttention().getMaxFanout(), retrievalProperties.getMinRelationTrust());
+        return new GraphReasoner(jdbcTemplate, properties.getAttention().getMaxFanout(),
+                retrievalProperties.getMinRelationTrust());
     }
 
     @Bean

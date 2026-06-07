@@ -865,8 +865,9 @@ public class SemanticMemory {
                 """
                 INSERT INTO memory_relations(
                     id, space_id, source_entity_id, target_entity_id, relation_type,
-                    reality_type, status, created_at, updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?)
+                    reality_type, status, created_at, updated_at,
+                    evidence_kind, trust_level, trust_score
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 relation.id(),
                 spaceId,
@@ -876,7 +877,10 @@ public class SemanticMemory {
                 resolvedContext.realityType().name(),
                 relation.validTo() == null ? "ACTIVE" : "ARCHIVED",
                 relation.createdAt().toString(),
-                now.toString());
+                now.toString(),
+                relation.evidenceKind() != null ? relation.evidenceKind().name() : null,
+                relation.trustLevel() != null ? relation.trustLevel().name() : null,
+                relation.trustScore());
         jdbcTemplate.update(
                 """
                 INSERT INTO memory_relation_versions(
@@ -1193,7 +1197,8 @@ public class SemanticMemory {
                 """
                 SELECT tr.id, tr.source_entity_id, tr.target_entity_id, tr.relation_type,
                        tr.strength, tr.properties_json, tr.valid_from, tr.valid_to,
-                       tr.source_conversation_id, tr.created_at
+                       tr.source_conversation_id, tr.created_at,
+                       tr.evidence_kind, tr.trust_level, tr.trust_score
                 FROM temporal_relations tr
                 JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
                 WHERE tr.valid_to IS NULL
@@ -1213,7 +1218,8 @@ public class SemanticMemory {
                 """
                 SELECT tr.id, tr.source_entity_id, tr.target_entity_id, tr.relation_type,
                        tr.strength, tr.properties_json, tr.valid_from, tr.valid_to,
-                       tr.source_conversation_id, tr.created_at
+                       tr.source_conversation_id, tr.created_at,
+                       tr.evidence_kind, tr.trust_level, tr.trust_score
                 FROM temporal_relations tr
                 JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
                 WHERE (tr.source_entity_id = ? OR tr.target_entity_id = ?)
@@ -1960,7 +1966,10 @@ public class SemanticMemory {
                 Instant.parse(rs.getString("valid_from")),
                 validToStr != null ? Instant.parse(validToStr) : null,
                 rs.getString("source_conversation_id"),
-                Instant.parse(rs.getString("created_at"))
+                Instant.parse(rs.getString("created_at")),
+                parseEvidenceKind(rs.getString("evidence_kind")),
+                parseTrustLevel(rs.getString("trust_level")),
+                rs.getFloat("trust_score")
         );
     }
 }

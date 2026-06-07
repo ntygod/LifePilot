@@ -13,6 +13,7 @@ import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
@@ -904,8 +905,13 @@ public class MemoryToolProvider {
             }
             MemoryWriteContext writeContext = toProjectWriteContext(projectContext, sessionId);
             var now = Instant.now();
+            float relTrust = MemoryQualityPolicy.trustScoreFor(
+                    MemoryEvidenceKind.USER_CONFIRMED, Math.max(0.0f, Math.min(1.0f, strength)));
             var relation = new TemporalRelation(UUID.randomUUID().toString(), sourceId, targetId, relationType, strength,
-                    null, now, null, conversationId, now);
+                    null, now, null, conversationId, now)
+                    .withQuality(MemoryEvidenceKind.USER_CONFIRMED,
+                            MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.USER_CONFIRMED, relTrust),
+                            relTrust);
             SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
             return ToolResult.success(Map.of(
                     "id", relation.id(), "relationType", relationType,

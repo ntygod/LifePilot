@@ -423,6 +423,8 @@ lifepilot:
       rewrite-timeout-ms: 5000
       min-vector-similarity: 0.15
       topic-switch-threshold: 0.3
+      # 图遍历/联想的关系最低可信分门控（relation-quality-gate）；0.0=不过滤，NULL 历史边恒放行
+      min-relation-trust: 0.0
       # 记忆精排配置（retrieval.reranker）
       reranker:
         enabled: true

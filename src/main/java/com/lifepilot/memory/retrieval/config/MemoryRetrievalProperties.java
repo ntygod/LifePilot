@@ -73,6 +73,14 @@ public class MemoryRetrievalProperties {
     /** STALE_CANDIDATE 结果的检索惩罚比例（0~1），默认 0.35，得分乘 0.65。 */
     private float stalenessRetrievalPenalty = 0.35f;
 
+    /**
+     * 图遍历/联想的关系最低可信分门控 [0.0, 1.0]，默认 0.0（不过滤）。
+     *
+     * <p>大于 0 时，{@code GraphReasoner}/{@code GraphTraverser} 跳过 {@code trust_score} 低于此值的
+     * 关系边；{@code trust_score} 为 NULL 的历史未评分关系恒放行，避免存量关系召回骤降。</p>
+     */
+    private float minRelationTrust = 0.0f;
+
     // ─── AgenticTool 配置 ───
 
     /** Agentic Tool 配置 — 控制记忆 tool 的默认检索参数。 */
