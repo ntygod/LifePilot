@@ -1166,6 +1166,26 @@ public class SemanticMemory {
     }
 
     /**
+     * 截止日期查询（memory-deadline-awareness）—— 返回 {@code properties_json} 中含 {@code $.dueAt}
+     * 的当前有效、可召回实体。dueAt 的窗口/逾期判定交由调用方解析（容忍纯日期/时间戳），
+     * 避免日期字符串范围比较的脆弱性。
+     *
+     * @param types  限定的实体类型；为空表示不限类型
+     * @param filter 读取过滤（空间/scope）
+     */
+    public List<TemporalEntity> findWithDueDate(Set<EntityType> types, @Nullable MemoryReadFilter filter) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT " + ENTITY_SELECT_COLUMNS + " FROM temporal_entities"
+                        + " WHERE is_current = 1"
+                        + " AND lifecycle_state IN " + RECALLABLE_LIFECYCLE
+                        + " AND json_extract(properties_json, '$.dueAt') IS NOT NULL");
+        List<Object> params = new ArrayList<>();
+        appendTypeFilter(sql, params, types);
+        appendEntityReadFilter(sql, params, filter);
+        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> mapRowToEntity(rs), params.toArray());
+    }
+
+    /**
      * 查询所有当前有效关系。
      *
      * @return 当前有效关系列表

@@ -44,6 +44,9 @@ public class MemoryAttentionService {
     /** 临近到期关注的实体类型（带 deadline 语义）。 */
     private static final Set<EntityType> EXPIRING_TYPES =
             EnumSet.of(EntityType.GOAL, EntityType.EVENT, EntityType.PROJECT);
+    /** 截止日期（dueAt）关注的实体类型。 */
+    private static final Set<EntityType> DUE_TYPES =
+            EnumSet.of(EntityType.GOAL, EntityType.EVENT, EntityType.PROJECT);
     /** 停滞高价值关注的实体类型。 */
     private static final Set<EntityType> NEGLECTED_TYPES =
             EnumSet.of(EntityType.GOAL, EntityType.PROJECT, EntityType.TOPIC, EntityType.SKILL);
@@ -69,7 +72,7 @@ public class MemoryAttentionService {
     }
 
     /** 注意力信号类别。 */
-    public enum AttentionKind { EXPIRING, NEGLECTED, EVOLVING, CONNECTION }
+    public enum AttentionKind { EXPIRING, DUE_SOON, NEGLECTED, EVOLVING, CONNECTION }
 
     /**
      * 一条注意力项。
@@ -118,6 +121,24 @@ public class MemoryAttentionService {
                 }
             } catch (Exception ex) {
                 log.warn("记忆注意力: EXPIRING 计算失败，跳过, error={}", ex.getMessage());
+            }
+        }
+
+        // DUE_SOON —— 硬截止日期临近（含逾期），dueAt 存于 properties，与 expires_at 解耦
+        int dueSoon = 0;
+        if (cfg.isDueSoonEnabled()) {
+            try {
+                Instant until = now.plus(Duration.ofDays(cfg.getDueSoonWindowDays()));
+                for (var e : semanticMemory.findWithDueDate(DUE_TYPES, filter)) {
+                    if (dueSoon >= cfg.getMaxPerKind()) break;
+                    Instant due = parseDueAt(e.properties().get("dueAt"));
+                    if (due == null) continue;
+                    if (due.isAfter(until)) continue;  // 窗口外（含未来太远）；逾期(due<now)仍纳入
+                    items.add(toDueSoon(e, due, now, cfg));
+                    dueSoon++;
+                }
+            } catch (Exception ex) {
+                log.warn("记忆注意力: DUE_SOON 计算失败，跳过, error={}", ex.getMessage());
             }
         }
 
@@ -185,8 +206,8 @@ public class MemoryAttentionService {
 
         items.sort(Comparator.comparing(AttentionItem::score).reversed());
         var result = items.size() > limit ? items.subList(0, limit) : items;
-        log.debug("记忆注意力: expiring={}, neglected={}, evolving={}, connection={}, returned={}",
-                expiring, neglected, evolving, connection, result.size());
+        log.debug("记忆注意力: expiring={}, dueSoon={}, neglected={}, evolving={}, connection={}, returned={}",
+                expiring, dueSoon, neglected, evolving, connection, result.size());
         return List.copyOf(result);
     }
 
@@ -201,6 +222,42 @@ public class MemoryAttentionService {
         String reason = "「%s」将在 %d 天后到期".formatted(e.name(), daysUntil);
         return new AttentionItem(e.id(), e.name(), e.type().name(), AttentionKind.EXPIRING,
                 clamp01(score), reason, e.expiresAt(), null, null);
+    }
+
+    private AttentionItem toDueSoon(TemporalEntity e, Instant due, Instant now,
+                                    MemoryConsumptionProperties.Attention cfg) {
+        long daysUntil = Duration.between(now, due).toDays();  // 逾期为负
+        float urgency;
+        String reason;
+        if (due.isBefore(now)) {
+            urgency = 1.0f;  // 已逾期，最高紧迫度
+            reason = "「%s」已逾期 %d 天未完成".formatted(e.name(), Math.max(0, -daysUntil));
+        } else {
+            float windowDays = Math.max(1, cfg.getDueSoonWindowDays());
+            float remaining = (float) Duration.between(now, due).toHours() / (windowDays * 24f);
+            urgency = clamp01(1f - remaining);
+            reason = "「%s」将在 %d 天后到期".formatted(e.name(), Math.max(0, daysUntil));
+        }
+        float score = cfg.getWeightDueSoon() * (0.5f + 0.5f * urgency) * (0.4f + 0.6f * e.importanceScore());
+        return new AttentionItem(e.id(), e.name(), e.type().name(), AttentionKind.DUE_SOON,
+                clamp01(score), reason, due, daysUntil, null);
+    }
+
+    /** 解析 dueAt：容忍完整时间戳与纯日期；非法返回 null。 */
+    @Nullable
+    private static Instant parseDueAt(@Nullable Object raw) {
+        if (raw == null) return null;
+        String s = raw.toString().trim();
+        if (s.isEmpty()) return null;
+        try {
+            return Instant.parse(s);
+        } catch (Exception ignore) {
+            try {
+                return java.time.LocalDate.parse(s).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+            } catch (Exception ignore2) {
+                return null;
+            }
+        }
     }
 
     private AttentionItem toNeglected(TemporalEntity e, Instant now, MemoryConsumptionProperties.Attention cfg) {

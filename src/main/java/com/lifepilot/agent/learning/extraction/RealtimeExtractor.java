@@ -30,6 +30,7 @@ import org.springframework.lang.Nullable;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -476,7 +477,7 @@ public class RealtimeExtractor {
                 decision.entityType(),
                 decision.entityName(),
                 decision.description(),
-                decision.properties() != null ? decision.properties() : Map.of(),
+                resolveProperties(decision),
                 1, true, now, null, sessionId,
                 confidence,
                 importance,
@@ -516,6 +517,7 @@ public class RealtimeExtractor {
         if (decision.properties() != null) {
             mergedProps.putAll(decision.properties());
         }
+        deriveDueAtInto(mergedProps, decision);
         // 使用 LLM 输出的 scores：confidence 取新值，importance 取较大值
         float newConfidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float newImportance = safeFloat(decision.importanceScore(), 0.5f);
@@ -552,6 +554,7 @@ public class RealtimeExtractor {
         if (decision.properties() != null) {
             mergedProps.putAll(decision.properties());
         }
+        deriveDueAtInto(mergedProps, decision);
         float newConfidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float newImportance = safeFloat(decision.importanceScore(), 0.5f);
         Temporality temporality = decision.temporalityRaw() != null && !decision.temporalityRaw().isBlank()
@@ -648,6 +651,43 @@ public class RealtimeExtractor {
     /** @Nullable Float 安全拆箱，null 时返回默认值。 */
     private static float safeFloat(@Nullable Float value, float defaultValue) {
         return value != null ? value : defaultValue;
+    }
+
+    /** 截止日期可承载的实体类型。 */
+    private static boolean isDeadlineType(EntityType type) {
+        return type == EntityType.GOAL || type == EntityType.EVENT || type == EntityType.PROJECT;
+    }
+
+    /** ADD 路径：在 decision.properties 基础上确定性补 dueAt。 */
+    private Map<String, Object> resolveProperties(AudnDecision decision) {
+        var base = new java.util.HashMap<String, Object>(
+                decision.properties() != null ? decision.properties() : Map.of());
+        deriveDueAtInto(base, decision);
+        return base;
+    }
+
+    /**
+     * 确定性补全 dueAt（memory-deadline-awareness）—— 对 GOAL/EVENT/PROJECT，
+     * 若 properties 尚无 dueAt，则从实体名/描述/证据中提取绝对日期写入。
+     * 不依赖 LLM 是否主动输出 dueAt；relative 日期不在范围内。
+     */
+    private void deriveDueAtInto(Map<String, Object> props, AudnDecision decision) {
+        if (decision.entityType() == null || !isDeadlineType(decision.entityType())) {
+            return;
+        }
+        Object existing = props.get("dueAt");
+        if (existing != null && !existing.toString().isBlank()) {
+            return;
+        }
+        String text = String.join(" ",
+                decision.entityName() != null ? decision.entityName() : "",
+                decision.description() != null ? decision.description() : "",
+                decision.evidenceExcerpt() != null ? decision.evidenceExcerpt() : "");
+        int refYear = LocalDate.now(clock).getYear();
+        DueDateExtractor.extractIsoDate(text, refYear).ifPresent(iso -> {
+            props.put("dueAt", iso);
+            log.debug("AUDN: 确定性补全 dueAt={}, entity={}", iso, decision.entityName());
+        });
     }
 
     /**

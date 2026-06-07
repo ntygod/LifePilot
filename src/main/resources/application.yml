@@ -379,6 +379,8 @@ lifepilot:
         enabled: true
         expiring-enabled: true
         expiring-window-days: 14
+        due-soon-enabled: true
+        due-soon-window-days: 14
         neglected-enabled: true
         neglect-days: 30
         neglect-min-importance: 0.6
@@ -391,6 +393,7 @@ lifepilot:
         max-per-kind: 10
         top-n: 10
         weight-expiring: 1.0
+        weight-due-soon: 1.2
         weight-neglected: 0.8
         weight-evolving: 0.6
         weight-connection: 0.7

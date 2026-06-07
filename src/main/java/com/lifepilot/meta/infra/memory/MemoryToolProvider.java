@@ -404,6 +404,20 @@ public class MemoryToolProvider {
         }
     }
 
+    /**
+     * 为 GOAL/EVENT/PROJECT 从名称/描述中确定性提取截止日期写入 properties.dueAt（memory-deadline-awareness）。
+     * 与 RealtimeExtractor 共用 {@link DueDateExtractor}，覆盖 Agent 经 memory 工具显式建目标的路径。
+     */
+    private Map<String, Object> deriveDueDateProperties(EntityType type, String name, String description) {
+        if (type != EntityType.GOAL && type != EntityType.EVENT && type != EntityType.PROJECT) {
+            return Map.of();
+        }
+        String text = (name != null ? name : "") + " " + (description != null ? description : "");
+        return com.lifepilot.agent.learning.extraction.DueDateExtractor.extractIsoDate(text)
+                .<Map<String, Object>>map(iso -> Map.of("dueAt", iso))
+                .orElse(Map.of());
+    }
+
     ToolResult executeCreate(ToolInput input) {
         try {
             String name = input.getParam("name", String.class);
@@ -413,7 +427,8 @@ public class MemoryToolProvider {
                     .orElseGet(() -> input.getContextValue("sessionId", String.class).orElse(null));
             EntityType entityType = EntityType.valueOf(typeStr.toUpperCase());
             var now = Instant.now();
-            var incoming = new TemporalEntity(null, entityType, name, description, Map.of(), 1, true,
+            var properties = deriveDueDateProperties(entityType, name, description);
+            var incoming = new TemporalEntity(null, entityType, name, description, properties, 1, true,
                     now, null, conversationId, 1.0f, 0.5f, 0, null, now, now);
             MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), conversationId);
             var created = SqliteBusyRetry.execute(() ->

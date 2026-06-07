@@ -129,6 +129,12 @@ public class MemoryConsumptionProperties {
         /** 是否产出 EXPIRING 项，默认 true。 */
         private boolean expiringEnabled = true;
 
+        /** DUE_SOON：硬截止日期临近窗口（天），properties.dueAt 落在 [now, now+window] 视为临近截止，默认 14。 */
+        private int dueSoonWindowDays = 14;
+
+        /** 是否产出 DUE_SOON 项，默认 true。 */
+        private boolean dueSoonEnabled = true;
+
         /** NEGLECTED：停滞判定的未访问天数阈值，默认 30。 */
         private int neglectDays = 30;
 
@@ -164,6 +170,9 @@ public class MemoryConsumptionProperties {
 
         /** EXPIRING 权重，默认 1.0。 */
         private float weightExpiring = 1.0f;
+
+        /** DUE_SOON 权重，默认 1.2（硬截止比自动遗忘 TTL 更紧急）。 */
+        private float weightDueSoon = 1.2f;
 
         /** NEGLECTED 权重，默认 0.8。 */
         private float weightNeglected = 0.8f;
