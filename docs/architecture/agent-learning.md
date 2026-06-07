@@ -332,14 +332,17 @@ sequenceDiagram
 
 > 归属记忆消费层 `com.lifepilot.memory.consumption.attention`，遵循"记忆提供、主动消费"边界：只读派生，不写主库、不触发自主对外行为。
 
-- `MemoryAttentionService.computeAttention(filter, topN)` 聚合四类主动注意力信号，按可配置权重融合排序：
+- `MemoryAttentionService.computeAttention(filter, topN)` 聚合多类主动注意力信号，按可配置权重融合排序：
   - **EXPIRING**：`expires_at` 落入窗口的实体（即将被 `ExpirationScanner` 自动遗忘的 EPHEMERAL/SHORT_TERM 记忆，提醒"短期事项即将失效"）
+  - **DUE_SOON**：带硬截止日期（`properties.dueAt`）的 GOAL/EVENT/PROJECT 临近截止（含已逾期），权重默认最高（1.2）。dueAt 与 `expires_at` 解耦——见下方"截止日期捕获"
   - **NEGLECTED**：`importance ≥ 阈值` 但长期未访问的高价值实体（"重要但被冷落"）
   - **EVOLVING**：近期持续多版本演进的实体
   - **CONNECTION**：`GraphReasoner` 在关系图上发现的两跳可达但无直接边的连接机会（联想），自动排除 `__` 前缀的系统派生聚合实体（如 `__consolidated_profile`）以降噪
 - 出口：`ProactiveMemoryBridge.getAttentionItems(topN)`（主动层消费）+ `GET /api/memories/attention`（运维/UI）
 - 配置见 §8.6
-- **deadline 语义说明**：`expires_at` 专指"自动遗忘 TTL"，非"目标截止日期"。带硬截止日期的目标提醒属独立能力（需专用 `dueAt`），不复用 `expires_at`（否则 `ExpirationScanner` 会在截止后误归档目标）
+- **截止日期捕获（memory-deadline-awareness）**：硬截止日期存于 `properties.dueAt`（ISO 日期），与 `expires_at`（自动遗忘 TTL）严格区分——
+  否则 `ExpirationScanner` 会在截止后误归档目标。由 `DueDateExtractor` 确定性正则从实体名/描述提取绝对日期兜底
+  （AUDN LLM 不可靠地输出结构化 dueAt），覆盖两条写入路径：`RealtimeExtractor`（对话 AUDN）与 `MemoryToolProvider`（Agent 显式 `memory.create`）
 
 
 ---
@@ -528,6 +531,8 @@ sequenceDiagram
 | `lifepilot.memory.consumption.attention.enabled` | true | 记忆注意力总开关 |
 | `lifepilot.memory.consumption.attention.expiring-enabled` | true | 产出 EXPIRING 项 |
 | `lifepilot.memory.consumption.attention.expiring-window-days` | 14 | 临近到期窗口（天） |
+| `lifepilot.memory.consumption.attention.due-soon-enabled` | true | 产出 DUE_SOON 项（硬截止日期） |
+| `lifepilot.memory.consumption.attention.due-soon-window-days` | 14 | 截止临近窗口（天） |
 | `lifepilot.memory.consumption.attention.neglected-enabled` | true | 产出 NEGLECTED 项 |
 | `lifepilot.memory.consumption.attention.neglect-days` | 30 | 停滞判定未访问天数 |
 | `lifepilot.memory.consumption.attention.neglect-min-importance` | 0.6 | 停滞高价值最小重要度 |
@@ -540,6 +545,7 @@ sequenceDiagram
 | `lifepilot.memory.consumption.attention.max-per-kind` | 10 | 每类候选上限 |
 | `lifepilot.memory.consumption.attention.top-n` | 10 | 最终返回上限 |
 | `lifepilot.memory.consumption.attention.weight-*` | 1.0/0.8/0.6/0.7 | EXPIRING/NEGLECTED/EVOLVING/CONNECTION 权重 |
+| `lifepilot.memory.consumption.attention.weight-due-soon` | 1.2 | DUE_SOON 权重（硬截止最紧急） |
 
 ---
 
