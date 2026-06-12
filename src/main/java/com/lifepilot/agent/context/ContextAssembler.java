@@ -822,48 +822,23 @@ public class ContextAssembler {
     }
 
     private String buildModeSpecificRules(String taskMode) {
-        return switch (taskMode) {
-            case "cron" -> """
-                    - 这是明确的 cron 调度任务，按计划执行，不要改写成普通对话
-                    - 除非缺少执行前提，否则不要反问，不要重复任务描述
-                    - 没有新的有效结果时返回 TASK_SILENT
-                    """.trim();
-            case "heartbeat" -> """
-                    - 这是系统内部的 heartbeat 唤醒任务，不维护 checklist，也不要输出 HEARTBEAT_OK
-                    - 仅在存在明确需要上报的内部结果时才返回正文
-                    - 不要擅自把唤醒任务改成新的 cron 调度
-                    """.trim();
-            default -> """
-                    - 明确时间点或周期任务时，使用 cron
-                    - 模糊持续关注类请求时，不要创建过时的 heartbeat checklist；优先记录到记忆或工作区，交由主动提醒引擎后续判断
-                    - 一次性分析或执行任务时，直接执行，不创建长期任务
-                    """.trim();
+        String key = switch (taskMode) {
+            case "cron" -> "agent/task-mode-cron";
+            case "heartbeat" -> "agent/task-mode-heartbeat";
+            default -> "agent/task-mode-interactive";
         };
+        return promptRegistry.render(key).trim();
     }
 
     private String buildExecutionGuardPrompt(ReactAgentState state) {
         if (isTaskMode(state)) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("""
-                <completion_contract>
-                - 自行判断当前请求是普通问答还是多步任务
-                - 普通问答/解释/分析/总结：直接回答并结束
-                - 多步任务：首次调工具前用 1-3 句话简述执行计划（目标拆解 + 步骤顺序）；有必要步骤未完成时继续调用工具，不要用阶段性总结结束本轮
-                - 可恢复阻塞（缺用户补充信息/等待确认/外部回传）不要包装成失败或完成
-                - 需要用户补充信息时，把追问包在 <await_user_input>...</await_user_input> 中，说清：缺什么、为什么缺、补充后会继续做什么
-                - 这轮没调用工具但已能给出终态时，正文后追加隐藏标签：
-                  · `<completion_control>done</completion_control>` — 任务已完成
-                  · `<completion_control>blocked</completion_control>` — 任务明确阻塞
-                  · `<completion_control>continue</completion_control>` — 阶段说明，非终态
-                - `completion_control` 仅供系统判定，不展示给用户
-                - 用户明确要求结束且目标已满足时，直接自然收尾
-                """);
-        if (state.earlyStopRejectCount() > 0) {
-            sb.append("- 系统已经拒绝过你的一次疑似提前结束；如果这轮要结束，请补上正确的 `<completion_control>` 标签；如果任务还没做完，就继续调用工具\n");
-        }
-        sb.append("</completion_contract>");
-        return sb.toString();
+        String earlyStopHint = state.earlyStopRejectCount() > 0
+                ? "- 系统已经拒绝过你的一次疑似提前结束；如果这轮要结束，请补上正确的 `<completion_control>` 标签；如果任务还没做完，就继续调用工具\n"
+                : "";
+        return promptRegistry.render("agent/completion-contract",
+                Map.of("earlyStopHint", earlyStopHint)).trim();
     }
 
     private ContextEngine.ContextSnapshot safeLoadContextSnapshot(ReactAgentState state, int totalContextTokens) {
