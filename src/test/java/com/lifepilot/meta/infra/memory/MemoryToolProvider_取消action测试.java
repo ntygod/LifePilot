@@ -3,17 +3,17 @@ package com.lifepilot.meta.infra.memory;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.lifecycle.ChangeSource;
-import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,7 +65,7 @@ class MemoryToolProvider_取消action测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryProperties()
+                new MemoryRetrievalProperties()
         );
         provider.registerTools(registry);
     }

@@ -1,12 +1,16 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.entity.VersionMerger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -687,17 +691,17 @@ class VersionMerger_单元测试 {
                 String id, String name, String description,
                 Map<String, Object> properties,
                 float confidence, float importance,
-                com.lifepilot.memory.quality.MemoryEvidenceKind evidenceKind) {
+                MemoryEvidenceKind evidenceKind) {
             return new TemporalEntity(
                     id, EntityType.PREFERENCE, name, description,
                     properties, 1, true,
                     BASE_TIME, null, null,
                     confidence, importance, 5, BASE_TIME, BASE_TIME, BASE_TIME,
-                    com.lifepilot.memory.lifecycle.LifecycleState.ACTIVE,
-                    null, null, com.lifepilot.memory.lifecycle.Temporality.PERSISTENT,
+                    com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                    null, null, com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
                     null, false, java.util.List.of(),
                     evidenceKind,
-                    com.lifepilot.memory.quality.MemoryTrustLevel.EXPLICIT,
+                    MemoryTrustLevel.EXPLICIT,
                     0.8f, 1, null);
         }
 
@@ -706,10 +710,10 @@ class VersionMerger_单元测试 {
             // given — existing 置信度 0.95，incoming 只有 0.5 但是 USER_EXPLICIT
             var existing = buildWithEvidence("e1", "编程语言", "Java 22",
                     Map.of("lang", "Java"), 0.95f, 0.8f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+                    MemoryEvidenceKind.USER_EXPLICIT);
             var incoming = buildWithEvidence("i1", "编程语言", "Rust",
                     Map.of("lang", "Rust"), 0.5f, 0.7f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+                    MemoryEvidenceKind.USER_EXPLICIT);
 
             // when
             var result = merger.merge(existing, incoming, "conv-1");
@@ -726,10 +730,10 @@ class VersionMerger_单元测试 {
             // given — existing 描述更长，但 incoming 是 USER_CONFIRMED
             var existing = buildWithEvidence("e1", "编辑器", "用户使用 Neovim 编辑器，配置了大量插件",
                     Map.of(), 0.9f, 0.8f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.CHAT_INFERRED);
+                    MemoryEvidenceKind.CHAT_INFERRED);
             var incoming = buildWithEvidence("i1", "编辑器", "Cursor",
                     Map.of(), 0.7f, 0.7f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_CONFIRMED);
+                    MemoryEvidenceKind.USER_CONFIRMED);
 
             // when
             var result = merger.merge(existing, incoming, "conv-1");
@@ -744,10 +748,10 @@ class VersionMerger_单元测试 {
             // given — incoming 是 CHAT_INFERRED，置信度低于 existing
             var existing = buildWithEvidence("e1", "编程语言", "Java 22",
                     Map.of("lang", "Java"), 0.9f, 0.8f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+                    MemoryEvidenceKind.USER_EXPLICIT);
             var incoming = buildWithEvidence("i1", "编程语言", "Python",
                     Map.of("lang", "Python"), 0.5f, 0.5f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.CHAT_INFERRED);
+                    MemoryEvidenceKind.CHAT_INFERRED);
 
             // when
             var result = merger.merge(existing, incoming, "conv-1");
@@ -763,10 +767,10 @@ class VersionMerger_单元测试 {
             // given — incoming 是 USER_EXPLICIT 但描述为空
             var existing = buildWithEvidence("e1", "城市", "用户住在北京市朝阳区",
                     Map.of(), 0.9f, 0.8f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+                    MemoryEvidenceKind.USER_EXPLICIT);
             var incoming = buildWithEvidence("i1", "城市", "",
                     Map.of(), 0.7f, 0.7f,
-                    com.lifepilot.memory.quality.MemoryEvidenceKind.USER_EXPLICIT);
+                    MemoryEvidenceKind.USER_EXPLICIT);
 
             // when
             var result = merger.merge(existing, incoming, "conv-1");

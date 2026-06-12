@@ -1,5 +1,7 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.memory.store.entity.TemporalEntity;
+
 import java.util.Map;
 
 /**

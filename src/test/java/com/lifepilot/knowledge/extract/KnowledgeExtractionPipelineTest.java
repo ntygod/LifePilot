@@ -5,14 +5,15 @@ import com.lifepilot.knowledge.chunking.DocumentChunk;
 import com.lifepilot.knowledge.config.KnowledgeBaseProperties;
 import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentSourceType;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryWriteContext;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
-import com.lifepilot.memory.scope.MemorySpaceType;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceType;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemorySpace;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -93,7 +94,7 @@ class KnowledgeExtractionPipelineTest {
                 Map.of()
         ));
 
-        var domainSpace = new com.lifepilot.memory.scope.MemorySpace(
+        var domainSpace = new MemorySpace(
                 "space-kb-1",
                 "domain:knowledge-base:kb-1",
                 MemorySpaceType.DOMAIN,
@@ -139,7 +140,7 @@ class KnowledgeExtractionPipelineTest {
                 memorySpaceRepository
         );
 
-        var domainSpace = new com.lifepilot.memory.scope.MemorySpace(
+        var domainSpace = new MemorySpace(
                 "space-kb-1",
                 "domain:knowledge-base:kb-1",
                 MemorySpaceType.DOMAIN,
@@ -232,7 +233,7 @@ class KnowledgeExtractionPipelineTest {
                 memorySpaceRepository
         );
 
-        var domainSpace = new com.lifepilot.memory.scope.MemorySpace(
+        var domainSpace = new MemorySpace(
                 "space-kb-1",
                 "domain:knowledge-base:kb-1",
                 MemorySpaceType.DOMAIN,

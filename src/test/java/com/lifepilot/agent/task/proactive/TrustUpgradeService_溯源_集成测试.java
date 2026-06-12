@@ -1,16 +1,16 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
-import com.lifepilot.memory.lifecycle.ChangeSource;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.feedback.FeedbackLedgerRepository;
-import com.lifepilot.memory.lifecycle.feedback.FeedbackThresholdConfig;
-import com.lifepilot.memory.lifecycle.listeners.NegativeFeedbackListener;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.feedback.FeedbackLedgerRepository;
+import com.lifepilot.memory.governance.lifecycle.feedback.FeedbackThresholdConfig;
+import com.lifepilot.memory.governance.lifecycle.listeners.NegativeFeedbackListener;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.support.MemoryProjectionTestSupport;
-import com.lifepilot.memory.semantic.ConflictDetector;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
+import com.lifepilot.memory.store.entity.ConflictDetector;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.VersionMerger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,7 +98,7 @@ class TrustUpgradeService_溯源_集成测试 {
         listener = new NegativeFeedbackListener(ledger, semanticMemory, new FeedbackThresholdConfig(), clock);
         ApplicationEventPublisher publisher = event -> {
             publishedEvents.add(event);
-            if (event instanceof com.lifepilot.memory.lifecycle.events.EntityWeightChanged ew) {
+            if (event instanceof com.lifepilot.memory.governance.lifecycle.events.EntityWeightChanged ew) {
                 // 同步触发 listener —— 避免依赖 Spring 事务事件机制
                 listener.onWeightChanged(ew);
             }
@@ -150,8 +150,8 @@ class TrustUpgradeService_溯源_集成测试 {
 
         // 断言：恰一次 EntityLifecycleChanged 事件，source=NEGATIVE_FEEDBACK
         var lifecycleEvents = publishedEvents.stream()
-                .filter(e -> e instanceof com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged)
-                .map(e -> (com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged) e)
+                .filter(e -> e instanceof com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged)
+                .map(e -> (com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged) e)
                 .toList();
         assertThat(lifecycleEvents).hasSize(1);
         assertThat(lifecycleEvents.getFirst().source()).isEqualTo(ChangeSource.NEGATIVE_FEEDBACK);
@@ -189,7 +189,7 @@ class TrustUpgradeService_溯源_集成测试 {
 
         // 断言：没有任何账本写入，也没有事件
         assertThat(publishedEvents)
-                .filteredOn(e -> e instanceof com.lifepilot.memory.lifecycle.events.EntityWeightChanged)
+                .filteredOn(e -> e instanceof com.lifepilot.memory.governance.lifecycle.events.EntityWeightChanged)
                 .as("无关联时不触发 importanceScore 更新")
                 .isEmpty();
     }

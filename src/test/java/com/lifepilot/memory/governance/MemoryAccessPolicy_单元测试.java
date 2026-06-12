@@ -1,6 +1,7 @@
 package com.lifepilot.memory.governance;
 
-import com.lifepilot.memory.scope.MemoryScope;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.store.scope.MemoryScope;
 import com.lifepilot.project.context.ProjectContext;
 import org.junit.jupiter.api.Test;
 

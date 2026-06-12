@@ -80,6 +80,8 @@ class ProcessBooterTest {
         // 测试不依赖真实捆绑 Python，桩出 Ready 状态 + 系统 python 路径
         when(runtimeManager.checkStatus()).thenReturn(new RuntimeStatus.Ready("3.12.13", 0L));
         when(runtimeManager.getPythonExecutable()).thenReturn(Paths.get("python"));
+        // ProcessBooter.execute 会读取 Python 缓存目录，桩为临时目录避免 NPE
+        when(runtimeManager.getPythonCacheDir()).thenReturn(tempDir);
 
         booter = new ProcessBooter(config, runtimeManager);
         booter.boot(tempDir).join();

@@ -1,8 +1,9 @@
 package com.lifepilot.memory.forgetting;
 
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.agent.learning.forgetting.ForgettingPriority;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,11 +22,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class ForgettingPriorityTest {
 
     private ForgettingPriority calculator;
-    private MemoryProperties.Forgetting config;
+    private AgentLearningProperties.Forgetting config;
 
     @BeforeEach
     void setUp() {
-        config = new MemoryProperties.Forgetting();
+        config = new AgentLearningProperties.Forgetting();
         // 使用默认值：maxRetentionDays=365, privacyAwareBoost=0.3
         calculator = new ForgettingPriority(config);
     }

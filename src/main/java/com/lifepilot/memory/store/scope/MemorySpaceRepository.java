@@ -1,0 +1,226 @@
+package com.lifepilot.memory.store.scope;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
+import org.springframework.stereotype.Repository;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * 记忆空间仓储。
+ *
+ * @author zsg
+ * @since 2026-03-27
+ */
+@Repository
+public class MemorySpaceRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(MemorySpaceRepository.class);
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+
+    public MemorySpaceRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+    }
+
+    public MemorySpace ensureDefaultPersonalSpace() {
+        return ensureSpace(MemorySpaceKeys.defaultPersonal(), MemorySpaceType.PERSONAL, "个人记忆",
+                "SYSTEM", "default", Map.of());
+    }
+
+    public MemorySpace ensureDefaultExperienceSpace() {
+        return ensureSpace(MemorySpaceKeys.defaultExperience(), MemorySpaceType.EXPERIENCE, "Agent经验",
+                "SYSTEM", "default", Map.of());
+    }
+
+    public MemorySpace ensureKnowledgeBaseDomainSpace(String knowledgeBaseId) {
+        return ensureSpace(
+                MemorySpaceKeys.knowledgeBaseDomain(knowledgeBaseId),
+                MemorySpaceType.DOMAIN,
+                "知识库领域记忆",
+                "KNOWLEDGE_BASE",
+                knowledgeBaseId,
+                Map.of("knowledgeBaseId", knowledgeBaseId)
+        );
+    }
+
+    /**
+     * 确保给定项目的项目级记忆空间存在（Plan 1 引入）。
+     *
+     * @param projectId 项目 id
+     * @return 已存在或新建的项目记忆空间
+     */
+    public MemorySpace ensureProjectSpace(String projectId) {
+        return ensureSpace(
+                MemorySpaceKeys.project(projectId),
+                MemorySpaceType.PROJECT,
+                "项目记忆",
+                "PROJECT",
+                projectId,
+                Map.of("projectId", projectId)
+        );
+    }
+
+    /**
+     * 按 id 物理删除记忆空间。
+     *
+     * <p><b>调用约束</b>：memory_entities / memory_relations 对 memory_spaces
+     * 的 FK 是 <b>RESTRICT</b>（V1:337/404），因此调用此方法前必须先清空归属
+     * 此 space 的 memory_entities / memory_relations，否则 FK 会阻断删除。
+     * 级联语义由调用方负责组织（参见 {@code ProjectService#deleteProject}
+     * 的级联顺序说明）。</p>
+     *
+     * <p>memory_space_knowledge_bases 通过 FK CASCADE 自动清理。</p>
+     */
+    public void deleteById(String spaceId) {
+        jdbcTemplate.update("DELETE FROM memory_spaces WHERE id = ?", spaceId);
+    }
+
+    /**
+     * 把知识库绑定到记忆空间（memory_space_knowledge_bases）。
+     *
+     * <p>复合主键 (memory_space_id, knowledge_base_id) 天然保证绑定不重复；
+     * 使用 {@code INSERT OR IGNORE} 实现幂等绑定，避免重复绑定时抛异常。</p>
+     *
+     * @param spaceId         记忆空间 id
+     * @param knowledgeBaseId 知识库 id
+     */
+    public void attachKnowledgeBase(String spaceId, String knowledgeBaseId) {
+        jdbcTemplate.update("""
+                INSERT OR IGNORE INTO memory_space_knowledge_bases (
+                    memory_space_id, knowledge_base_id, created_at
+                ) VALUES (?, ?, ?)
+                """,
+                spaceId,
+                knowledgeBaseId,
+                Instant.now().toString()
+        );
+    }
+
+    /**
+     * 查询记忆空间下绑定的所有知识库 id（按绑定时间升序）。
+     *
+     * @param spaceId 记忆空间 id
+     * @return 知识库 id 列表（可能为空）
+     */
+    public List<String> findKnowledgeBaseIdsForSpace(String spaceId) {
+        return jdbcTemplate.queryForList("""
+                SELECT knowledge_base_id
+                FROM memory_space_knowledge_bases
+                WHERE memory_space_id = ?
+                ORDER BY created_at ASC
+                """, String.class, spaceId);
+    }
+
+    public MemorySpace ensureSpace(String spaceKey,
+                                   MemorySpaceType spaceType,
+                                   String displayName,
+                                   @Nullable String ownerType,
+                                   @Nullable String ownerId,
+                                   @Nullable Map<String, Object> metadata) {
+        return findBySpaceKey(spaceKey).orElseGet(() -> insertSpace(
+                spaceKey,
+                spaceType,
+                displayName,
+                ownerType,
+                ownerId,
+                metadata != null ? metadata : Map.of()
+        ));
+    }
+
+    public Optional<MemorySpace> findBySpaceKey(String spaceKey) {
+        List<MemorySpace> rows = jdbcTemplate.query("""
+                SELECT id, space_key, space_type, display_name, owner_type, owner_id,
+                       metadata_json, created_at, updated_at
+                FROM memory_spaces
+                WHERE space_key = ?
+                """, this::mapRow, spaceKey);
+        return rows.stream().findFirst();
+    }
+
+    public Optional<MemorySpace> findById(String id) {
+        List<MemorySpace> rows = jdbcTemplate.query("""
+                SELECT id, space_key, space_type, display_name, owner_type, owner_id,
+                       metadata_json, created_at, updated_at
+                FROM memory_spaces
+                WHERE id = ?
+                """, this::mapRow, id);
+        return rows.stream().findFirst();
+    }
+
+    private MemorySpace insertSpace(String spaceKey,
+                                    MemorySpaceType spaceType,
+                                    String displayName,
+                                    @Nullable String ownerType,
+                                    @Nullable String ownerId,
+                                    Map<String, Object> metadata) {
+        Instant now = Instant.now();
+        String id = UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                INSERT INTO memory_spaces (
+                    id, space_key, space_type, display_name, owner_type, owner_id,
+                    metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                id,
+                spaceKey,
+                spaceType.name(),
+                displayName,
+                ownerType,
+                ownerId,
+                writeJson(metadata),
+                now.toString(),
+                now.toString()
+        );
+        log.debug("创建记忆空间: id={}, spaceKey={}, spaceType={}", id, spaceKey, spaceType);
+        return new MemorySpace(id, spaceKey, spaceType, displayName, ownerType, ownerId, metadata, now, now);
+    }
+
+    private MemorySpace mapRow(ResultSet rs, int rowNum) throws SQLException {
+        return new MemorySpace(
+                rs.getString("id"),
+                rs.getString("space_key"),
+                MemorySpaceType.valueOf(rs.getString("space_type")),
+                rs.getString("display_name"),
+                rs.getString("owner_type"),
+                rs.getString("owner_id"),
+                readJsonMap(rs.getString("metadata_json")),
+                Instant.parse(rs.getString("created_at")),
+                Instant.parse(rs.getString("updated_at"))
+        );
+    }
+
+    private Map<String, Object> readJsonMap(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, MAP_TYPE);
+        } catch (JsonProcessingException e) {
+            log.warn("解析记忆空间 metadata_json 失败: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private String writeJson(Map<String, Object> value) {
+        try {
+            return objectMapper.writeValueAsString(value != null ? value : Map.of());
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("序列化记忆空间 metadata_json 失败", e);
+        }
+    }
+}

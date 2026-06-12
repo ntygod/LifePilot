@@ -405,45 +405,48 @@ git commit -m "feat(project): 新增 Project record 与字段约束"
 package com.lifepilot.memory.scope;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.store.scope.MemorySpace;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
-import org.springframework.core.io.ClassPathResource;
 
 import javax.sql.DataSource;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class MemorySpaceRepository_项目空间集成测试 {
 
-    MemorySpaceRepository repo;
+  MemorySpaceRepository repo;
 
-    @BeforeEach
-    void setUp() {
-        DataSource ds = new EmbeddedDatabaseBuilder()
-                .setType(EmbeddedDatabaseType.H2)  // 或复用项目 SQLite TestConfig
-                .addScript("classpath:db/migration/V1__init_schema.sql")
-                // ...加载到 V16
-                .build();
-        repo = new MemorySpaceRepository(new JdbcTemplate(ds), new ObjectMapper());
-    }
+  @BeforeEach
+  void setUp() {
+    DataSource ds = new EmbeddedDatabaseBuilder()
+      .setType(EmbeddedDatabaseType.H2)  // 或复用项目 SQLite TestConfig
+      .addScript("classpath:db/migration/V1__init_schema.sql")
+      // ...加载到 V16
+      .build();
+    repo = new MemorySpaceRepository(new JdbcTemplate(ds), new ObjectMapper());
+  }
 
-    @Test
-    void ensureProjectSpace_首次创建_type为PROJECT() {
-        MemorySpace space = repo.ensureProjectSpace("project-123");
-        assertEquals(MemorySpaceType.PROJECT, space.spaceType());
-        assertEquals("project:project-123", space.spaceKey());
-        assertEquals("PROJECT", space.ownerType());
-        assertEquals("project-123", space.ownerId());
-    }
+  @Test
+  void ensureProjectSpace_首次创建_type为PROJECT() {
+    MemorySpace space = repo.ensureProjectSpace("project-123");
+    assertEquals(MemorySpaceType.PROJECT, space.spaceType());
+    assertEquals("project:project-123", space.spaceKey());
+    assertEquals("PROJECT", space.ownerType());
+    assertEquals("project-123", space.ownerId());
+  }
 
-    @Test
-    void ensureProjectSpace_重复调用_返回同一个空间() {
-        MemorySpace a = repo.ensureProjectSpace("project-123");
-        MemorySpace b = repo.ensureProjectSpace("project-123");
-        assertEquals(a.id(), b.id());
-    }
+  @Test
+  void ensureProjectSpace_重复调用_返回同一个空间() {
+    MemorySpace a = repo.ensureProjectSpace("project-123");
+    MemorySpace b = repo.ensureProjectSpace("project-123");
+    assertEquals(a.id(), b.id());
+  }
 }
 ```
 
@@ -696,6 +699,9 @@ git commit -m "feat(project): 新增 ProjectRepository CRUD"
 package com.lifepilot.project.service;
 
 import com.lifepilot.memory.scope.*;
+import com.lifepilot.memory.store.scope.MemorySpace;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceType;
 import com.lifepilot.project.model.*;
 import com.lifepilot.project.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
@@ -704,6 +710,7 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -711,9 +718,12 @@ import static org.junit.jupiter.api.Assertions.*;
 @ExtendWith(MockitoExtension.class)
 class ProjectService_单元测试 {
 
-    @Mock ProjectRepository projectRepository;
-    @Mock MemorySpaceRepository memorySpaceRepository;
-    @InjectMocks ProjectService service;
+    @Mock
+    ProjectRepository projectRepository;
+    @Mock
+    MemorySpaceRepository memorySpaceRepository;
+    @InjectMocks
+    ProjectService service;
 
     @Test
     void createProject_会自动建关联MemorySpace() {
@@ -771,8 +781,8 @@ Expected: 编译失败
 ```java
 package com.lifepilot.project.service;
 
-import com.lifepilot.memory.scope.MemorySpace;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpace;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
@@ -1067,7 +1077,9 @@ git commit -m "feat(project): 新增 /api/projects CRUD"
 ```java
 package com.lifepilot.memory.scope;
 
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class MemoryReadFilter_项目过滤器测试 {
@@ -1176,6 +1188,9 @@ git commit -m "feat(memory): MemoryReadFilter 新增 buildForProject 工厂方�
 package com.lifepilot.project.context;
 
 import com.lifepilot.memory.scope.*;
+import com.lifepilot.memory.store.scope.MemorySpace;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceType;
 import com.lifepilot.project.model.*;
 import com.lifepilot.project.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
@@ -1185,15 +1200,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.Optional;
+
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
 class ProjectContextResolver_单元测试 {
 
-    @Mock ProjectRepository projectRepository;
-    @Mock MemorySpaceRepository memorySpaceRepository;
-    @InjectMocks ProjectContextResolver resolver;
+    @Mock
+    ProjectRepository projectRepository;
+    @Mock
+    MemorySpaceRepository memorySpaceRepository;
+    @InjectMocks
+    ProjectContextResolver resolver;
 
     @Test
     void projectId为null_返回主账户上下文() {
@@ -1265,8 +1284,8 @@ public record ProjectContext(
 // ProjectContextResolver.java
 package com.lifepilot.project.context;
 
-import com.lifepilot.memory.scope.MemorySpace;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpace;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
@@ -2642,7 +2661,7 @@ package com.lifepilot.project;
 
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.service.ProjectService;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -2653,8 +2672,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 class ProjectLifecycle_集成测试 {
 
-    @Autowired ProjectService projectService;
-    @Autowired MemorySpaceRepository memorySpaceRepository;
+    @Autowired
+    ProjectService projectService;
+    @Autowired
+    MemorySpaceRepository memorySpaceRepository;
 
     @Test
     @Transactional
@@ -2722,6 +2743,8 @@ git commit -m "test(project): 新增项目生命周期端到端集成测试"
 package com.lifepilot.project;
 
 import com.lifepilot.memory.scope.*;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.project.context.*;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.service.ProjectService;
@@ -2737,9 +2760,12 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 class ProjectIsolation_端到端测试 {
 
-    @Autowired ProjectService projectService;
-    @Autowired ProjectContextResolver resolver;
-    @Autowired MemorySpaceRepository spaceRepo;
+    @Autowired
+    ProjectService projectService;
+    @Autowired
+    ProjectContextResolver resolver;
+    @Autowired
+    MemorySpaceRepository spaceRepo;
 
     @Test
     @Transactional

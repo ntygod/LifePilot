@@ -135,7 +135,8 @@ graph TB
 | `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | `observability.guardrail` | 安全护栏（内容安全 / 速率限制 / 数据脱敏策略引擎，不再独立为顶层包） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
 | `mcp` | Model Context Protocol 客户端、懒连接生命周期、工具缓存、自动发现、传输层 | [架构](architecture/mcp-support.md) · [特性](features/mcp-support.md) |
-| `memory` | 四层记忆（工作/情景/语义/程序）、向量检索、知识图谱、遗忘策略 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
+| `memory` | 四层记忆存储（工作/情景/语义/程序）、向量检索、知识图谱、热摘要消费、数据治理 | [架构](architecture/memory-system.md) · [特性](features/memory-system.md) |
+| `agent.learning` | 学习系统：对话提取、经验总结、巩固管线、认知遗忘、效果追踪 | [架构](architecture/agent-learning.md) · [特性](features/agent-learning.md) |
 | `knowledge` | 文档摄入、多格式解析、分块策略、多知识库管理、Reranker | [架构](architecture/knowledge-base.md) · [特性](features/knowledge-base.md) |
 | `skill` | SKILL.md 三级分层（L1/L2/L3）、四来源安装（BUILTIN/USER_IMPORTED/MARKETPLACE/AUTO_GENERATED）、`skill.load` 统一激活、`SkillSynthesizer` 自生成 | [架构](architecture/skill-system.md) · [特性](features/skill-system.md) |
 | `interaction` | MessageGateway、中间件管道、Channel 适配器（插件架构）、Web 端点 | [架构](architecture/gateway-middleware.md) · [架构](architecture/channel-plugin-architecture.md) · [特性](features/gateway-channels.md) |

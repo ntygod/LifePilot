@@ -2,6 +2,8 @@ package com.lifepilot.memory.semantic;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
+import com.lifepilot.memory.store.entity.EntityType;
 import org.springframework.lang.Nullable;
 
 import java.util.Map;

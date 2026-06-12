@@ -18,10 +18,10 @@ import com.lifepilot.agent.task.reminder.timing.GoldilocksWindowCalculator;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.notification.NotificationRepository;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationAutoConfiguration;
@@ -62,10 +62,12 @@ public class ProactiveAutoConfiguration {
             @Autowired(required = false) ProceduralMemory proceduralMemory,
             GoalTrackingRepository goalTrackingRepository,
             JdbcTemplate jdbcTemplate,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            @Autowired(required = false) com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
         var bridge = new ProactiveMemoryBridge(
                 semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, jdbcTemplate);
         bridge.setEventPublisher(eventPublisher);
+        bridge.setMemoryAttentionService(memoryAttentionService);
         return bridge;
     }
 

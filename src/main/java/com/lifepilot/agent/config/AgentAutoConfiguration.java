@@ -6,6 +6,7 @@ import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
 import com.lifepilot.agent.checkpoint.SqliteAgentCheckpointStore;
 import com.lifepilot.agent.context.*;
+import com.lifepilot.agent.learning.experience.*;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.agent.persistence.AgentPersistenceHandler;
@@ -29,17 +30,17 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
-import com.lifepilot.memory.document.MemoryDocumentRepository;
-import com.lifepilot.memory.experience.*;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.hot.HotMemoryDigestService;
-import com.lifepilot.memory.procedural.IntentMatcher;
-import com.lifepilot.memory.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.document.MemoryDocumentRepository;
+import com.lifepilot.agent.learning.experience.*;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.semantic.RealtimeExtractor;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.workspace.SessionWorkspaceService;
-import com.lifepilot.memory.workspace.WorkspaceProperties;
+import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.store.workspace.WorkspaceProperties;
 import com.lifepilot.observability.context.ContextReportRepository;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -54,7 +55,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -200,7 +200,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SkillRequirementGate skillRequirementGate,
             @Autowired(required = false) ProjectContextResolver projectContextResolver,
             @Autowired(required = false) ChatSessionRepository chatSessionRepository,
-            @Autowired(required = false) HotMemoryDigestService hotMemoryDigestService) {
+            @Autowired(required = false) HotMemoryDigestService hotMemoryDigestService,
+            @Autowired(required = false) com.lifepilot.agent.intelligence.AdaptiveDecisionEngine adaptiveDecisionEngine) {
         log.info("Agent 引擎：注册 ContextAssembler，contextEngine={}，L3={}，hotDigest={}，projectContext={}",
                 contextEngine != null ? "enabled" : "disabled",
                 semanticMemory != null ? "enabled" : "disabled",
@@ -225,6 +226,7 @@ public class AgentAutoConfiguration {
         assembler.setProjectContextResolver(projectContextResolver);
         assembler.setChatSessionRepository(chatSessionRepository);
         assembler.setHotMemoryDigestService(hotMemoryDigestService);
+        assembler.setAdaptiveDecisionEngine(adaptiveDecisionEngine);
         return assembler;
     }
 
@@ -315,7 +317,8 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) SessionWorkspaceService workspaceService,
             @Autowired(required = false) ExperienceSummarizer experienceSummarizer,
             @Autowired(required = false) SessionArtifactRepository sessionArtifactRepository,
-            @Autowired(required = false) com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager) {
+            @Autowired(required = false) com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager,
+            @Autowired(required = false) com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor) {
         var loop = new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -338,6 +341,7 @@ public class AgentAutoConfiguration {
         // 文件产物链路：让 Agent 主循环把工具产物升级为 session_artifacts 并通过 SSE 推送
         loop.setSessionArtifactRepository(sessionArtifactRepository);
         loop.setSseSessionManager(sseSessionManager);
+        loop.setCapabilityAssessor(capabilityAssessor);
         return loop;
     }
 

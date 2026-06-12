@@ -1,6 +1,6 @@
 package com.lifepilot.memory.episodic;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -70,7 +70,7 @@ class EpisodicMemory_V1Schema召回测试 {
                     "history");
             assertThat(ftsCount).isEqualTo(2);
 
-            var episodicMemory = new EpisodicMemory(jdbcTemplate, new MemoryProperties());
+            var episodicMemory = new EpisodicMemory(jdbcTemplate);
             var snippets = episodicMemory.searchSnippetsExcludingSession("transcript", "current", 3);
 
             assertThat(snippets).hasSize(1);

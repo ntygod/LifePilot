@@ -5,13 +5,13 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.scope.MemoryWriteContext;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.tool.model.ToolInput;
@@ -61,7 +61,7 @@ class MemoryToolProvider_项目写入路径测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryProperties(),
+                new MemoryRetrievalProperties(),
                 projectContextResolver,
                 chatSessionRepository
         );
@@ -165,7 +165,7 @@ class MemoryToolProvider_项目写入路径测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryProperties()
+                new MemoryRetrievalProperties()
         );
         var fallbackRegistry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         providerWithoutResolver.registerTools(fallbackRegistry);

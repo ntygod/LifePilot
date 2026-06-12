@@ -7,16 +7,18 @@ import com.lifepilot.knowledge.model.ExtractionResult;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.memory.scope.MemoryOriginType;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryRealityType;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
-import com.lifepilot.memory.scope.MemoryWriteContext;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.support.SqliteBusyRetry;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.store.scope.MemoryOriginType;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryRealityType;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.support.SqliteBusyRetry;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -213,12 +215,17 @@ public class KnowledgeExtractionPipeline {
                                                 String sourceId, String targetId,
                                                 String documentId) {
         var now = Instant.now();
+        float strength = Math.max(0.0f, Math.min(1.0f, info.strength()));
+        float relTrust = MemoryQualityPolicy.trustScoreFor(MemoryEvidenceKind.DOCUMENT_GROUNDED, strength);
         return new TemporalRelation(
                 UUID.randomUUID().toString(),
                 sourceId, targetId,
                 info.relationType(),
-                Math.max(0.0f, Math.min(1.0f, info.strength())),
-                null, now, null, documentId, now);
+                strength,
+                null, now, null, documentId, now)
+                .withQuality(MemoryEvidenceKind.DOCUMENT_GROUNDED,
+                        MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DOCUMENT_GROUNDED, relTrust),
+                        relTrust);
     }
 
     @Nullable

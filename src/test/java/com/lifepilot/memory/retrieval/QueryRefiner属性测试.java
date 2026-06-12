@@ -1,6 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import net.jqwik.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,9 +29,9 @@ class QueryRefiner属性测试 {
 
         String output = refiner.refine(input);
 
-        assertTrue(output.length() <= properties.getRetrieval().getQueryMaxLength(),
+        assertTrue(output.length() <= properties.getQueryMaxLength(),
                 "refine() 输出长度 %d 超过 queryMaxLength %d, input='%s', output='%s'"
-                        .formatted(output.length(), properties.getRetrieval().getQueryMaxLength(),
+                        .formatted(output.length(), properties.getQueryMaxLength(),
                                 truncate(input, 50), truncate(output, 50)));
     }
 
@@ -65,7 +65,7 @@ class QueryRefiner属性测试 {
     void refine移除填充词且长度不增(@ForAll("stringsWithFillers") String input) {
         var properties = buildProperties(500);
         // queryMinLength 设为 1 确保不跳过精炼
-        properties.getRetrieval().setQueryMinLength(1);
+        properties.setQueryMinLength(1);
         var refiner = new QueryRefiner(properties);
 
         String output = refiner.refine(input);
@@ -140,10 +140,10 @@ class QueryRefiner属性测试 {
     //  辅助方法
     // ─────────────────────────────────────────────
 
-    private MemoryProperties buildProperties(int queryMaxLength) {
-        var properties = new MemoryProperties();
-        properties.getRetrieval().setQueryMaxLength(queryMaxLength);
-        properties.getRetrieval().setQueryMinLength(10);
+    private MemoryRetrievalProperties buildProperties(int queryMaxLength) {
+        var properties = new MemoryRetrievalProperties();
+        properties.setQueryMaxLength(queryMaxLength);
+        properties.setQueryMinLength(10);
         return properties;
     }
 

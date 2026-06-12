@@ -1,15 +1,16 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.agent.learning.experience.EffectivenessTracker;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.lifecycle.WeightSource;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -47,12 +48,12 @@ class EffectivenessTracker_单元测试 {
     @Mock
     private InjectionRecordRepository injectionRecordRepository;
 
-    private MemoryProperties memoryProperties;
+    private AgentLearningProperties memoryProperties;
     private EffectivenessTracker tracker;
 
     @BeforeEach
     void 初始化() {
-        memoryProperties = new MemoryProperties();
+        memoryProperties = new AgentLearningProperties();
         // 使用默认配置：successRatioThreshold=0.5, positiveBoost=0.05, negativeDecay=0.03, evictionThreshold=0.1
         tracker = new EffectivenessTracker(semanticMemory, injectionRecordRepository, memoryProperties);
     }

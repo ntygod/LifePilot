@@ -8,8 +8,8 @@ import com.lifepilot.conversation.artifact.SessionArtifactRepository;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
-import com.lifepilot.memory.event.MemoryEvent;
-import com.lifepilot.memory.event.MemoryEventBus;
+import com.lifepilot.memory.store.event.MemoryEvent;
+import com.lifepilot.memory.store.event.MemoryEventBus;
 import com.lifepilot.observability.context.ContextReportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -148,7 +148,6 @@ class ContextEngine_集成测试 {
         config.getContext().setOutputReservedTokens(512);
         config.getContext().getTokenAllocation().setToolResultPercent(20);
         config.getContext().getTokenAllocation().setMemoryPercent(15);
-        config.getContext().getSlice().setRecentTurnLimit(2);
         config.getContext().getSlice().setRecentArtifactLimit(2);
         config.getContext().getPruning().setRecentToolResultLimit(10);
         config.getContext().getPruning().setToolResultPreviewChars(80);

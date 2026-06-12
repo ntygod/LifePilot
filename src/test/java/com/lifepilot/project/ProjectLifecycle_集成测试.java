@@ -3,7 +3,8 @@ package com.lifepilot.project;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.interaction.web.model.ChatSession;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemorySpaceType;
 import com.lifepilot.project.model.Project;
 import com.lifepilot.project.model.ProjectIsolation;
 import com.lifepilot.project.repository.ProjectRepository;
@@ -197,7 +198,7 @@ class ProjectLifecycle_集成测试 {
         // 关联的 MemorySpace 被自动创建且可查
         assertThat(memorySpaceRepository.findById(p.memorySpaceId())).isPresent();
         assertThat(memorySpaceRepository.findById(p.memorySpaceId()).orElseThrow().spaceType())
-                .isEqualTo(com.lifepilot.memory.scope.MemorySpaceType.PROJECT);
+                .isEqualTo(MemorySpaceType.PROJECT);
     }
 
     @Test

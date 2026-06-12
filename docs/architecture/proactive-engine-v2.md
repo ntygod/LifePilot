@@ -371,7 +371,7 @@ lifepilot:
       llm-scene: thinking
 ```
 
-### 7.5 想法成熟度模型
+### 7.5 想法成熟度模型（已落地 thought-maturity-evolution）
 
 想法不是产生了就立刻表达。它需要"酝酿"：
 
@@ -382,11 +382,15 @@ lifepilot:
 | 0.6 - 0.8 | 比较成熟，值得表达 | 进入 Gatekeeper 评估 |
 | 0.8 - 1.0 | 非常成熟或紧急 | 优先表达 |
 
-成熟度会随时间和新证据变化：
-- 新的相关信号到达 → maturity +0.1~0.3
-- 时间流逝接近截止日期 → maturity 自然增长
-- 用户主动提到相关话题 → maturity 直接跳到 1.0（但此时可能不需要主动了，因为用户自己提了）
-- 长时间无新证据 → maturity 缓慢衰减，最终 DISMISSED
+成熟度由确定性纯函数组件 `MaturityModel`（`com.lifepilot.agent.initiative.maturity`）按三种力演化（不调 LLM、不依赖随机、`now` 由调用方传入，可复现）：
+
+- **证据强化（reinforce，离散）**：同 intentKey 再次被观察到时，`ThoughtPool.submit` 按新证据 relevance 加权提升 maturity——`gain = reinforceBaseGain · weight · (1 - maturity)`，越接近 1.0 增量越小（边际递减），并合并证据、刷新 `lastReinforcedAt`。取代了原先固定 `+0.1`。
+- **截止升温（deadline pull，连续）**：带未来截止锚点（`matureAt`，由 DefaultThinker 从注意力项 `dueAt` 注入）的想法，在截止前 `deadlinePullWindowHours` 窗口内随临近线性升温，逾期取最大；作为下托底（`max(decayed, pull)`），不被衰减压住。
+- **停滞衰减（staleness decay，连续）**：自 `lastReinforcedAt` 起超过 `decayGraceHours` 宽限期后，maturity 按 `decayHalfLifeHours` 指数半衰期衰减。
+
+状态迁移由 maturity 驱动且带迟滞（避免阈值附近抖动）：BREWING→READY 当 `maturity ≥ readyThreshold(0.6)`；READY→BREWING 当 `maturity < demoteThreshold(0.5)`；任意活跃态 → DISMISSED 当 `maturity ≤ dismissFloor(0.15)`。EXPRESSED/终态不被演化改写。硬 TTL（brewing/ready）保留为兜底。
+
+演化在 `InitiativeEngine.tryExpress` / `idleThink` 前由 `ThoughtPool.evolve(now)` 周期重算并持久化（`initiative_thoughts.last_reinforced_at`，V4 迁移新增列），重启后曲线连续。配置见 §15 `lifepilot.initiative.maturity.*`。
 
 
 ---
@@ -400,6 +404,10 @@ lifepilot:
 1. **意图级去重**：同一个 `intentKey` 只允许存在一个活跃想法
 2. **生命周期管理**：自动过期、自动清理
 3. **优先级排序**：当多个想法同时就绪时，决定表达顺序
+4. **持久化与重启恢复**（memory-trust-and-cleanup）：注入 `@Nullable ThoughtRepository`（`initiative_thoughts` 表）后，
+   `submit` / `transition` / `cleanup` 即写库（best-effort，失败仅 warn 不阻塞思考）；构造时 `loadActiveFromRepository`
+   从库恢复 `BREWING` / `READY` 活跃想法，避免重启丢失去重与冷却状态。未注入仓库时退化为纯内存（测试/未启用持久化）。
+   终态（`DISMISSED` / `ABSORBED`）想法不在恢复集合内。
 
 ### 8.2 intentKey 设计
 
@@ -998,6 +1006,16 @@ lifepilot:
       ready-ttl-hours: 48
       expressed-cooldown-days: 7
       dismissed-cooldown-days: 3
+
+    # 想法成熟度演化（thought-maturity-evolution）
+    maturity:
+      ready-threshold: 0.6            # ≥ 则 BREWING→READY
+      demote-threshold: 0.5           # READY 且 < 则回退 BREWING（迟滞带）
+      dismiss-floor: 0.15             # ≤ 则 DISMISSED
+      reinforce-base-gain: 0.15       # 强化基础增益（再乘证据权重与边际递减）
+      decay-half-life-hours: 48       # 停滞衰减半衰期
+      decay-grace-hours: 24           # 衰减宽限期（期内不衰减）
+      deadline-pull-window-hours: 72  # 截止升温窗口
 
     # 表达门控
     gatekeeper:

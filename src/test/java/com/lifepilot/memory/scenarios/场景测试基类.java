@@ -3,14 +3,14 @@ package com.lifepilot.memory.scenarios;
 import com.lifepilot.LifePilotApplication;
 import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.TurnResult;
-import com.lifepilot.memory.feedback.FeedbackProcessor;
-import com.lifepilot.memory.lifecycle.query.MemoryQueryApi;
-import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.memory.support.FeedbackGateway;
-import com.lifepilot.memory.support.LlmFixture;
-import com.lifepilot.memory.support.ManualTaskScheduler;
-import com.lifepilot.memory.support.MutableClock;
-import com.lifepilot.memory.support.ScenarioTestConfiguration;
+import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
+import com.lifepilot.memory.governance.lifecycle.query.MemoryQueryApi;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.support.FeedbackGateway;
+import com.lifepilot.memory.store.support.LlmFixture;
+import com.lifepilot.memory.store.support.ManualTaskScheduler;
+import com.lifepilot.memory.store.support.MutableClock;
+import com.lifepilot.memory.store.support.ScenarioTestConfiguration;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -89,7 +89,7 @@ public abstract class 场景测试基类 {
                 .toString()
                 .replace("\\", "/");
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
-        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+        registry.add("lifepilot.memory.store.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
     }
 
     @Autowired protected ReactAgentLoop agentLoop;

@@ -1,6 +1,5 @@
 package com.lifepilot.agent.task.proactive;
 
-import com.lifepilot.memory.procedural.PreferenceRule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;

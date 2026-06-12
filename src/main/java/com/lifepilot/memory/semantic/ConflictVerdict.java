@@ -1,5 +1,6 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
 import jakarta.annotation.Nullable;
 
 /**

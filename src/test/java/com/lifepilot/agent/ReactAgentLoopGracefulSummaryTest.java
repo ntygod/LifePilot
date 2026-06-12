@@ -217,7 +217,7 @@ class ReactAgentLoopGracefulSummaryTest {
     }
 
     private void 准备搜索工具() {
-        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class))).thenReturn(List.of(
+        when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
                 创建工具回调("web.search", "互联网搜索",
                         "{\"status\":\"OK\",\"data\":{\"query\":\"AI news\",\"summary\":\"OpenAI发布新模型，国内大模型更新\"}}")
         ));

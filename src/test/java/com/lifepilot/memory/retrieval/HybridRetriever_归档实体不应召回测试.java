@@ -1,7 +1,7 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +36,7 @@ class HybridRetriever_归档实体不应召回测试 {
     private GraphTraverser graphTraverser;
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
-    private MemoryProperties properties;
+    private MemoryRetrievalProperties properties;
 
     @BeforeEach
     void 初始化() {
@@ -45,9 +45,9 @@ class HybridRetriever_归档实体不应召回测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
-        properties = new MemoryProperties();
-        properties.getRetrieval().setMinVectorSimilarity(0.0f);
-        properties.getRetrieval().setMinFusedScore(0.0f);
+        properties = new MemoryRetrievalProperties();
+        properties.setMinVectorSimilarity(0.0f);
+        properties.setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
     }
 

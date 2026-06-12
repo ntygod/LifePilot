@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -85,7 +86,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenReturn(new LlmResponse(llmOutput, null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             generator.generateIfNeeded(sessionId, userMessage);
@@ -167,7 +168,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenReturn(new LlmResponse(null, null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             generator.generateIfNeeded(sessionId, "你好");
@@ -335,7 +336,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenReturn(new LlmResponse("英文对话", null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             generator.generateIfNeeded(sessionId, "Hello");
@@ -360,7 +361,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("rendered prompt");
             when(generationRouter.call(
                     eq("session-title"), eq("rendered prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenReturn(new LlmResponse("天气预报查询", null, null, List.of(), Map.of(), 20, 8, null, 0, "openai", "gpt-4o-mini", 200, false));
 
             generator.generateIfNeeded(sessionId, userMessage);
@@ -392,7 +393,7 @@ class SessionTitleGenerator_标题生成测试 {
             });
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenReturn(new LlmResponse("长消息讨论", null, null, List.of(), Map.of(), 20, 8, null, 0, "p1", "m1", 200, false));
 
             generator.generateIfNeeded(sessionId, longMessage);
@@ -411,7 +412,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenReturn(new LlmResponse("无SSE标题", null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
 
             gen.generateIfNeeded(sessionId, "你好");
@@ -435,7 +436,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenThrow(new RuntimeException("连接超时"));
 
             // 不应抛出异常
@@ -469,7 +470,7 @@ class SessionTitleGenerator_标题生成测试 {
             when(promptRegistry.render(eq("generation/session-title"), any())).thenReturn("prompt");
             when(generationRouter.call(
                     eq("session-title"), eq("prompt"), eq(null), eq(null), eq(null),
-                    eq(GenerationCapability.CHAT), any(Duration.class)
+                    eq(GenerationCapability.CHAT), any(Duration.class), anyBoolean()
             )).thenReturn(new LlmResponse("正常标题", null, null, List.of(), Map.of(), 10, 5, null, 0, "p1", "m1", 100, false));
             // SSE 广播时抛异常 — pushTitleUpdate 内部 catch 了，不影响主流程
             // 注意：broadcastByPrefix 异常在 pushTitleUpdate 内被 catch，不会传播到 generateIfNeeded

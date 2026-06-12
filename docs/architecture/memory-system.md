@@ -1,8 +1,8 @@
 # 记忆系统 — 架构设计
 
 > **文档性质**：记忆模块整体心智模型、分层模型、子系统设计与演进路线
-> **模块归属**：`com.lifepilot.memory` + `com.lifepilot.agent.context` + `com.lifepilot.meta.infra.memory`
-> **最后更新**：2026-05-10（合并 memory-advanced / memory-domain-isolation 以及本轮 8 个 spec 的架构说明）
+> **模块归属**：`com.lifepilot.memory.{store,retrieval,consumption,governance}` + `com.lifepilot.agent.learning` + `com.lifepilot.meta.infra.memory`
+> **最后更新**：2026-05-21（MemoryProperties 拆分完成，配置前缀迁移至子模块）
 > **配套数据流契约**：[memory-data-flow.md](./memory-data-flow.md) 是写入链路、事件契约、Schema、生命周期、项目隔离、质量门槛和消费边界的 **source of truth**
 >
 > 涉及这些治理契约的改动，必须先更新 `memory-data-flow.md`，再更新本文档的心智模型或路线，最后改代码。
@@ -190,7 +190,7 @@ L3.5 是从 L3 派生的**小型、可解释、带来源的 Prompt 表面**，�
 - 节点：`memory_entities` + `memory_entity_versions` + `memory_entity_provenances`
 - 边：`memory_relations` + `memory_relation_versions` + `memory_relation_provenances`
 - 读视图：`temporal_relations`
-- 入口：知识库文档提取实体/关系、`memory(action="tag")` 显式标注、`HybridRetriever` 图遍历、`GraphKnowledgeSearcher` 领域图检索
+- 入口：知识库文档提取实体/关系、对话期关系抽取（`RealtimeExtractor` 二阶段，写入 memory_relations）、`memory(action="tag")` 显式标注、`HybridRetriever` 图遍历、`GraphKnowledgeSearcher` 领域图检索
 
 终态要把图分成两类：
 
@@ -216,41 +216,15 @@ Hindsight 0.5 的经验：把传统 BFS / 多路径传播收敛为 `LinkExpansio
 
 ## 3. 写入链路
 
+> **学习相关的写入链路**（自动对话学习、经验学习）已迁移到 [agent-learning.md](./agent-learning.md)。本节只保留记忆系统自身的写入入口。
+
 ### 3.1 自动对话学习
 
-```mermaid
-sequenceDiagram
-    participant T as session_transcript_entries
-    participant S as ChatTurnMemorySnapshot
-    participant R as RealtimeExtractor
-    participant C as memory_extraction_candidates
-    participant Q as MemoryQualityPolicy
-    participant M as SemanticMemory
-    participant O as memory_projection_outbox
-
-    T->>R: 用户可治理文本
-    S->>R: 本轮读写范围快照
-    R->>R: LLM AUDN 决策
-    R->>C: 写候选与证据
-    C->>Q: 质量门控
-    Q-->>R: VALIDATED / REJECTED
-    R->>M: governed upsert / archive
-    M->>O: after-commit projection task
-```
-
-硬规则：
-
-- 缺 `ChatTurnMemorySnapshot` 直接跳过自动学习
-- `RealtimeExtractor` 的 existing summary 可以读取继承空间，但 UPDATE / DELETE 只能命中可写空间
-- `UNKNOWN` 证据不得写主库；低质量候选必须留审计
-- `importance_score` 不是质量分；是否可写、可注入、可派生由 `trust_level` / `trust_score` / `evidence_kind` 决定
+详见 [agent-learning.md §2.1](./agent-learning.md)。学习系统通过 `SemanticMemory.upsertWithConflictDetection()` 写入记忆，记忆系统只负责存储和治理，不参与提取决策。
 
 ### 3.2 经验学习
 
-- `ExperienceSummarizer` 只写可迁移的任务级经验
-- `SubtaskReflector` 只写工具级经验，带 `toolId` 和 `granularity=TOOL_LEVEL`
-- 工具级经验不进入通用经验注入；只由 `ToolTipResolver` 在匹配工具时提供提示
-- `ContrastiveLearner` 的终态应产出独立派生洞察，而不是无血缘地原地增强
+详见 [agent-learning.md §2.2](./agent-learning.md)。经验写入同样通过 `SemanticMemory` 标准接口，记忆系统按质量门槛和项目隔离规则治理。
 
 ### 3.3 显式工具与 Web 写入
 
@@ -375,56 +349,38 @@ overlay 不改变 base 实体生命周期，不复制 base provenance 的治理�
 
 ## 6. 进阶子系统
 
+> **巩固管线、遗忘引擎、经验学习**等学习相关子系统已迁移到 [agent-learning.md](./agent-learning.md)。本节只保留记忆系统自身的进阶能力。
+
 ### 6.1 L4 程序记忆与意图匹配
 
-- `ProcedureTemplate`：操作模板，包含步骤序列（`TemplateStep`）、触发意图、成功率、执行次数；模板聚类由 `lifepilot.memory.procedural.templateEnabled` 控制，默认启用
+- `ProcedureTemplate`：操作模板，包含步骤序列（`TemplateStep`）、触发意图、成功率、执行次数；模板聚类由 `lifepilot.memory.store.procedural.template-enabled` 控制，默认启用
 - `PreferenceRule`：偏好规则，按 category + key 组织，支持强化（reinforcement）
 - 使用 sqlite-vec 建立意图向量索引（`procedure_intent_embeddings`），记录每次模板执行的成功 / 失败，动态更新成功率
 - `IntentMatcher`：通过 VectorSearcher 进行向量相似度匹配，返回最佳匹配的 `ProcedureTemplate`；结果供 `HybridRetriever` 冷检索链路参考，**不进入 `ContextAssembler` 默认自动注入**
 - 在 `ToolExecutionCoordinator` 中以 `Thread.startVirtualThread` 异步调用，不阻塞主 Agent 循环
 
-### 6.2 记忆巩固管线
+> 注：L4 的数据（ProcedureTemplate / PreferenceRule）由学习系统的巩固管线写入，但 L4 的**存储和检索**属于记忆系统。IntentMatcher 是纯检索组件，不产出新知识。
 
-`ConsolidationPipeline` 按 Cron 触发（也提供 `consolidate()` 入口供未来 Idle-Driven 使用），顺序执行七步，故障隔离：
+### 6.2 巩固管线
 
-| 阶段 | 组件 | 职责 |
-|---|---|---|
-| 1. 语义巩固 | `EpisodicToSemanticConsolidator` | 高频提及的已有 L3 实体直接 `UPDATE importanceScore`（不创建新版本，避免与 RealtimeExtractor 并发时的唯一约束冲突） |
-| 2. 程序巩固 | `EpisodicToProceduralConsolidator` | 分析对话轨迹中工具调用序列，相似度超阈值聚类为 `ProcedureTemplate` |
-| 3. 偏好同步 | `PreferenceConsolidator` | L3 `PREFERENCE` 实体同步为 L4 `PreferenceRule`（只允许 `VERIFIED / EXPLICIT` 进入） |
-| 4. 经验合并 | `ExperienceMerger` | 向量相似度检测 + LLM 合并泛化元经验 |
-| 5. 用户画像巩固 | `UserProfileConsolidator` | 读取 L3 碎片 + L4 偏好 + 最近对话摘要，调 LLM 生成 `__consolidated_profile`；按源签名防抖（≥2h） |
-| 6. 经验提升 | `promoteHighFrequencyExperiences` | L3 `EXPERIENCE` 中 `importanceScore ≥ 0.8 且 accessCount ≥ 3` 提升为 `ProcedureTemplate`，源经验归档 |
-| 7. REM 式联想巩固 | `AssociationCandidateGenerator` + `AssociationConsolidator` | 详见 §8.5 |
-
-其中 `UserProfileConsolidator` 的实际触发由 `ConversationCompletionHook` 在对话完成后异步调用（虚拟线程），不再依赖定时到点。
+详见 [agent-learning.md §3](./agent-learning.md)。
 
 ### 6.3 MaRS 认知遗忘
 
-- 通过 sealed interface 定义 6 种策略：`FifoPolicy` / `LruPolicy` / `PriorityDecayPolicy` / `ReflectionSummaryPolicy` / `RandomDropPolicy` / `HybridPolicy`（编排四阶段遗忘流程）
-- `ForgettingEngine` 定时流程：获取当前实体 → 过滤受保护实体 → HybridPolicy 选择候选 → 执行遗忘动作 → 记录日志
-- 受保护实体（满足任一即受保护）：
-  - 受保护类型（默认 `PREFERENCE / HABIT / GOAL`）
-  - `importanceScore ≥ 保护阈值`（默认 0.9）
-  - `accessCount ≥ 高频访问保护阈值`（默认 10）
-  - 最近 `recentAccessProtectionDays` 内被访问过（默认 7 天）
-- 遗忘动作：中等重要度 + LLM 可用 → 压缩后归档；其他 → 直接归档；LLM 压缩失败降级为直接归档
-- 压缩调用走 `generationRouter.call(..., skipCache=true)` 8 参重载：每个实体的压缩 prompt 仅在 name / description 上有差异，不跳过语义缓存会张冠李戴
-- 归档动作统一走 `SemanticMemory.archive()`：事务内更新主库生命周期并登记 `memory_projection_outbox` DELETE 投影任务；保留失败补偿能力
-- 所有遗忘操作落 `forgetting_log` 表，支持事后追溯
+详见 [agent-learning.md §4](./agent-learning.md)。
 
 ### 6.4 子系统关键配置
 
 | 配置键 | 默认 | 说明 |
 |--------|------|------|
-| `lifepilot.memory.procedural.templateEnabled` | true | 操作模板聚类开关 |
-| `lifepilot.memory.procedural.match-threshold` | — | 意图匹配相似度阈值 |
-| `lifepilot.memory.consolidation.cron` | — | 巩固管线 Cron |
-| `lifepilot.memory.consolidation.trigger-mode` | cron | `cron` / `idle` |
-| `lifepilot.memory.forgetting.cron` | — | 遗忘引擎 Cron |
-| `lifepilot.memory.forgetting.max-forget-per-run` | — | 每次运行最大遗忘数 |
-| `lifepilot.memory.forgetting.recentAccessProtectionDays` | 7 | 近期访问保护天数 |
-| `lifepilot.memory.forgetting.highAccessCountProtection` | 10 | 高频访问保护阈值 |
+| `lifepilot.memory.store.procedural.template-enabled` | true | 操作模板聚类开关 |
+| `lifepilot.memory.store.procedural.match-threshold` | 0.6 | 意图匹配相似度阈值 |
+| `lifepilot.agent.learning.consolidation.cron` | `0 0 3 * * *` | 巩固管线 Cron |
+| `lifepilot.agent.learning.consolidation.trigger-mode` | CRON | `CRON` / `IDLE` / `HYBRID` |
+| `lifepilot.agent.learning.forgetting.cron` | `0 0 4 * * SUN` | 遗忘引擎 Cron |
+| `lifepilot.agent.learning.forgetting.max-forget-per-run` | 100 | 每次运行最大遗忘数 |
+| `lifepilot.agent.learning.forgetting.recent-access-protection-days` | 7 | 近期访问保护天数 |
+| `lifepilot.agent.learning.forgetting.high-access-count-protection` | 10 | 高频访问保护阈值 |
 
 ---
 
@@ -473,7 +429,7 @@ overlay 不改变 base 实体生命周期，不复制 base provenance 的治理�
 
 - `SourceAdapter` sealed interface：`HybridRetrievalSource` / `ExperienceRetrievalSource` / `KnowledgeBaseSource` 占位
 - `QueryPlanner` 按 `RetrievalIntent(FACT / EXPERIENCE / GENERAL)` 选 source，过滤 `isAvailable=false` 的 adapter
-- 本期为上层可选接口，默认 `lifepilot.memory.retrieval-orchestrator.enabled=false`，不替换既有 `memory.search / recall` 工具链路
+- 本期为上层可选接口，默认 `lifepilot.memory.retrieval.orchestrator.enabled=false`，不替换既有 `memory.search / recall` 工具链路
 - 后续演进：`QueryDecomposer`（复杂问题改写为子查询）、图扩展（GraphRAG / DRIFT）、`KnowledgeBaseSource` 真实实现、Agent 工具化 `memory.retrieve`
 
 Spec：`.kiro/specs/retrieval-orchestrator/`
@@ -483,7 +439,7 @@ Spec：`.kiro/specs/retrieval-orchestrator/`
 新事实写入时自动识别与之语义冲突的老邻居，迁入新的 `STALE_CANDIDATE` 生命周期态；召回时降权但不丢弃，Agent 命中时可自然追问确认。
 
 - `LifecycleState` 增 `STALE_CANDIDATE`；允许 `ACTIVE → STALE_CANDIDATE`、`STALE_CANDIDATE → ACTIVE / SUPERSEDED / ARCHIVED`，其他终态禁止进入
-- `VectorBasedStaleConflictDetector`：类型白名单（默认 `PREFERENCE / HABIT / LOCATION / GOAL`）+ 相似度阈值（默认 0.85）+ UNVERIFIED 过滤
+- `VectorBasedStaleConflictDetector`：类型白名单（默认 `PREFERENCE / HABIT / PLACE / GOAL`）+ 相似度阈值（默认 0.85）+ UNVERIFIED 过滤
 - `StalenessCoordinator`：虚拟线程 afterCommit 异步调度 `Detector → StalenessMarker → NeighborRefreshService`
 - `HybridRetriever`：`STALE_CANDIDATE` 命中分数乘 0.65（默认 penalty 0.35），`scoreBreakdown.lifecycleAdjustment` 可审
 - `ProactiveCacheInvalidator` 订阅 `EntityLifecycleChanged`，让主动引擎感知 L3 失活
@@ -517,7 +473,7 @@ Spec：`.kiro/specs/memory-eval-harness/`
 - 本 spec 只落地可用组件，**不强制注入到 RealtimeExtractor 等写入链路**；接入节奏由未来 spec 按实际风险场景推进
 - M-P2-7 前端血缘展示（EntityDetailDrawer 血缘 Tab / Provenance 时间线 / Overlay 关系图 / HotDigest 命中统计）作为前端独立迭代，后端 API 已就绪
 
-默认 `lifepilot.memory.security.injection-detection-enabled=false`。
+默认 `lifepilot.memory.governance.security.injection-detection-enabled=false`。
 
 Spec：`.kiro/specs/memory-security-polish/`
 
@@ -529,7 +485,7 @@ Spec：`.kiro/specs/memory-security-polish/`
 - `AssociationCandidateGenerator`：seed 选择（top-K 按 importance） + 邻居拉取 + LLM JSON 输出
 - `AssociationConsolidator`：confidence 过滤（默认 ≥0.65） + 24h 窗口去重
 - `AssociationCandidateStore`：文件持久化 `target/cache/memory-rem-associations/{yyyy-MM-dd}.json`（当天多次巩固合并到同一文件）
-- **候选落文件不直写 L3 relations**：避免与 AudnDecision 语义强绑定；未来 spec 加"关联应用器"做人工/自动审阅后再落主库
+- **候选先落文件、再由 `AssociationCandidateApplier` 应用到 L3 relations**：阈值 `apply-min-confidence`（默认 0.75）+ 端点存活校验 + `relationExists` 幂等；巩固周期 `runRemAssociation` 末尾自动触发，亦可经 `POST /api/memories/rem/apply` 手动触发
 - 默认 `enabled=false`；开启后 `seedLimit=10 × neighborLimit=5 = 50 次检索 + 10 次 LLM`
 
 Spec：`.kiro/specs/memory-rem-consolidation/`
@@ -547,12 +503,15 @@ Spec：`.kiro/specs/memory-mcp-server/`
 
 ### 8.7 剩余演进方向
 
-- **图记忆持续加固**：relation 级 `evidence_kind / trust_level / trust_score / evidence_excerpt` 补齐、对话关系自动提取候选、entity co-occurrence / semantic link / causal link 图投影 outbox
+- **图记忆持续加固**：relation 级 `evidence_kind / trust_level / trust_score` ✅ 已补齐（relation-quality-gate：按来源 CHAT_INFERRED/DERIVED/DOCUMENT_GROUNDED/USER_CONFIRMED 推导可信度，`GraphReasoner`/`GraphTraverser` 经 `lifepilot.memory.retrieval.min-relation-trust` 门控过滤低可信边，历史 NULL 边放行）；`evidence_excerpt`、entity co-occurrence / semantic link / causal link 图投影 outbox 待后续（对话关系自动提取已落地，见 §3.x / agent-learning §3.3.8）
 - **统一检索编排进阶**：并行 source 调用、`QueryDecomposer`、学习型 reranker、`KnowledgeBaseSource` 真实实现、`memory.retrieve` Agent 工具化
-- **REM 候选应用器**：文件候选 → 人工/自动审阅 → L3 relations 主库
+- **REM 候选应用器**：✅ 已落地（`AssociationCandidateApplier`，文件候选 → 阈值+幂等 → L3 relations 主库）
 - **前端血缘展示**：`EntityDetailDrawer` 血缘 Tab、Provenance 时间线、overlay / derivation 关系图、HotDigest 命中次数统计
 - **Staleness 精度提升**：时间距离 + 显式否定词（"我改了"/"现在是"）融合判定
 - **记忆注入安全接入**：把 `MemoryInjectionDetector` 真正前置到 `RealtimeExtractor` / KB 抽取链路
+- **记忆注意力**：✅ 已落地（`MemoryAttentionService` + `GraphReasoner`，主动浮现 EXPIRING/NEGLECTED/EVOLVING/CONNECTION，经 `GET /api/memories/attention` 与 `ProactiveMemoryBridge.getAttentionItems` 出口，见 agent-learning §3.3.9）
+- **注意力可信化质量门**：✅ 已落地（memory-trust-and-cleanup）所有注意力项过 `MemoryQualityPolicy.isPromptConsumable`，时间类信号限定 `ACTIVE`，CONNECTION 端点经 `existsConsumableById` 校验——不基于不可信/已完成记忆主动浮现
+- **目标截止日期感知**：✅ 已落地（`properties.dueAt` 独立于 `expires_at`，`DueDateExtractor` 确定性兜底覆盖 AUDN + memory 工具两条写入路径，注意力 DUE_SOON 信号，见 agent-learning §3.3.9）
 
 ---
 
@@ -560,6 +519,8 @@ Spec：`.kiro/specs/memory-mcp-server/`
 
 | 模块 | 边界 |
 |---|---|
+| `memory` | 负责存储、检索、消费视图、数据治理；不做学习决策 |
+| `agent.learning` | 负责从经历中提炼知识（提取、巩固、遗忘、经验）；通过记忆标准接口读写，见 [agent-learning.md](./agent-learning.md) |
 | `conversation` | 负责 L0 transcript 和 turn snapshot，不直接治理长期事实 |
 | `agent.context` | 负责消费记忆，不能绕过质量 / 生命周期 / 项目 filter |
 | `meta.infra.memory` | 暴露工具入口，所有写操作必须校验可写范围 |

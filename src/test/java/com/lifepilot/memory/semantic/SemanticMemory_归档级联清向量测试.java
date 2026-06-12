@@ -1,7 +1,8 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.projection.MemoryProjectionService;
+import com.lifepilot.memory.store.entity.*;
+import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

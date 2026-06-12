@@ -3,7 +3,7 @@ package com.lifepilot.agent.task.proactive;
 import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
-import com.lifepilot.memory.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

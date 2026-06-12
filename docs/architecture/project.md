@@ -251,7 +251,7 @@ L3 用户偏好 / L4 程序记忆的"项目级覆盖主账户同键"留给后续
 | 上下文组装（`com.lifepilot.agent.context`） | Agent → Project | `ContextAssembler` 通过 `ProjectContextResolver` 解析 ctx，按 filter 分键缓存 metadata 避免跨项目污染 |
 | 记忆工具（`com.lifepilot.meta.infra.memory`） | Tool → Project | `MemoryToolProvider` 从 `ToolInput.context.sessionId` 反查 ctx，构造 `toProjectFilter` 读 / `toProjectWriteContext` 写 |
 | 对话轮持久化（`com.lifepilot.conversation.chatturn`） | Turn → Project | `ChatTurnService.persistTurnMemorySnapshot` 按 session 的 projectId 填 `project_space_id`，固化到 snapshot |
-| 经验学习（`com.lifepilot.memory.experience`） | Memory → Project | `ExperienceSummarizer` / `SubtaskReflector` 写入按 `ProjectContext.writeContext` 路由 |
+| 经验学习（`com.lifepilot.agent.learning.experience`） | Memory → Project | `ExperienceSummarizer` / `SubtaskReflector` 写入按 `ProjectContext.writeContext` 路由 |
 | 定时任务（`com.lifepilot.agent.task` + `com.lifepilot.meta.infra.task`） | Project → Cron | `cron_tasks.project_id`；`CronActionDispatchExecutor` 创建时按 `ChatSession.projectId` 填充；`CronTaskRepository.findByProjectId` 供 `ScheduledTaskController` 过滤查询使用 |
 
 ## 8. 当前限制

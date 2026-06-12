@@ -5,7 +5,7 @@ import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -34,16 +34,16 @@ public class QueryRewriter {
     private final GenerationRouter generationRouter;
     @Nullable
     private final EmbeddingRouter embeddingRouter;
-    private final MemoryProperties.Retrieval retrievalConfig;
+    private final MemoryRetrievalProperties retrievalConfig;
     private final PromptRegistry promptRegistry;
 
     public QueryRewriter(@Nullable GenerationRouter generationRouter,
                          @Nullable EmbeddingRouter embeddingRouter,
-                         MemoryProperties properties,
+                         MemoryRetrievalProperties properties,
                          PromptRegistry promptRegistry) {
         this.generationRouter = generationRouter;
         this.embeddingRouter = embeddingRouter;
-        this.retrievalConfig = properties.getRetrieval();
+        this.retrievalConfig = properties;
         this.promptRegistry = promptRegistry;
         log.debug("初始化 QueryRewriter: mode={}, timeoutMs={}, maxRewrites={}",
                 retrievalConfig.getQueryRewriteMode(),

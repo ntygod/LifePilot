@@ -1,15 +1,15 @@
 package com.lifepilot.agent.task.proactive;
 
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.procedural.PreferenceRule;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.quality.MemoryEvidenceKind;
-import com.lifepilot.memory.quality.MemoryTrustLevel;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
-import com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.governance.lifecycle.events.ProactiveTaskCancelled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -51,6 +50,8 @@ public class ProactiveMemoryBridge {
     @Nullable private final JdbcTemplate jdbcTemplate;
     /** Spring 事件总线 — Task 13 发 ProactiveTaskCancelled；单测可为空。 */
     @Nullable private ApplicationEventPublisher eventPublisher;
+    /** 记忆注意力服务（memory-proactive-foundation）—— setter 注入，空时 getAttentionItems 返回空。 */
+    @Nullable private com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
 
     public ProactiveMemoryBridge(@Nullable SemanticMemory semanticMemory,
                                   @Nullable EpisodicMemory episodicMemory,
@@ -79,6 +80,38 @@ public class ProactiveMemoryBridge {
      */
     public void setEventPublisher(@Nullable ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * 注入记忆注意力服务（memory-proactive-foundation）—— setter 注入，与本类既有
+     * {@link #setEventPublisher} 同范式，避免破坏多参构造器签名与大量手工装配测试。
+     *
+     * @param memoryAttentionService 注意力服务，null 表示注意力能力关闭
+     */
+    public void setMemoryAttentionService(
+            @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
+        this.memoryAttentionService = memoryAttentionService;
+    }
+
+    /**
+     * 获取记忆主动浮现的注意力清单 —— 主动引擎消费"现在该关注什么"的统一入口。
+     *
+     * <p>按主账户画像范围读取；服务未注入时返回空列表。</p>
+     *
+     * @param topN 返回上限
+     * @return 注意力项列表（按 score 降序）
+     */
+    public List<com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionItem> getAttentionItems(int topN) {
+        if (memoryAttentionService == null) {
+            return List.of();
+        }
+        try {
+            // 与 /api/memories/attention 一致：{USER_PROFILE, USER_FACT}；均不含 DOMAIN_MEMORY，虚构/知识库记忆不浮现
+            return memoryAttentionService.computeAttention(MemoryReadFilter.userMemory(), topN);
+        } catch (Exception e) {
+            log.debug("记忆桥接: 注意力清单获取失败: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     /**
@@ -163,7 +196,7 @@ public class ProactiveMemoryBridge {
     /**
      * 事务提交后发布事件；无活跃事务时立即发布（fallback，保持单测/手工装配可用）。
      *
-     * <p>与 {@link com.lifepilot.memory.semantic.SemanticMemory} 的同名方法语义一致：
+     * <p>与 {@link SemanticMemory} 的同名方法语义一致：
      * 回滚路径下不产生幻觉事件，避免下游 listener 基于幻觉事件更新派生存储。</p>
      *
      * @param event Spring ApplicationEvent

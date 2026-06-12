@@ -10,6 +10,7 @@ import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
 import com.lifepilot.agent.execution.ReflectContentBuilder;
 import com.lifepilot.agent.execution.ToolExecutionCoordinator;
+import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
@@ -24,11 +25,11 @@ import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
-import com.lifepilot.memory.procedural.IntentMatcher;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.workspace.SessionWorkspaceService;
-import com.lifepilot.memory.workspace.TaskStateItem;
-import com.lifepilot.memory.workspace.WorkingSetItem;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
+import com.lifepilot.memory.store.workspace.TaskStateItem;
+import com.lifepilot.memory.store.workspace.WorkingSetItem;
 import com.lifepilot.observability.trace.LlmCallStep;
 import com.lifepilot.observability.trace.TraceContext;
 import com.lifepilot.observability.trace.TraceRecorder;
@@ -36,7 +37,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -107,7 +107,7 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final IntentMatcher intentMatcher;
 
     // ===== 可选依赖（即时经验补丁） =====
-    @Nullable private final com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer;
+    @Nullable private final ExperienceSummarizer experienceSummarizer;
 
     // ===== 可选依赖（run(Session, UserMessage) 便捷入口依赖） =====
     // 通过 setter 注入，避免破坏既有 18 参构造器签名；生产环境由 AgentAutoConfiguration 注入，
@@ -130,7 +130,7 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Nullable SessionWorkspaceService workspaceService,
-            @Nullable com.lifepilot.memory.experience.ExperienceSummarizer experienceSummarizer) {
+            @Nullable ExperienceSummarizer experienceSummarizer) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -196,6 +196,11 @@ public class ReactAgentLoop implements CallbackHelper {
      */
     public void setSseSessionManager(@Nullable com.lifepilot.interaction.web.sse.SseSessionManager mgr) {
         this.toolExecutionCoordinator.setSseSessionManager(mgr);
+    }
+
+    /** 注入智能层能力评估器 — 记录工具执行结果，供决策引擎使用。 */
+    public void setCapabilityAssessor(@Nullable com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor) {
+        this.toolExecutionCoordinator.setCapabilityAssessor(capabilityAssessor);
     }
 
     ProviderMessageBuilder.BuildResult buildProviderMessages(AssembledContext ctx, ReactAgentState state) {
@@ -375,16 +380,8 @@ public class ReactAgentLoop implements CallbackHelper {
                 break;
             }
 
-            // 3. 预算检查：每轮开始前先刷新 elapsed，并在任一维度超限时统一降级终止
-            var startBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
-            state = startBudgetCheck.state();
-            if (startBudgetCheck.invalidateCachedContext() && cachedContext != null) {
-                // 增量降级：基于已缓存的上下文裁剪，避免重新检索记忆和知识
-                cachedContext = cachedContext.degrade(startBudgetCheck.degradationLevel());
-                if (startBudgetCheck.degradationLevel() == Budget.DegradationLevel.TRIM_TOOLS) {
-                    cachedToolCallbacks = null;
-                }
-            }
+            // 3. 预算检查：每轮开始前先刷新 elapsed，任一维度超限时优雅终止
+            state = refreshBudgetAndTerminateIfExceeded(state, loopStart);
             if (state.isDone()) {
                 break;
             }
@@ -625,14 +622,7 @@ public class ReactAgentLoop implements CallbackHelper {
                     cachedContext = null;
                     cachedToolCallbacks = null;
                 }
-                var endBudgetCheck = checkBudgetAndInvalidateCacheIfNeeded(state, loopStart, cachedContext != null);
-                state = endBudgetCheck.state();
-                if (endBudgetCheck.invalidateCachedContext() && cachedContext != null) {
-                    cachedContext = cachedContext.degrade(endBudgetCheck.degradationLevel());
-                    if (endBudgetCheck.degradationLevel() == Budget.DegradationLevel.TRIM_TOOLS) {
-                        cachedToolCallbacks = null;
-                    }
-                }
+                state = refreshBudgetAndTerminateIfExceeded(state, loopStart);
                 if (state.isDone()) {
                     break;
                 }
@@ -1020,33 +1010,19 @@ public class ReactAgentLoop implements CallbackHelper {
     }
 
     /**
-     * 刷新预算状态，并在达到渐进式降级阈值时通知上层丢弃缓存上下文。
+     * 刷新预算的 elapsed，并在任一维度（token/步骤/时长）超限时优雅终止。
      *
-     * <p>这样下一轮重新 assemble 时才能应用压缩历史、裁剪工具或跳过记忆等预算策略。
+     * <p>token 维度作为防失控的粗粒度安全上限与用量遥测，不再驱动渐进降级。</p>
      */
-    private BudgetCheckResult checkBudgetAndInvalidateCacheIfNeeded(
-            ReactAgentState state, Instant loopStart, boolean hasCachedContext) {
+    private ReactAgentState refreshBudgetAndTerminateIfExceeded(
+            ReactAgentState state, Instant loopStart) {
         state = refreshBudgetElapsed(state, loopStart);
-
-        boolean invalidateCachedContext = false;
-        Budget.DegradationLevel degradation = state.budget().degradationLevel();
-        Budget.DegradationLevel reportedLevel = null;
-        if ((degradation == Budget.DegradationLevel.COMPRESS_HISTORY
-                || degradation == Budget.DegradationLevel.TRIM_TOOLS
-                || degradation == Budget.DegradationLevel.SKIP_MEMORY)
-                && hasCachedContext) {
-            log.info("预算渐进式降级: traceId={}, level={}, tokenUtilization={}%",
-                    state.traceId(), degradation, (int) (state.budget().tokenUtilization() * 100));
-            invalidateCachedContext = true;
-            reportedLevel = degradation;
-        }
-
         if (state.budget().exceeded()) {
             log.warn("ReAct 循环预算超限: traceId={}, reason={}",
                     state.traceId(), state.budget().exceedReason());
             state = DegradedResponseBuilder.terminateWithReason(state, state.budget().exceedReason());
         }
-        return new BudgetCheckResult(state, invalidateCachedContext, reportedLevel);
+        return state;
     }
 
     private boolean maybeCompactMidLoop(ReactAgentState state, int iteration, boolean hasCachedContext) {
@@ -1056,7 +1032,8 @@ public class ReactAgentLoop implements CallbackHelper {
         if (state.suspended() || state.isDone()) {
             return false;
         }
-        if (iteration <= 0 && state.budget().degradationLevel() == com.lifepilot.agent.model.Budget.DegradationLevel.NORMAL) {
+        // 首轮不做轮中压缩；后续轮次由窗口核算阈值决定是否压缩
+        if (iteration <= 0) {
             return false;
         }
         try {
@@ -1120,11 +1097,6 @@ public class ReactAgentLoop implements CallbackHelper {
             return new ReactStep.Reflect(
                     ReflectContentBuilder.buildContent(state, iteration, ReactStep.ReflectTrigger.TOOL_FAILURE),
                     ReactStep.ReflectTrigger.TOOL_FAILURE);
-        }
-
-        // 预算门控：非 NORMAL 降级时跳过周期性和停滞触发
-        if (state.budget().degradationLevel() != Budget.DegradationLevel.NORMAL) {
-            return null;
         }
 
         // 2. 停滞检测
@@ -1194,14 +1166,6 @@ public class ReactAgentLoop implements CallbackHelper {
         } catch (Exception e) {
             log.debug("写入工作区进度快照失败，降级跳过: error={}", e.getMessage());
         }
-    }
-
-    /** 预算检查结果：同时返回新 state 以及是否需要丢弃缓存上下文。 */
-    private record BudgetCheckResult(
-            ReactAgentState state,
-            boolean invalidateCachedContext,
-            @Nullable Budget.DegradationLevel degradationLevel
-    ) {
     }
 
     /**

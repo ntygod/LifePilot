@@ -18,6 +18,7 @@ import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * CompactionEngine 负责在 transcript-first 架构下生成会话压缩摘要。
@@ -30,6 +31,31 @@ import java.util.*;
 public class CompactionEngine {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionEngine.class);
+
+    /**
+     * 会话压缩锁分段 — 串行化同一会话的轮中（ReAct 循环）与轮末（异步后处理）压缩，
+     * 防止两个触发点并发写入双 compaction_summary 条目（竞态）。
+     *
+     * <p>采用<b>固定分段锁</b>（lock striping）而非按 sessionId 累积锁：按 sessionId 哈希
+     * 映射到固定 {@value #SESSION_LOCK_STRIPES} 个锁之一，长跑进程内锁数量恒定、不随会话增长而泄漏。
+     * 同一会话恒定落到同一分段（强串行化）；不同会话偶发共享分段仅造成极少量额外串行，无正确性影响。
+     * tryLock 获取失败即跳过本次压缩，由下一轮重判（区间去重由 compaction 边界解析 + minTurnCount 天然保证）。</p>
+     */
+    private static final int SESSION_LOCK_STRIPES = 64;
+    private final ReentrantLock[] sessionLocks = createSessionLockStripes();
+
+    private static ReentrantLock[] createSessionLockStripes() {
+        ReentrantLock[] locks = new ReentrantLock[SESSION_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new ReentrantLock();
+        }
+        return locks;
+    }
+
+    /** 按 sessionId 哈希取对应分段锁（floorMod 保证非负索引）。 */
+    private ReentrantLock sessionLockFor(String sessionId) {
+        return sessionLocks[Math.floorMod(sessionId.hashCode(), SESSION_LOCK_STRIPES)];
+    }
 
     /** 触发压缩的上下文窗口占用百分比阈值 */
     private static final int DEFAULT_TRIGGER_THRESHOLD_PERCENT = 75;
@@ -110,6 +136,22 @@ public class CompactionEngine {
         if (sessionId == null || sessionId.isBlank() || !compactionConfig().isEnabled()) {
             return false;
         }
+        // ── 并发串行化：同一会话同一时刻只允许一个压缩执行，获取不到锁即跳过 ──
+        ReentrantLock lock = sessionLockFor(sessionId);
+        if (!lock.tryLock()) {
+            log.debug("会话压缩已在进行中，跳过本次触发: sessionId={}", sessionId);
+            return false;
+        }
+        try {
+            return doCompactIfNeeded(sessionId, traceId, preferredProviderId);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private boolean doCompactIfNeeded(String sessionId,
+                                      @Nullable String traceId,
+                                      @Nullable String preferredProviderId) {
         try {
             // ── 第 1 步：加载全量 transcript 条目 ──
             List<SessionTranscriptRepository.SessionTranscriptEntryRow> allRows =
@@ -606,31 +648,38 @@ public class CompactionEngine {
         if (percent <= 0) {
             percent = DEFAULT_TRIGGER_THRESHOLD_PERCENT;
         }
-        return Math.max(1, resolveEffectiveContextWindow(preferredProviderId) * percent / 100);
+        // 有效窗口先扣除固定开销预留（systemPrompt + catalog + 自动注入），
+        // 使压缩按"transcript 可用窗口"判断，及时在真实逼近窗口时触发。
+        int effectiveWindow = resolveEffectiveContextWindow(preferredProviderId);
+        int reserve = Math.max(0, compactionConfig().getFixedOverheadReserveTokens());
+        int transcriptWindow = Math.max(1024, effectiveWindow - reserve);
+        return Math.max(1, transcriptWindow * percent / 100);
     }
 
     /**
      * 确定有效上下文窗口大小。
-     * <p>取用户配置的窗口和 Provider 实际支持的窗口中的较小值，
-     * 保证阈值计算不会超出 Provider 的真实能力。
-     * Provider 查询失败时静默降级为配置值。</p>
+     * <p>{@code maxContextTokens <= 0} 时以 Provider 实际窗口为准；否则取配置窗口与
+     * Provider 窗口的较小值。Provider 查询失败时回退配置值（或安全默认）。</p>
      */
     private int resolveEffectiveContextWindow(@Nullable String preferredProviderId) {
-        int configuredWindow = Math.max(1024, config.getContext().getMaxContextTokens());
+        int configuredWindow = config.getContext().getMaxContextTokens();
+        int providerWindow = 0;
         try {
-            int providerWindow = generationRouter.resolveMaxContextWindow(
+            providerWindow = generationRouter.resolveMaxContextWindow(
                     config.getLoop().getLlmScene(),
                     preferredProviderId,
                     null
             );
-            if (providerWindow > 0) {
-                return Math.min(configuredWindow, providerWindow);
-            }
         } catch (Exception e) {
             log.debug("读取 Provider 上下文窗口失败，回退默认配置: provider={}, error={}",
                     preferredProviderId, e.getMessage());
         }
-        return configuredWindow;
+        if (configuredWindow <= 0) {
+            // 以 Provider 窗口为准；Provider 不可用时回退安全默认
+            return providerWindow > 0 ? providerWindow : 128_000;
+        }
+        configuredWindow = Math.max(1024, configuredWindow);
+        return providerWindow > 0 ? Math.min(configuredWindow, providerWindow) : configuredWindow;
     }
 
     // ──────────────────────────────────────────────────────

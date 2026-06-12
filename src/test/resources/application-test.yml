@@ -42,7 +42,8 @@ lifepilot:
     enabled: false
   memory:
     enabled: false
-    vector-db-url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-vec-test.db"
+    store:
+      vector-db-url: "jdbc:sqlite:${java.io.tmpdir}/lifepilot-vec-test.db"
   marketplace:
     enabled: false
   notification:

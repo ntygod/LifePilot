@@ -1,6 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
-import com.lifepilot.memory.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,9 +28,16 @@ public class GraphTraverser {
 
     private final JdbcTemplate jdbcTemplate;
     private Boolean overlayTableAvailable;
+    /** 关系最低可信分门控；trust_score < 此值的边被跳过（NULL 历史边放行）。 */
+    private final float minRelationTrust;
 
     public GraphTraverser(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, 0.0f);
+    }
+
+    public GraphTraverser(JdbcTemplate jdbcTemplate, float minRelationTrust) {
         this.jdbcTemplate = jdbcTemplate;
+        this.minRelationTrust = Math.max(0.0f, minRelationTrust);
     }
 
     /**
@@ -97,6 +104,9 @@ public class GraphTraverser {
     private String buildGraphSql(int startEntityCount) {
         String seedValues = String.join(",", Collections.nCopies(startEntityCount, "(?)"));
         String startPlaceholders = buildPlaceholders(startEntityCount);
+        String trustClause = minRelationTrust > 0.0f
+                ? " AND (mr.trust_score IS NULL OR mr.trust_score >= ?)"
+                : "";
         return """
                 WITH RECURSIVE
                 start(entity_id) AS (VALUES %s),
@@ -108,7 +118,7 @@ public class GraphTraverser {
                     FROM temporal_relations tr
                     JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
                     JOIN start s ON (tr.source_entity_id = s.entity_id OR tr.target_entity_id = s.entity_id)
-                    WHERE tr.valid_to IS NULL
+                    WHERE tr.valid_to IS NULL%s
                     UNION
                     SELECT CASE
                         WHEN tr.source_entity_id = g.entity_id THEN tr.target_entity_id
@@ -117,7 +127,7 @@ public class GraphTraverser {
                     FROM temporal_relations tr
                     JOIN memory_relations mr ON mr.id = tr.id AND mr.status = 'ACTIVE'
                     JOIN graph g ON (tr.source_entity_id = g.entity_id OR tr.target_entity_id = g.entity_id)
-                    WHERE tr.valid_to IS NULL AND g.depth < %d
+                    WHERE tr.valid_to IS NULL AND g.depth < %d%s
                 )
                 SELECT te.id, te.type, te.name, te.description,
                        MIN(g.depth) AS min_depth,
@@ -132,17 +142,23 @@ public class GraphTraverser {
                 GROUP BY te.id
                 ORDER BY min_depth ASC, te.importance_score DESC, te.updated_at DESC
                 LIMIT ?
-                """.formatted(seedValues, MAX_DEPTH, startPlaceholders);
+                """.formatted(seedValues, trustClause, MAX_DEPTH, trustClause, startPlaceholders);
     }
 
     private List<Object> buildGraphParams(List<String> startEntities, int topK) {
         List<Object> params = new ArrayList<>();
-        params.addAll(startEntities);
-        params.addAll(startEntities);
+        params.addAll(startEntities);          // 1. seed VALUES
+        if (minRelationTrust > 0.0f) {
+            params.add(minRelationTrust);      // 2. depth1 trust clause
+        }
+        if (minRelationTrust > 0.0f) {
+            params.add(minRelationTrust);      // 3. depth2 trust clause
+        }
+        params.addAll(startEntities);          // 4. final SELECT NOT IN
         String now = Instant.now().toString();
-        params.add(now);
-        params.add(now);
-        params.add(topK);
+        params.add(now);                       // 5. valid_to
+        params.add(now);                       // 6. expires_at
+        params.add(topK);                      // 7. LIMIT
         return params;
     }
 

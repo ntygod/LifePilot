@@ -3,7 +3,7 @@ package com.lifepilot.agent.task.proactive.behavior;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

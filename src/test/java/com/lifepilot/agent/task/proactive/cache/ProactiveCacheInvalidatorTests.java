@@ -1,9 +1,9 @@
 package com.lifepilot.agent.task.proactive.cache;
 
 import com.lifepilot.agent.task.proactive.ProactiveMemoryBridge;
-import com.lifepilot.memory.lifecycle.ChangeSource;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;

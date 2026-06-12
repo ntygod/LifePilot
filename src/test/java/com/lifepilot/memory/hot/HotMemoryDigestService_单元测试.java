@@ -1,17 +1,20 @@
 package com.lifepilot.memory.hot;
 
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.experience.SubtaskReflector;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.Temporality;
-import com.lifepilot.memory.procedural.PreferenceRule;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.quality.MemoryEvidenceKind;
-import com.lifepilot.memory.quality.MemoryTrustLevel;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigest;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
+import com.lifepilot.memory.consumption.hot.HotMemorySectionKind;
+import com.lifepilot.agent.learning.experience.SubtaskReflector;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.observability.redactor.DataRedactor;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +41,7 @@ class HotMemoryDigestService_单元测试 {
     @Test
     void 热摘要只包含可消费实体并排除工具级经验() {
         SemanticMemory semanticMemory = mock(SemanticMemory.class);
-        var properties = new MemoryProperties();
+        var properties = new MemoryConsumptionProperties();
         var service = new HotMemoryDigestService(
                 semanticMemory,
                 properties,
@@ -83,7 +86,7 @@ class HotMemoryDigestService_单元测试 {
     @Test
     void 巩固画像存在时优先使用巩固画像避免碎片重复() {
         SemanticMemory semanticMemory = mock(SemanticMemory.class);
-        var properties = new MemoryProperties();
+        var properties = new MemoryConsumptionProperties();
         properties.getHotDigest().setUserProfileMaxEntries(1);
         var service = new HotMemoryDigestService(
                 semanticMemory,
@@ -118,7 +121,7 @@ class HotMemoryDigestService_单元测试 {
         SemanticMemory semanticMemory = mock(SemanticMemory.class);
         var service = new HotMemoryDigestService(
                 semanticMemory,
-                new MemoryProperties(),
+                new MemoryConsumptionProperties(),
                 null,
                 new DataRedactor(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
@@ -145,7 +148,7 @@ class HotMemoryDigestService_单元测试 {
         ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
         var service = new HotMemoryDigestService(
                 semanticMemory,
-                new MemoryProperties(),
+                new MemoryConsumptionProperties(),
                 proceduralMemory,
                 null,
                 Clock.fixed(NOW, ZoneOffset.UTC));

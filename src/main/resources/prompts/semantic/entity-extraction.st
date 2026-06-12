@@ -45,6 +45,7 @@
 - "我最近在学 Python" → GOAL(学习 Python)  ✓
 - "今年要拿到 AWS 认证" → GOAL(AWS 认证)  ✓
 - "准备考研" → GOAL(考研)  ✓
+- "下周五（6月14日）要交季度述职报告" → GOAL(季度述职报告) + properties.dueAt="2026-06-14"  ✓ 有明确截止日期
 - "如果有钱我想去日本，不过还不确定" → 不提取  ✗ 条件性+不确定性
 - "可能以后想学 Rust" → 不提取  ✗ 过弱、条件性，不足以成为长期目标
 
@@ -133,6 +134,8 @@
 - entityType: PERSON/ORGANIZATION/PLACE/EVENT/PROJECT/TOPIC/PREFERENCE/HABIT/GOAL/SKILL/EXPERIENCE/CUSTOM
 - description: 简洁描述（不含相对时间词）
 - properties: 可选键值对，仅在信息明确时填写
+    * **dueAt**：当且仅当用户为 GOAL / EVENT / PROJECT 陈述了**具体截止日期/到期日**（如"6月14日截止""下周五要交""月底前完成"且能推出具体日期）时，填入 ISO-8601 日期（如 `"2026-06-14"` 或 `"2026-06-14T18:00:00Z"`）。
+      dueAt 表示"该事项何时该完成"，与记忆遗忘无关；纯计划/无明确日期时**不要**填 dueAt，也不要臆造日期。
 - extractionConfidence: 0.0-1.0（<0.6 不提取）
 - importanceScore: 0.0-1.0
 - evidenceKind: 证据类型，必须从以下枚举选择：
@@ -151,6 +154,24 @@
 <constraints>
 返回 JSON 决策列表。对话中没有用户个人信息时返回空列表 []。
 </constraints>
+
+<output_example>
+当用户说"我要在 6 月 14 日前交季度述职报告"时，正确输出（注意 dueAt 在 properties 内，描述里不重复写日期作为唯一载体）：
+[
+  {
+    "operation": "ADD",
+    "entityName": "季度述职报告",
+    "entityType": "GOAL",
+    "description": "提交季度述职报告",
+    "properties": {"dueAt": "2026-06-14"},
+    "extractionConfidence": 0.95,
+    "importanceScore": 0.7,
+    "evidenceKind": "USER_EXPLICIT",
+    "evidenceExcerpt": "我要在 6 月 14 日前交季度述职报告",
+    "temporality": "PERSISTENT"
+  }
+]
+</output_example>
 
 <input>
 对话内容：

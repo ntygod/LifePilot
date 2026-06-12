@@ -3,6 +3,8 @@ com.lifepilot.prompt.config.PromptAutoConfiguration
 com.lifepilot.llm.config.LlmAutoConfiguration
 com.lifepilot.modelservice.config.ModelRoutingAutoConfiguration
 com.lifepilot.memory.config.MemoryAutoConfiguration
+com.lifepilot.agent.intelligence.config.IntelligenceAutoConfiguration
+com.lifepilot.agent.initiative.config.InitiativeAutoConfiguration
 com.lifepilot.tool.config.ToolAutoConfiguration
 com.lifepilot.agent.config.AgentAutoConfiguration
 com.lifepilot.agent.task.config.TaskAutoConfiguration

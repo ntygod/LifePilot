@@ -50,7 +50,7 @@ class MarketplaceMigrationTest {
         var vecDbPath = Path.of(tmpDir, "lifepilot-marketplace-migration-vec-test-" + DB_ID + ".db")
                 .toString().replace("\\", "/");
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
-        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+        registry.add("lifepilot.memory.store.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
     }
 
     @Autowired

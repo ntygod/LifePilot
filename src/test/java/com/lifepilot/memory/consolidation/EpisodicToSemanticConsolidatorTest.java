@@ -1,13 +1,14 @@
 package com.lifepilot.memory.consolidation;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.ConversationRecord;
-import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,7 +39,7 @@ class EpisodicToSemanticConsolidatorTest {
         var episodicMemory = mock(EpisodicMemory.class);
         var semanticMemory = mock(SemanticMemory.class);
         var jdbcTemplate = mock(JdbcTemplate.class);
-        var properties = new MemoryProperties();
+        var properties = new AgentLearningProperties();
         properties.getConsolidation().setLookbackDays(7);
         properties.getConsolidation().setHighFrequencyThreshold(2);
         properties.getConsolidation().setImportanceBoostStep(0.1f);

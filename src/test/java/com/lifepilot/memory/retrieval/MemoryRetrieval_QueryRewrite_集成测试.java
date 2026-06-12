@@ -3,10 +3,10 @@ package com.lifepilot.memory.retrieval;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +45,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
     private GenerationRouter generationRouter;
     private EmbeddingRouter embeddingRouter;
     private PromptRegistry promptRegistry;
-    private MemoryProperties properties;
+    private MemoryRetrievalProperties properties;
     private QueryRefiner queryRefiner;
     private QueryRewriter queryRewriter;
 
@@ -61,13 +61,13 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
         generationRouter = mock(GenerationRouter.class);
         embeddingRouter = mock(EmbeddingRouter.class);
         promptRegistry = mock(PromptRegistry.class);
-        properties = new MemoryProperties();
+        properties = new MemoryRetrievalProperties();
 
-        properties.getRetrieval().setQueryRewriteMode("rewrite");
-        properties.getRetrieval().setMaxRewrites(2);
-        properties.getRetrieval().setRewriteTimeoutMs(5000);
-        properties.getRetrieval().setMinFusedScore(0.0f);
-        properties.getRetrieval().setMinVectorSimilarity(0.0f);
+        properties.setQueryRewriteMode("rewrite");
+        properties.setMaxRewrites(2);
+        properties.setRewriteTimeoutMs(5000);
+        properties.setMinFusedScore(0.0f);
+        properties.setMinVectorSimilarity(0.0f);
 
         queryRefiner = new QueryRefiner(properties);
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("mock prompt");
@@ -146,7 +146,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
     @Test
     @DisplayName("none 模式下 QueryRewriter 直接透传且不调用模型")
     void none模式下QueryRewriter直接透传且不调用模型() {
-        properties.getRetrieval().setQueryRewriteMode("none");
+        properties.setQueryRewriteMode("none");
         queryRewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
 
         String rawQuery = "帮我查一下之前的会议记录";

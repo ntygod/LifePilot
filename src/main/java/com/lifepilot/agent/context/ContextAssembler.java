@@ -7,15 +7,16 @@ import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.mcp.config.McpConfigProperties;
-import com.lifepilot.memory.experience.EffectivenessTracker;
-import com.lifepilot.memory.hot.HotMemoryDigest;
-import com.lifepilot.memory.hot.HotMemoryDigestService;
-import com.lifepilot.memory.hot.HotMemorySectionKind;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.workspace.WorkspaceItem;
+import com.lifepilot.agent.learning.experience.EffectivenessTracker;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigest;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
+import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
+import com.lifepilot.memory.consumption.hot.HotMemorySectionKind;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.workspace.WorkspaceItem;
 import com.lifepilot.observability.redactor.DataRedactor;
 import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.skill.install.SkillInstallation;
@@ -128,6 +129,7 @@ public class ContextAssembler {
     @Nullable private final DynamicToolRegistry toolRegistry;
     @Nullable private final McpConfigProperties mcpConfig;
     @Nullable private volatile HotMemoryDigestService hotMemoryDigestService;
+    @Nullable private volatile com.lifepilot.agent.intelligence.AdaptiveDecisionEngine adaptiveDecisionEngine;
     @Nullable private volatile WeatherService weatherService;
     /** Skill 安装事实源 — Phase A.7 新增，driven by {@code skills} 表判断 enabled。 */
     @Nullable private volatile SkillInstallationRepository skillInstallationRepository;
@@ -260,6 +262,11 @@ public class ContextAssembler {
         this.hotMemoryDigestService = hotMemoryDigestService;
     }
 
+    /** 注入自适应决策引擎（可选，智能层 Phase 1）。 */
+    public void setAdaptiveDecisionEngine(@Nullable com.lifepilot.agent.intelligence.AdaptiveDecisionEngine adaptiveDecisionEngine) {
+        this.adaptiveDecisionEngine = adaptiveDecisionEngine;
+    }
+
     public AssembledContext assemble(ReactAgentState state) {
         Instant startTime = Instant.now();
         try {
@@ -313,14 +320,20 @@ public class ContextAssembler {
             String systemPrompt = buildAugmentedSystemPrompt(state);
             MemoryCounts memoryCounts = buildInjectedMemoryCounts(
                     rawProfileSection, rawExperienceSection, rawMemorySection);
-            List<Message> contextMessages = buildContextMessages(
+            List<Message> contextMessages = new ArrayList<>(buildContextMessages(
                     profileSection,
                     workspaceSection,
                     artifactSection,
                     experienceSection,
                     memorySection,
                     memoryCounts
-            );
+            ));
+            // 智能层决策信号注入（Phase 1）：放入 user 上下文段首，而非追加到 system 前缀，
+            // 使 system 提示词（角色/工具协议/catalog）在多轮间保持稳定，利于 provider prompt caching。
+            String decisionSignalText = buildDecisionSignalSection(state);
+            if (decisionSignalText != null && !decisionSignalText.isBlank()) {
+                contextMessages.add(0, new AssistantMessage(decisionSignalText));
+            }
             String userPrompt = buildUserPrompt(state);
 
             TokenBudget tokenBudget = buildTokenBudget(
@@ -331,7 +344,7 @@ public class ContextAssembler {
                     contextSnapshot.toolResultTokens()
             );
 
-            int workspaceTokens = estimateTokens(workspaceSection);
+            int workspaceTokens = TokenEstimator.estimate(workspaceSection);
             AssembledContext context = new AssembledContext(
                     systemPrompt,
                     contextMessages,
@@ -623,6 +636,31 @@ public class ContextAssembler {
         );
     }
 
+    /**
+     * 构建决策信号文本 — 由 AdaptiveDecisionEngine 生成，注入系统提示词。
+     *
+     * <p>智能层 Phase 1：将历史经验、工具能力、环境状态等信号注入 LLM 上下文，
+     * 让 LLM 基于更丰富的信息做出更好的决策。失败时静默降级，不影响主流程。</p>
+     */
+    @Nullable
+    private String buildDecisionSignalSection(ReactAgentState state) {
+        if (adaptiveDecisionEngine == null) return null;
+        try {
+            var availableToolIds = state.discoveredToolIds() != null
+                    ? state.discoveredToolIds() : Set.<String>of();
+            var signal = adaptiveDecisionEngine.buildDecisionSignal(
+                    state.goal(), availableToolIds);
+            String formatted = adaptiveDecisionEngine.formatForPrompt(signal);
+            if (formatted != null && !formatted.isBlank()) {
+                return "<decision_context>\n" + formatted + "\n</decision_context>";
+            }
+            return null;
+        } catch (Exception e) {
+            log.debug("决策信号构建失败，静默跳过: {}", e.getMessage());
+            return null;
+        }
+    }
+
     String buildUserPrompt(ReactAgentState state) {
         ZonedDateTime now = ZonedDateTime.now();
         String weatherSuffix = "";
@@ -785,48 +823,23 @@ public class ContextAssembler {
     }
 
     private String buildModeSpecificRules(String taskMode) {
-        return switch (taskMode) {
-            case "cron" -> """
-                    - 这是明确的 cron 调度任务，按计划执行，不要改写成普通对话
-                    - 除非缺少执行前提，否则不要反问，不要重复任务描述
-                    - 没有新的有效结果时返回 TASK_SILENT
-                    """.trim();
-            case "heartbeat" -> """
-                    - 这是系统内部的 heartbeat 唤醒任务，不维护 checklist，也不要输出 HEARTBEAT_OK
-                    - 仅在存在明确需要上报的内部结果时才返回正文
-                    - 不要擅自把唤醒任务改成新的 cron 调度
-                    """.trim();
-            default -> """
-                    - 明确时间点或周期任务时，使用 cron
-                    - 模糊持续关注类请求时，不要创建过时的 heartbeat checklist；优先记录到记忆或工作区，交由主动提醒引擎后续判断
-                    - 一次性分析或执行任务时，直接执行，不创建长期任务
-                    """.trim();
+        String key = switch (taskMode) {
+            case "cron" -> "agent/task-mode-cron";
+            case "heartbeat" -> "agent/task-mode-heartbeat";
+            default -> "agent/task-mode-interactive";
         };
+        return promptRegistry.render(key).trim();
     }
 
     private String buildExecutionGuardPrompt(ReactAgentState state) {
         if (isTaskMode(state)) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("""
-                <completion_contract>
-                - 自行判断当前请求是普通问答还是多步任务
-                - 普通问答/解释/分析/总结：直接回答并结束
-                - 多步任务：首次调工具前用 1-3 句话简述执行计划（目标拆解 + 步骤顺序）；有必要步骤未完成时继续调用工具，不要用阶段性总结结束本轮
-                - 可恢复阻塞（缺用户补充信息/等待确认/外部回传）不要包装成失败或完成
-                - 需要用户补充信息时，把追问包在 <await_user_input>...</await_user_input> 中，说清：缺什么、为什么缺、补充后会继续做什么
-                - 这轮没调用工具但已能给出终态时，正文后追加隐藏标签：
-                  · `<completion_control>done</completion_control>` — 任务已完成
-                  · `<completion_control>blocked</completion_control>` — 任务明确阻塞
-                  · `<completion_control>continue</completion_control>` — 阶段说明，非终态
-                - `completion_control` 仅供系统判定，不展示给用户
-                - 用户明确要求结束且目标已满足时，直接自然收尾
-                """);
-        if (state.earlyStopRejectCount() > 0) {
-            sb.append("- 系统已经拒绝过你的一次疑似提前结束；如果这轮要结束，请补上正确的 `<completion_control>` 标签；如果任务还没做完，就继续调用工具\n");
-        }
-        sb.append("</completion_contract>");
-        return sb.toString();
+        String earlyStopHint = state.earlyStopRejectCount() > 0
+                ? "- 系统已经拒绝过你的一次疑似提前结束；如果这轮要结束，请补上正确的 `<completion_control>` 标签；如果任务还没做完，就继续调用工具\n"
+                : "";
+        return promptRegistry.render("agent/completion-contract",
+                Map.of("earlyStopHint", earlyStopHint)).trim();
     }
 
     private ContextEngine.ContextSnapshot safeLoadContextSnapshot(ReactAgentState state, int totalContextTokens) {
@@ -906,7 +919,7 @@ public class ContextAssembler {
                                          int contextMessageTokens,
                                          int toolResultTokens) {
         TokenBudget base = TokenBudget.allocateDefault(totalTokens, config.getContext().getTokenAllocation());
-        int systemPromptUsed = Math.max(0, estimateTokens(systemPrompt));
+        int systemPromptUsed = Math.max(0, TokenEstimator.estimate(systemPrompt));
         int historyUsed = historyTokens;
         int memoryUsed = Math.max(0, contextMessageTokens);
         int toolResultUsed = toolResultTokens;
@@ -931,7 +944,7 @@ public class ContextAssembler {
             return 0;
         }
         return contextMessages.stream()
-                .mapToInt(message -> estimateTokens(message.getText()))
+                .mapToInt(message -> TokenEstimator.estimate(message.getText()))
                 .sum();
     }
 
@@ -984,17 +997,6 @@ public class ContextAssembler {
             sb.append('\n');
         }
         return sb.toString();
-    }
-
-    int estimateTokens(@Nullable String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        long cjkChars = text.chars()
-                .filter(ch -> Character.UnicodeScript.of(ch) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     /**
@@ -1186,7 +1188,7 @@ public class ContextAssembler {
             return "";
         }
         String content = state.loadedSkillContent().strip();
-        int tokens = estimateTokens(content);
+        int tokens = TokenEstimator.estimate(content);
         if (tokens > LOADED_SKILLS_MAX_TOKENS) {
             log.warn("loaded_skills 内容超出预算被截断: originalTokens={}, budget={}",
                     tokens, LOADED_SKILLS_MAX_TOKENS);
@@ -1198,13 +1200,13 @@ public class ContextAssembler {
 
     /** 按 token 预算截断字符串，按行边界切（避免破坏 markdown 结构）。 */
     private String truncateByTokenBudget(String text, int tokenBudget) {
-        if (estimateTokens(text) <= tokenBudget) {
+        if (TokenEstimator.estimate(text) <= tokenBudget) {
             return text;
         }
         var sb = new StringBuilder();
         int used = 0;
         for (String line : text.split("\n", -1)) {
-            int lineTokens = estimateTokens(line) + 1; // 算上换行
+            int lineTokens = TokenEstimator.estimate(line) + 1; // 算上换行
             if (used + lineTokens > tokenBudget) break;
             sb.append(line).append('\n');
             used += lineTokens;

@@ -1,12 +1,13 @@
 package com.lifepilot.memory.feedback;
 
+import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.lifecycle.WeightSource;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
 import net.jqwik.api.constraints.FloatRange;
@@ -44,15 +45,15 @@ class FeedbackProcessor_单元测试 {
     @Mock
     private MessageFeedbackRepository feedbackRepository;
 
-    private MemoryProperties properties;
-    private MemoryProperties.Feedback feedbackConfig;
+    private AgentLearningProperties properties;
+    private AgentLearningProperties.Feedback feedbackConfig;
     private FeedbackProcessor processor;
 
     /** 默认 likeBoost=0.1, dislikePenalty=0.05 */
     @BeforeEach
     void 初始化() {
-        properties = new MemoryProperties();
-        feedbackConfig = new MemoryProperties.Feedback();
+        properties = new AgentLearningProperties();
+        feedbackConfig = new AgentLearningProperties.Feedback();
         feedbackConfig.setLikeBoost(0.1f);
         feedbackConfig.setDislikePenalty(0.05f);
         properties.setFeedback(feedbackConfig);

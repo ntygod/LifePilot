@@ -10,17 +10,17 @@ import com.lifepilot.interaction.web.controller.AgentController;
 import com.lifepilot.interaction.web.controller.MemoryController;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
-import com.lifepilot.memory.forgetting.ForgettingLogRepository;
-import com.lifepilot.memory.procedural.PreferenceRule;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.scope.MemoryOriginType;
-import com.lifepilot.memory.scope.MemoryRealityType;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.scope.MemorySpaceRepository;
-import com.lifepilot.memory.scope.MemoryWriteContext;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.scope.MemoryOriginType;
+import com.lifepilot.memory.store.scope.MemoryRealityType;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.scope.MemorySpaceRepository;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
@@ -133,7 +133,7 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 .toString()
                 .replace("\\", "/");
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
-        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+        registry.add("lifepilot.memory.store.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
     }
 
     @Autowired private MockMvc mockMvc;

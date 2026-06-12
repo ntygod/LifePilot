@@ -5,26 +5,28 @@ import com.lifepilot.knowledge.model.DocumentSearchResult;
 import com.lifepilot.knowledge.model.KnowledgeSearchScope;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.episodic.ConversationSnippetRecord;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.lifecycle.ChangeSource;
-import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
-import com.lifepilot.memory.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.ExperienceRanking;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.scope.MemoryWriteContext;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
-import com.lifepilot.memory.support.MemoryQuerySignals;
+import com.lifepilot.memory.store.support.MemoryQuerySignals;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
@@ -37,7 +39,7 @@ import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.tool.schema.JsonSchema;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
-import com.lifepilot.memory.support.SqliteBusyRetry;
+import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
@@ -66,7 +68,7 @@ public class MemoryToolProvider {
     @Nullable private final DocumentRetriever documentRetriever;
     @Nullable private final SessionKnowledgeBaseRepository sessionKbRepo;
     @Nullable private final SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver;
-    @Nullable private final MemoryProperties memoryProperties;
+    @Nullable private final MemoryRetrievalProperties memoryProperties;
     @Nullable private final ProjectContextResolver projectContextResolver;
     @Nullable private final ChatSessionRepository chatSessionRepository;
     private final MemoryAccessPolicy memoryAccessPolicy;
@@ -77,7 +79,7 @@ public class MemoryToolProvider {
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryProperties memoryProperties) {
+                              @Nullable MemoryRetrievalProperties memoryProperties) {
         this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
                 sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties, null, null, null);
     }
@@ -88,7 +90,7 @@ public class MemoryToolProvider {
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryProperties memoryProperties,
+                              @Nullable MemoryRetrievalProperties memoryProperties,
                               @Nullable ProjectContextResolver projectContextResolver,
                               @Nullable ChatSessionRepository chatSessionRepository) {
         this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
@@ -102,7 +104,7 @@ public class MemoryToolProvider {
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryProperties memoryProperties,
+                              @Nullable MemoryRetrievalProperties memoryProperties,
                               @Nullable ProjectContextResolver projectContextResolver,
                               @Nullable ChatSessionRepository chatSessionRepository,
                               @Nullable MemoryAccessPolicy memoryAccessPolicy) {
@@ -404,6 +406,20 @@ public class MemoryToolProvider {
         }
     }
 
+    /**
+     * 为 GOAL/EVENT/PROJECT 从名称/描述中确定性提取截止日期写入 properties.dueAt（memory-deadline-awareness）。
+     * 与 RealtimeExtractor 共用 {@link DueDateExtractor}，覆盖 Agent 经 memory 工具显式建目标的路径。
+     */
+    private Map<String, Object> deriveDueDateProperties(EntityType type, String name, String description) {
+        if (type != EntityType.GOAL && type != EntityType.EVENT && type != EntityType.PROJECT) {
+            return Map.of();
+        }
+        String text = (name != null ? name : "") + " " + (description != null ? description : "");
+        return com.lifepilot.agent.learning.extraction.DueDateExtractor.extractIsoDate(text)
+                .<Map<String, Object>>map(iso -> Map.of("dueAt", iso))
+                .orElse(Map.of());
+    }
+
     ToolResult executeCreate(ToolInput input) {
         try {
             String name = input.getParam("name", String.class);
@@ -413,7 +429,8 @@ public class MemoryToolProvider {
                     .orElseGet(() -> input.getContextValue("sessionId", String.class).orElse(null));
             EntityType entityType = EntityType.valueOf(typeStr.toUpperCase());
             var now = Instant.now();
-            var incoming = new TemporalEntity(null, entityType, name, description, Map.of(), 1, true,
+            var properties = deriveDueDateProperties(entityType, name, description);
+            var incoming = new TemporalEntity(null, entityType, name, description, properties, 1, true,
                     now, null, conversationId, 1.0f, 0.5f, 0, null, now, now);
             MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), conversationId);
             var created = SqliteBusyRetry.execute(() ->
@@ -889,8 +906,13 @@ public class MemoryToolProvider {
             }
             MemoryWriteContext writeContext = toProjectWriteContext(projectContext, sessionId);
             var now = Instant.now();
+            float relTrust = MemoryQualityPolicy.trustScoreFor(
+                    MemoryEvidenceKind.USER_CONFIRMED, Math.max(0.0f, Math.min(1.0f, strength)));
             var relation = new TemporalRelation(UUID.randomUUID().toString(), sourceId, targetId, relationType, strength,
-                    null, now, null, conversationId, now);
+                    null, now, null, conversationId, now)
+                    .withQuality(MemoryEvidenceKind.USER_CONFIRMED,
+                            MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.USER_CONFIRMED, relTrust),
+                            relTrust);
             SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, writeContext));
             return ToolResult.success(Map.of(
                     "id", relation.id(), "relationType", relationType,
@@ -962,15 +984,19 @@ public class MemoryToolProvider {
                     ? Map.of()
                     : semanticMemory.findByIds(hitIds, filter);
 
-            // 按检索排序保留语义相关性，过滤后截取 topK
+            // 按检索召回，过滤后用统一 ExperienceRanking 口径排序，与热摘要 EXPERIENCE section 一致
             boolean crossContext = memoryProperties != null
-                    && memoryProperties.getExperience().getIsolation().isCrossContextRetrieval();
+                    && memoryProperties.getAgenticTool().isCrossContextRetrieval();
+            Instant rankNow = Instant.now();
             var results = ranked.stream()
                     .map(r -> entityMap.get(r.entityId()))
                     .filter(Objects::nonNull)
                     .filter(e -> crossContext || isMainAgentContext(e))
                     .filter(MemoryQualityPolicy::isPromptConsumable)
                     .filter(e -> !successOnly || Boolean.TRUE.equals(e.properties().get("success")))
+                    .sorted(java.util.Comparator
+                            .comparingDouble((TemporalEntity e) -> ExperienceRanking.score(e, rankNow))
+                            .reversed())
                     .limit(topK)
                     .map(this::experienceEntityToMap)
                     .toList();

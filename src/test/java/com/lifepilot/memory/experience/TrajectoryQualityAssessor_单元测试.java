@@ -1,11 +1,12 @@
 package com.lifepilot.memory.experience;
 
+import com.lifepilot.agent.learning.experience.TrajectoryQualityAssessor;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.interaction.model.InteractionSource;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class TrajectoryQualityAssessor_单元测试 {
 
-    private MemoryProperties properties;
+    private AgentLearningProperties properties;
     private TrajectoryQualityAssessor assessor;
 
     /** 默认预算，测试中不关注预算本身。 */
@@ -38,7 +39,7 @@ class TrajectoryQualityAssessor_单元测试 {
 
     @BeforeEach
     void 初始化() {
-        properties = new MemoryProperties();
+        properties = new AgentLearningProperties();
         // 使用默认配置：minToolSuccessRatio=0.3, evalQualityRelaxFactor=0.5
         assessor = new TrajectoryQualityAssessor(properties);
     }

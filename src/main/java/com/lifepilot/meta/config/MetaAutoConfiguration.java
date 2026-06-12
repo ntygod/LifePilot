@@ -13,14 +13,13 @@ import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.UserSettingsRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
-import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.meta.convenience.CapabilityAggregator;
 import com.lifepilot.meta.convenience.IntrospectionToolProvider;
 import com.lifepilot.meta.convenience.SkillDiscoveryRegistrar;
@@ -51,7 +50,6 @@ import com.lifepilot.workflow.repository.WorkflowRepository;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -73,7 +71,7 @@ import org.springframework.core.annotation.Order;
  * @author zsg
  * @since 2026-03-10
  */
-@AutoConfiguration
+@AutoConfiguration(after = com.lifepilot.memory.config.MemoryAutoConfiguration.class)
 @ConditionalOnProperty(name = "lifepilot.meta.enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(MetaProperties.class)
 public class MetaAutoConfiguration {
@@ -252,7 +250,7 @@ public class MetaAutoConfiguration {
      * 注册记忆管理工具提供者。
      *
      * <p>仅在 HybridRetriever 和 SemanticMemory Bean 可用时注册。
-     * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryProperties 为可选依赖。</p>
+     * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryRetrievalProperties 为可选依赖。</p>
      */
     @Bean
     @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class})
@@ -262,7 +260,7 @@ public class MetaAutoConfiguration {
                                           @Nullable DocumentRetriever documentRetriever,
                                           @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                                           @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                                          @Nullable MemoryProperties memoryProperties,
+                                          @Nullable MemoryRetrievalProperties memoryProperties,
                                           @Nullable ProjectContextResolver projectContextResolver,
                                           @Nullable ChatSessionRepository chatSessionRepository,
                                           @Nullable MemoryAccessPolicy memoryAccessPolicy) {
@@ -290,8 +288,30 @@ public class MetaAutoConfiguration {
 
         ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
         ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
-        if (ctx.containsBean("memoryToolProvider")) {
-            ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
+
+        // 记忆工具：ApplicationReady 时全部 Bean 已实例化，按依赖可用性直接构建+注册，
+        // 不依赖 @ConditionalOnBean 的自动配置处理时序（记忆模块拆分后时序变化曾导致
+        // memoryToolProvider Bean 因条件早评估为 false 而未创建 → memory 工具从未注册）。
+        var hybrid = ctx.getBeanProvider(HybridRetriever.class).getIfAvailable();
+        var semantic = ctx.getBeanProvider(SemanticMemory.class).getIfAvailable();
+        if (hybrid != null && semantic != null) {
+            MemoryToolProvider mtp = ctx.getBeanProvider(MemoryToolProvider.class).getIfAvailable();
+            if (mtp == null) {
+                mtp = new MemoryToolProvider(
+                        hybrid, semantic,
+                        ctx.getBeanProvider(EpisodicMemory.class).getIfAvailable(),
+                        ctx.getBeanProvider(DocumentRetriever.class).getIfAvailable(),
+                        ctx.getBeanProvider(SessionKnowledgeBaseRepository.class).getIfAvailable(),
+                        ctx.getBeanProvider(SessionKnowledgeScopeResolver.class).getIfAvailable(),
+                        ctx.getBeanProvider(MemoryRetrievalProperties.class).getIfAvailable(),
+                        ctx.getBeanProvider(ProjectContextResolver.class).getIfAvailable(),
+                        ctx.getBeanProvider(ChatSessionRepository.class).getIfAvailable(),
+                        ctx.getBeanProvider(MemoryAccessPolicy.class).getIfAvailable());
+                log.info("记忆工具: memoryToolProvider Bean 缺失，已在 ApplicationReady 阶段按依赖构建");
+            }
+            mtp.registerTools(toolRegistry);
+        } else {
+            log.warn("记忆工具: HybridRetriever 或 SemanticMemory 不可用，跳过 memory 工具注册");
         }
 
         log.info("元能力模块工具注册完成");

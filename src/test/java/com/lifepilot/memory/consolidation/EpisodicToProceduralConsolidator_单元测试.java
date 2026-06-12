@@ -1,14 +1,16 @@
 package com.lifepilot.memory.consolidation;
 
+import com.lifepilot.agent.learning.consolidation.ConsolidationStats;
+import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.procedural.ProcedureTemplate;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,12 +56,12 @@ class EpisodicToProceduralConsolidator_单元测试 {
     @Mock
     private PromptRegistry promptRegistry;
 
-    private MemoryProperties properties;
+    private AgentLearningProperties properties;
     private EpisodicToProceduralConsolidator consolidator;
 
     @BeforeEach
     void 初始化() {
-        properties = new MemoryProperties();
+        properties = new AgentLearningProperties();
         properties.getConsolidation().setLookbackDays(7);
         properties.getConsolidation().setMinExecutionSteps(2);
         properties.getConsolidation().setMinClusterSize(2);
@@ -293,8 +295,9 @@ class EpisodicToProceduralConsolidator_单元测试 {
             assertThat(saved.triggerIntent()).isEqualTo("帮我搜索并总结");
             assertThat(saved.steps()).hasSize(2);
             assertThat(saved.sourceTraceIds()).hasSize(3);
-            assertThat(saved.successRate()).isEqualTo(0.0f);
-            assertThat(saved.useCount()).isZero();
+            // 初始可靠性来自源证据：3 条成功源轨迹 → successRate=1.0, useCount=3（可被 IntentMatcher 匹配）
+            assertThat(saved.successRate()).isEqualTo(1.0f);
+            assertThat(saved.useCount()).isEqualTo(3);
         }
 
         @Test

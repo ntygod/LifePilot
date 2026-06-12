@@ -779,6 +779,10 @@ git commit -m "feat(memory): 定义 4 个生命周期事件 record"
 package com.lifepilot.memory.lifecycle.query;
 
 import com.lifepilot.memory.semantic.MemoryEntity;
+import com.lifepilot.memory.store.procedural.PreferenceRule;
+import com.lifepilot.memory.store.procedural.PreferenceRuleRepository;
+import com.lifepilot.memory.store.procedural.ProceduralMemoryRepository;
+import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -793,36 +797,36 @@ import java.util.Optional;
 @Service
 public class MemoryQueryApi {
 
-    private final com.lifepilot.memory.repository.MemoryEntityRepository entityRepo;
-    private final com.lifepilot.memory.repository.MemoryEntityProvenanceRepository provenanceRepo;
-    private final com.lifepilot.memory.procedural.ProceduralMemoryRepository procedureRepo;
-    private final com.lifepilot.memory.procedural.PreferenceRuleRepository ruleRepo;
+  private final com.lifepilot.memory.repository.MemoryEntityRepository entityRepo;
+  private final com.lifepilot.memory.repository.MemoryEntityProvenanceRepository provenanceRepo;
+  private final com.lifepilot.memory.store.procedural.ProceduralMemoryRepository procedureRepo;
+  private final com.lifepilot.memory.store.procedural.PreferenceRuleRepository ruleRepo;
 
-    public MemoryQueryApi(/* 构造注入 */) { /* ... */ }
+  public MemoryQueryApi(/* 构造注入 */) { /* ... */ }
 
-    public Optional<MemoryEntity> findById(String id) {
-        return entityRepo.findById(id);
-    }
+  public Optional<MemoryEntity> findById(String id) {
+    return entityRepo.findById(id);
+  }
 
-    public String findLatestGoalId() {
-        return entityRepo.findLatestByType("GOAL").map(MemoryEntity::id).orElseThrow();
-    }
+  public String findLatestGoalId() {
+    return entityRepo.findLatestByType("GOAL").map(MemoryEntity::id).orElseThrow();
+  }
 
-    public com.lifepilot.memory.procedural.ProcedureTemplate findProcedureBySourceEntity(String entityId) {
-        return procedureRepo.findBySourceEntityId(entityId).orElseThrow();
-    }
+  public com.lifepilot.memory.store.procedural.ProcedureTemplate findProcedureBySourceEntity(String entityId) {
+    return procedureRepo.findBySourceEntityId(entityId).orElseThrow();
+  }
 
-    public com.lifepilot.memory.procedural.PreferenceRule findRuleBySourceEntity(String entityId) {
-        return ruleRepo.findBySourceEntityId(entityId).orElseThrow();
-    }
+  public com.lifepilot.memory.store.procedural.PreferenceRule findRuleBySourceEntity(String entityId) {
+    return ruleRepo.findBySourceEntityId(entityId).orElseThrow();
+  }
 
-    public List<com.lifepilot.memory.provenance.Provenance> findProvenancesByEntityId(String entityId) {
-        return provenanceRepo.findAllByEntityId(entityId);
-    }
+  public List<com.lifepilot.memory.provenance.Provenance> findProvenancesByEntityId(String entityId) {
+    return provenanceRepo.findAllByEntityId(entityId);
+  }
 
-    public double findCumulativeFeedbackScore(String entityId) {
-        return feedbackLedgerRepo.findLatestCumulative(entityId).orElse(0.0);
-    }
+  public double findCumulativeFeedbackScore(String entityId) {
+    return feedbackLedgerRepo.findLatestCumulative(entityId).orElse(0.0);
+  }
 }
 ```
 
@@ -1080,25 +1084,28 @@ public class ScenarioTestConfiguration {
 // src/test/java/com/lifepilot/memory/support/FeedbackGateway.java
 package com.lifepilot.memory.support;
 
-import com.lifepilot.memory.feedback.FeedbackProcessor;
+import com.lifepilot.agent.learning.feedback.FeedbackProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** 测试专用：绕过 HTTP 直接提交反馈。 */
 @Component
 public class FeedbackGateway {
-    @Autowired FeedbackProcessor feedback;
+  @Autowired
+  FeedbackProcessor feedback;
 
-    public void dislike(String entryId) {
-        feedback.processFeedbackForEntry(entryId, FeedbackType.DISLIKE);
-    }
-    public void like(String entryId) {
-        feedback.processFeedbackForEntry(entryId, FeedbackType.LIKE);
-    }
-    public void notHelpful(String notificationId) {
-        // 调 NotificationController 对应的 service 方法
-        // 待 Phase 3 Task 25 接入后具体实现
-    }
+  public void dislike(String entryId) {
+    feedback.processFeedbackForEntry(entryId, FeedbackType.DISLIKE);
+  }
+
+  public void like(String entryId) {
+    feedback.processFeedbackForEntry(entryId, FeedbackType.LIKE);
+  }
+
+  public void notHelpful(String notificationId) {
+    // 调 NotificationController 对应的 service 方法
+    // 待 Phase 3 Task 25 接入后具体实现
+  }
 }
 ```
 
@@ -1172,21 +1179,21 @@ git commit -m "test(memory): ScenarioTestConfiguration + 场景测试基类 + Fe
 // src/test/java/com/lifepilot/memory/scenarios/updateDescription版本化_单元测试.java
 package com.lifepilot.memory.scenarios;
 
-import com.lifepilot.memory.semantic.SemanticMemory;
 import org.junit.jupiter.api.Test;
+
 import static org.assertj.core.api.Assertions.*;
 
 class updateDescription版本化_单元测试 extends 场景测试基类 {
-    @Test
-    void 两次修改描述应产生两条版本记录而非覆盖() {
-        var id = queryApi.findLatestGoalId(); // 前置用 fixture 创建过实体
-        semanticMemory.updateDescription(id, "v1 描述");
-        semanticMemory.updateDescription(id, "v2 描述");
-        var versions = queryApi.findAllVersions(id);
-        assertThat(versions).hasSize(2);
-        assertThat(versions.get(0).description()).isEqualTo("v1 描述");
-        assertThat(versions.get(1).description()).isEqualTo("v2 描述");
-    }
+  @Test
+  void 两次修改描述应产生两条版本记录而非覆盖() {
+    var id = queryApi.findLatestGoalId(); // 前置用 fixture 创建过实体
+    semanticMemory.updateDescription(id, "v1 描述");
+    semanticMemory.updateDescription(id, "v2 描述");
+    var versions = queryApi.findAllVersions(id);
+    assertThat(versions).hasSize(2);
+    assertThat(versions.get(0).description()).isEqualTo("v1 描述");
+    assertThat(versions.get(1).description()).isEqualTo("v2 描述");
+  }
 }
 ```
 
@@ -1250,19 +1257,24 @@ package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.lifecycle.WeightSource;
 import com.lifepilot.memory.lifecycle.events.EntityWeightChanged;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.List;
+
 import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest
 class SemanticMemory_权重变化事件_集成测试 {
-    @Autowired SemanticMemory memory;
-    @Autowired CapturingListener listener;
+    @Autowired
+    SemanticMemory memory;
+    @Autowired
+    CapturingListener listener;
 
     @Test
     void updateImportanceScore应发布EntityWeightChanged事件() {
@@ -1278,7 +1290,11 @@ class SemanticMemory_权重变化事件_集成测试 {
     @Component
     static class CapturingListener {
         List<EntityWeightChanged> captured = new ArrayList<>();
-        @EventListener void on(EntityWeightChanged e) { captured.add(e); }
+
+        @EventListener
+        void on(EntityWeightChanged e) {
+            captured.add(e);
+        }
     }
 }
 ```
@@ -1577,34 +1593,40 @@ package com.lifepilot.memory.lifecycle;
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.lifecycle.listeners.L4SyncListener;
 import com.lifepilot.memory.procedural.*;
+import com.lifepilot.memory.store.procedural.PreferenceRuleRepository;
+import com.lifepilot.memory.store.procedural.ProceduralMemoryRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class L4SyncListener_单元测试 {
-    @Mock PreferenceRuleRepository ruleRepo;
-    @Mock ProceduralMemoryRepository procedureRepo;
-    @InjectMocks L4SyncListener listener;
+  @Mock
+  PreferenceRuleRepository ruleRepo;
+  @Mock
+  ProceduralMemoryRepository procedureRepo;
+  @InjectMocks
+  L4SyncListener listener;
 
-    @Test
-    void 源实体转CANCELLED应使对应preference_rules失活() {
-        var event = new EntityLifecycleChanged("e-1", "PREFERENCE",
-            LifecycleState.ACTIVE, LifecycleState.CANCELLED,
-            "user-cancel", ChangeSource.TOOL_EXPLICIT);
-        listener.onLifecycleChanged(event);
-        verify(ruleRepo).deactivateBySourceEntity("e-1", "user-cancel");
-    }
+  @Test
+  void 源实体转CANCELLED应使对应preference_rules失活() {
+    var event = new EntityLifecycleChanged("e-1", "PREFERENCE",
+      LifecycleState.ACTIVE, LifecycleState.CANCELLED,
+      "user-cancel", ChangeSource.TOOL_EXPLICIT);
+    listener.onLifecycleChanged(event);
+    verify(ruleRepo).deactivateBySourceEntity("e-1", "user-cancel");
+  }
 
-    @Test
-    void 源实体转ACTIVE不触发失活() {
-        var event = new EntityLifecycleChanged("e-2", "GOAL",
-            null, LifecycleState.ACTIVE, "created", ChangeSource.LLM_SEMANTIC);
-        listener.onLifecycleChanged(event);
-        verifyNoInteractions(ruleRepo, procedureRepo);
-    }
+  @Test
+  void 源实体转ACTIVE不触发失活() {
+    var event = new EntityLifecycleChanged("e-2", "GOAL",
+      null, LifecycleState.ACTIVE, "created", ChangeSource.LLM_SEMANTIC);
+    listener.onLifecycleChanged(event);
+    verifyNoInteractions(ruleRepo, procedureRepo);
+  }
 }
 ```
 
@@ -1622,8 +1644,12 @@ package com.lifepilot.memory.lifecycle.listeners;
 import com.lifepilot.memory.lifecycle.LifecycleState;
 import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.procedural.*;
+
 import java.util.EnumSet;
 import java.util.Set;
+
+import com.lifepilot.memory.store.procedural.PreferenceRuleRepository;
+import com.lifepilot.memory.store.procedural.ProceduralMemoryRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -1637,28 +1663,28 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class L4SyncListener {
 
-    private static final Set<LifecycleState> INACTIVATING = EnumSet.of(
-        LifecycleState.CANCELLED, LifecycleState.EXPIRED,
-        LifecycleState.SUPERSEDED, LifecycleState.ARCHIVED,
-        LifecycleState.REGENERATION_NEEDED
-    );
+  private static final Set<LifecycleState> INACTIVATING = EnumSet.of(
+    LifecycleState.CANCELLED, LifecycleState.EXPIRED,
+    LifecycleState.SUPERSEDED, LifecycleState.ARCHIVED,
+    LifecycleState.REGENERATION_NEEDED
+  );
 
-    private final PreferenceRuleRepository ruleRepo;
-    private final ProceduralMemoryRepository procedureRepo;
+  private final PreferenceRuleRepository ruleRepo;
+  private final ProceduralMemoryRepository procedureRepo;
 
-    public L4SyncListener(PreferenceRuleRepository ruleRepo,
-                          ProceduralMemoryRepository procedureRepo) {
-        this.ruleRepo = ruleRepo;
-        this.procedureRepo = procedureRepo;
-    }
+  public L4SyncListener(PreferenceRuleRepository ruleRepo,
+                        ProceduralMemoryRepository procedureRepo) {
+    this.ruleRepo = ruleRepo;
+    this.procedureRepo = procedureRepo;
+  }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onLifecycleChanged(EntityLifecycleChanged event) {
-        if (!INACTIVATING.contains(event.newState())) return;
-        var reason = event.reason() == null ? event.newState().name() : event.reason();
-        ruleRepo.deactivateBySourceEntity(event.entityId(), reason);
-        procedureRepo.deactivateBySourceEntity(event.entityId(), reason);
-    }
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  public void onLifecycleChanged(EntityLifecycleChanged event) {
+    if (!INACTIVATING.contains(event.newState())) return;
+    var reason = event.reason() == null ? event.newState().name() : event.reason();
+    ruleRepo.deactivateBySourceEntity(event.entityId(), reason);
+    procedureRepo.deactivateBySourceEntity(event.entityId(), reason);
+  }
 }
 ```
 
@@ -3120,66 +3146,72 @@ git commit -m "feat(memory): ConflictResolutionRetry Cron（每日重试失败�
 - [ ] **Step 29.1: 实现**
 
 ```java
+import com.lifepilot.agent.learning.consolidation.EntityDeduplicator;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.experience.ContrastiveLearner;
+
 @Component
 public class DerivationRegenerator {
-    private final RegenerationQueueRepository queue;
-    private final MemoryEntityRepository entityRepo;
-    private final com.lifepilot.memory.consolidation.UserProfileConsolidator profileConsolidator;
-    private final com.lifepilot.memory.experience.ContrastiveLearner contrastiveLearner;
-    private final com.lifepilot.memory.consolidation.EntityDeduplicator deduplicator;
-    private final ApplicationEventPublisher events;
+  private final RegenerationQueueRepository queue;
+  private final MemoryEntityRepository entityRepo;
+  private final UserProfileConsolidator profileConsolidator;
+  private final ContrastiveLearner contrastiveLearner;
+  private final EntityDeduplicator deduplicator;
+  private final ApplicationEventPublisher events;
 
-    public DerivationRegenerator(/*...*/) { /*...*/ }
+  public DerivationRegenerator(/*...*/) { /*...*/ }
 
-    @Scheduled(cron = "0 0 */2 * * *")  // 每 2 小时
-    public void process() { processQueueNow(); }
+  @Scheduled(cron = "0 0 */2 * * *")  // 每 2 小时
+  public void process() {
+    processQueueNow();
+  }
 
-    public void processQueueNow() {
-        var pending = queue.findPending(50);  // 批量 50
-        for (var item : pending) {
-            try {
-                regenerateOne(item);
-                queue.markDone(item.id());
-            } catch (Exception ex) {
-                queue.markFailed(item.id(), ex.getMessage());
-            }
-        }
+  public void processQueueNow() {
+    var pending = queue.findPending(50);  // 批量 50
+    for (var item : pending) {
+      try {
+        regenerateOne(item);
+        queue.markDone(item.id());
+      } catch (Exception ex) {
+        queue.markFailed(item.id(), ex.getMessage());
+      }
     }
+  }
 
-    private void regenerateOne(RegenerationItem item) {
-        var derived = entityRepo.findById(item.derivedEntityId()).orElseThrow();
-        switch (derived.type()) {
-            case "__consolidated_profile" -> profileConsolidator.consolidate();  // 内部会产出新 profile 并把旧 SUPERSEDED
-            case "CONTRASTIVE_INSIGHT" -> regenerateContrastive(derived);
-            default -> {
-                if (derived.isDerived()) deduplicator.regenerate(derived);
-            }
-        }
-        // 统一：将旧派生实体转 SUPERSEDED（若重算过程中没动）
-        var reloaded = entityRepo.findById(derived.id()).orElseThrow();
-        if (reloaded.lifecycleState() == LifecycleState.REGENERATION_NEEDED) {
-            entityRepo.updateLifecycleState(derived.id(), LifecycleState.SUPERSEDED, "regenerated");
-            events.publishEvent(new EntityLifecycleChanged(
-                derived.id(), derived.type(),
-                LifecycleState.REGENERATION_NEEDED, LifecycleState.SUPERSEDED,
-                "regenerated", ChangeSource.DERIVATION_TRIGGER));
-        }
+  private void regenerateOne(RegenerationItem item) {
+    var derived = entityRepo.findById(item.derivedEntityId()).orElseThrow();
+    switch (derived.type()) {
+      case "__consolidated_profile" -> profileConsolidator.consolidate();  // 内部会产出新 profile 并把旧 SUPERSEDED
+      case "CONTRASTIVE_INSIGHT" -> regenerateContrastive(derived);
+      default -> {
+        if (derived.isDerived()) deduplicator.regenerate(derived);
+      }
     }
+    // 统一：将旧派生实体转 SUPERSEDED（若重算过程中没动）
+    var reloaded = entityRepo.findById(derived.id()).orElseThrow();
+    if (reloaded.lifecycleState() == LifecycleState.REGENERATION_NEEDED) {
+      entityRepo.updateLifecycleState(derived.id(), LifecycleState.SUPERSEDED, "regenerated");
+      events.publishEvent(new EntityLifecycleChanged(
+        derived.id(), derived.type(),
+        LifecycleState.REGENERATION_NEEDED, LifecycleState.SUPERSEDED,
+        "regenerated", ChangeSource.DERIVATION_TRIGGER));
+    }
+  }
 
-    private void regenerateContrastive(MemoryEntity insight) {
-        var sources = insight.derivationSources();
-        var liveSources = sources.stream()
-            .map(entityRepo::findById).flatMap(Optional::stream)
-            .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
-            .toList();
-        if (liveSources.size() < 2) {
-            // 两个源都失效 → 直接 SUPERSEDED，不重算
-            entityRepo.updateLifecycleState(insight.id(), LifecycleState.SUPERSEDED,
-                "sources-all-invalid");
-            return;
-        }
-        contrastiveLearner.learnFromSources(liveSources.get(0), liveSources.get(1));
+  private void regenerateContrastive(MemoryEntity insight) {
+    var sources = insight.derivationSources();
+    var liveSources = sources.stream()
+      .map(entityRepo::findById).flatMap(Optional::stream)
+      .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
+      .toList();
+    if (liveSources.size() < 2) {
+      // 两个源都失效 → 直接 SUPERSEDED，不重算
+      entityRepo.updateLifecycleState(insight.id(), LifecycleState.SUPERSEDED,
+        "sources-all-invalid");
+      return;
     }
+    contrastiveLearner.learnFromSources(liveSources.get(0), liveSources.get(1));
+  }
 }
 ```
 
@@ -3656,16 +3688,18 @@ git commit -m "test(memory): 场景 S7 孤儿引用 provenance STALE"
 
 ```java
 import com.lifepilot.memory.lifecycle.WeightSource;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 
 class 垃圾经验被累计负反馈淘汰_场景测试 extends 场景测试基类 {
-    @Autowired com.lifepilot.memory.semantic.SemanticMemory semanticMemory;
+    @Autowired
+    SemanticMemory semanticMemory;
 
     @Test
     void EXPERIENCE连续3次QUALITY_REJECT应SUPERSEDED() {
         // 手动注入一条失败工具链产出的 EXPERIENCE（绕开 SubtaskReflector）
         var e = semanticMemory.upsertWithConflictDetection(
-            new MemoryEntity(/* EXPERIENCE, name=[工具]xxx, ... */),
-            "subtask-reflection");
+                new MemoryEntity(/* EXPERIENCE, name=[工具]xxx, ... */),
+                "subtask-reflection");
         assertThat(查实体(e.id()).lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
 
         for (int i = 0; i < 3; i++) {
@@ -3731,32 +3765,35 @@ git commit -m "test(memory): 场景 S10 主动任务取消级联 L3 insight"
 - [ ] **Step 39.1: 测试类 `对比洞察源失效触发重算_场景测试.java`**
 
 ```java
+import com.lifepilot.agent.learning.experience.ContrastiveLearner;
+
 class 对比洞察源失效触发重算_场景测试 extends 场景测试基类 {
-    @Autowired com.lifepilot.memory.experience.ContrastiveLearner learner;
+  @Autowired
+  ContrastiveLearner learner;
 
-    @Test
-    void 源EXPERIENCE_SUPERSEDED应使洞察_REGENERATION_NEEDED_之后重算后SUPERSEDED() {
-        // 前置：创建两条 EXPERIENCE（成功 + 失败对比）
-        var expSuccess = semanticMemory.upsertWithConflictDetection(/* ... */, "subtask-reflection");
-        var expFail = semanticMemory.upsertWithConflictDetection(/* ... */, "subtask-reflection");
-        // 通过 ContrastiveLearner 产出 CONTRASTIVE_INSIGHT（is_derived=1，derivation_sources=[两个 id]）
-        var insight = learner.learnFromSources(expSuccess, expFail);
-        assertThat(查实体(insight.id()).isDerived()).isTrue();
-        assertThat(查实体(insight.id()).lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
+  @Test
+  void 源EXPERIENCE_SUPERSEDED应使洞察_REGENERATION_NEEDED_之后重算后SUPERSEDED() {
+    // 前置：创建两条 EXPERIENCE（成功 + 失败对比）
+    var expSuccess = semanticMemory.upsertWithConflictDetection(/* ... */, "subtask-reflection");
+    var expFail = semanticMemory.upsertWithConflictDetection(/* ... */, "subtask-reflection");
+    // 通过 ContrastiveLearner 产出 CONTRASTIVE_INSIGHT（is_derived=1，derivation_sources=[两个 id]）
+    var insight = learner.learnFromSources(expSuccess, expFail);
+    assertThat(查实体(insight.id()).isDerived()).isTrue();
+    assertThat(查实体(insight.id()).lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
 
-        // 使一个源 SUPERSEDED
-        semanticMemory.archive(expSuccess.id(), "test-archive");
+    // 使一个源 SUPERSEDED
+    semanticMemory.archive(expSuccess.id(), "test-archive");
 
-        // DerivedEntityListener 已异步触发；验证
-        Thread.sleep(500);
-        assertThat(查实体(insight.id()).lifecycleState()).isEqualTo(LifecycleState.REGENERATION_NEEDED);
+    // DerivedEntityListener 已异步触发；验证
+    Thread.sleep(500);
+    assertThat(查实体(insight.id()).lifecycleState()).isEqualTo(LifecycleState.REGENERATION_NEEDED);
 
-        // 运行重算 Cron
-        运行派生重算Cron();
+    // 运行重算 Cron
+    运行派生重算Cron();
 
-        // 另一个源仍 ACTIVE，重算可以执行 → 旧 insight SUPERSEDED，新 insight ACTIVE
-        assertThat(查实体(insight.id()).lifecycleState()).isEqualTo(LifecycleState.SUPERSEDED);
-    }
+    // 另一个源仍 ACTIVE，重算可以执行 → 旧 insight SUPERSEDED，新 insight ACTIVE
+    assertThat(查实体(insight.id()).lifecycleState()).isEqualTo(LifecycleState.SUPERSEDED);
+  }
 }
 ```
 
@@ -3777,44 +3814,47 @@ git commit -m "test(memory): 场景 S11 对比洞察源失效触发重算"
 - [ ] **Step 40.1: 测试类 `派生画像源失效后重算_场景测试.java`**
 
 ```java
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+
 class 派生画像源失效后重算_场景测试 extends 场景测试基类 {
-    @Autowired com.lifepilot.memory.consolidation.UserProfileConsolidator profileConsolidator;
+  @Autowired
+  UserProfileConsolidator profileConsolidator;
 
-    @Test
-    void 画像源失效超过20百分比应触发重算() {
-        // 前置：创建 10 条 PREFERENCE，运行 UserProfileConsolidator 产出 __consolidated_profile
-        var prefs = java.util.stream.IntStream.range(0, 10)
-            .mapToObj(i -> semanticMemory.upsertWithConflictDetection(
-                buildPreference("pref-" + i, "value-" + i), "user-edit"))
-            .toList();
-        profileConsolidator.consolidateNow();
-        var profile = queryApi.findLatestByType("__consolidated_profile").orElseThrow();
-        assertThat(profile.isDerived()).isTrue();
-        assertThat(profile.derivationSources()).hasSize(10);
+  @Test
+  void 画像源失效超过20百分比应触发重算() {
+    // 前置：创建 10 条 PREFERENCE，运行 UserProfileConsolidator 产出 __consolidated_profile
+    var prefs = java.util.stream.IntStream.range(0, 10)
+      .mapToObj(i -> semanticMemory.upsertWithConflictDetection(
+        buildPreference("pref-" + i, "value-" + i), "user-edit"))
+      .toList();
+    profileConsolidator.consolidateNow();
+    var profile = queryApi.findLatestByType("__consolidated_profile").orElseThrow();
+    assertThat(profile.isDerived()).isTrue();
+    assertThat(profile.derivationSources()).hasSize(10);
 
-        // 使 3 条（30%）SUPERSEDED
-        for (int i = 0; i < 3; i++) {
-            semanticMemory.archive(prefs.get(i).id(), "test-archive");
-        }
-        Thread.sleep(500);
-
-        // 画像应进入 REGENERATION_NEEDED
-        assertThat(查实体(profile.id()).lifecycleState()).isEqualTo(LifecycleState.REGENERATION_NEEDED);
-
-        // 运行重算
-        运行派生重算Cron();
-
-        // 旧画像 SUPERSEDED，新画像 ACTIVE
-        assertThat(查实体(profile.id()).lifecycleState()).isEqualTo(LifecycleState.SUPERSEDED);
-        var newProfile = queryApi.findLatestByType("__consolidated_profile").orElseThrow();
-        assertThat(newProfile.id()).isNotEqualTo(profile.id());
-        assertThat(newProfile.lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
+    // 使 3 条（30%）SUPERSEDED
+    for (int i = 0; i < 3; i++) {
+      semanticMemory.archive(prefs.get(i).id(), "test-archive");
     }
+    Thread.sleep(500);
 
-    @Test
-    void 画像源失效10百分比不触发重算() {
-        // 10 条源 → 只 1 条 SUPERSEDED → 比例 10% < 20% → 画像仍 ACTIVE
-    }
+    // 画像应进入 REGENERATION_NEEDED
+    assertThat(查实体(profile.id()).lifecycleState()).isEqualTo(LifecycleState.REGENERATION_NEEDED);
+
+    // 运行重算
+    运行派生重算Cron();
+
+    // 旧画像 SUPERSEDED，新画像 ACTIVE
+    assertThat(查实体(profile.id()).lifecycleState()).isEqualTo(LifecycleState.SUPERSEDED);
+    var newProfile = queryApi.findLatestByType("__consolidated_profile").orElseThrow();
+    assertThat(newProfile.id()).isNotEqualTo(profile.id());
+    assertThat(newProfile.lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
+  }
+
+  @Test
+  void 画像源失效10百分比不触发重算() {
+    // 10 条源 → 只 1 条 SUPERSEDED → 比例 10% < 20% → 画像仍 ACTIVE
+  }
 }
 ```
 

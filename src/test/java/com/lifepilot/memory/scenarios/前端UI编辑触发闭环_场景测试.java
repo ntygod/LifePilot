@@ -3,17 +3,19 @@ package com.lifepilot.memory.scenarios;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-import com.lifepilot.memory.lifecycle.ChangeSource;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.events.EntityLifecycleChanged;
-import com.lifepilot.memory.lifecycle.listeners.L4SyncListener;
-import com.lifepilot.memory.procedural.PreferenceRuleRepository;
-import com.lifepilot.memory.procedural.ProceduralMemoryRepository;
+import com.lifepilot.agent.learning.consolidation.PreferenceConsolidator;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
+import com.lifepilot.memory.governance.lifecycle.listeners.L4SyncListener;
+import com.lifepilot.memory.store.procedural.PreferenceRuleRepository;
+import com.lifepilot.memory.store.procedural.ProceduralMemoryRepository;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.support.MemoryProjectionTestSupport;
-import com.lifepilot.memory.semantic.ConflictDetector;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.VersionMerger;
+import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
+import com.lifepilot.memory.store.entity.ConflictDetector;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.VersionMerger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -51,7 +53,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *   <li>前置：手动 INSERT PREFERENCE "pref-1" ACTIVE + 当前版本 +
  *       preference_rules 一行 {@code source_entity_id='pref-1'}
  *       {@code deactivated_reason=NULL}（参考 S6 path-B：绕过
- *       {@link com.lifepilot.memory.consolidation.PreferenceConsolidator}
+ *       {@link PreferenceConsolidator}
  *       当前不填 source_entity_id 的漂移）；</li>
  *   <li>动作：{@code semanticMemory.updateLifecycleState("pref-1",
  *       LifecycleState.ARCHIVED, "user-ui-delete", ChangeSource.UI_EDIT)}
@@ -68,7 +70,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *   <li>未走 HTTP 层（需 @SpringBootTest 会撞 meta.enabled=false 问题）；
  *       直接调 {@link SemanticMemory#updateLifecycleState} 模拟前端
  *       {@code DELETE /api/memories/entities/{id}} 的效果 —— Controller
- *       内部走的是 {@link SemanticMemory#archive(com.lifepilot.memory.semantic.TemporalEntity)}
+ *       内部走的是 {@link SemanticMemory#archive(TemporalEntity)}
  *       但该重载默认 reason=null（取自 entity.lifecycleReason()）；为验证
  *       "UI 传入 reason 逐跳透传到 L4"，本测试使用
  *       {@code updateLifecycleState(id, ARCHIVED, reason, UI_EDIT)} 的

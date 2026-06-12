@@ -2,8 +2,8 @@ package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
-import com.lifepilot.memory.lifecycle.WeightSource;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.governance.lifecycle.WeightSource;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;

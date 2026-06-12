@@ -1,10 +1,11 @@
 package com.lifepilot.memory.forgetting;
 
+import com.lifepilot.agent.learning.forgetting.ForgettingEngine;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,15 +43,15 @@ class ForgettingEngine_访问保护测试 {
     @Mock
     private PromptRegistry promptRegistry;
 
-    private MemoryProperties properties;
-    private MemoryProperties.Forgetting forgettingConfig;
+    private AgentLearningProperties properties;
+    private AgentLearningProperties.Forgetting forgettingConfig;
 
     private ForgettingEngine engine;
 
     @BeforeEach
     void 初始化() {
-        properties = new MemoryProperties();
-        forgettingConfig = new MemoryProperties.Forgetting();
+        properties = new AgentLearningProperties();
+        forgettingConfig = new AgentLearningProperties.Forgetting();
         // 设置合理的默认值用于测试
         forgettingConfig.setMaxRetentionDays(365);
         forgettingConfig.setLruThresholdDays(90);

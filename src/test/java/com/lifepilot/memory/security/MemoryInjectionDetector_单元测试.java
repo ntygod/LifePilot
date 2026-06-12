@@ -1,6 +1,10 @@
 package com.lifepilot.memory.security;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.governance.config.MemoryGovernanceProperties;
+import com.lifepilot.memory.governance.security.InjectionReason;
+import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
+import com.lifepilot.memory.governance.security.PromptInjectionPatternScanner;
+import com.lifepilot.memory.governance.security.SpaceTrustDistribution;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,7 +19,7 @@ class MemoryInjectionDetector_单元测试 {
 
     @Test
     void 开关关闭时直接PASS() {
-        var props = new MemoryProperties();
+        var props = new MemoryGovernanceProperties();
         props.getSecurity().setInjectionDetectionEnabled(false);
         var detector = new MemoryInjectionDetector(
                 new PromptInjectionPatternScanner(),
@@ -29,7 +33,7 @@ class MemoryInjectionDetector_单元测试 {
 
     @Test
     void 命中prompt注入模式返回BLOCKED() {
-        var props = new MemoryProperties();
+        var props = new MemoryGovernanceProperties();
         props.getSecurity().setInjectionDetectionEnabled(true);
         var detector = new MemoryInjectionDetector(
                 new PromptInjectionPatternScanner(),
@@ -43,7 +47,7 @@ class MemoryInjectionDetector_单元测试 {
 
     @Test
     void trustScore异常值返回SUSPICIOUS() {
-        var props = new MemoryProperties();
+        var props = new MemoryGovernanceProperties();
         props.getSecurity().setInjectionDetectionEnabled(true);
         props.getSecurity().setOutlierThreshold(3.0f);
 
@@ -64,7 +68,7 @@ class MemoryInjectionDetector_单元测试 {
 
     @Test
     void blockOnSuspicious开启时异常值返回BLOCKED() {
-        var props = new MemoryProperties();
+        var props = new MemoryGovernanceProperties();
         props.getSecurity().setInjectionDetectionEnabled(true);
         props.getSecurity().setBlockOnSuspicious(true);
         props.getSecurity().setOutlierThreshold(3.0f);
@@ -85,7 +89,7 @@ class MemoryInjectionDetector_单元测试 {
 
     @Test
     void 正常文本和分数返回PASS() {
-        var props = new MemoryProperties();
+        var props = new MemoryGovernanceProperties();
         props.getSecurity().setInjectionDetectionEnabled(true);
         var detector = new MemoryInjectionDetector(
                 new PromptInjectionPatternScanner(),
@@ -98,7 +102,7 @@ class MemoryInjectionDetector_单元测试 {
 
     @Test
     void 空文本PASS不抛异常() {
-        var props = new MemoryProperties();
+        var props = new MemoryGovernanceProperties();
         props.getSecurity().setInjectionDetectionEnabled(true);
         var detector = new MemoryInjectionDetector(
                 new PromptInjectionPatternScanner(),

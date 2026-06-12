@@ -11,7 +11,8 @@ spring:
 
 lifepilot:
   memory:
-    vector-db-url: "jdbc:sqlite:${zhiwei.home}/db/vectors.db"
+    store:
+      vector-db-url: "jdbc:sqlite:${zhiwei.home}/db/vectors.db"
   eval:
     scenario-directory: "/data/eval/scenarios"
 

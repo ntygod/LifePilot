@@ -1,12 +1,12 @@
 package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.semantic.ConflictDetector;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.VersionMerger;
-import com.lifepilot.memory.support.MemoryProjectionTestSupport;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.store.entity.ConflictDetector;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,9 +95,9 @@ class HybridRetriever_生命周期过滤_集成测试 {
         graphTraverser = new GraphTraverser(jdbcTemplate);
         provenanceRepository = new MemoryProvenanceRepository(jdbcTemplate);
 
-        var properties = new MemoryProperties();
-        properties.getRetrieval().setMinVectorSimilarity(0.0f);
-        properties.getRetrieval().setMinFusedScore(0.0f);
+        var properties = new MemoryRetrievalProperties();
+        properties.setMinVectorSimilarity(0.0f);
+        properties.setMinFusedScore(0.0f);
 
         retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,

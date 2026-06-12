@@ -7,7 +7,7 @@ import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.SuspendReason;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.llm.thinking.ReasoningContentMarker;
-import com.lifepilot.memory.experience.ToolTipResolver;
+import com.lifepilot.agent.learning.experience.ToolTipResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.*;

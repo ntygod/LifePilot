@@ -1,10 +1,14 @@
 package com.lifepilot.memory.semantic;
 
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.Temporality;
-import com.lifepilot.memory.quality.MemoryEvidenceKind;
-import com.lifepilot.memory.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.entity.ConflictDetector;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.VersionMerger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

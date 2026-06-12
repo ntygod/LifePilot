@@ -1,7 +1,7 @@
 package com.lifepilot.config;
 
-import com.lifepilot.memory.config.SqliteVecDataSource;
-import com.lifepilot.memory.config.SqliteVecInitializer;
+import com.lifepilot.memory.store.vector.SqliteVecDataSource;
+import com.lifepilot.memory.store.vector.SqliteVecInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;

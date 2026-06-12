@@ -1,10 +1,10 @@
 package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.knowledge.rerank.RerankCandidate;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.rerank.router.RerankRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,7 +12,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -44,7 +43,7 @@ class HybridRetriever精排测试 {
     private GraphTraverser graphTraverser;
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
-    private MemoryProperties properties;
+    private MemoryRetrievalProperties properties;
 
     @BeforeEach
     void setUp() {
@@ -53,9 +52,9 @@ class HybridRetriever精排测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
-        properties = new MemoryProperties();
-        properties.getRetrieval().setMinVectorSimilarity(0.0f);
-        properties.getRetrieval().setMinFusedScore(0.0f);
+        properties = new MemoryRetrievalProperties();
+        properties.setMinVectorSimilarity(0.0f);
+        properties.setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
     }
 
@@ -126,7 +125,7 @@ class HybridRetriever精排测试 {
 
     @Test
     void fusedScore阈值会过滤低分结果() {
-        properties.getRetrieval().setMinFusedScore(0.5f);
+        properties.setMinFusedScore(0.5f);
         setupMockResults();
 
         var retriever = new HybridRetriever(

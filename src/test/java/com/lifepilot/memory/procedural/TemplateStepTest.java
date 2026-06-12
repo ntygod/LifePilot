@@ -1,5 +1,6 @@
 package com.lifepilot.memory.procedural;
 
+import com.lifepilot.memory.store.procedural.TemplateStep;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;

@@ -3,14 +3,14 @@ package com.lifepilot.meta.infra.memory;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.lifecycle.ChangeSource;
-import com.lifepilot.memory.lifecycle.LifecycleState;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +29,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -67,7 +66,7 @@ class MemoryToolProvider_action扩展_单元测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryProperties()
+                new MemoryRetrievalProperties()
         );
         provider.registerTools(registry);
     }
@@ -336,7 +335,7 @@ class MemoryToolProvider_action扩展_单元测试 {
                 1, true, now, null, "sess-test",
                 0.8f, 0.5f, 0, null, now, now,
                 state, null, null,
-                com.lifepilot.memory.lifecycle.Temporality.PERSISTENT,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
                 null, false, List.of());
     }
 }

@@ -4,25 +4,26 @@ import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
-import com.lifepilot.memory.consolidation.ConsolidationPipeline;
-import com.lifepilot.memory.consolidation.EntityDeduplicator;
-import com.lifepilot.memory.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.consolidation.EntityDeduplicator;
+import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
 import com.lifepilot.memory.episodic.ConversationRecord;
-import com.lifepilot.memory.episodic.EpisodicMemory;
-import com.lifepilot.memory.forgetting.ForgettingLogRepository;
-import com.lifepilot.memory.governance.MemoryAccessPolicy;
-import com.lifepilot.memory.procedural.ProceduralMemory;
-import com.lifepilot.memory.scope.MemoryOriginType;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.scope.MemoryRealityType;
-import com.lifepilot.memory.scope.MemoryScope;
-import com.lifepilot.memory.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.store.procedural.ProcedureTemplate;
+import com.lifepilot.memory.store.scope.MemoryOriginType;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryRealityType;
+import com.lifepilot.memory.store.scope.MemoryScope;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.support.SqliteBusyRetry;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.support.SqliteBusyRetry;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.project.context.ProjectContext;
 import com.lifepilot.project.context.ProjectContextResolver;
@@ -31,15 +32,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 /**
  * 记忆管理 REST Controller — 暴露记忆系统的查询、搜索和管理 API。
@@ -63,13 +61,17 @@ public class MemoryController {
     private final @Nullable HybridRetriever hybridRetriever;
     private final @Nullable ConsolidationPipeline consolidationPipeline;
     private final @Nullable EntityDeduplicator entityDeduplicator;
+    private final @Nullable com.lifepilot.agent.learning.forgetting.ForgettingEngine forgettingEngine;
     private final @Nullable UserProfileConsolidator userProfileConsolidator;
     private final ForgettingLogRepository forgettingLogRepository;
     private final MemoryProvenanceRepository provenanceRepository;
     private final @Nullable ProjectContextResolver projectContextResolver;
     private final MemoryAccessPolicy memoryAccessPolicy;
+    private final @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier;
+    private final @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
     private final AtomicBoolean deduplicating = new AtomicBoolean(false);
+    private final AtomicBoolean forgetting = new AtomicBoolean(false);
 
     public MemoryController(@Nullable SemanticMemory semanticMemory,
                             @Nullable EpisodicMemory episodicMemory,
@@ -77,22 +79,28 @@ public class MemoryController {
                             @Nullable HybridRetriever hybridRetriever,
                             @Nullable ConsolidationPipeline consolidationPipeline,
                             @Nullable EntityDeduplicator entityDeduplicator,
+                            @Nullable com.lifepilot.agent.learning.forgetting.ForgettingEngine forgettingEngine,
                             @Nullable UserProfileConsolidator userProfileConsolidator,
                             ForgettingLogRepository forgettingLogRepository,
                             MemoryProvenanceRepository provenanceRepository,
                             @Nullable ProjectContextResolver projectContextResolver,
-                            @Nullable MemoryAccessPolicy memoryAccessPolicy) {
+                            @Nullable MemoryAccessPolicy memoryAccessPolicy,
+                            @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier,
+                            @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
         this.hybridRetriever = hybridRetriever;
         this.consolidationPipeline = consolidationPipeline;
         this.entityDeduplicator = entityDeduplicator;
+        this.forgettingEngine = forgettingEngine;
         this.userProfileConsolidator = userProfileConsolidator;
         this.forgettingLogRepository = forgettingLogRepository;
         this.provenanceRepository = provenanceRepository;
         this.projectContextResolver = projectContextResolver;
         this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
+        this.remApplier = remApplier;
+        this.memoryAttentionService = memoryAttentionService;
     }
 
     /** 检查记忆系统是否启用，未启用时抛出 503。 */
@@ -777,10 +785,10 @@ public class MemoryController {
         }
 
         // 排序
-        Comparator<com.lifepilot.memory.procedural.ProcedureTemplate> comparator = switch (sortBy) {
-            case "successRate" -> Comparator.comparing(com.lifepilot.memory.procedural.ProcedureTemplate::successRate);
-            case "useCount" -> Comparator.comparingInt(com.lifepilot.memory.procedural.ProcedureTemplate::useCount);
-            default -> Comparator.comparing(com.lifepilot.memory.procedural.ProcedureTemplate::createdAt);
+        Comparator<ProcedureTemplate> comparator = switch (sortBy) {
+            case "successRate" -> Comparator.comparing(ProcedureTemplate::successRate);
+            case "useCount" -> Comparator.comparingInt(ProcedureTemplate::useCount);
+            default -> Comparator.comparing(ProcedureTemplate::createdAt);
         };
         if ("desc".equalsIgnoreCase(order)) {
             comparator = comparator.reversed();
@@ -891,6 +899,64 @@ public class MemoryController {
         return ApiResponse.ok(Map.of("status", "accepted", "message", "巩固任务已提交"));
     }
 
+    /**
+     * 手动触发 REM 联想候选落库 — 开发期用于验证关系图谱写入；生产由巩固周期触发。
+     */
+    @PostMapping("/rem/apply")
+    public ApiResponse<Map<String, Object>> triggerRemApply(
+            @RequestParam(required = false) @Nullable String date) {
+        requireMemoryEnabled();
+        if (remApplier == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "REM 落库应用器未启用");
+        }
+        java.time.LocalDate target = (date != null && !date.isBlank())
+                ? java.time.LocalDate.parse(date.trim())
+                : java.time.LocalDate.now();
+        var result = remApplier.apply(target);
+        return ApiResponse.ok(Map.of(
+                "date", target.toString(),
+                "input", result.input(),
+                "applied", result.applied(),
+                "skippedLowConfidence", result.skippedLowConfidence(),
+                "skippedMissingEntity", result.skippedMissingEntity(),
+                "skippedDuplicate", result.skippedDuplicate()));
+    }
+
+    /**
+     * 记忆注意力清单（memory-proactive-foundation）—— 主动浮现"现在该关注什么、为什么"。
+     *
+     * <p>聚合临近到期 / 停滞高价值 / 演进活跃 / 图联想连接机会，按 score 降序返回。</p>
+     */
+    @GetMapping("/attention")
+    public ApiResponse<List<Map<String, Object>>> getAttention(
+            @RequestParam(required = false) @Nullable String projectId,
+            @RequestParam(defaultValue = "10") int limit) {
+        requireMemoryEnabled();
+        if (limit <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须大于 0");
+        }
+        if (memoryAttentionService == null) {
+            return ApiResponse.ok(List.of());
+        }
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var readFilter = toProjectReadFilter(projectContext, Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
+        var items = memoryAttentionService.computeAttention(readFilter, limit);
+        var result = items.stream().map(item -> {
+            var map = new LinkedHashMap<String, Object>();
+            map.put("entityId", item.entityId());
+            map.put("name", item.name());
+            map.put("entityType", item.entityType());
+            map.put("kind", item.kind().name());
+            map.put("score", item.score());
+            map.put("reason", item.reason());
+            if (item.dueAt() != null) map.put("dueAt", item.dueAt().toString());
+            if (item.daysIdle() != null) map.put("daysIdle", item.daysIdle());
+            if (item.pathLabels() != null) map.put("pathLabels", item.pathLabels());
+            return (Map<String, Object>) map;
+        }).toList();
+        return ApiResponse.ok(result);
+    }
+
     // ========== Req 9: 手动触发去重 ==========
 
     /**
@@ -913,6 +979,28 @@ public class MemoryController {
             }
         });
         return ApiResponse.ok(Map.of("status", "accepted", "message", "去重任务已提交"));
+    }
+
+    // ========== 手动触发遗忘（开发期，验证 ForgettingEngine）==========
+
+    /**
+     * 手动触发一次 MaRS 遗忘流程 — 开发期用于验证遗忘引擎；生产由 Cron 触发。
+     */
+    @PostMapping("/forget")
+    public ApiResponse<Map<String, Object>> triggerForgetting() {
+        requireMemoryEnabled();
+        if (forgettingEngine == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "遗忘引擎未启用");
+        }
+        if (!forgetting.compareAndSet(false, true)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "遗忘任务正在执行中");
+        }
+        try {
+            int count = forgettingEngine.forget();
+            return ApiResponse.ok(Map.of("status", "completed", "forgottenCount", count));
+        } finally {
+            forgetting.set(false);
+        }
     }
 
     // ========== 用户画像 ==========

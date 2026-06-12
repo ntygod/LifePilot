@@ -36,7 +36,7 @@ class SkillInstallationRepository_持久化测试 {
         var dbPath = Path.of(tmpDir, "skill-install-repo-test-" + DB_ID + ".db").toString().replace("\\", "/");
         var vecDbPath = Path.of(tmpDir, "skill-install-repo-vec-test-" + DB_ID + ".db").toString().replace("\\", "/");
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + dbPath);
-        registry.add("lifepilot.memory.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
+        registry.add("lifepilot.memory.store.vector-db-url", () -> "jdbc:sqlite:" + vecDbPath);
     }
 
     @Autowired

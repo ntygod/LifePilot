@@ -1,6 +1,6 @@
 package com.lifepilot.memory.episodic;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -67,17 +67,6 @@ class EpisodicMemorySessionReadModelTest {
                 )
                 """);
         jdbcTemplate.execute("""
-                CREATE TABLE session_transcript_compressions (
-                    entry_id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    compression_level INTEGER NOT NULL DEFAULT 0,
-                    compressed_content TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY (entry_id) REFERENCES session_transcript_entries(id) ON DELETE CASCADE,
-                    FOREIGN KEY (session_id) REFERENCES session_store(session_id) ON DELETE CASCADE
-                )
-                """);
-        jdbcTemplate.execute("""
                 CREATE VIRTUAL TABLE session_transcript_entries_fts USING fts5(
                     entry_id UNINDEXED,
                     session_id UNINDEXED,
@@ -134,7 +123,7 @@ class EpisodicMemorySessionReadModelTest {
                 END
                 """);
 
-        episodicMemory = new EpisodicMemory(jdbcTemplate, new MemoryProperties());
+        episodicMemory = new EpisodicMemory(jdbcTemplate);
     }
 
     @Test
@@ -225,25 +214,6 @@ class EpisodicMemorySessionReadModelTest {
 
         var listed = episodicMemory.listConversations(0, 10);
         assertThat(listed).extracting(ConversationRecord::id).contains("s1", "s2");
-    }
-
-    @Test
-    void compress_会写入Transcript压缩投影并影响读取结果() {
-        insertSession("s1", "tea preferences", "tea notes", Instant.parse("2026-03-19T09:00:00Z"));
-        insertTurn("s1", "m1", "user", "My favorite is oolong tea.", Instant.parse("2026-03-19T09:00:01Z"));
-        insertTurn("s1", "m2", "assistant", "I will remember that.", Instant.parse("2026-03-19T09:00:02Z"));
-
-        episodicMemory.compress("s1", CompressionLevel.SUMMARY, java.util.Map.of(
-                "m1", "用户偏好：乌龙茶",
-                "m2", "助手确认已记住偏好"
-        ));
-
-        var conversation = episodicMemory.getById("s1").orElseThrow();
-
-        assertThat(conversation.messages()).extracting(MessageRecord::effectiveContent)
-                .containsExactly("用户偏好：乌龙茶", "助手确认已记住偏好");
-        assertThat(conversation.messages()).extracting(MessageRecord::compressionLevel)
-                .containsOnly(CompressionLevel.SUMMARY);
     }
 
     private void insertSession(String id, String title, String summary, Instant createdAt) {

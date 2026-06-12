@@ -1,11 +1,12 @@
 package com.lifepilot.memory.semantic;
 
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.lifecycle.Temporality;
-import com.lifepilot.memory.lifecycle.WeightSource;
-import com.lifepilot.memory.lifecycle.events.EntityWeightChanged;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.governance.lifecycle.WeightSource;
+import com.lifepilot.memory.governance.lifecycle.events.EntityWeightChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.support.MemoryProjectionTestSupport;
+import com.lifepilot.memory.store.entity.*;
+import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEvent;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -114,24 +114,6 @@ class SemanticMemory_权重变化事件_集成测试 {
         assertThat(event.source()).isEqualTo(WeightSource.USER_FEEDBACK);
         assertThat(event.cumulativeScore()).isCloseTo(0.2d, org.assertj.core.data.Offset.offset(1e-6d));
         assertThat(event.delta()).isCloseTo(-0.3d, org.assertj.core.data.Offset.offset(1e-6d));
-    }
-
-    @Test
-    void 默认2arg重载应按USER_FEEDBACK发事件() {
-        var entity = 构造ACTIVE实体("entity-权重-2", EntityType.PREFERENCE, 0.4f);
-        semanticMemory.upsertWithConflictDetection(entity, null);
-        captured.clear();
-
-        semanticMemory.updateImportanceScore(entity.id(), 0.9f);
-
-        var weightEvents = captured.stream()
-                .filter(e -> e instanceof EntityWeightChanged)
-                .map(e -> (EntityWeightChanged) e)
-                .toList();
-        assertThat(weightEvents).hasSize(1);
-        assertThat(weightEvents.getFirst().source()).isEqualTo(WeightSource.USER_FEEDBACK);
-        assertThat(weightEvents.getFirst().delta())
-                .isCloseTo(0.5d, org.assertj.core.data.Offset.offset(1e-6d));
     }
 
     @Test

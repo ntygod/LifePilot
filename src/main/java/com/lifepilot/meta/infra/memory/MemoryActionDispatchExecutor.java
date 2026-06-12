@@ -1,12 +1,10 @@
 package com.lifepilot.meta.infra.memory;
 
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.dispatch.ActionDispatchExecutor;
@@ -31,7 +29,7 @@ public class MemoryActionDispatchExecutor extends ActionDispatchExecutor {
                                         SemanticMemory semanticMemory,
                                         @Nullable EpisodicMemory episodicMemory,
                                         @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
-                                        @Nullable MemoryProperties memoryProperties) {
+                                        @Nullable MemoryRetrievalProperties memoryProperties) {
         register("search",
                 RiskLevel.LOW,
                 ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),

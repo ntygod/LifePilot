@@ -2,13 +2,13 @@ package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.rerank.RerankCandidate;
-import com.lifepilot.memory.config.MemoryProperties;
-import com.lifepilot.memory.lifecycle.LifecycleState;
-import com.lifepilot.memory.procedural.IntentMatcher;
-import com.lifepilot.memory.quality.MemoryQualityPolicy;
-import com.lifepilot.memory.scope.MemoryReadFilter;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.rerank.router.RerankRouter;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
@@ -24,7 +24,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -52,7 +51,7 @@ public class HybridRetriever {
     private final SemanticMemory semanticMemory;
     @Nullable
     private final IntentMatcher intentMatcher;
-    private final MemoryProperties memoryProperties;
+    private final MemoryRetrievalProperties memoryProperties;
     private final JdbcTemplate jdbcTemplate;
     private final ExecutorService virtualThreadExecutor;
     @Nullable
@@ -75,7 +74,7 @@ public class HybridRetriever {
                            GraphTraverser graphTraverser,
                            SemanticMemory semanticMemory,
                            @Nullable IntentMatcher intentMatcher,
-                           MemoryProperties memoryProperties,
+                           MemoryRetrievalProperties memoryProperties,
                            JdbcTemplate jdbcTemplate,
                            @Nullable RerankRouter rerankRouter,
                            @Nullable MemoryProvenanceRepository provenanceRepository) {
@@ -128,7 +127,7 @@ public class HybridRetriever {
         long startTime = System.currentTimeMillis();
 
         // 1. 并行执行三路检索 + 可选 L4 意图匹配
-        float minVecSim = memoryProperties.getRetrieval().getMinVectorSimilarity();
+        float minVecSim = memoryProperties.getMinVectorSimilarity();
         // 向量路径 pre-filter：filter 生效时，预查合规实体 ID
         final Set<String> eligibleIds;
         if (filter != null && !filter.isUnrestricted()) {
@@ -223,7 +222,7 @@ public class HybridRetriever {
 
             // 可信度加成：trustScoreBoostWeight × trust_score（质量门槛之外的排序维度）
             float trustScore = trustScoreMap.getOrDefault(acc.entityId, 0.0f);
-            float trustBoost = memoryProperties.getRetrieval().getTrustScoreBoostWeight() * trustScore;
+            float trustBoost = memoryProperties.getTrustScoreBoostWeight() * trustScore;
 
             float lexicalBoost = acc.ftsScore >= EXACT_LEXICAL_MATCH_THRESHOLD
                     ? acc.ftsScore * adaptedWeights.ftsWeight()
@@ -233,17 +232,17 @@ public class HybridRetriever {
             LifecycleState lifecycleState = lifecycleStateMap.get(acc.entityId);
             float lifecycleAdjustment = 0.0f;
             if (lifecycleState == LifecycleState.REGENERATION_NEEDED) {
-                lifecycleAdjustment -= memoryProperties.getRetrieval().getStaleLifecyclePenalty();
+                lifecycleAdjustment -= memoryProperties.getStaleLifecyclePenalty();
             } else if (lifecycleState == LifecycleState.STALE_CANDIDATE) {
                 // memory-staleness spec：旧事实被新证据挑战，显著降权但仍可召回
-                float stalenessPenalty = memoryProperties.getStaleness().getRetrievalPenalty();
+                float stalenessPenalty = memoryProperties.getStalenessRetrievalPenalty();
                 lifecycleAdjustment -= stalenessPenalty;
                 if (log.isDebugEnabled()) {
                     log.debug("retrieval: STALE_CANDIDATE 降权 entity={} penalty={}",
                             acc.entityId, stalenessPenalty);
                 }
             } else if (lifecycleState == LifecycleState.COMPLETED) {
-                lifecycleAdjustment -= memoryProperties.getRetrieval().getHistoricalLifecyclePenalty();
+                lifecycleAdjustment -= memoryProperties.getHistoricalLifecyclePenalty();
             }
 
             float fusedScore = rrfScore + recencyBoost + impBoost + trustBoost + lifecycleAdjustment + lexicalBoost;
@@ -252,8 +251,8 @@ public class HybridRetriever {
             float timeDecayFactor = 1.0f;
             if (acc.updatedAt != null) {
                 long daysSinceUpdate = Duration.between(acc.updatedAt, now).toDays();
-                float decayRate = memoryProperties.getRetrieval().getTimeDecayRate();
-                float minDecay = memoryProperties.getRetrieval().getMinTimeDecayFactor();
+                float decayRate = memoryProperties.getTimeDecayRate();
+                float minDecay = memoryProperties.getMinTimeDecayFactor();
                 timeDecayFactor = Math.max(minDecay, 1.0f - daysSinceUpdate * decayRate);
             }
             float finalScore = fusedScore * timeDecayFactor;
@@ -340,7 +339,7 @@ public class HybridRetriever {
         }
 
         // 新增：fusedScore 阈值过滤
-        float minScore = memoryProperties.getRetrieval().getMinFusedScore();
+        float minScore = memoryProperties.getMinFusedScore();
         if (minScore > 0.0f) {
             int beforeCount = finalResults.size();
             finalResults = finalResults.stream()
@@ -378,12 +377,6 @@ public class HybridRetriever {
      *
      * @return L4 程序记忆匹配的 ReasoningSlot
      */
-    /**
-     * 兼容旧写入回调入口。检索 miss 不再设置全局空库缓存，因此这里保留为空实现。
-     */
-    public void resetEmptyFlag() {
-    }
-
     // --- 内部方法 ---
 
     /** 安全获取 CompletableFuture 结果，失败时返回空列表。 */

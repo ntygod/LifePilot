@@ -1,6 +1,10 @@
 package com.lifepilot.memory.consolidation.association;
 
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidate;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateStore;
+import com.lifepilot.agent.learning.consolidation.association.AssociationConsolidator;
+import com.lifepilot.agent.learning.consolidation.association.AssociationType;
+import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -21,7 +25,7 @@ class AssociationConsolidator_单元测试 {
 
     @Test
     void 置信度低于阈值被过滤(@TempDir Path tempDir) {
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setMinConfidence(0.65f);
         var store = new AssociationCandidateStore(tempDir);
         var consolidator = new AssociationConsolidator(props, store);
@@ -38,7 +42,7 @@ class AssociationConsolidator_单元测试 {
 
     @Test
     void 去重窗口内同source_target_type不重复入库(@TempDir Path tempDir) {
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         props.getRem().setMinConfidence(0.5f);
         props.getRem().setDeduplicationWindowHours(24);
         var store = new AssociationCandidateStore(tempDir);
@@ -55,7 +59,7 @@ class AssociationConsolidator_单元测试 {
 
     @Test
     void 不同关系类型不算重复(@TempDir Path tempDir) {
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         var store = new AssociationCandidateStore(tempDir);
         var consolidator = new AssociationConsolidator(props, store);
 
@@ -68,7 +72,7 @@ class AssociationConsolidator_单元测试 {
 
     @Test
     void 空输入返回0(@TempDir Path tempDir) {
-        var props = new MemoryProperties();
+        var props = new AgentLearningProperties();
         var store = new AssociationCandidateStore(tempDir);
         var consolidator = new AssociationConsolidator(props, store);
 

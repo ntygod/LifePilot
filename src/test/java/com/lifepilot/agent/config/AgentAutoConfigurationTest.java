@@ -9,7 +9,7 @@ import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.multimodal.MultimodalRouter;
-import com.lifepilot.memory.document.MemoryDocumentRepository;
+import com.lifepilot.memory.store.document.MemoryDocumentRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;

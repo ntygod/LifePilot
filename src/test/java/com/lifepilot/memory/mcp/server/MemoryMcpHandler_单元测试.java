@@ -1,15 +1,17 @@
 package com.lifepilot.memory.mcp.server;
 
 import com.lifepilot.mcp.protocol.JsonRpcMessage;
-import com.lifepilot.memory.config.MemoryProperties;
+import com.lifepilot.memory.governance.config.MemoryGovernanceProperties;
 import com.lifepilot.memory.episodic.ConversationRecord;
-import com.lifepilot.memory.episodic.EpisodicMemory;
+import com.lifepilot.memory.governance.server.MemoryMcpHandler;
+import com.lifepilot.memory.governance.server.MemoryMcpToolRegistry;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
-import com.lifepilot.memory.semantic.EntityType;
-import com.lifepilot.memory.semantic.SemanticMemory;
-import com.lifepilot.memory.semantic.TemporalEntity;
+import com.lifepilot.memory.store.entity.EntityType;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -32,7 +34,7 @@ import static org.mockito.Mockito.when;
  */
 class MemoryMcpHandler_单元测试 {
 
-    private final MemoryProperties properties = new MemoryProperties();
+    private final MemoryGovernanceProperties properties = new MemoryGovernanceProperties();
     private final MemoryMcpToolRegistry registry = new MemoryMcpToolRegistry();
 
     @Test

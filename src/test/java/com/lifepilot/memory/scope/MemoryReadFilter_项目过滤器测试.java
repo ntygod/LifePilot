@@ -1,5 +1,7 @@
 package com.lifepilot.memory.scope;
 
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
+import com.lifepilot.memory.store.scope.MemoryScope;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
