@@ -103,12 +103,6 @@ public class AgentConfigProperties {
         private int maxContextTokens = 2000000;
         @Setter
         private int outputReservedTokens = 8192;
-        /** 成功步骤输出截断长度。 */
-        @Setter
-        private int successStepMaxLength = 200;
-        /** 失败步骤输出截断长度。 */
-        @Setter
-        private int failedStepMaxLength = 80;
         /** Token 分配比例。 */
         private TokenAllocation tokenAllocation = new TokenAllocation();
         private SliceConfig slice = new SliceConfig();
@@ -157,7 +151,6 @@ public class AgentConfigProperties {
         @Setter
         @Getter
         public static class SliceConfig {
-            private int recentTurnLimit = 6;
             private int recentArtifactLimit = 3;
         }
 

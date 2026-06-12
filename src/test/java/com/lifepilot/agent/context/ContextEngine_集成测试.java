@@ -148,7 +148,6 @@ class ContextEngine_集成测试 {
         config.getContext().setOutputReservedTokens(512);
         config.getContext().getTokenAllocation().setToolResultPercent(20);
         config.getContext().getTokenAllocation().setMemoryPercent(15);
-        config.getContext().getSlice().setRecentTurnLimit(2);
         config.getContext().getSlice().setRecentArtifactLimit(2);
         config.getContext().getPruning().setRecentToolResultLimit(10);
         config.getContext().getPruning().setToolResultPreviewChars(80);
