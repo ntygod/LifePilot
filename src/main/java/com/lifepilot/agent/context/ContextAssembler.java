@@ -318,21 +318,22 @@ public class ContextAssembler {
             updateInjectedAccessCounts(injectedIds);
 
             String systemPrompt = buildAugmentedSystemPrompt(state);
-            // 智能层决策信号注入（Phase 1）
-            String decisionSignalText = buildDecisionSignalSection(state);
-            if (decisionSignalText != null && !decisionSignalText.isBlank()) {
-                systemPrompt = systemPrompt + "\n\n" + decisionSignalText;
-            }
             MemoryCounts memoryCounts = buildInjectedMemoryCounts(
                     rawProfileSection, rawExperienceSection, rawMemorySection);
-            List<Message> contextMessages = buildContextMessages(
+            List<Message> contextMessages = new ArrayList<>(buildContextMessages(
                     profileSection,
                     workspaceSection,
                     artifactSection,
                     experienceSection,
                     memorySection,
                     memoryCounts
-            );
+            ));
+            // 智能层决策信号注入（Phase 1）：放入 user 上下文段首，而非追加到 system 前缀，
+            // 使 system 提示词（角色/工具协议/catalog）在多轮间保持稳定，利于 provider prompt caching。
+            String decisionSignalText = buildDecisionSignalSection(state);
+            if (decisionSignalText != null && !decisionSignalText.isBlank()) {
+                contextMessages.add(0, new AssistantMessage(decisionSignalText));
+            }
             String userPrompt = buildUserPrompt(state);
 
             TokenBudget tokenBudget = buildTokenBudget(
