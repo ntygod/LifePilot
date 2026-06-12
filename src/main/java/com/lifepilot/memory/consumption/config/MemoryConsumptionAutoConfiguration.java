@@ -1,7 +1,5 @@
 package com.lifepilot.memory.consumption.config;
 
-import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.memory.consumption.compression.CompressionService;
 import com.lifepilot.memory.consumption.EpisodicCleanupJob;
 import com.lifepilot.memory.consumption.attention.GraphReasoner;
 import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
@@ -11,7 +9,6 @@ import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.observability.redactor.DataRedactor;
-import com.lifepilot.prompt.PromptRegistry;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,17 +44,6 @@ public class MemoryConsumptionAutoConfiguration {
                                                           Clock clock) {
         log.info("记忆模块: 注册 HotMemoryDigestService");
         return new HotMemoryDigestService(semanticMemory, properties, proceduralMemory, dataRedactor, clock);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public CompressionService compressionService(EpisodicMemory episodicMemory,
-                                                 @Nullable GenerationRouter generationRouter,
-                                                 PromptRegistry promptRegistry,
-                                                 MemoryConsumptionProperties properties) {
-        log.info("记忆模块: 注册 CompressionService, generationRouterAvailable={}",
-                generationRouter != null ? "yes" : "no");
-        return new CompressionService(generationRouter, episodicMemory, promptRegistry, properties);
     }
 
     @Bean

@@ -17,18 +17,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "lifepilot.memory.consumption")
 public class MemoryConsumptionProperties {
 
-    /** 触发压缩的 Token 阈值，默认 4000。 */
-    private int compressionThresholdTokens = 4000;
-
     // ─── HotDigest 热记忆摘要配置 ───
 
     /** 热记忆摘要配置。 */
     private HotDigest hotDigest = new HotDigest();
-
-    // ─── Compression 对话压缩配置 ───
-
-    /** 对话压缩配置。 */
-    private Compression compression = new Compression();
 
     // ─── EpisodicCleanup 情景记忆清理配置 ───
 
@@ -75,23 +67,6 @@ public class MemoryConsumptionProperties {
 
         /** 事实最多条目数。 */
         private int factsMaxEntries = 4;
-    }
-
-    /**
-     * 对话压缩配置 — 控制压缩策略、滑动窗口大小和窗口重叠。
-     */
-    @Setter
-    @Getter
-    public static class Compression {
-
-        /** 压缩策略：whole / sliding-window，默认 sliding-window。 */
-        private String strategy = "sliding-window";
-
-        /** 滑动窗口大小（消息数），默认 20。 */
-        private int windowSize = 20;
-
-        /** 窗口重叠消息数，默认 2。 */
-        private int windowOverlap = 2;
     }
 
     /**

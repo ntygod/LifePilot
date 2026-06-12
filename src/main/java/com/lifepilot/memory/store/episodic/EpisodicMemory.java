@@ -106,11 +106,6 @@ public class EpisodicMemory {
                     payloadJson,
                     Math.max(0, msg.tokenCount()),
                     msg.createdAt().toString());
-            if (msg.compressedContent() != null && !msg.compressedContent().isBlank()
-                    && msg.compressionLevel() != CompressionLevel.ORIGINAL) {
-                upsertCompressionProjection(sessionId, msg.id(), msg.compressionLevel(), msg.compressedContent(),
-                        record.updatedAt());
-            }
         }
 
         notifyWriteCallback();
@@ -308,34 +303,6 @@ public class EpisodicMemory {
         return rows > 0;
     }
 
-    @Transactional
-    public void compress(String conversationId,
-                         CompressionLevel targetLevel,
-                         Map<String, String> compressedTexts) {
-        if (compressedTexts == null || compressedTexts.isEmpty()) {
-            return;
-        }
-        int updated = 0;
-        Instant now = Instant.now();
-        for (var entry : compressedTexts.entrySet()) {
-            String compressedContent = entry.getValue();
-            if (compressedContent == null || compressedContent.isBlank()) {
-                continue;
-            }
-            updated += upsertCompressionProjection(
-                    conversationId,
-                    entry.getKey(),
-                    targetLevel,
-                    compressedContent,
-                    now);
-        }
-        if (updated > 0) {
-            notifyWriteCallback();
-        }
-        log.info("已写入 transcript 压缩投影: conversationId={}, level={}, count={}",
-                conversationId, targetLevel, updated);
-    }
-
     private void notifyWriteCallback() {
         if (writeCallback == null) {
             return;
@@ -366,11 +333,8 @@ public class EpisodicMemory {
                        e.session_id,
                        e.role,
                        json_extract(e.payload_json, '$.content') AS content,
-                       c.compressed_content AS compressed_content,
-                       COALESCE(c.compression_level, 0) AS compression_level,
                        e.created_at
                 FROM session_transcript_entries e
-                LEFT JOIN session_transcript_compressions c ON c.entry_id = e.id
                 WHERE e.session_id = ?
                   AND e.entry_type IN ('user_message', 'assistant_message')
                   AND e.visible_to_user = 1
@@ -382,43 +346,13 @@ public class EpisodicMemory {
                         rs.getString("session_id"),
                         rs.getString("role"),
                         rs.getString("content"),
-                        normalizeBlank(rs.getString("compressed_content")),
-                        CompressionLevel.fromLevel(rs.getInt("compression_level")),
+                        null,
+                        CompressionLevel.ORIGINAL,
                         false,
                         null,
                         estimateTokenCount(rs.getString("content")),
                         Instant.parse(rs.getString("created_at"))),
                 sessionId);
-    }
-
-    private int upsertCompressionProjection(String sessionId,
-                                            String entryId,
-                                            CompressionLevel targetLevel,
-                                            String compressedContent,
-                                            Instant updatedAt) {
-        return jdbcTemplate.update("""
-                        INSERT INTO session_transcript_compressions (
-                            entry_id, session_id, compression_level, compressed_content, updated_at
-                        )
-                        SELECT id, session_id, ?, ?, ?
-                        FROM session_transcript_entries
-                        WHERE id = ?
-                          AND session_id = ?
-                          AND entry_type IN ('user_message', 'assistant_message')
-                          AND visible_to_user = 1
-                        ON CONFLICT(entry_id) DO UPDATE SET
-                            session_id = excluded.session_id,
-                            compression_level = excluded.compression_level,
-                            compressed_content = excluded.compressed_content,
-                            updated_at = excluded.updated_at
-                        WHERE session_transcript_compressions.compression_level <= excluded.compression_level
-                        """,
-                targetLevel.level(),
-                compressedContent,
-                updatedAt.toString(),
-                entryId,
-                sessionId
-        );
     }
 
     private String escapeJson(String value) {

@@ -361,7 +361,6 @@ lifepilot:
         default-importance: 0.5
     # 消费层（绑定 lifepilot.memory.consumption）
     consumption:
-      compression-threshold-tokens: 4000
       # L3.5 热记忆摘要（小预算、带来源，从 L3 可消费实体和 L4 高置信偏好实时派生）
       hot-digest:
         enabled: true
@@ -373,11 +372,6 @@ lifepilot:
         project-memory-max-entries: 4
         experience-max-entries: 3
         facts-max-entries: 4
-      # 对话压缩配置（consumption.compression）
-      compression:
-        strategy: sliding-window
-        window-size: 20
-        window-overlap: 2
       # L2 情景记忆自动清理（consumption.episodic-cleanup）
       episodic-cleanup:
         cron: "0 0 5 * * *"
