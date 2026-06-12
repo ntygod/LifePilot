@@ -25,7 +25,9 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.UUID;
 
@@ -44,9 +46,15 @@ import static org.mockito.Mockito.mock;
 class 记忆注意力_集成测试 {
 
     private static final String SPACE_ID = "memory-space-personal-default";
-    private static final Instant NOW = Instant.parse("2026-06-07T00:00:00Z");
+    // 锚定到真实当天起点（UTC）—— 避免固定过去日期被 isPromptConsumable 墙钟判过期的时间炸弹
+    private static final Instant NOW = Instant.now().truncatedTo(ChronoUnit.DAYS);
     private static final String NOW_S = NOW.toString();
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+
+    /** 相对 NOW 的 yyyy-MM-dd 日期字符串（dueAt 用）。 */
+    private static String isoPlus(long days) {
+        return LocalDate.ofInstant(NOW, ZoneOffset.UTC).plusDays(days).toString();
+    }
 
     private SingleConnectionDataSource dataSource;
     private JdbcTemplate jdbcTemplate;
@@ -127,18 +135,18 @@ class 记忆注意力_集成测试 {
 
     @Test
     void findWithDueDate只返回带dueAt的实体() {
-        插入带截止实体("g-due", "季度述职报告", EntityType.GOAL, "2026-06-10");
+        插入带截止实体("g-due", "季度述职报告", EntityType.GOAL, isoPlus(3));
         插入实体("g-nodue", "无截止目标", EntityType.GOAL, 0.7f, null, NOW);
 
         var list = semanticMemory.findWithDueDate(EnumSet.of(EntityType.GOAL), null);
 
         assertThat(list).extracting(e -> e.id()).containsExactly("g-due");
-        assertThat(list.getFirst().properties().get("dueAt")).isEqualTo("2026-06-10");
+        assertThat(list.getFirst().properties().get("dueAt")).isEqualTo(isoPlus(3));
     }
 
     @Test
     void computeAttention产出DUE_SOON() {
-        插入带截止实体("g-due", "季度述职报告", EntityType.GOAL, "2026-06-10");  // NOW=06-07，3 天后
+        插入带截止实体("g-due", "季度述职报告", EntityType.GOAL, isoPlus(3));  // NOW+3 天后
 
         var items = attentionService.computeAttention(null, 20);
 

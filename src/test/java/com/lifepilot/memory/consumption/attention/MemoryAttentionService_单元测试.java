@@ -14,7 +14,9 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
@@ -33,8 +35,14 @@ import static org.mockito.Mockito.when;
  */
 class MemoryAttentionService_单元测试 {
 
-    private static final Instant NOW = Instant.parse("2026-06-07T00:00:00Z");
+    // 锚定到真实当天起点（UTC）—— 避免固定过去日期与 isPromptConsumable 墙钟过期判断冲突的时间炸弹
+    private static final Instant NOW = Instant.now().truncatedTo(ChronoUnit.DAYS);
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+
+    /** 相对 NOW 的 yyyy-MM-dd 日期字符串（dueAt 用）。 */
+    private static String isoPlus(long days) {
+        return LocalDate.ofInstant(NOW, ZoneOffset.UTC).plusDays(days).toString();
+    }
 
     private SemanticMemory semanticMemory;
     private GraphReasoner graphReasoner;
@@ -87,7 +95,7 @@ class MemoryAttentionService_单元测试 {
     @Test
     void DUE_SOON_未来窗口内应产出并标注剩余天数() {
         when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of(
-                dueEntity("g1", "季度述职报告", EntityType.GOAL, 0.7f, "2026-06-10")));
+                dueEntity("g1", "季度述职报告", EntityType.GOAL, 0.7f, isoPlus(3))));
 
         var items = service.computeAttention(null, 10);
 
@@ -95,14 +103,14 @@ class MemoryAttentionService_单元测试 {
             assertThat(i.kind()).isEqualTo(MemoryAttentionService.AttentionKind.DUE_SOON);
             assertThat(i.entityId()).isEqualTo("g1");
             assertThat(i.reason()).contains("天后到期");
-            assertThat(i.dueAt()).isEqualTo(Instant.parse("2026-06-10T00:00:00Z"));
+            assertThat(i.dueAt()).isEqualTo(NOW.plus(Duration.ofDays(3)));
         });
     }
 
     @Test
     void DUE_SOON_已逾期应产出并标注逾期() {
         when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of(
-                dueEntity("g1", "季度述职报告", EntityType.GOAL, 0.7f, "2026-06-01")));  // NOW=06-07，已逾期
+                dueEntity("g1", "季度述职报告", EntityType.GOAL, 0.7f, isoPlus(-6))));  // 已逾期
 
         var items = service.computeAttention(null, 10);
 
@@ -116,7 +124,7 @@ class MemoryAttentionService_单元测试 {
     @Test
     void DUE_SOON_窗口外不产出() {
         when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of(
-                dueEntity("g1", "远期目标", EntityType.GOAL, 0.7f, "2026-09-01")));  // 远超 14 天窗口
+                dueEntity("g1", "远期目标", EntityType.GOAL, 0.7f, isoPlus(86))));  // 远超 14 天窗口
 
         var items = service.computeAttention(null, 10);
 
@@ -230,7 +238,7 @@ class MemoryAttentionService_单元测试 {
     @Test
     void UNVERIFIED实体不应产出DUE_SOON() {
         var due = new TemporalEntity(
-                "g1", EntityType.GOAL, "猜测截止", "描述", Map.of("dueAt", "2026-06-10"),
+                "g1", EntityType.GOAL, "猜测截止", "描述", Map.of("dueAt", isoPlus(3)),
                 1, true, NOW, null, "conv", 0.3f, 0.7f, 0, NOW, NOW, NOW,
                 LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of())
                 .withQuality(MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED, 0.0f, 0, null);
