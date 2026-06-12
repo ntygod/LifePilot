@@ -173,6 +173,14 @@ public class AgentConfigProperties {
             private int minTurnCount = 6;
             private int maxSourceEntries = 80;
             private int summaryMaxChars = 500;
+            /**
+             * 固定开销预留 token 数 — 代表 systemPrompt + skill/mcp catalog + 自动注入
+             * （热摘要/决策信号/工作区/检查点）等非 transcript 的每轮固定开销。
+             *
+             * <p>压缩触发阈值在有效窗口中先扣除该预留，使压缩在真实逼近窗口时及时触发，
+             * 而非仅按 transcript token 判断导致偏晚。</p>
+             */
+            private int fixedOverheadReserveTokens = 8000;
         }
 
         @Setter

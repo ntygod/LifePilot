@@ -606,31 +606,38 @@ public class CompactionEngine {
         if (percent <= 0) {
             percent = DEFAULT_TRIGGER_THRESHOLD_PERCENT;
         }
-        return Math.max(1, resolveEffectiveContextWindow(preferredProviderId) * percent / 100);
+        // 有效窗口先扣除固定开销预留（systemPrompt + catalog + 自动注入），
+        // 使压缩按"transcript 可用窗口"判断，及时在真实逼近窗口时触发。
+        int effectiveWindow = resolveEffectiveContextWindow(preferredProviderId);
+        int reserve = Math.max(0, compactionConfig().getFixedOverheadReserveTokens());
+        int transcriptWindow = Math.max(1024, effectiveWindow - reserve);
+        return Math.max(1, transcriptWindow * percent / 100);
     }
 
     /**
      * 确定有效上下文窗口大小。
-     * <p>取用户配置的窗口和 Provider 实际支持的窗口中的较小值，
-     * 保证阈值计算不会超出 Provider 的真实能力。
-     * Provider 查询失败时静默降级为配置值。</p>
+     * <p>{@code maxContextTokens <= 0} 时以 Provider 实际窗口为准；否则取配置窗口与
+     * Provider 窗口的较小值。Provider 查询失败时回退配置值（或安全默认）。</p>
      */
     private int resolveEffectiveContextWindow(@Nullable String preferredProviderId) {
-        int configuredWindow = Math.max(1024, config.getContext().getMaxContextTokens());
+        int configuredWindow = config.getContext().getMaxContextTokens();
+        int providerWindow = 0;
         try {
-            int providerWindow = generationRouter.resolveMaxContextWindow(
+            providerWindow = generationRouter.resolveMaxContextWindow(
                     config.getLoop().getLlmScene(),
                     preferredProviderId,
                     null
             );
-            if (providerWindow > 0) {
-                return Math.min(configuredWindow, providerWindow);
-            }
         } catch (Exception e) {
             log.debug("读取 Provider 上下文窗口失败，回退默认配置: provider={}, error={}",
                     preferredProviderId, e.getMessage());
         }
-        return configuredWindow;
+        if (configuredWindow <= 0) {
+            // 以 Provider 窗口为准；Provider 不可用时回退安全默认
+            return providerWindow > 0 ? providerWindow : 128_000;
+        }
+        configuredWindow = Math.max(1024, configuredWindow);
+        return providerWindow > 0 ? Math.min(configuredWindow, providerWindow) : configuredWindow;
     }
 
     // ──────────────────────────────────────────────────────
