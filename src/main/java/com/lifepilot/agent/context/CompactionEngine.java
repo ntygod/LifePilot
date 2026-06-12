@@ -18,6 +18,8 @@ import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * CompactionEngine 负责在 transcript-first 架构下生成会话压缩摘要。
@@ -30,6 +32,13 @@ import java.util.*;
 public class CompactionEngine {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionEngine.class);
+
+    /**
+     * 按 sessionId 维度的压缩锁 — 串行化同一会话的轮中（ReAct 循环）与轮末（异步后处理）压缩，
+     * 防止两个触发点并发写入双 compaction_summary 条目（竞态）。tryLock 获取失败即跳过本次压缩，
+     * 由下一轮重判（区间去重由 compaction 边界解析 + minTurnCount 天然保证）。
+     */
+    private final ConcurrentHashMap<String, ReentrantLock> sessionLocks = new ConcurrentHashMap<>();
 
     /** 触发压缩的上下文窗口占用百分比阈值 */
     private static final int DEFAULT_TRIGGER_THRESHOLD_PERCENT = 75;
@@ -110,6 +119,22 @@ public class CompactionEngine {
         if (sessionId == null || sessionId.isBlank() || !compactionConfig().isEnabled()) {
             return false;
         }
+        // ── 并发串行化：同一会话同一时刻只允许一个压缩执行，获取不到锁即跳过 ──
+        ReentrantLock lock = sessionLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
+        if (!lock.tryLock()) {
+            log.debug("会话压缩已在进行中，跳过本次触发: sessionId={}", sessionId);
+            return false;
+        }
+        try {
+            return doCompactIfNeeded(sessionId, traceId, preferredProviderId);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private boolean doCompactIfNeeded(String sessionId,
+                                      @Nullable String traceId,
+                                      @Nullable String preferredProviderId) {
         try {
             // ── 第 1 步：加载全量 transcript 条目 ──
             List<SessionTranscriptRepository.SessionTranscriptEntryRow> allRows =
