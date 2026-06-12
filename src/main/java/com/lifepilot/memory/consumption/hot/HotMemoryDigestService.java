@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consumption.hot;
 
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.agent.learning.experience.SubtaskReflector;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
@@ -209,7 +210,7 @@ public class HotMemoryDigestService {
             MemoryConsumptionProperties.HotDigest config) {
         StringBuilder content = new StringBuilder("L3.5 热记忆 - 用户画像:\n");
         Set<String> sourceIds = new LinkedHashSet<>();
-        int usedTokens = estimateTokens(content.toString());
+        int usedTokens = TokenEstimator.estimate(content.toString());
         int added = 0;
 
         for (TemporalEntity entity : l3Entries) {
@@ -220,7 +221,7 @@ public class HotMemoryDigestService {
             if (entry == null || entry.isBlank()) {
                 continue;
             }
-            int entryTokens = estimateTokens(entry);
+            int entryTokens = TokenEstimator.estimate(entry);
             if (usedTokens + entryTokens > config.getUserProfileTokenBudget()) {
                 break;
             }
@@ -238,7 +239,7 @@ public class HotMemoryDigestService {
             if (entry == null || entry.isBlank()) {
                 continue;
             }
-            int entryTokens = estimateTokens(entry);
+            int entryTokens = TokenEstimator.estimate(entry);
             if (usedTokens + entryTokens > config.getUserProfileTokenBudget()) {
                 break;
             }
@@ -269,7 +270,7 @@ public class HotMemoryDigestService {
         }
         StringBuilder content = new StringBuilder(title).append('\n');
         Set<String> sourceIds = new LinkedHashSet<>();
-        int usedTokens = estimateTokens(content.toString());
+        int usedTokens = TokenEstimator.estimate(content.toString());
         int added = 0;
 
         for (TemporalEntity entity : candidates.stream()
@@ -282,7 +283,7 @@ public class HotMemoryDigestService {
             if (entry == null || entry.isBlank()) {
                 continue;
             }
-            int entryTokens = estimateTokens(entry);
+            int entryTokens = TokenEstimator.estimate(entry);
             if (usedTokens + entryTokens > tokenBudget) {
                 break;
             }
@@ -442,17 +443,6 @@ public class HotMemoryDigestService {
         } catch (Exception e) {
             return Integer.toHexString(raw.hashCode());
         }
-    }
-
-    private int estimateTokens(@Nullable String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        long cjkChars = text.chars()
-                .filter(ch -> Character.UnicodeScript.of(ch) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     private String textOrEmpty(@Nullable String text) {

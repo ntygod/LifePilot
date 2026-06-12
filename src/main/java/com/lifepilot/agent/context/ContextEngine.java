@@ -8,6 +8,7 @@ import com.lifepilot.conversation.transcript.TranscriptEntryType;
 import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.store.workspace.WorkspaceItem;
 import com.lifepilot.memory.store.workspace.WorkspaceProperties;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.observability.context.ContextReportRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -277,7 +278,7 @@ public class ContextEngine {
                 }
                 section.append('\n');
             }
-            return new ArtifactSnapshot(section.toString(), estimateTokens(section.toString()), artifacts.size());
+            return new ArtifactSnapshot(section.toString(), TokenEstimator.estimate(section.toString()), artifacts.size());
         } catch (Exception e) {
             log.warn("context engine 读取 artifact 失败: sessionId={}, error={}", sessionId, e.getMessage());
             return new ArtifactSnapshot("", 0, 0);
@@ -643,21 +644,21 @@ public class ContextEngine {
 
     private int estimateMessageTokens(Message message) {
         return switch (message) {
-            case UserMessage userMessage -> estimateTokens(userMessage.getText());
+            case UserMessage userMessage -> TokenEstimator.estimate(userMessage.getText());
             case AssistantMessage assistantMessage -> {
-                int tokens = estimateTokens(assistantMessage.getText());
+                int tokens = TokenEstimator.estimate(assistantMessage.getText());
                 if (assistantMessage.hasToolCalls()) {
                     for (AssistantMessage.ToolCall toolCall : assistantMessage.getToolCalls()) {
-                        tokens += estimateTokens(toolCall.name());
-                        tokens += estimateTokens(toolCall.arguments());
+                        tokens += TokenEstimator.estimate(toolCall.name());
+                        tokens += TokenEstimator.estimate(toolCall.arguments());
                     }
                 }
                 yield tokens;
             }
             case ToolResponseMessage toolResponseMessage -> toolResponseMessage.getResponses().stream()
-                    .mapToInt(response -> estimateTokens(response.name()) + estimateTokens(response.responseData()))
+                    .mapToInt(response -> TokenEstimator.estimate(response.name()) + TokenEstimator.estimate(response.responseData()))
                     .sum();
-            default -> estimateTokens(message.toString());
+            default -> TokenEstimator.estimate(message.toString());
         };
     }
 
@@ -666,17 +667,6 @@ public class ContextEngine {
             return bool;
         }
         return value != null && Boolean.parseBoolean(value.toString());
-    }
-
-    private int estimateTokens(@Nullable String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        long cjkChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     private AgentConfigProperties.ContextConfig.ReportConfig reportConfig() {

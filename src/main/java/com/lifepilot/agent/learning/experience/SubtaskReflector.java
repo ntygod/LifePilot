@@ -9,6 +9,7 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
@@ -217,9 +218,9 @@ public class SubtaskReflector {
                     pair.observation().success() ? "成功" : "失败",
                     pair.observation().output());
 
-            // 估算 Token：字符串长度 / 4 作为粗略估计
-            int currentTokens = estimateTokens(sb.toString());
-            int lineTokens = estimateTokens(line);
+            // 估算 Token：统一口径 TokenEstimator
+            int currentTokens = TokenEstimator.estimate(sb.toString());
+            int lineTokens = TokenEstimator.estimate(line);
 
             if (currentTokens + lineTokens > maxTokens) {
                 // 截断：尝试添加部分内容
@@ -234,17 +235,6 @@ public class SubtaskReflector {
         }
 
         return sb.toString();
-    }
-
-    /**
-     * 估算文本 Token 数 — 简单启发式：字符串长度 / 4。
-     *
-     * @param text 输入文本
-     * @return 估算的 Token 数
-     */
-    private int estimateTokens(String text) {
-        if (text == null || text.isEmpty()) return 0;
-        return Math.max(1, text.length() / 4);
     }
 
     /** 持久化子任务经验实体。 */

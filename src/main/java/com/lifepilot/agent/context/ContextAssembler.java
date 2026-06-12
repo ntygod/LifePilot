@@ -9,6 +9,7 @@ import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
 import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.agent.learning.experience.EffectivenessTracker;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigest;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
 import com.lifepilot.memory.consumption.hot.HotMemorySectionKind;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
@@ -342,7 +343,7 @@ public class ContextAssembler {
                     contextSnapshot.toolResultTokens()
             );
 
-            int workspaceTokens = estimateTokens(workspaceSection);
+            int workspaceTokens = TokenEstimator.estimate(workspaceSection);
             AssembledContext context = new AssembledContext(
                     systemPrompt,
                     contextMessages,
@@ -942,7 +943,7 @@ public class ContextAssembler {
                                          int contextMessageTokens,
                                          int toolResultTokens) {
         TokenBudget base = TokenBudget.allocateDefault(totalTokens, config.getContext().getTokenAllocation());
-        int systemPromptUsed = Math.max(0, estimateTokens(systemPrompt));
+        int systemPromptUsed = Math.max(0, TokenEstimator.estimate(systemPrompt));
         int historyUsed = historyTokens;
         int memoryUsed = Math.max(0, contextMessageTokens);
         int toolResultUsed = toolResultTokens;
@@ -967,7 +968,7 @@ public class ContextAssembler {
             return 0;
         }
         return contextMessages.stream()
-                .mapToInt(message -> estimateTokens(message.getText()))
+                .mapToInt(message -> TokenEstimator.estimate(message.getText()))
                 .sum();
     }
 
@@ -1020,17 +1021,6 @@ public class ContextAssembler {
             sb.append('\n');
         }
         return sb.toString();
-    }
-
-    int estimateTokens(@Nullable String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        long cjkChars = text.chars()
-                .filter(ch -> Character.UnicodeScript.of(ch) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     /**
@@ -1222,7 +1212,7 @@ public class ContextAssembler {
             return "";
         }
         String content = state.loadedSkillContent().strip();
-        int tokens = estimateTokens(content);
+        int tokens = TokenEstimator.estimate(content);
         if (tokens > LOADED_SKILLS_MAX_TOKENS) {
             log.warn("loaded_skills 内容超出预算被截断: originalTokens={}, budget={}",
                     tokens, LOADED_SKILLS_MAX_TOKENS);
@@ -1234,13 +1224,13 @@ public class ContextAssembler {
 
     /** 按 token 预算截断字符串，按行边界切（避免破坏 markdown 结构）。 */
     private String truncateByTokenBudget(String text, int tokenBudget) {
-        if (estimateTokens(text) <= tokenBudget) {
+        if (TokenEstimator.estimate(text) <= tokenBudget) {
             return text;
         }
         var sb = new StringBuilder();
         int used = 0;
         for (String line : text.split("\n", -1)) {
-            int lineTokens = estimateTokens(line) + 1; // 算上换行
+            int lineTokens = TokenEstimator.estimate(line) + 1; // 算上换行
             if (used + lineTokens > tokenBudget) break;
             sb.append(line).append('\n');
             used += lineTokens;

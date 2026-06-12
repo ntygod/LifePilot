@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
@@ -92,7 +93,7 @@ public class SessionPruningEngine {
             if (preview.isBlank()) {
                 continue;
             }
-            int lineTokens = estimateTokens(preview);
+            int lineTokens = TokenEstimator.estimate(preview);
             boolean pinnedFailure = pinnedFailureEntryIds.contains(candidate.id());
             boolean overRecentLimit = recentOnlyMode && selectedCount >= resultLimit && !pinnedFailure;
             boolean overTokenBudget = usedTokens + lineTokens > toolResultBudget;
@@ -467,17 +468,6 @@ public class SessionPruningEngine {
 
     private String normalizeWhitespace(@Nullable String text) {
         return text == null ? "" : text.replaceAll("\\s+", " ").trim();
-    }
-
-    private int estimateTokens(@Nullable String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        long cjkChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     private boolean booleanValue(@Nullable Object value) {

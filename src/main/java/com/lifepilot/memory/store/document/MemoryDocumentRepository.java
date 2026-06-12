@@ -3,6 +3,7 @@ package com.lifepilot.memory.store.document;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -131,7 +132,7 @@ public class MemoryDocumentRepository {
                     documentId,
                     i,
                     content,
-                    estimateTokens(content),
+                    TokenEstimator.estimate(content),
                     timestamp.toString()
             );
         }
@@ -195,17 +196,6 @@ public class MemoryDocumentRepository {
                 rs.getInt("token_estimate"),
                 Instant.parse(rs.getString("created_at"))
         );
-    }
-
-    private int estimateTokens(String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        long cjkChars = text.chars()
-                .filter(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN)
-                .count();
-        long otherChars = text.length() - cjkChars;
-        return Math.max(1, (int) (cjkChars + otherChars / 4));
     }
 
     @SuppressWarnings("unused")

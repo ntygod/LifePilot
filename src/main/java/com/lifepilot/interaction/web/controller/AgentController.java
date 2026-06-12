@@ -18,6 +18,7 @@ import com.lifepilot.interaction.web.model.ContextPreviewResponse.TokenBudgetInf
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.knowledge.model.KnowledgeBase;
 import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
@@ -556,7 +557,7 @@ public class AgentController {
                             ContextMessageFormatter.serializeForPreview(assembled.historyMessages()),
                             tb.historyUsed() + tb.toolResultUsed()));
             segments.put(ContextPreviewResponse.SEGMENT_CURRENT_USER_PROMPT,
-                    new SegmentInfo(assembled.userPrompt(), estimateTokens(assembled.userPrompt())));
+                    new SegmentInfo(assembled.userPrompt(), TokenEstimator.estimate(assembled.userPrompt())));
 
             var tokenBudgetInfo = new TokenBudgetInfo(
                     tb.systemPromptBudget(), tb.historyBudget(), tb.memoryBudget(),
@@ -585,16 +586,9 @@ public class AgentController {
     /**
      * 获取 Agent 详情。
      *
-     * @param text Agent ID
+     * @param id Agent ID
      * @return Agent 详情
      */
-    private int estimateTokens(String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        return Math.max(1, text.length() / 4);
-    }
-
     @GetMapping("/{id}")
     public ApiResponse<?> getAgent(@PathVariable String id) {
         log.debug("查询 Agent 详情: id={}", id);
