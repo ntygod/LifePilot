@@ -18,7 +18,6 @@ import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -34,11 +33,29 @@ public class CompactionEngine {
     private static final Logger log = LoggerFactory.getLogger(CompactionEngine.class);
 
     /**
-     * 按 sessionId 维度的压缩锁 — 串行化同一会话的轮中（ReAct 循环）与轮末（异步后处理）压缩，
-     * 防止两个触发点并发写入双 compaction_summary 条目（竞态）。tryLock 获取失败即跳过本次压缩，
-     * 由下一轮重判（区间去重由 compaction 边界解析 + minTurnCount 天然保证）。
+     * 会话压缩锁分段 — 串行化同一会话的轮中（ReAct 循环）与轮末（异步后处理）压缩，
+     * 防止两个触发点并发写入双 compaction_summary 条目（竞态）。
+     *
+     * <p>采用<b>固定分段锁</b>（lock striping）而非按 sessionId 累积锁：按 sessionId 哈希
+     * 映射到固定 {@value #SESSION_LOCK_STRIPES} 个锁之一，长跑进程内锁数量恒定、不随会话增长而泄漏。
+     * 同一会话恒定落到同一分段（强串行化）；不同会话偶发共享分段仅造成极少量额外串行，无正确性影响。
+     * tryLock 获取失败即跳过本次压缩，由下一轮重判（区间去重由 compaction 边界解析 + minTurnCount 天然保证）。</p>
      */
-    private final ConcurrentHashMap<String, ReentrantLock> sessionLocks = new ConcurrentHashMap<>();
+    private static final int SESSION_LOCK_STRIPES = 64;
+    private final ReentrantLock[] sessionLocks = createSessionLockStripes();
+
+    private static ReentrantLock[] createSessionLockStripes() {
+        ReentrantLock[] locks = new ReentrantLock[SESSION_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new ReentrantLock();
+        }
+        return locks;
+    }
+
+    /** 按 sessionId 哈希取对应分段锁（floorMod 保证非负索引）。 */
+    private ReentrantLock sessionLockFor(String sessionId) {
+        return sessionLocks[Math.floorMod(sessionId.hashCode(), SESSION_LOCK_STRIPES)];
+    }
 
     /** 触发压缩的上下文窗口占用百分比阈值 */
     private static final int DEFAULT_TRIGGER_THRESHOLD_PERCENT = 75;
@@ -120,7 +137,7 @@ public class CompactionEngine {
             return false;
         }
         // ── 并发串行化：同一会话同一时刻只允许一个压缩执行，获取不到锁即跳过 ──
-        ReentrantLock lock = sessionLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
+        ReentrantLock lock = sessionLockFor(sessionId);
         if (!lock.tryLock()) {
             log.debug("会话压缩已在进行中，跳过本次触发: sessionId={}", sessionId);
             return false;
