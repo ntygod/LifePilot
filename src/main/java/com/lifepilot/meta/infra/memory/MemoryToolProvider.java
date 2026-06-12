@@ -14,6 +14,7 @@ import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.ExperienceRanking;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
@@ -983,15 +984,19 @@ public class MemoryToolProvider {
                     ? Map.of()
                     : semanticMemory.findByIds(hitIds, filter);
 
-            // 按检索排序保留语义相关性，过滤后截取 topK
+            // 按检索召回，过滤后用统一 ExperienceRanking 口径排序，与热摘要 EXPERIENCE section 一致
             boolean crossContext = memoryProperties != null
                     && memoryProperties.getAgenticTool().isCrossContextRetrieval();
+            Instant rankNow = Instant.now();
             var results = ranked.stream()
                     .map(r -> entityMap.get(r.entityId()))
                     .filter(Objects::nonNull)
                     .filter(e -> crossContext || isMainAgentContext(e))
                     .filter(MemoryQualityPolicy::isPromptConsumable)
                     .filter(e -> !successOnly || Boolean.TRUE.equals(e.properties().get("success")))
+                    .sorted(java.util.Comparator
+                            .comparingDouble((TemporalEntity e) -> ExperienceRanking.score(e, rankNow))
+                            .reversed())
                     .limit(topK)
                     .map(this::experienceEntityToMap)
                     .toList();

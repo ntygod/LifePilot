@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consumption.hot;
 
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
+import com.lifepilot.memory.consumption.ExperienceRanking;
 import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.agent.learning.experience.SubtaskReflector;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
@@ -401,14 +402,7 @@ public class HotMemoryDigestService {
     }
 
     private double rank(TemporalEntity entity) {
-        double trust = entity.trustScore();
-        double importance = entity.importanceScore();
-        double recency = 1.0d;
-        if (entity.updatedAt() != null) {
-            long days = Math.max(0, Duration.between(entity.updatedAt(), Instant.now(clock)).toDays());
-            recency = Math.max(0.0d, 1.0d - days / 30.0d);
-        }
-        return trust * 0.45d + importance * 0.35d + recency * 0.20d;
+        return ExperienceRanking.score(entity, Instant.now(clock));
     }
 
     private String sourceRevision(List<TemporalEntity> entities, List<HotPreferenceRule> hotPreferences) {
