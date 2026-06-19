@@ -130,9 +130,7 @@ enum FocusMode { FOCUS_MODE, NORMAL }
 
 ### 3.3 ContextPacket 扩展
 
-record 增加 `BoundaryState boundaryState` + `FocusMode focusMode` 两个字段。紧凑构造函数中通过 null-safe 默认值（`BoundaryState.UNKNOWN` / `FocusMode.NORMAL`）保证向前兼容。
-
-提供旧签名的重载构造函数，既有测试无需修改。
+record 包含 `BoundaryState boundaryState` + `FocusMode focusMode` 两个字段。紧凑构造函数中通过 null-safe 默认值（`BoundaryState.UNKNOWN` / `FocusMode.NORMAL`）处理调用方传入的空值。
 
 ### 3.4 ProactiveFewShotSample
 
@@ -182,12 +180,12 @@ target/cache/proactive-few-shot/
 
 ## 5. 跨模块接口变更
 
-| 变更接口 | 所属模块 | 变更内容 | 影响模块 | 兼容性 |
-|---|---|---|---|---|
-| `ContextPacket` record | agent.task.proactive | +2 字段 | proactive.behavior / reminder / 测试 | 通过保留旧签名构造函数保证向后兼容 |
-| `ProactiveEngine` 构造函数 | agent.task.proactive | +2 可空参数 | ProactiveAutoConfiguration / 测试 | 保留旧 10 参构造函数作为兼容入口 |
-| `DecisionGate` 构造函数 | agent.task.proactive | +3 float 参数 (boundary deltas) | ProactiveAutoConfiguration / 测试 | 保留无参默认值构造函数 |
-| `DecisionGate.scoreToLevel(float)` | agent.task.proactive | 原静态方法标记 @Deprecated，新增 `scoreToLevel(float, ContextPacket)` | 既有调用点保留 | 向后兼容 |
+| 变更接口 | 所属模块 | 变更内容 | 影响模块 |
+|---|---|---|---|
+| `ContextPacket` record | agent.task.proactive | 包含 boundary / focus 字段 | proactive.behavior / reminder / 测试 |
+| `ProactiveEngine` 构造函数 | agent.task.proactive | 接收 boundary / focus / 分层策略依赖 | ProactiveAutoConfiguration / 测试 |
+| `DecisionGate` 构造函数 | agent.task.proactive | 完整构造函数接收 boundary deltas，默认构造入口使用内置参数 | ProactiveAutoConfiguration / 测试 |
+| `DecisionGate.scoreToLevel(float, ContextPacket)` | agent.task.proactive | 按 boundary / focus 动态映射投递级别 | proactive 决策测试 |
 
 ## 6. 依赖接口验证
 
@@ -222,6 +220,6 @@ target/cache/proactive-few-shot/
 
 - **Goldilocks Time Window 预测**（P-P1-4，归 `proactive-timing-cot` spec）：window_end = deadline − p80(latency)，超过 window_end × 0.8 且 focus_mode 则跳过
 - **Gate 3 Think-before-action**（P-P1-5，归 `proactive-timing-cot` spec）：Gate 3 prompt 改为四段 `<think>` 结构化思考，消费本 spec 产出的 few-shot 库
-- **行为插件分层激活**（P-P1-6，归 `proactive-timing-cot` spec）：事实驱动 / 经验驱动 / 习惯驱动三组按记忆层触发
+- **行为插件分层激活**（P-P1-6，归 `proactive-timing-cot` spec）：事实驱动 / 习惯驱动 / 独立触发三组按记忆层触发
 - **Off-Policy Evaluation**（P-P2-7，后续 spec）：LinUCB OPE，基于 importance-sampled reward 计算 regret 曲线
 - **Meta-check**（P-P2-8，后续 spec）：Gate 3 通过后插入"用户是否清楚自己需要"自检

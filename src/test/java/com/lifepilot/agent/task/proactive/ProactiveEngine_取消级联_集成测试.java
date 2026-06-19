@@ -1,5 +1,6 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.task.proactive.behavior.BehaviorActivationPolicy;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.events.ProactiveTaskCancelled;
@@ -94,7 +95,8 @@ class ProactiveEngine_取消级联_集成测试 {
         // 走 ProactiveEngine 作为对外入口，behaviors / gate / delivery 用空/mock
         engine = new ProactiveEngine(
                 List.of(), mock(DecisionGate.class), mock(DeliveryEngine.class),
-                null, null, null, null, bridge, null, null, null, null, null);
+                null, null, null, null, bridge, null, null, null, null,
+                new BehaviorActivationPolicy());
     }
 
     @AfterEach

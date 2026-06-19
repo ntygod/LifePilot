@@ -9,12 +9,10 @@ package com.lifepilot.agent.task.proactive.behavior;
  *
  * <ul>
  *   <li>{@link #FACT_DRIVEN}：依赖 L3 语义实体变化（如用户刚显式否认某偏好、新目标实体落库）。
- *       代表：FollowUp / Insight。</li>
- *   <li>{@link #EXPERIENCE_DRIVEN}：依赖 HotDigest EXPERIENCE 或 L2 情景记忆。
- *       代表：ContextPrep / TaskExecution。</li>
+ *       代表：FollowUp / Insight / MemoryAttention。</li>
  *   <li>{@link #HABIT_DRIVEN}：依赖 L4 PreferenceRule（时段 / 频率类）。
  *       代表：Reminder / Report。</li>
- *   <li>{@link #STANDALONE}：独立触发，不依赖上述三层（如剪贴板意图 / 信息补充）。</li>
+ *   <li>{@link #STANDALONE}：独立触发，不依赖上述两层（如剪贴板意图）。</li>
  * </ul>
  *
  * @author zsg
@@ -22,7 +20,6 @@ package com.lifepilot.agent.task.proactive.behavior;
  */
 public enum BehaviorLayer {
     FACT_DRIVEN,
-    EXPERIENCE_DRIVEN,
     HABIT_DRIVEN,
     STANDALONE
 }

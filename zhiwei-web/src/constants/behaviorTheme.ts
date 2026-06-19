@@ -25,9 +25,7 @@ export const BEHAVIOR_THEMES: BehaviorTheme[] = [
   { key: 'insight', label: '关联洞察', icon: 'Sparkles', hue: 38, saturation: 72, lightness: 50 },
   { key: 'clipboard', label: '剪贴板识别', icon: 'ClipboardCheck', hue: 24, saturation: 78, lightness: 52 },
   { key: 'report', label: '日报周报', icon: 'FileBarChart', hue: 152, saturation: 48, lightness: 42 },
-  { key: 'info-supplement', label: '信息补充', icon: 'BookPlus', hue: 186, saturation: 55, lightness: 42 },
-  { key: 'context-prep', label: '情境准备', icon: 'CalendarClock', hue: 230, saturation: 50, lightness: 52 },
-  { key: 'task-execution', label: '任务代行', icon: 'Zap', hue: 2, saturation: 72, lightness: 54 },
+  { key: 'memory-attention', label: '记忆关注', icon: 'BookOpenCheck', hue: 186, saturation: 55, lightness: 42 },
   { key: 'reminder', label: '定时提醒', icon: 'BellRing', hue: 160, saturation: 30, lightness: 42 },
 ]
 

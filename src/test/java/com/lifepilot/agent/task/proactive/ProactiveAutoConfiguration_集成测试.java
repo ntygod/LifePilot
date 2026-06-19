@@ -2,12 +2,10 @@ package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
-import com.lifepilot.agent.task.proactive.behavior.ContextPrepBehavior;
 import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
-import com.lifepilot.agent.task.proactive.behavior.InfoSupplementBehavior;
 import com.lifepilot.agent.task.proactive.behavior.InsightBehavior;
+import com.lifepilot.agent.task.proactive.behavior.MemoryAttentionBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
-import com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.reminder.ReminderBehavior;
 import com.lifepilot.notification.NotificationService;
@@ -76,21 +74,13 @@ class ProactiveAutoConfiguration_集成测试 {
         assertThat(clipboardBehavior).isNotNull();
         assertThat(clipboardBehavior.name()).isEqualTo("clipboard");
 
-        InfoSupplementBehavior infoSupplementBehavior = config.infoSupplementBehavior(memoryBridge);
-        assertThat(infoSupplementBehavior).isNotNull();
-        assertThat(infoSupplementBehavior.name()).isEqualTo("info-supplement");
-
-        ContextPrepBehavior contextPrepBehavior = config.contextPrepBehavior(memoryBridge, null, null, null);
-        assertThat(contextPrepBehavior).isNotNull();
-        assertThat(contextPrepBehavior.name()).isEqualTo("context-prep");
+        MemoryAttentionBehavior memoryAttentionBehavior = config.memoryAttentionBehavior(memoryBridge);
+        assertThat(memoryAttentionBehavior).isNotNull();
+        assertThat(memoryAttentionBehavior.name()).isEqualTo("memory-attention");
 
         ReportBehavior reportBehavior = config.reportBehavior(null, null, null, null);
         assertThat(reportBehavior).isNotNull();
         assertThat(reportBehavior.name()).isEqualTo("report");
-
-        TaskExecutionBehavior taskExecutionBehavior = config.taskExecutionBehavior(memoryBridge, trustUpgradeService);
-        assertThat(taskExecutionBehavior).isNotNull();
-        assertThat(taskExecutionBehavior.name()).isEqualTo("task-execution");
 
         // ── 隐式信号 + Hook ──
         var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgradeService);
@@ -117,21 +107,20 @@ class ProactiveAutoConfiguration_集成测试 {
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
         var buffer = config.clipboardIntentBuffer();
         var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgrade);
+        var activationPolicy = config.behaviorActivationPolicy();
 
         var behaviors = java.util.List.<ProactiveBehavior>of(
                 config.followUpBehavior(memoryBridge, null, null, null),
                 config.insightBehavior(null, null, null),
                 config.clipboardBehavior(buffer),
-                config.infoSupplementBehavior(memoryBridge),
-                config.contextPrepBehavior(memoryBridge, null, null, null),
-                config.reportBehavior(null, null, null, null),
-                config.taskExecutionBehavior(memoryBridge, trustUpgrade)
+                config.memoryAttentionBehavior(memoryBridge),
+                config.reportBehavior(null, null, null, null)
         );
 
         ProactiveEngine engine = config.proactiveEngine(
                 behaviors, gate, delivery, notificationProperties,
                 null, null, null, memoryBridge, trustUpgrade, signalCollector,
-                null, null, null);
+                null, null, activationPolicy);
 
         assertThat(engine).isNotNull();
     }
@@ -165,16 +154,14 @@ class ProactiveAutoConfiguration_集成测试 {
                 config.followUpBehavior(memoryBridge, null, null, null),
                 config.insightBehavior(null, null, null),
                 config.clipboardBehavior(buffer),
-                config.infoSupplementBehavior(memoryBridge),
-                config.contextPrepBehavior(memoryBridge, null, null, null),
-                config.reportBehavior(null, null, null, null),
-                config.taskExecutionBehavior(memoryBridge, trustUpgrade)
+                config.memoryAttentionBehavior(memoryBridge),
+                config.reportBehavior(null, null, null, null)
         );
 
         var names = behaviors.stream().map(ProactiveBehavior::name).toList();
         assertThat(names).doesNotHaveDuplicates();
         assertThat(names).containsExactlyInAnyOrder(
                 "follow-up", "insight", "clipboard",
-                "info-supplement", "context-prep", "report", "task-execution");
+                "memory-attention", "report");
     }
 }

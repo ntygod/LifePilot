@@ -44,9 +44,7 @@ public class ProactiveController {
             "insight", "关联洞察",
             "clipboard", "剪贴板识别",
             "report", "日报周报",
-            "info-supplement", "信息补充",
-            "context-prep", "情境准备",
-            "task-execution", "任务代行",
+            "memory-attention", "记忆关注",
             "reminder", "定时提醒"
     );
 

@@ -165,19 +165,8 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public InfoSupplementBehavior infoSupplementBehavior(
-            @Autowired(required = false) ProactiveMemoryBridge memoryBridge) {
-        return new InfoSupplementBehavior(memoryBridge);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ContextPrepBehavior contextPrepBehavior(
-            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
-            @Autowired(required = false) GenerationRouter generationRouter,
-            @Autowired(required = false) PromptRegistry promptRegistry,
-            @Autowired(required = false) AgentConfigProperties config) {
-        return new ContextPrepBehavior(memoryBridge, generationRouter, promptRegistry, config);
+    public MemoryAttentionBehavior memoryAttentionBehavior(ProactiveMemoryBridge memoryBridge) {
+        return new MemoryAttentionBehavior(memoryBridge);
     }
 
     @Bean
@@ -188,14 +177,6 @@ public class ProactiveAutoConfiguration {
             @Autowired(required = false) AgentConfigProperties config,
             @Autowired(required = false) PromptRegistry promptRegistry) {
         return new ReportBehavior(episodicMemory, generationRouter, config, promptRegistry);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public TaskExecutionBehavior taskExecutionBehavior(
-            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
-            @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
-        return new TaskExecutionBehavior(memoryBridge, trustUpgradeService);
     }
 
     // ── 日程提取 ──
@@ -290,11 +271,8 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public BehaviorActivationPolicy behaviorActivationPolicy(
-            @Autowired(required = false) AgentConfigProperties config) {
-        AgentConfigProperties.TaskConfig taskConfig =
-                config != null ? config.getTask() : new AgentConfigProperties().getTask();
-        return new BehaviorActivationPolicy(taskConfig);
+    public BehaviorActivationPolicy behaviorActivationPolicy() {
+        return new BehaviorActivationPolicy();
     }
 
     @Bean
@@ -333,7 +311,7 @@ public class ProactiveAutoConfiguration {
                                            @Autowired(required = false) ImplicitSignalCollector implicitSignalCollector,
                                            @Autowired(required = false) BoundarySignalCollector boundarySignalCollector,
                                            @Autowired(required = false) FocusStateDetector focusStateDetector,
-                                           @Autowired(required = false) BehaviorActivationPolicy behaviorActivationPolicy) {
+                                           BehaviorActivationPolicy behaviorActivationPolicy) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
                 notificationProperties, notificationRepository, config, focusStateHolder,
                 memoryBridge, trustUpgradeService, implicitSignalCollector,

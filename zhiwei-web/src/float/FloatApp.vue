@@ -43,9 +43,7 @@ const BEHAVIOR_MAP: Record<string, { label: string; hue: number; sat: number; li
   'insight': { label: '关联洞察', hue: 38, sat: 72, lit: 50 },
   'clipboard': { label: '剪贴板识别', hue: 24, sat: 78, lit: 52 },
   'report': { label: '日报周报', hue: 152, sat: 48, lit: 42 },
-  'info-supplement': { label: '信息补充', hue: 186, sat: 55, lit: 42 },
-  'context-prep': { label: '情境准备', hue: 230, sat: 50, lit: 52 },
-  'task-execution': { label: '任务代行', hue: 2, sat: 72, lit: 54 },
+  'memory-attention': { label: '记忆关注', hue: 186, sat: 55, lit: 42 },
   'reminder': { label: '定时提醒', hue: 160, sat: 30, lit: 42 },
 }
 

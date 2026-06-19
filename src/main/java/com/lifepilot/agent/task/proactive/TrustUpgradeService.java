@@ -52,10 +52,8 @@ public class TrustUpgradeService {
             "follow-up", AutonomyLevel.A,
             "insight", AutonomyLevel.A,
             "clipboard", AutonomyLevel.A,
-            "info-supplement", AutonomyLevel.A,
-            "context-prep", AutonomyLevel.B,
             "report", AutonomyLevel.B,
-            "task-execution", AutonomyLevel.B
+            "memory-attention", AutonomyLevel.A
     );
 
     private final AutonomyRepository autonomyRepository;

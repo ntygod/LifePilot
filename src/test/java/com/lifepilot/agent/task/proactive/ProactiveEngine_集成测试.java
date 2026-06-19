@@ -3,6 +3,7 @@ package com.lifepilot.agent.task.proactive;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
 import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
+import com.lifepilot.agent.task.proactive.behavior.BehaviorActivationPolicy;
 import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
@@ -111,7 +112,8 @@ class ProactiveEngine_集成测试 {
     /** 构建引擎，使用指定的行为插件列表。 */
     private ProactiveEngine buildEngine(List<ProactiveBehavior> behaviors) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null,
+                new BehaviorActivationPolicy());
     }
 
     /** 构建标准 ContextPacket。 */

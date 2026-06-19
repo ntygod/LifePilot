@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 import {
   Lightbulb, GitBranch, Settings, Bell, Loader2, AlertCircle,
   MessageCircleQuestion, Sparkles, ClipboardCheck, FileBarChart,
-  BookPlus, CalendarClock, Zap, BellRing,
+  BookOpenCheck, BellRing,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { useNotificationStore } from '@/stores/notification'
@@ -41,9 +41,7 @@ const behaviorIconMap: Record<string, Component> = {
   'insight': Sparkles,
   'clipboard': ClipboardCheck,
   'report': FileBarChart,
-  'info-supplement': BookPlus,
-  'context-prep': CalendarClock,
-  'task-execution': Zap,
+  'memory-attention': BookOpenCheck,
   'reminder': BellRing,
 }
 

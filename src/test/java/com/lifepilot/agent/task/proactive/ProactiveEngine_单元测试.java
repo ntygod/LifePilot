@@ -1,5 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.task.proactive.behavior.BehaviorActivationPolicy;
+import com.lifepilot.agent.task.proactive.behavior.BehaviorLayer;
 import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
@@ -31,10 +33,12 @@ class ProactiveEngine_单元测试 {
     void setUp() {
         behavior = mock(ProactiveBehavior.class);
         when(behavior.name()).thenReturn("test-behavior");
+        when(behavior.layer()).thenReturn(BehaviorLayer.STANDALONE);
         gate = mock(DecisionGate.class);
         delivery = mock(DeliveryEngine.class);
         engine = new ProactiveEngine(List.of(behavior), gate, delivery,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null,
+                new BehaviorActivationPolicy());
     }
 
     @Test

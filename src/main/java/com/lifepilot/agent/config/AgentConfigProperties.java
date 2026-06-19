@@ -423,8 +423,5 @@ public class AgentConfigProperties {
         /** CoT prompt 中拼接的 few-shot 样本数。 */
         private int proactiveCotFewShotCount = 4;
 
-        /** 是否启用行为插件分层激活。 */
-        private boolean proactiveBehaviorLayeredActivationEnabled = false;
-
     }
 }

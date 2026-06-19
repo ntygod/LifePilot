@@ -44,8 +44,8 @@ class TrustUpgradeService_单元测试 {
     }
 
     @Test
-    void 情境准备默认自主度为B() {
-        assertThat(service.getLevel("u1", "context-prep")).isEqualTo(AutonomyLevel.B);
+    void 记忆关注默认自主度为A() {
+        assertThat(service.getLevel("u1", "memory-attention")).isEqualTo(AutonomyLevel.A);
     }
 
     @Test

@@ -60,7 +60,7 @@ public class ProactiveEngine {
     @Nullable private final ImplicitSignalCollector implicitSignalCollector;
     @Nullable private final BoundarySignalCollector boundarySignalCollector;
     @Nullable private final FocusStateDetector focusStateDetector;
-    @Nullable private final BehaviorActivationPolicy behaviorActivationPolicy;
+    private final BehaviorActivationPolicy behaviorActivationPolicy;
     private final BehaviorHealthTracker healthTracker = new BehaviorHealthTracker();
 
     /** 上次心跳时间，用于 Gate 1 变化量检查。 */
@@ -79,7 +79,7 @@ public class ProactiveEngine {
                            @Nullable ImplicitSignalCollector implicitSignalCollector,
                            @Nullable BoundarySignalCollector boundarySignalCollector,
                            @Nullable FocusStateDetector focusStateDetector,
-                           @Nullable BehaviorActivationPolicy behaviorActivationPolicy) {
+                           BehaviorActivationPolicy behaviorActivationPolicy) {
         this.behaviors = List.copyOf(behaviors);
         this.decisionGate = decisionGate;
         this.deliveryEngine = deliveryEngine;
@@ -92,7 +92,7 @@ public class ProactiveEngine {
         this.implicitSignalCollector = implicitSignalCollector;
         this.boundarySignalCollector = boundarySignalCollector;
         this.focusStateDetector = focusStateDetector;
-        this.behaviorActivationPolicy = behaviorActivationPolicy;
+        this.behaviorActivationPolicy = Objects.requireNonNull(behaviorActivationPolicy, "行为分层策略不能为空");
     }
 
     /**
@@ -102,11 +102,8 @@ public class ProactiveEngine {
      * 事件，供 {@code ProactiveTaskCancelListener}（Phase 1 挂载）级联将
      * 关联 insight 转 CANCELLED）。
      *
-     * <p>之所以让 Bridge 发事件而非在本方法里发：{@link com.lifepilot.agent.task.proactive.behavior.TaskExecutionBehavior}
-     * 等行为插件会在 {@code reason} 中直接调 {@code bridge.markGoalFulfilled}
-     * 自主归档目标，如果事件只在 Engine 发，那些路径会漏事件；把事件发布
-     * 下沉到 Bridge 保证所有调用路径都触发级联。若将来需要将调用强制收拢到
-     * Engine，应直接收敛调用入口并同步更新所有行为插件。</p>
+     * <p>Bridge 负责归档与事件发布，确保所有调用路径都能触发取消级联。
+     * 若将来需要将调用强制收拢到 Engine，应直接收敛调用入口并同步更新所有行为插件。</p>
      *
      * <p>taskId 即为 L3 GOAL 实体 id。memoryBridge 为空时退化为 no-op。</p>
      *
@@ -151,9 +148,8 @@ public class ProactiveEngine {
                 log.debug("主动引擎: 插件已降级，跳过 detect, behavior={}", behavior.name());
                 continue;
             }
-            // 分层激活策略：关闭时直通，开启时按 BehaviorLayer 过滤
-            if (behaviorActivationPolicy != null
-                    && !behaviorActivationPolicy.shouldActivate(behavior.layer(), ctx)) {
+            // 分层激活策略：按 BehaviorLayer 过滤本次心跳要运行的行为组
+            if (!behaviorActivationPolicy.shouldActivate(behavior.layer(), ctx)) {
                 log.debug("主动引擎: 分层激活跳过, behavior={} layer={}", behavior.name(), behavior.layer());
                 continue;
             }

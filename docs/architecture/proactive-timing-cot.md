@@ -12,7 +12,7 @@
 1. **Goldilocks 时效窗口**（P-P1-4）：让 deadline 型候选知道"最晚多晚还有意义"。
 2. **Gate 3 结构化推理 + few-shot 消费**（P-P1-5）：高分候选可选走 CoT prompt，结构化输出并参考历史反馈样例。
 3. **行为插件分层激活**（P-P1-6）：按记忆层分组，每次心跳只激活相关组。
-4. **偏好命名卫士**（C-P1-2）：文档 + 静态工具固化 `proactive-*` 前缀约定。
+4. **偏好命名约定**（C-P1-2）：主动引擎调用点统一使用 `proactive-*` 前缀类别。
 
 ## 2. 核心组件
 
@@ -27,7 +27,7 @@
 设计决策：
 - **使用 `suggestedAt` 而非 `relevantAt`**：`ReminderCandidate` 不直接暴露 `relevantAt`（在 signal 层），但 `suggestedAt` 是检测阶段写入的"建议提醒时机"。以 `suggestedAt` 为基准加响应延迟 grace 即可表达 Goldilocks 语义。
 - **集成点**：`ReminderDecisionEngine.decide` 在硬边界（mute/quiet/fullscreen）之后、冷却检查之前插入；跳过返回 `SKIP(WINDOW_CLOSED)`。
-- **向后兼容**：`ReminderDecisionEngine` 保留无参 / 单参 / 双参构造函数；新增四参构造函数接受 `@Nullable GoldilocksWindowCalculator + userIdSupplier`。
+- `ReminderDecisionEngine` 通过完整构造函数接收 `@Nullable GoldilocksWindowCalculator + userIdSupplier`。
 
 ### 2.2 GateThreeReasoner
 
@@ -47,27 +47,23 @@
 
 **包路径**：`com.lifepilot.agent.task.proactive.behavior`
 
-`BehaviorLayer` 枚举声明 4 层。`ProactiveBehavior` 接口新增 `default BehaviorLayer layer() { return STANDALONE; }`。8 个行为插件按归属 override：
+`BehaviorLayer` 枚举声明 3 层。`ProactiveBehavior` 接口要求每个行为显式声明 `layer()`：
 
 | 插件 | Layer |
 |---|---|
 | FollowUpBehavior | FACT_DRIVEN |
 | InsightBehavior | FACT_DRIVEN |
-| ContextPrepBehavior | EXPERIENCE_DRIVEN |
-| TaskExecutionBehavior | EXPERIENCE_DRIVEN |
+| MemoryAttentionBehavior | FACT_DRIVEN |
 | ReminderBehavior | HABIT_DRIVEN |
 | ReportBehavior | HABIT_DRIVEN |
 | ClipboardBehavior | STANDALONE |
-| InfoSupplementBehavior | STANDALONE |
 
 `ProactiveEngine.heartbeat` 在 Gate 2 遍历行为前先按 `policy.shouldActivate(layer, ctx)` 过滤。
 
-### 2.4 ProactivePreferenceGuard
+### 2.4 偏好命名约定
 
-**包路径**：`com.lifepilot.agent.task.proactive`
-
-静态工具类，提供 `isProactiveCategory(category)` 与 `isRecognizedCategory(category)`。
-本 spec **不做运行期强制拦截**（避免破坏性变更）；留作未来严格化的入口。
+主动引擎只读写 `proactive-domain` / `proactive-timing` / `proactive-style` 三类 L4 偏好。
+非主动引擎类别（如 `user-preference` / `schedule` / `output`）不参与打扰决策。
 
 ## 3. 数据流
 
@@ -124,20 +120,18 @@ private boolean proactiveCotEnabled = false;
 private float proactiveCotMinScore = 0.6f;
 private int proactiveCotFewShotCount = 4;
 
-// 分层激活
-private boolean proactiveBehaviorLayeredActivationEnabled = false;
 ```
 
 ## 5. 跨模块接口变更
 
-| 变更接口 | 模块 | 变更 | 兼容性 |
-|---|---|---|---|
-| `ReminderSkipReason` | agent.task.reminder | +WINDOW_CLOSED | 向后兼容 |
-| `ProactiveBehavior` | agent.task.proactive | +`default BehaviorLayer layer()` | 向后兼容（default 方法） |
-| 8 个行为插件 | agent.task.proactive.behavior + agent.task.reminder | override `layer()` | 向后兼容 |
-| `ReminderDecisionEngine` | agent.task.reminder | +四参构造函数 | 保留无参/单参/双参 |
-| `ProactiveEngine` | agent.task.proactive | +13 参构造函数 | 保留 10/12 参 |
-| `AgentConfigProperties.TaskConfig` | agent.config | +8 字段 | 向后兼容 |
+| 变更接口 | 模块 | 变更 |
+|---|---|---|
+| `ReminderSkipReason` | agent.task.reminder | +WINDOW_CLOSED |
+| `ProactiveBehavior` | agent.task.proactive | 要求实现 `BehaviorLayer layer()` |
+| 主动行为插件 | agent.task.proactive.behavior + agent.task.reminder | 显式声明 `layer()` |
+| `ReminderDecisionEngine` | agent.task.reminder | 完整构造函数接收窗口计算器 |
+| `ProactiveEngine` | agent.task.proactive | 完整构造函数接收分层策略依赖 |
+| `AgentConfigProperties.TaskConfig` | agent.config | +7 字段 |
 
 ## 6. 依赖接口验证
 
@@ -154,10 +148,10 @@ private boolean proactiveBehaviorLayeredActivationEnabled = false;
 
 - **Goldilocks 历史样本不足** → 回退到 30 分钟默认延迟（配置可调）
 - **CoT 响应格式不稳定** → `parseAction` 失败降级为插件 suggestedLevel；`proactiveCotEnabled` 默认关闭
-- **分层激活误跳过** → 默认关闭，生产前经运维验证
-- **`ProactiveBehavior.layer()` 影响 Mockito mock** → 使用 default 方法避免破坏
+- **分层激活误跳过** → 行为插件必须显式声明分层，并通过单元测试覆盖边界条件
+- **`ProactiveBehavior.layer()` 影响 Mockito mock** → 测试 mock 需显式 stub layer，保证行为分层可见
 
-所有子系统支持独立开关关闭。
+Timing 与 CoT 可独立关闭；分层激活是主动引擎固定运行路径。
 
 ## 8. 前沿参考
 

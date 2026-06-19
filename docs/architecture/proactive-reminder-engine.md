@@ -20,10 +20,8 @@ HeartbeatRunner（定时唤醒）
        ├─ FollowUpBehavior（追问进展插件）
        ├─ InsightBehavior（关联洞察插件）
        ├─ ClipboardBehavior（剪贴板识别插件）
-       ├─ InfoSupplementBehavior（信息补充插件）
-       ├─ ContextPrepBehavior（情境准备插件）
+       ├─ MemoryAttentionBehavior（记忆关注插件）
        ├─ ReportBehavior（日报周报插件）
-       └─ TaskExecutionBehavior（任务代行插件）
 ```
 
 ### 实现进度
@@ -31,7 +29,7 @@ HeartbeatRunner（定时唤醒）
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | **ProactiveEngine 三级管线** | ✅ 已实现 | Gate 1 变化量检查 → Gate 2 快速检测 → Gate 3 精细推理 |
-| **行为插件框架**（`ProactiveBehavior`） | ✅ 已实现 | 7 个行为插件 + `ReminderBehavior` 适配 |
+| **行为插件框架**（`ProactiveBehavior`） | ✅ 已实现 | 5 个行为插件 + `ReminderBehavior` 适配 |
 | **DecisionGate 决策门控** | ✅ 已实现 | 硬边界 + 偏好降级 + 自主度约束 |
 | **DeliveryEngine 四级投递** | ✅ 已实现 | SILENT → QUEUE → NOTIFY → INTERRUPT |
 | **信任阶梯**（`TrustUpgradeService`） | ✅ 已实现 | A/B/C 三级自主度 + 连续正反馈升级建议 + 用户确认 |
@@ -129,10 +127,8 @@ graph TB
         B2["FollowUpBehavior<br/>追问进展"]
         B3["InsightBehavior<br/>关联洞察"]
         B4["ClipboardBehavior<br/>剪贴板识别"]
-        B5["InfoSupplementBehavior<br/>信息补充"]
-        B6["ContextPrepBehavior<br/>情境准备"]
-        B7["ReportBehavior<br/>日报周报"]
-        B8["TaskExecutionBehavior<br/>任务代行"]
+        B5["MemoryAttentionBehavior<br/>记忆关注"]
+        B6["ReportBehavior<br/>日报周报"]
     end
 
     subgraph "决策与投递"
@@ -156,8 +152,8 @@ graph TB
     HB --> G1
     G1 -->|有变化| ISC
     ISC --> G2
-    G2 --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8
-    B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8 --> PREF
+    G2 --> B1 & B2 & B3 & B4 & B5 & B6
+    B1 & B2 & B3 & B4 & B5 & B6 --> PREF
     PREF -->|高分候选| G3
     G3 --> DG
     DG --> DE
@@ -792,7 +788,7 @@ QUEUE 级投递的排队动作。同一 userId + topicKey 走 UPSERT 去重。
 
 ## 17. 演进落地（新增模块）
 
-以下两个 spec 已在 `feature/memory-evolution` 分支落地（参考 #[[file:docs/planned/memory-and-proactive-evolution-gaps.md]] §2）。均默认关闭关键开关，保持零回归；需手动开启并在真实场景验证。
+以下两个 spec 已在 `feature/memory-evolution` 分支落地（参考 #[[file:docs/planned/memory-and-proactive-evolution-gaps.md]] §2）。其中训练回放与 CoT 仍按样本积累情况开启；行为分层激活已作为主动引擎固定运行路径。
 
 ### 17.1 proactive-boundary-training（P-P0-1/2/3）
 
@@ -813,8 +809,8 @@ QUEUE 级投递的排队动作。同一 userId + topicKey 走 UPSERT 去重。
 
 - **Goldilocks 窗口**：`GoldilocksWindowCalculator` 按用户 p80 响应延迟估算窗口，`ReminderDecisionEngine.decide` 在硬边界后插入 `isWindowClosed` 检查；超窗口返回 `ReminderSkipReason.WINDOW_CLOSED`（新增枚举）。
 - **Gate 3 CoT**：`GateThreeReasoner` 构造四段 `<observation>/<user-state>/<necessity>/<action>` prompt，消费上一 spec 的 `ProactiveFewShotLibrary` 做 priming；本期只提供组件，不强制接入任何行为插件。
-- **行为分层激活**：`BehaviorLayer` 4 档（FACT_DRIVEN / EXPERIENCE_DRIVEN / HABIT_DRIVEN / STANDALONE），8 个行为插件按归属 override；`BehaviorActivationPolicy.shouldActivate(layer, ctx)` 在 `ProactiveEngine.heartbeat` 的 Gate 2 入口按 ctx 过滤。
-- **偏好命名**：`ProactivePreferenceGuard` 静态工具类固化 `proactive-*` category 前缀约定。
+- **行为分层激活**：`BehaviorLayer` 3 档（FACT_DRIVEN / HABIT_DRIVEN / STANDALONE），当前行为插件按归属 override；`BehaviorActivationPolicy.shouldActivate(layer, ctx)` 在 `ProactiveEngine.heartbeat` 的 Gate 2 入口按 ctx 过滤。
+- **偏好命名**：主动引擎只读写 `proactive-*` category，避免和通用用户偏好混用。
 
 ### 17.3 开关矩阵（默认全部保守）
 
@@ -825,4 +821,3 @@ QUEUE 级投递的排队动作。同一 userId + topicKey 走 UPSERT 去重。
 | `lifepilot.agent.task.proactive-training-enabled` | false | 样本积累后再开 |
 | `lifepilot.agent.task.proactive-timing-window-enabled` | true | Goldilocks 检查 |
 | `lifepilot.agent.task.proactive-cot-enabled` | false | 等 few-shot 库就位 |
-| `lifepilot.agent.task.proactive-behavior-layered-activation-enabled` | false | 验证后再开 |

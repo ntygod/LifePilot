@@ -104,7 +104,7 @@ public class ReminderBehavior implements ProactiveBehavior {
             actions.add(new ProactiveAction(
                     candidate,
                     message.body(),
-                    scoreToDeliveryLevel(candidate.score()),
+                    DeliveryLevel.fromScore(candidate.score()),
                     detail
             ));
         }
@@ -133,14 +133,6 @@ public class ReminderBehavior implements ProactiveBehavior {
                 candidate.rationale(),
                 new ReminderCandidateDetail(snapshot, candidate, policyConfig)
         );
-    }
-
-    /** 分数 → 建议投递级别。 */
-    private static DeliveryLevel scoreToDeliveryLevel(float score) {
-        if (score >= 0.7f) return DeliveryLevel.INTERRUPT;
-        if (score >= 0.5f) return DeliveryLevel.NOTIFY;
-        if (score >= 0.3f) return DeliveryLevel.QUEUE;
-        return DeliveryLevel.SILENT;
     }
 
     private void inferOutcomesQuietly(ContextPacket ctx) {
