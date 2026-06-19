@@ -34,7 +34,7 @@ import static org.mockito.Mockito.verify;
 
 /**
  * {@link DerivationRegenerator} 集成测试 —— 轻量 Flyway + {@link SingleConnectionDataSource}
- * 真跑 V15 迁移 + 真 SemanticMemory + 真 Queue Repository，mock 掉 UserProfileConsolidator
+ * 真跑当前迁移 + 真 SemanticMemory + 真 Queue Repository，mock 掉 UserProfileConsolidator
  * 验证编排正确性。
  *
  * <p>覆盖用例：

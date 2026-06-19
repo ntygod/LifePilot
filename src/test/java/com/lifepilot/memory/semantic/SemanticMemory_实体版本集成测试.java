@@ -6,6 +6,7 @@ import com.lifepilot.memory.store.projection.MemoryProjectionOutboxProcessor;
 import com.lifepilot.memory.store.projection.MemoryProjectionOutboxRepository;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -218,7 +219,10 @@ class SemanticMemory_实体版本集成测试 {
         when(conflictDetector.detectConflict(any(), nullable(String.class)))
                 .thenReturn(Optional.empty(), Optional.of(created));
 
-        var persisted = semanticMemory.upsertWithConflictDetection(created, "session-1");
+        var persisted = semanticMemory.upsertWithConflictDetection(
+                created,
+                "session-1",
+                MemoryWriteContext.conversation("session-1"));
         var updated = semanticMemory.upsertWithConflictDetection(
                 new TemporalEntity(
                         null,
@@ -238,7 +242,8 @@ class SemanticMemory_实体版本集成测试 {
                         now,
                         now
                 ),
-                "session-2"
+                "session-2",
+                MemoryWriteContext.conversation("session-2")
         );
 
         assertThat(persisted.id()).isEqualTo("entity-hero");

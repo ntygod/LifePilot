@@ -22,9 +22,8 @@ import java.util.Set;
  *   {@link LifecycleState#SUPERSEDED}, {@link LifecycleState#ARCHIVED},
  *   {@link LifecycleState#REGENERATION_NEEDED} } 的事件。</p>
  *
- * <p>对 {@code source_entity_id} 为空（V15 新列，旧数据无此值）或已失活的记录
- * ——由 Repository SQL 的 {@code deactivated_reason IS NULL} 条件兜底，
- * 实际表现为 no-op。</p>
+ * <p>对 {@code source_entity_id} 为空或已失活的记录，由 Repository SQL 的
+ * {@code deactivated_reason IS NULL} 条件兜底，实际表现为 no-op。</p>
  *
  * <p>幂等性：同一事件重放多次最终状态一致 —— 首次命中后规则已带 {@code deactivated_reason}，
  * 后续 UPDATE 不再匹配 {@code IS NULL} 过滤。</p>

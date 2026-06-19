@@ -23,6 +23,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import java.nio.file.Files;
@@ -65,7 +66,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *       单元测试更贴近真实场景（前者仅单测 applyVerdict）。</li>
  *   <li>异步执行：{@code resolveAsync} 实际由 virtual thread 触发，测试改调
  *       同包可见的 {@code resolveSync}（package-private），使断言同步可见。</li>
- *   <li>{@link ConflictResolutionRepository} 使用真实 DB 版本（V15 conflict_resolution_queue 表
+ *   <li>{@link ConflictResolutionRepository} 使用真实 DB 版本（conflict_resolution_queue 表
  *       已由 Flyway 建出），enqueue/markResolved 走真实 SQL，一起覆盖。</li>
  * </ol>
  *
@@ -142,14 +143,20 @@ class 冲突记忆被新版替代_场景测试 {
     void 高相似新偏好应触发LLM裁决使老版SUPERSEDED() {
         // 1. 用户说"我最爱的编程语言是 Python" → 落入系统
         var oldPref = 构造ACTIVE偏好("最爱编程语言", "Python");
-        var pythonEntity = semanticMemory.upsertWithConflictDetection(oldPref, "scenario-session-s4");
+        var pythonEntity = semanticMemory.upsertWithConflictDetection(
+                oldPref,
+                "scenario-session-s4",
+                MemoryWriteContext.conversation("scenario-session-s4"));
         assertThat(pythonEntity).isNotNull();
         var oldId = pythonEntity.id();
 
         // 2. 用户改主意："现在我更爱 Rust" → 再落入一条新实体
         //    name 换成新值以避免 ConflictDetector 相同 (name, type) 判定 → 走合并
         var newPref = 构造ACTIVE偏好("偏好变更_Rust", "Rust");
-        var rustEntity = semanticMemory.upsertWithConflictDetection(newPref, "scenario-session-s4");
+        var rustEntity = semanticMemory.upsertWithConflictDetection(
+                newPref,
+                "scenario-session-s4",
+                MemoryWriteContext.conversation("scenario-session-s4"));
         assertThat(rustEntity).isNotNull();
         var newId = rustEntity.id();
 

@@ -15,6 +15,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -113,7 +114,10 @@ class 取消定时任务后不再提醒_场景测试 {
     void 取消后GOAL应转CANCELLED() {
         // 1. 用户"每周一 10 点提醒我做汇报"落入系统 → 建立 GOAL 实体
         var goal = 构造ACTIVE实体(EntityType.GOAL, "每周一汇报", "每周一上午 10 点做汇报");
-        var created = semanticMemory.upsertWithConflictDetection(goal, "scenario-session-s1");
+        var created = semanticMemory.upsertWithConflictDetection(
+                goal,
+                "scenario-session-s1",
+                MemoryWriteContext.conversation("scenario-session-s1"));
 
         assertThat(created).as("upsert 应返回持久化实体").isNotNull();
         assertThat(created.lifecycleState())

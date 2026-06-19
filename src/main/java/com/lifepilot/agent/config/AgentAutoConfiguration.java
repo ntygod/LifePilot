@@ -6,6 +6,7 @@ import com.lifepilot.agent.ReactAgentLoop;
 import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
 import com.lifepilot.agent.checkpoint.SqliteAgentCheckpointStore;
 import com.lifepilot.agent.context.*;
+import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
 import com.lifepilot.agent.learning.experience.*;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
@@ -30,15 +31,13 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
-import com.lifepilot.memory.store.document.MemoryDocumentRepository;
-import com.lifepilot.agent.learning.experience.*;
-import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
+import com.lifepilot.memory.store.document.MemoryDocumentRepository;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
-import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
-import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.store.workspace.WorkspaceProperties;
 import com.lifepilot.observability.context.ContextReportRepository;
@@ -55,6 +54,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -94,11 +94,13 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, ProjectContextResolver.class,
+            ChatSessionRepository.class, MemoryAccessPolicy.class})
     public ToolTipResolver toolTipResolver(
-            @Autowired(required = false) SemanticMemory semanticMemory,
-            @Autowired(required = false) ProjectContextResolver projectContextResolver,
-            @Autowired(required = false) ChatSessionRepository chatSessionRepository,
-            @Autowired(required = false) MemoryAccessPolicy memoryAccessPolicy) {
+            SemanticMemory semanticMemory,
+            ProjectContextResolver projectContextResolver,
+            ChatSessionRepository chatSessionRepository,
+            MemoryAccessPolicy memoryAccessPolicy) {
         return new ToolTipResolver(
                 semanticMemory, projectContextResolver, chatSessionRepository, memoryAccessPolicy);
     }

@@ -12,6 +12,9 @@ import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryScope;
@@ -65,6 +68,7 @@ class MemoryControllerTest {
     @Mock private ConsolidationPipeline consolidationPipeline;
     @Mock private ForgettingLogRepository forgettingLogRepository;
     @Mock private MemoryProvenanceRepository provenanceRepository;
+    @Mock private ProjectContextResolver projectContextResolver;
 
     private MockMvc mockMvc;
 
@@ -72,10 +76,12 @@ class MemoryControllerTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(projectContextResolver.resolve(null))
+                .thenReturn(ProjectContext.personal("space-personal", "space-experience"));
         var controller = new MemoryController(
                 semanticMemory, episodicMemory, proceduralMemory,
                 hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
-                provenanceRepository, null, new MemoryAccessPolicy(), null, null);
+                provenanceRepository, projectContextResolver, new MemoryAccessPolicy(), null, null);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         lenient().when(provenanceRepository.loadEntityMetadata(anyCollection()))
                 .thenReturn(Map.of());
@@ -89,7 +95,8 @@ class MemoryControllerTest {
         return new TemporalEntity(
                 id, type, name, name + " 描述",
                 Map.of(), 1, true, NOW, null, "conv-1",
-                0.9f, 0.5f, 3, NOW, NOW, NOW);
+                0.9f, 0.5f, 3, NOW, NOW, NOW)
+                .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
     }
 
     private static TemporalRelation testRelation(String id, String sourceId, String targetId) {
@@ -104,6 +111,11 @@ class MemoryControllerTest {
                 List.of(), NOW, NOW);
     }
 
+    private void stubReadable(TemporalEntity entity) {
+        when(semanticMemory.findByIds(eq(List.of(entity.id())), any(MemoryReadFilter.class)))
+                .thenReturn(Map.of(entity.id(), entity));
+    }
+
     // ── 记忆系统未启用 ───────────────────────────────────
 
     @Nested
@@ -115,7 +127,7 @@ class MemoryControllerTest {
         void setUp() {
             var controller = new MemoryController(
                     null, null, null, null, null, null, null, null, forgettingLogRepository,
-                    provenanceRepository, null, new MemoryAccessPolicy(), null, null);
+                    provenanceRepository, projectContextResolver, new MemoryAccessPolicy(), null, null);
             disabledMvc = MockMvcBuilders.standaloneSetup(controller).build();
         }
 
@@ -182,19 +194,24 @@ class MemoryControllerTest {
                     "e1", "PERSON", "张三", "描述", 0.85f,
                     new RetrievalResult.ScoreBreakdown(0.5f, 0.3f, 0.3f, 0.2f, 0.2f, 0.1f, 0.05f, 0.05f, 0f, 0f),
                     "vector+fts", NOW, 0.5f, null, false, false, false);
-            when(hybridRetriever.retrieve(eq("张三"), eq(10), any(RetrievalWeights.class), any()))
+            when(hybridRetriever.retrieve(eq("张三"), eq(30), any(RetrievalWeights.class), any()))
                     .thenReturn(List.of(result));
+            when(semanticMemory.findByIds(anyCollection(), any(MemoryReadFilter.class)))
+                    .thenReturn(Map.of("e1", testEntity("e1", "张三", EntityType.PERSON)));
             when(provenanceRepository.loadEntityMetadata(List.of("e1")))
                     .thenReturn(Map.of("e1", new EntityMetadata("e1", "user:default", "USER_FACT", "REAL")));
 
             mockMvc.perform(get("/api/memories/search").param("q", "张三"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data", hasSize(1)))
-                    .andExpect(jsonPath("$.data[0].entityId").value("e1"))
-                    .andExpect(jsonPath("$.data[0].name").value("张三"))
-                    .andExpect(jsonPath("$.data[0].spaceId").value("user:default"))
-                    .andExpect(jsonPath("$.data[0].memoryScope").value("USER_FACT"))
-                    .andExpect(jsonPath("$.data[0].realityType").value("REAL"));
+                    .andExpect(jsonPath("$.data.count").value(1))
+                    .andExpect(jsonPath("$.data.results", hasSize(1)))
+                    .andExpect(jsonPath("$.data.results[0].entityId").value("e1"))
+                    .andExpect(jsonPath("$.data.results[0].name").value("张三"))
+                    .andExpect(jsonPath("$.data.results[0].spaceId").value("user:default"))
+                    .andExpect(jsonPath("$.data.results[0].memoryScope").value("USER_FACT"))
+                    .andExpect(jsonPath("$.data.results[0].realityType").value("REAL"))
+                    .andExpect(jsonPath("$.data.results[0].evidenceKind").value("USER_EXPLICIT"))
+                    .andExpect(jsonPath("$.data.results[0].trustLevel").value("EXPLICIT"));
         }
 
         @Test
@@ -207,7 +224,7 @@ class MemoryControllerTest {
                     hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
                     provenanceRepository, resolver, new MemoryAccessPolicy(), null, null);
             var projectMvc = MockMvcBuilders.standaloneSetup(controller).build();
-            when(hybridRetriever.retrieve(eq("咖啡"), eq(10), any(RetrievalWeights.class), any()))
+            when(hybridRetriever.retrieve(eq("咖啡"), eq(30), any(RetrievalWeights.class), any()))
                     .thenReturn(List.of());
 
             projectMvc.perform(get("/api/memories/search")
@@ -216,7 +233,7 @@ class MemoryControllerTest {
                     .andExpect(status().isOk());
 
             ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
-            verify(hybridRetriever).retrieve(eq("咖啡"), eq(10), any(RetrievalWeights.class), captor.capture());
+            verify(hybridRetriever).retrieve(eq("咖啡"), eq(30), any(RetrievalWeights.class), captor.capture());
             assertThat(captor.getValue().spaceIds())
                     .containsExactlyInAnyOrder("space-project", "space-personal", "space-experience");
             assertThat(captor.getValue().scopes())
@@ -299,8 +316,7 @@ class MemoryControllerTest {
 
         @Test
         void 实体详情_存在() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "张三", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
 
             mockMvc.perform(get("/api/memories/entities/e1"))
                     .andExpect(status().isOk())
@@ -310,8 +326,6 @@ class MemoryControllerTest {
 
         @Test
         void 实体详情_不存在_返回404() throws Exception {
-            when(semanticMemory.findById("not-exist")).thenReturn(Optional.empty());
-
             mockMvc.perform(get("/api/memories/entities/not-exist"))
                     .andExpect(status().isNotFound());
         }
@@ -319,18 +333,16 @@ class MemoryControllerTest {
         @Test
         void 归档实体_成功() throws Exception {
             var entity = testEntity("e1", "张三", EntityType.PERSON);
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(entity));
+            stubReadable(entity);
 
             mockMvc.perform(delete("/api/memories/entities/e1"))
                     .andExpect(status().isOk());
 
-            verify(semanticMemory).archive(entity);
+        verify(semanticMemory).archive(entity, ChangeSource.UI_EDIT);
         }
 
         @Test
         void 归档实体_不存在_返回404() throws Exception {
-            when(semanticMemory.findById("not-exist")).thenReturn(Optional.empty());
-
             mockMvc.perform(delete("/api/memories/entities/not-exist"))
                     .andExpect(status().isNotFound());
         }
@@ -356,17 +368,14 @@ class MemoryControllerTest {
         }
 
         @Test
-        void 更新实体_沿用原space和scope写入() throws Exception {
-            var entity = testEntity("e-domain", "林夜", EntityType.PERSON);
-            when(semanticMemory.findById("e-domain")).thenReturn(Optional.of(entity));
-            when(provenanceRepository.loadEntityMetadata(List.of("e-domain")))
-                    .thenReturn(Map.of("e-domain",
-                            new EntityMetadata("e-domain", "domain:kb-1", "DOMAIN_MEMORY", "FICTIONAL")));
+        void 更新实体_主账户路径使用主账户写入上下文() throws Exception {
+            var entity = testEntity("e-main", "林夜", EntityType.PERSON);
+            stubReadable(entity);
             when(semanticMemory.upsertWithConflictDetection(
                     any(TemporalEntity.class), eq("manual-edit"), any(MemoryWriteContext.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
-            mockMvc.perform(put("/api/memories/entities/e-domain")
+            mockMvc.perform(put("/api/memories/entities/e-main")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"description":"更新后描述","importanceScore":0.9}
@@ -377,8 +386,8 @@ class MemoryControllerTest {
             ArgumentCaptor<MemoryWriteContext> captor = ArgumentCaptor.forClass(MemoryWriteContext.class);
             verify(semanticMemory).upsertWithConflictDetection(
                     any(TemporalEntity.class), eq("manual-edit"), captor.capture());
-            assertThat(captor.getValue().spaceId()).isEqualTo("domain:kb-1");
-            assertThat(captor.getValue().memoryScope()).isEqualTo(MemoryScope.DOMAIN_MEMORY);
+            assertThat(captor.getValue().spaceId()).isNull();
+            assertThat(captor.getValue().memoryScope()).isNull();
         }
 
         @Test
@@ -420,8 +429,7 @@ class MemoryControllerTest {
 
         @Test
         void 实体来源明细_返回provenance列表() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "张三", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
             when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "CHAT",
@@ -450,8 +458,7 @@ class MemoryControllerTest {
 
         @Test
         void 实体来源明细_返回友好名称() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "林夜", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "林夜", EntityType.PERSON));
             when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "KNOWLEDGE_BASE_DOCUMENT",
@@ -485,8 +492,7 @@ class MemoryControllerTest {
 
         @Test
         void 实体来源明细_按来源字段过滤() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "张三", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
             when(provenanceRepository.findEntityProvenances(
                     eq("e1"), eq("KNOWLEDGE_BASE_DOCUMENT"), eq("kb-1"), eq("doc-1")))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
@@ -643,7 +649,7 @@ class MemoryControllerTest {
         void 关系列表_附带实体名称() throws Exception {
             var relation = testRelation("r1", "e1", "e2");
             when(semanticMemory.findAllCurrentRelations()).thenReturn(List.of(relation));
-            when(semanticMemory.findByIds(any())).thenReturn(Map.of(
+            when(semanticMemory.findByIds(anyCollection(), any(MemoryReadFilter.class))).thenReturn(Map.of(
                     "e1", testEntity("e1", "张三", EntityType.PERSON),
                     "e2", testEntity("e2", "项目A", EntityType.PROJECT)));
             when(provenanceRepository.loadEntityMetadata(anyCollection()))

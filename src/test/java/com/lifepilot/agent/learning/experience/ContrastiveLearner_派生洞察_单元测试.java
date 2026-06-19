@@ -10,6 +10,7 @@ import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,10 @@ class ContrastiveLearner_派生洞察_单元测试 {
         learner.learn(success);
 
         ArgumentCaptor<TemporalEntity> captor = ArgumentCaptor.forClass(TemporalEntity.class);
-        verify(semanticMemory).upsertWithConflictDetection(captor.capture(), eq("contrastive-learning"));
+        verify(semanticMemory).upsertWithConflictDetection(
+                captor.capture(),
+                eq("contrastive-learning"),
+                any(MemoryWriteContext.class));
         var derived = captor.getValue();
 
         assertThat(derived.isDerived()).isTrue();
@@ -105,6 +109,6 @@ class ContrastiveLearner_派生洞察_单元测试 {
         learner.learn(success);
 
         verify(semanticMemory, org.mockito.Mockito.never())
-                .upsertWithConflictDetection(any(), any(String.class));
+                .upsertWithConflictDetection(any(), any(String.class), any(MemoryWriteContext.class));
     }
 }

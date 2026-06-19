@@ -16,6 +16,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -61,7 +62,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *       create schema 不含 temporality 字段）；</li>
  *   <li>改为：构造 {@link TemporalEntity} 带 EPHEMERAL + expiresAt=now+7d，走
  *       {@link SemanticMemory#upsertWithConflictDetection} 标准路径，确保
- *       V15 schema 的 {@code expires_at / temporality} 列写入；</li>
+ *       当前 schema 的 {@code expires_at / temporality} 列写入；</li>
  *   <li>用 {@link ExpirationScanner#scanNow()}（测试友好入口）同步触发扫描；</li>
  *   <li>{@link Clock} 注入固定时刻，scanNow 内部 {@code clock.instant()} 取的时间
  *       大于 {@code expires_at} 从而命中 {@code findExpiredActive} 过滤；</li>
@@ -134,7 +135,10 @@ class 临时情绪不污染长期偏好_场景测试 {
         var ephemeralExperience = 构造EPHEMERAL体验(
                 "近期工作负荷", "最近工作忙，不想写代码",
                 BASE_TIME, BASE_TIME.plus(Duration.ofDays(7)));
-        var created = semanticMemory.upsertWithConflictDetection(ephemeralExperience, "scenario-session-s5");
+        var created = semanticMemory.upsertWithConflictDetection(
+                ephemeralExperience,
+                "scenario-session-s5",
+                MemoryWriteContext.conversation("scenario-session-s5"));
         assertThat(created).as("upsert 应返回持久化实体").isNotNull();
 
         var loaded = queryApi.findById(created.id()).orElseThrow();
@@ -171,8 +175,14 @@ class 临时情绪不污染长期偏好_场景测试 {
         var ephemeral = 构造EPHEMERAL体验("临时情绪", null,
                 BASE_TIME, BASE_TIME.plus(Duration.ofDays(7)));
         var persistent = 构造ACTIVE偏好("长期偏好_编程语言", "Kotlin");
-        semanticMemory.upsertWithConflictDetection(ephemeral, "scenario-session-s5");
-        var persistedPref = semanticMemory.upsertWithConflictDetection(persistent, "scenario-session-s5");
+        semanticMemory.upsertWithConflictDetection(
+                ephemeral,
+                "scenario-session-s5",
+                MemoryWriteContext.conversation("scenario-session-s5"));
+        var persistedPref = semanticMemory.upsertWithConflictDetection(
+                persistent,
+                "scenario-session-s5",
+                MemoryWriteContext.conversation("scenario-session-s5"));
 
         clock.advance(Duration.ofDays(30));
         expirationScanner.scanNow();

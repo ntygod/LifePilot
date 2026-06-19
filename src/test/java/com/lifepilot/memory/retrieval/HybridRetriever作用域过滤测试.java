@@ -1,5 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryScope;
@@ -86,8 +87,8 @@ class HybridRetriever作用域过滤测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null
-        , null);
+                null,
+                mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("帮我回忆一下", 10, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
 

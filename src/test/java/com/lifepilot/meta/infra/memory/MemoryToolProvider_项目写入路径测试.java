@@ -5,6 +5,7 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -63,7 +64,8 @@ class MemoryToolProvider_项目写入路径测试 {
                 mock(SessionKnowledgeScopeResolver.class),
                 new MemoryRetrievalProperties(),
                 projectContextResolver,
-                chatSessionRepository
+                chatSessionRepository,
+                new MemoryAccessPolicy()
         );
         provider.registerTools(registry);
 
@@ -153,31 +155,6 @@ class MemoryToolProvider_项目写入路径测试 {
         var captor = ArgumentCaptor.forClass(MemoryWriteContext.class);
         verify(semanticMemory).addRelation(any(), captor.capture());
         assertThat(captor.getValue().spaceId()).isEqualTo("space-tag");
-    }
-
-    @Test
-    void create路径_resolver缺失_走fallback填null() {
-        // 构造未注入 resolver 的 provider
-        var providerWithoutResolver = new MemoryToolProvider(
-                mock(HybridRetriever.class),
-                semanticMemory,
-                mock(EpisodicMemory.class),
-                mock(DocumentRetriever.class),
-                mock(SessionKnowledgeBaseRepository.class),
-                mock(SessionKnowledgeScopeResolver.class),
-                new MemoryRetrievalProperties()
-        );
-        var fallbackRegistry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
-        providerWithoutResolver.registerTools(fallbackRegistry);
-
-        var tool = fallbackRegistry.resolve("memory").orElseThrow();
-        tool.execute(new ToolInput(tool.id(),
-                Map.of("action", "create", "name", "x", "entityType", "PREFERENCE"),
-                tool.inputSchema(), null,
-                Map.of("sessionId", "s")));
-
-        MemoryWriteContext ctx = captureWriteContext();
-        assertThat(ctx.spaceId()).isNull();
     }
 
     private MemoryWriteContext captureWriteContext() {

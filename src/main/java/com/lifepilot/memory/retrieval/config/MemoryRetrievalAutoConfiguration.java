@@ -91,7 +91,7 @@ public class MemoryRetrievalAutoConfiguration {
             @Nullable RerankRouter rerankRouter,
             JdbcTemplate jdbcTemplate,
             MemoryRetrievalProperties properties,
-            @Nullable MemoryProvenanceRepository provenanceRepository) {
+            MemoryProvenanceRepository provenanceRepository) {
         log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}, provenance={}",
                 intentMatcher != null ? "enabled" : "disabled",
                 rerankRouter != null ? "enabled" : "disabled",

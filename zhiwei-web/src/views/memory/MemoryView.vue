@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useMemoryStore } from '@/stores/memory'
-import type { MemorySearchResult } from '@/types'
+import type { MemorySearchResponse, MemorySearchResult } from '@/types'
 import EntityPanel from './EntityPanel.vue'
 import RelationPanel from './RelationPanel.vue'
 import ConversationPanel from './ConversationPanel.vue'
@@ -44,6 +44,7 @@ const VALID_TABS = new Set(['entities', 'relations', 'conversations', 'templates
 // 搜索状态
 const searchQuery = ref('')
 const searchResults = ref<MemorySearchResult[]>([])
+const searchMeta = ref<MemorySearchResponse | null>(null)
 const searching = ref(false)
 
 onMounted(() => {
@@ -80,7 +81,9 @@ async function handleSearch() {
   }
   searching.value = true
   try {
-    searchResults.value = await store.search(q)
+    const response = await store.search(q)
+    searchResults.value = response.results
+    searchMeta.value = response
   } finally {
     searching.value = false
   }
@@ -89,6 +92,7 @@ async function handleSearch() {
 function clearSearch() {
   searchQuery.value = ''
   searchResults.value = []
+  searchMeta.value = null
 }
 
 function openSearchResult(item: MemorySearchResult) {
@@ -191,6 +195,9 @@ function formatRelevanceScore(score?: number | null) {
             <div v-if="searchResults.length > 0" class="mt-4 space-y-2">
               <div class="surface-label mb-2">
                 找到 {{ searchResults.length }} 条结果
+                <span v-if="searchMeta && searchMeta.filteredOutCount > 0" class="ml-2 text-muted-foreground">
+                  已过滤 {{ searchMeta.filteredOutCount }} 条
+                </span>
               </div>
               <div
                 v-for="item in searchResults"

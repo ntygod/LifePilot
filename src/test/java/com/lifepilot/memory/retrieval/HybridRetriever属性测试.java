@@ -1,5 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -205,8 +206,7 @@ class HybridRetriever属性测试 {
         return new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                rerankRouter
-        , null);
+                rerankRouter, mock(MemoryProvenanceRepository.class));
     }
 
     record QueryWithMockResults(

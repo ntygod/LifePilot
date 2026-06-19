@@ -6,6 +6,7 @@ import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -35,9 +36,9 @@ import static org.mockito.Mockito.lenient;
  *
  * <p>覆盖三条发布路径：
  * <ul>
- *   <li>{@code archive(entity)} → ARCHIVED 事件（source=UI_EDIT）</li>
+ *   <li>{@code archive(entity, UI_EDIT)} → ARCHIVED 事件（source=UI_EDIT）</li>
  *   <li>{@code upsertWithConflictDetection} 新建分支 → ACTIVE 事件（source 由 provenance 推断）</li>
- *   <li>{@code updateLifecycleState} 2-arg 兼容 + 4-arg 重载 → 对应 newState 事件</li>
+ *   <li>{@code updateLifecycleState} → 对应 newState 事件</li>
  * </ul></p>
  *
  * @author zsg
@@ -97,10 +98,10 @@ class SemanticMemory_生命周期事件_集成测试 {
     @Test
     void archive应发布ARCHIVED事件且source为UI_EDIT() {
         var entity = 构造ACTIVE实体("entity-归档-1", EntityType.GOAL);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         captured.clear();   // 忽略 upsert 产生的 ACTIVE 事件
 
-        semanticMemory.archive(persisted);
+        semanticMemory.archive(persisted, ChangeSource.UI_EDIT);
 
         var lifecycleEvents = captured.stream()
                 .filter(e -> e instanceof EntityLifecycleChanged)
@@ -118,10 +119,9 @@ class SemanticMemory_生命周期事件_集成测试 {
     @Test
     void archive带ChangeSource参数应透传到事件() {
         var entity = 构造ACTIVE实体("entity-归档-2", EntityType.EXPERIENCE);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         captured.clear();
 
-        // 3-arg 重载：模拟 ForgettingEngine 的 CRON_EXPIRE 归档
         semanticMemory.archive(persisted, ChangeSource.CRON_EXPIRE);
 
         var lifecycleEvents = captured.stream()
@@ -141,7 +141,7 @@ class SemanticMemory_生命周期事件_集成测试 {
     void upsertWithConflictDetection新建分支应发布ACTIVE事件且oldState为null() {
         var entity = 构造ACTIVE实体("entity-新建-1", EntityType.PREFERENCE);
 
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
 
         var lifecycleEvents = captured.stream()
                 .filter(e -> e instanceof EntityLifecycleChanged)
@@ -159,7 +159,7 @@ class SemanticMemory_生命周期事件_集成测试 {
     @Test
     void upsert合并分支不应发布LifecycleChanged事件() {
         var entity = 构造ACTIVE实体("entity-合并-1", EntityType.GOAL);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         captured.clear();
 
         // 触发合并：描述变长，VersionMerger 判定 isNewVersion=true
@@ -173,7 +173,7 @@ class SemanticMemory_生命周期事件_集成测试 {
                 persisted.lifecycleState(), persisted.lifecycleReason(), persisted.expiresAt(),
                 persisted.temporality(), persisted.succeededBy(),
                 persisted.isDerived(), persisted.derivationSources());
-        semanticMemory.upsertWithConflictDetection(longer, null);
+        semanticMemory.upsertWithConflictDetection(longer, null, MemoryWriteContext.unknown(null));
 
         assertThat(captured)
                 .filteredOn(e -> e instanceof EntityLifecycleChanged)
@@ -184,7 +184,7 @@ class SemanticMemory_生命周期事件_集成测试 {
     @Test
     void updateLifecycleState_2arg重载应发布事件且source默认TOOL_EXPLICIT() {
         var entity = 构造ACTIVE实体("entity-state-1", EntityType.GOAL);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         captured.clear();
 
         semanticMemory.updateLifecycleState(persisted.id(), LifecycleState.COMPLETED, "goal-done");
@@ -205,7 +205,7 @@ class SemanticMemory_生命周期事件_集成测试 {
     @Test
     void updateLifecycleState_4arg重载应透传自定义source() {
         var entity = 构造ACTIVE实体("entity-state-2", EntityType.EXPERIENCE);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         captured.clear();
 
         semanticMemory.updateLifecycleState(

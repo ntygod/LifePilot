@@ -118,7 +118,7 @@ public class SessionTranscriptRepository {
         }
         return appendEntry(
                 sessionId,
-                TranscriptEntryType.fromLegacyRole(role),
+                TranscriptEntryType.fromRole(role),
                 role,
                 normalizeBlank(turnId),
                 normalizeBlank(traceId),

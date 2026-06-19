@@ -3,6 +3,7 @@ package com.lifepilot.agent.learning.experience;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.retrieval.InjectionRecordRepository;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -120,7 +121,7 @@ public class EffectivenessTracker {
 
             if (newScore < config.getEvictionThreshold()) {
                 // 淘汰低分经验
-                SqliteBusyRetry.run(() -> semanticMemory.archive(entity));
+                SqliteBusyRetry.run(() -> semanticMemory.archive(entity, ChangeSource.NEGATIVE_FEEDBACK));
                 log.info("效果评估: 经验淘汰, entityId={}, score={}", entityId, newScore);
             } else {
                 SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(

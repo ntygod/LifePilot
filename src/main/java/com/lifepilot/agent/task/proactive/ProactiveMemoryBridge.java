@@ -9,6 +9,8 @@ import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.events.ProactiveTaskCancelled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -182,7 +184,8 @@ public class ProactiveMemoryBridge {
         List<String> relatedInsightIds = findInsightEntityIdsByTask(entityId);
         if (semanticMemory != null) {
             try {
-                semanticMemory.findById(entityId).ifPresent(semanticMemory::archive);
+                semanticMemory.findById(entityId)
+                        .ifPresent(entity -> semanticMemory.archive(entity, ChangeSource.PROACTIVE_CANCEL));
             } catch (Exception e) {
                 log.debug("记忆桥接: 目标归档失败: {}", e.getMessage());
             }
@@ -477,7 +480,10 @@ public class ProactiveMemoryBridge {
                     0.8f, Math.max(0.5f, value), 0, null, Instant.now(), Instant.now())
                     .withQuality(MemoryEvidenceKind.BEHAVIOR_INFERRED, MemoryTrustLevel.INFERRED,
                             Math.max(0.50f, Math.min(0.75f, value)), 1, null);
-            semanticMemory.upsertWithConflictDetection(entity, "proactive-engine");
+            semanticMemory.upsertWithConflictDetection(
+                    entity,
+                    "proactive-engine",
+                    MemoryWriteContext.consolidation("proactive-engine"));
             log.debug("记忆桥接: 主动洞察回写 L3, name={}", entityName);
         } catch (Exception e) {
             log.debug("记忆桥接: 主动洞察回写 L3 失败: {}", e.getMessage());

@@ -14,7 +14,6 @@ import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
 import com.lifepilot.memory.store.scope.MemoryScope;
@@ -38,6 +37,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -61,7 +61,7 @@ public class SemanticMemory {
     private static final String DEFAULT_EXPERIENCE_SPACE_ID = "memory-space-experience-default";
 
     /**
-     * temporal_entities 视图包含的全部列 — 含 V15 生命周期新字段。
+     * temporal_entities 视图包含的全部列 — 含生命周期与质量字段。
      * 集中声明以确保所有 SELECT 路径与 {@link #mapRowToEntity} 对齐。
      */
     private static final String ENTITY_SELECT_COLUMNS = "id, type, name, description, properties_json, "
@@ -164,29 +164,17 @@ public class SemanticMemory {
     }
 
     /**
-     * 版本感知 upsert：冲突检测 → 合并/新建 → 插入 → 更新向量索引。
-     *
-     * @param incoming       新实体信息
-     * @param conversationId 来源会话 ID
-     * @return 持久化后的实体
-     */
-    @Transactional
-    public TemporalEntity upsertWithConflictDetection(TemporalEntity incoming, String conversationId) {
-        return upsertWithConflictDetection(incoming, conversationId, null);
-    }
-
-    /**
      * 带写入上下文的版本感知 upsert。
      *
      * @param incoming        新实体信息
-     * @param sourceReference 来源引用（兼容旧的 conversationId/documentId/sourceId 语义）
+     * @param sourceReference 来源引用
      * @param writeContext    目标写入上下文
      * @return 持久化后的实体
      */
     @Transactional
     public TemporalEntity upsertWithConflictDetection(TemporalEntity incoming,
                                                       @Nullable String sourceReference,
-                                                      @Nullable MemoryWriteContext writeContext) {
+                                                      MemoryWriteContext writeContext) {
         MemoryWriteContext resolvedContext = resolveWriteContext(incoming, sourceReference, writeContext);
         incoming = MemoryQualityPolicy.applyDefaults(incoming, resolvedContext);
         var existing = conflictDetector.detectConflict(incoming, resolvedContext.spaceId());
@@ -277,7 +265,8 @@ public class SemanticMemory {
                                                TemporalEntity baseEntity,
                                                @Nullable String sourceReference,
                                                MemoryWriteContext writeContext) {
-        if (writeContext == null || writeContext.spaceId() == null || writeContext.spaceId().isBlank()) {
+        Objects.requireNonNull(writeContext, "创建项目 overlay 必须提供写入上下文");
+        if (writeContext.spaceId() == null || writeContext.spaceId().isBlank()) {
             throw new IllegalArgumentException("创建项目 overlay 必须提供项目 spaceId");
         }
         TemporalEntity overlay = upsertWithConflictDetection(incoming, sourceReference, writeContext);
@@ -324,7 +313,7 @@ public class SemanticMemory {
         }
         String now = Instant.now().toString();
         return jdbcTemplate.query(
-                """
+                ("""
                 WITH RECURSIVE related(id, depth) AS (
                     SELECT tr.target_entity_id, 1
                     FROM temporal_relations tr
@@ -349,10 +338,10 @@ public class SemanticMemory {
                 FROM temporal_entities te
                 JOIN related r ON te.id = r.id
                 WHERE te.is_current = 1 AND te.id != ?
-                  AND te.lifecycle_state IN ('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')
+                  AND te.lifecycle_state IN %s
                   AND (te.valid_to IS NULL OR te.valid_to > ?)
                   AND (te.expires_at IS NULL OR te.expires_at > ?)
-                """,
+                """).formatted(LifecycleState.recallableSqlInClause()),
                 (rs, rowNum) -> mapRowToEntity(rs),
                 entityId, entityId, maxDepth, entityId, now, now);
     }
@@ -437,25 +426,9 @@ public class SemanticMemory {
     }
 
     /**
-     * 归档（2-arg 兼容签名）— 等价 {@code archive(entity, ChangeSource.UI_EDIT)}。
-     *
-     * <p>保留给 UI/前端删除、Tool delete 等未显式指定来源的调用方：默认按"用户 UI 编辑"
-     * 归因。定时清理 / 合并 / 冲突裁决等路径必须走 3-arg 重载以携带正确 {@link ChangeSource}，
-     * 否则下游 DerivedEntityListener / L4SyncListener 无法区分 cron 与 UI 动作。</p>
-     */
-    public void archive(TemporalEntity entity) {
-        archive(entity, ChangeSource.UI_EDIT);
-    }
-
-    /**
      * 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系；
      * 向量清理只登记 {@code memory_projection_outbox} DELETE 任务，避免事务回滚后留下
      * "向量已删、主库未改"的不一致。
-     *
-     * <p>B5 follow-up：增加 {@code source} 入参，替代原先写死的 {@link ChangeSource#UI_EDIT}。
-     * 允许 {@code ForgettingEngine} / {@code ExperienceMerger} / {@code EntityDeduplicator}
-     * 等调用方显式传 {@link ChangeSource#CRON_EXPIRE} 或 {@link ChangeSource#CONFLICT_RESOLVE}，
-     * 保证事件 source 与实际触发原因对齐。</p>
      *
      * @param entity 待归档实体
      * @param source 归档来源 — 决定 LifecycleChanged 事件的 source 字段
@@ -837,7 +810,10 @@ public class SemanticMemory {
                 existing.evidenceKind(), existing.trustLevel(), existing.trustScore(),
                 existing.evidenceCount(), existing.lastVerifiedAt());
 
-        var writeContext = defaultWriteContext(updated, "user-edit-description");
+        var writeContext = resolveWriteContext(
+                updated,
+                "user-edit-description",
+                MemoryWriteContext.manual("user-edit-description"));
         insertEntityVersion(updated, writeContext, now);
         // 同步根表的 updated_at（画像等场景需要感知时间刷新）
         jdbcTemplate.update(
@@ -849,13 +825,8 @@ public class SemanticMemory {
                 entityId, updated.version());
     }
 
-    /** 添加关系。 */
-    public void addRelation(TemporalRelation relation) {
-        addRelation(relation, null);
-    }
-
     /** 添加关系并记录写入上下文。 */
-    public void addRelation(TemporalRelation relation, @Nullable MemoryWriteContext writeContext) {
+    public void addRelation(TemporalRelation relation, MemoryWriteContext writeContext) {
         var now = Instant.now();
         MemoryWriteContext resolvedContext = resolveRelationWriteContext(relation, writeContext);
         String spaceId = resolvedContext.spaceId() != null
@@ -1362,7 +1333,7 @@ public class SemanticMemory {
         }
     }
 
-    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突；同时写入 V15 生命周期字段。 */
+    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突；同时写入生命周期字段。 */
     private void insertEntityRoot(TemporalEntity entity, MemoryWriteContext writeContext, Instant now) {
         String spaceId = writeContext.spaceId() != null
                 ? writeContext.spaceId()
@@ -1517,8 +1488,8 @@ public class SemanticMemory {
                     id, entity_id, version_id, origin_type, source_reference, source_conversation_id,
                     source_session_id, source_turn_id, source_entry_id, source_document_id,
                     source_knowledge_base_id,
-                    confidence, evidence_kind, trust_score, trust_level, created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    confidence, evidence_kind, trust_score, trust_level, evidence_excerpt, created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 UUID.randomUUID().toString(),
                 entity.id(),
@@ -1535,6 +1506,7 @@ public class SemanticMemory {
                 entity.evidenceKind().name(),
                 entity.trustScore(),
                 entity.trustLevel().name(),
+                writeContext.evidenceExcerpt(),
                 now.toString());
     }
 
@@ -1636,10 +1608,8 @@ public class SemanticMemory {
 
     private MemoryWriteContext resolveWriteContext(TemporalEntity entity,
                                                    @Nullable String sourceReference,
-                                                   @Nullable MemoryWriteContext writeContext) {
-        if (writeContext == null) {
-            return defaultWriteContext(entity, sourceReference);
-        }
+                                                   MemoryWriteContext writeContext) {
+        Objects.requireNonNull(writeContext, "记忆写入上下文不能为空");
         MemoryScope resolvedScope = writeContext.memoryScope() != null
                 ? writeContext.memoryScope()
                 : resolveDefaultScope(entity.type());
@@ -1657,43 +1627,30 @@ public class SemanticMemory {
                 writeContext.sourceTurnId(),
                 writeContext.sourceEntryId(),
                 writeContext.sourceDocumentId(),
-                writeContext.sourceKnowledgeBaseId()
-        );
-    }
-
-    private MemoryWriteContext defaultWriteContext(TemporalEntity entity, @Nullable String sourceReference) {
-        return new MemoryWriteContext(
-                resolveDefaultSpaceId(entity.type()),
-                resolveDefaultScope(entity.type()),
-                detectOriginType(sourceReference),
-                MemoryRealityType.UNKNOWN,
-                sourceReference,
-                sourceReference,
-                null,
-                null,
-                null,
-                null,
-                null
+                writeContext.sourceKnowledgeBaseId(),
+                writeContext.evidenceExcerpt()
         );
     }
 
     private MemoryWriteContext resolveRelationWriteContext(TemporalRelation relation,
-                                                           @Nullable MemoryWriteContext writeContext) {
-        if (writeContext != null) {
+                                                           MemoryWriteContext writeContext) {
+        Objects.requireNonNull(writeContext, "关系写入上下文不能为空");
+        if (writeContext.spaceId() != null) {
             return writeContext;
         }
         return new MemoryWriteContext(
                 resolveRelationSpaceId(relation.sourceEntityId(), relation.targetEntityId()),
-                null,
-                detectOriginType(relation.sourceConversationId()),
-                MemoryRealityType.UNKNOWN,
-                relation.sourceConversationId(),
-                relation.sourceConversationId(),
-                null,
-                null,
-                null,
-                null,
-                null
+                writeContext.memoryScope(),
+                writeContext.originType(),
+                writeContext.realityType(),
+                writeContext.sourceReference() != null ? writeContext.sourceReference() : relation.sourceConversationId(),
+                writeContext.sourceConversationId() != null ? writeContext.sourceConversationId() : relation.sourceConversationId(),
+                writeContext.sourceSessionId(),
+                writeContext.sourceTurnId(),
+                writeContext.sourceEntryId(),
+                writeContext.sourceDocumentId(),
+                writeContext.sourceKnowledgeBaseId(),
+                writeContext.evidenceExcerpt()
         );
     }
 
@@ -1726,18 +1683,6 @@ public class SemanticMemory {
             return memorySpaceRepository.ensureDefaultPersonalSpace().id();
         }
         return DEFAULT_PERSONAL_SPACE_ID;
-    }
-
-    private MemoryOriginType detectOriginType(@Nullable String sourceReference) {
-        if (sourceReference == null || sourceReference.isBlank()) {
-            return MemoryOriginType.UNKNOWN;
-        }
-        return switch (sourceReference) {
-            case "user-edit-description", "manual-edit" -> MemoryOriginType.MANUAL;
-            case "subtask-reflection", "contrastive-learning", "experience-merge",
-                    "user-profile-consolidation", "proactive-engine" -> MemoryOriginType.CONSOLIDATION;
-            default -> MemoryOriginType.CHAT;
-        };
     }
 
     private String normalizeName(String name) {
@@ -1819,7 +1764,7 @@ public class SemanticMemory {
         projectionService.enqueueVectorUpsertAfterCommit(entity);
     }
 
-    /** ResultSet 行映射为 TemporalEntity — 含 V15 生命周期字段。 */
+    /** ResultSet 行映射为 TemporalEntity — 含生命周期与质量字段。 */
     @SuppressWarnings("unchecked")
     private TemporalEntity mapRowToEntity(java.sql.ResultSet rs) throws java.sql.SQLException {
         String propsJson = rs.getString("properties_json");

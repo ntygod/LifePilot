@@ -1,5 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,7 +72,8 @@ class HybridRetriever_归档实体不应召回测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null, null);
+                null,
+                mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("任意查询", 10, RetrievalWeights.DEFAULT);
 

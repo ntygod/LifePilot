@@ -1,5 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.rerank.RerankCandidate;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -80,7 +81,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                rerankRouter, null);
+                rerankRouter, mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
 
@@ -100,7 +101,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                rerankRouter, null);
+                rerankRouter, mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
 
@@ -116,7 +117,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                null, null);
+                null, mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
 
@@ -131,7 +132,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                null, null);
+                null, mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
 
@@ -169,7 +170,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                null, null);
+                null, mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
         var entityIds = results.stream().map(RetrievalResult::entityId).toList();
@@ -206,7 +207,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                null, null);
+                null, mock(MemoryProvenanceRepository.class));
 
         var results = retriever.retrieve("取消 MT-CANCEL-0507", 10, RetrievalWeights.DEFAULT);
 

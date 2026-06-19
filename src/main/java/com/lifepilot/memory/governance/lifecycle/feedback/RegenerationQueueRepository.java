@@ -117,8 +117,7 @@ public class RegenerationQueueRepository {
     /**
      * 将队列项标记为 {@code FAILED}。
      *
-     * <p>V15 表结构未保留 {@code rationale} 列，失败原因仅通过 {@code logger.warn}
-     * 打印到日志 —— 后续如需持久化可在迁移里补列。</p>
+     * <p>当前队列表不持久化失败原因，仅通过 {@code logger.warn} 打印到日志。</p>
      *
      * @param id     队列项 id
      * @param reason 失败原因（仅用于日志）

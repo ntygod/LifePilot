@@ -9,6 +9,7 @@ import com.lifepilot.memory.episodic.MessageRecord;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -98,6 +99,7 @@ class EpisodicToSemanticConsolidatorTest {
         var stats = consolidator.consolidate();
 
         assertThat(stats.extractionsTriggered()).isZero();
-        verify(semanticMemory, never()).upsertWithConflictDetection(any(TemporalEntity.class), anyString());
+        verify(semanticMemory, never()).upsertWithConflictDetection(
+                any(TemporalEntity.class), anyString(), any(MemoryWriteContext.class));
     }
 }

@@ -9,6 +9,7 @@ import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.entity.VersionMerger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -107,14 +108,17 @@ class ProactiveEngine_取消级联_集成测试 {
     void markGoalFulfilled应发布ProactiveTaskCancelled含相关insight() {
         // 前置 1：写一个 GOAL 实体作为 taskId
         var goal = 构造实体(EntityType.GOAL, "goal-学习rust", "想学 rust");
-        var persistedGoal = semanticMemory.upsertWithConflictDetection(goal, "test-proactive");
+        var persistedGoal = semanticMemory.upsertWithConflictDetection(
+                goal, "test-proactive", MemoryWriteContext.consolidation("test-proactive"));
         String taskId = persistedGoal.id();
 
         // 前置 2：写两个 PREFERENCE 实体作为 insight，并挂钩到 task
         var insight1 = 构造实体(EntityType.PREFERENCE, "proactive_insight_a", "早晨偏好");
         var insight2 = 构造实体(EntityType.PREFERENCE, "proactive_insight_b", "咖啡偏好");
-        var p1 = semanticMemory.upsertWithConflictDetection(insight1, "proactive-engine");
-        var p2 = semanticMemory.upsertWithConflictDetection(insight2, "proactive-engine");
+        var p1 = semanticMemory.upsertWithConflictDetection(
+                insight1, "proactive-engine", MemoryWriteContext.consolidation("proactive-engine"));
+        var p2 = semanticMemory.upsertWithConflictDetection(
+                insight2, "proactive-engine", MemoryWriteContext.consolidation("proactive-engine"));
         bridge.linkInsightToTask(taskId, p1.id());
         bridge.linkInsightToTask(taskId, p2.id());
 
@@ -138,7 +142,8 @@ class ProactiveEngine_取消级联_集成测试 {
     @Test
     void markGoalFulfilled无关联insight时应发空列表事件() {
         var goal = 构造实体(EntityType.GOAL, "goal-无关联", "没有 insight 挂钩");
-        var persistedGoal = semanticMemory.upsertWithConflictDetection(goal, "test-proactive");
+        var persistedGoal = semanticMemory.upsertWithConflictDetection(
+                goal, "test-proactive", MemoryWriteContext.consolidation("test-proactive"));
         captured.clear();
 
         engine.markGoalFulfilled(persistedGoal.id());
@@ -154,9 +159,11 @@ class ProactiveEngine_取消级联_集成测试 {
     @Test
     void linkInsightToTask幂等_重复挂钩不影响事件payload() {
         var goal = 构造实体(EntityType.GOAL, "goal-幂等", "幂等测试");
-        var persistedGoal = semanticMemory.upsertWithConflictDetection(goal, "test-proactive");
+        var persistedGoal = semanticMemory.upsertWithConflictDetection(
+                goal, "test-proactive", MemoryWriteContext.consolidation("test-proactive"));
         var insight = 构造实体(EntityType.PREFERENCE, "proactive_insight_c", "某偏好");
-        var p = semanticMemory.upsertWithConflictDetection(insight, "proactive-engine");
+        var p = semanticMemory.upsertWithConflictDetection(
+                insight, "proactive-engine", MemoryWriteContext.consolidation("proactive-engine"));
 
         // 重复挂钩同一对 (task, insight)
         bridge.linkInsightToTask(persistedGoal.id(), p.id());

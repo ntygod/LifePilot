@@ -23,6 +23,7 @@ import com.lifepilot.skill.install.SkillInstallation;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolution;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -276,16 +277,27 @@ public class ContextAssembler {
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
             // 入口一次性 resolve ProjectContext，热摘要与统计复用同一读取视图。
-            ProjectContext projectContext = resolveProjectContext(state);
-            MemoryReadFilter memoryFilter = toProjectFilter(projectContext,
-                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT, MemoryScope.AGENT_EXPERIENCE));
+            ProjectContextResolution projectResolution = resolveProjectContext(state);
+            MemoryReadFilter memoryFilter;
+            CompletableFuture<HotMemoryDigest> hotDigestFuture;
+            if (projectResolution.failed()) {
+                memoryFilter = MemoryReadFilter.of(
+                        List.of(),
+                        Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT, MemoryScope.AGENT_EXPERIENCE));
+                hotDigestFuture = CompletableFuture.completedFuture(null);
+            } else {
+                ProjectContext projectContext = projectResolution.context();
+                memoryFilter = toProjectFilter(
+                        projectContext,
+                        Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT, MemoryScope.AGENT_EXPERIENCE));
+                hotDigestFuture = mediaPlaceholder
+                        ? CompletableFuture.completedFuture(null)
+                        : CompletableFuture.supplyAsync(
+                                () -> safeBuildHotMemoryDigest(projectContext, memoryFilter), VIRTUAL_EXECUTOR);
+            }
             // 默认自动记忆注入只消费 HotMemoryDigest；冷召回由 memory.search / memory.recall 显式触发。
             var contextFuture = CompletableFuture.supplyAsync(
                     () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
-            var hotDigestFuture = mediaPlaceholder
-                    ? CompletableFuture.completedFuture((HotMemoryDigest) null)
-                    : CompletableFuture.supplyAsync(
-                        () -> safeBuildHotMemoryDigest(projectContext, memoryFilter), VIRTUAL_EXECUTOR);
             CompletableFuture.allOf(contextFuture, hotDigestFuture).join();
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
@@ -373,53 +385,63 @@ public class ContextAssembler {
     /**
      * 从 {@code state.sessionId()} 反查 ChatSession 的 projectId，经 resolver 得到 ProjectContext。
      *
-     * <p>依赖任一缺失（resolver / chatSessionRepo 为 null）或查询/解析抛错时返回 null，
-     * 调用方需在 {@link #toProjectFilter(ProjectContext, Set)} 中按 null 走 fallback 分支。</p>
+     * <p>没有会话归属时解析为主账户上下文；查询/解析抛错时返回 failed，调用方需跳过默认记忆注入。</p>
      */
-    @Nullable
-    ProjectContext resolveProjectContext(ReactAgentState state) {
+    ProjectContextResolution resolveProjectContext(ReactAgentState state) {
         if (projectContextResolver == null || chatSessionRepository == null) {
-            return null;
+            log.warn("项目上下文依赖未配置，本轮跳过默认记忆注入");
+            return ProjectContextResolution.failed("project_context_dependency_missing");
         }
         String sessionId = state.sessionId();
         if (sessionId == null || sessionId.isBlank()) {
-            return null;
-        }
-        try {
-            var session = chatSessionRepository.findById(sessionId);
-            if (session.isEmpty()) {
-                return null;
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.warn("解析主账户 ProjectContext 失败，本轮跳过默认记忆注入: error={}", e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
             }
-            return projectContextResolver.resolve(session.get().projectId());
+        }
+        Optional<com.lifepilot.interaction.web.model.ChatSession> session;
+        try {
+            session = chatSessionRepository.findById(sessionId);
         } catch (Exception e) {
-            log.debug("解析 ProjectContext 失败, 回退到默认 filter: sessionId={}, error={}",
+            log.warn("查询会话项目归属失败，本轮跳过默认记忆注入: sessionId={}, error={}",
                     sessionId, e.getMessage());
-            return null;
+            return ProjectContextResolution.failed("chat_session_lookup_failed");
+        }
+        if (session.isEmpty()) {
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.warn("解析主账户 ProjectContext 失败，本轮跳过默认记忆注入: sessionId={}, error={}",
+                        sessionId, e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
+            }
+        }
+        String projectId = session.get().projectId();
+        try {
+            return ProjectContextResolution.resolved(projectContextResolver.resolve(projectId));
+        } catch (Exception e) {
+            log.warn("解析 ProjectContext 失败，本轮跳过默认记忆注入: sessionId={}, projectId={}, error={}",
+                    sessionId, projectId != null ? projectId : "<personal>", e.getMessage());
+            return ProjectContextResolution.failed("project_context_resolution_failed");
         }
     }
 
     /**
      * 按 ProjectContext + scopes 构造记忆读取 filter。
-     *
-     * <p>ctx 为 null 时按 scopes 回退到 {@link MemoryReadFilter#userProfile()} /
-     * {@link MemoryReadFilter#userMemory()} / {@link MemoryReadFilter#agentExperience()} 原行为，
-     * 保证新旧路径向后兼容。</p>
-     *
-     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
-     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
      */
-    MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
-        return MemoryReadFilter.fromProjectContextOrFallback(
-                ctx != null,
-                ctx != null ? ctx.projectSpaceId() : null,
-                ctx != null ? ctx.personalSpaceId() : null,
-                ctx != null ? ctx.experienceSpaceId() : null,
-                ctx != null && ctx.isolated(),
+    MemoryReadFilter toProjectFilter(ProjectContext ctx, Set<MemoryScope> scopes) {
+        return MemoryReadFilter.buildForProject(
+                ctx.projectSpaceId(),
+                ctx.personalSpaceId(),
+                ctx.experienceSpaceId(),
+                ctx.isolated(),
                 scopes);
     }
 
     @Nullable
-    private HotMemoryDigest safeBuildHotMemoryDigest(@Nullable ProjectContext projectContext,
+    private HotMemoryDigest safeBuildHotMemoryDigest(ProjectContext projectContext,
                                                      MemoryReadFilter filter) {
         if (hotMemoryDigestService == null) {
             return null;
@@ -432,8 +454,8 @@ public class ContextAssembler {
         }
     }
 
-    private String hotDigestViewKey(@Nullable ProjectContext projectContext) {
-        if (projectContext == null || projectContext.projectId() == null || projectContext.projectId().isBlank()) {
+    private String hotDigestViewKey(ProjectContext projectContext) {
+        if (projectContext.projectId() == null || projectContext.projectId().isBlank()) {
             return "personal";
         }
         return "project:" + projectContext.projectId()

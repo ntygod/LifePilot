@@ -24,6 +24,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -63,7 +64,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *   <li><b>path-B</b>（单元覆盖）：直接向 {@code preference_rules} 表插入带
  *       {@code source_entity_id} 的规则，然后手动触发 {@link L4SyncListener#onLifecycleChanged}
  *       事件（模拟 {@code SemanticMemory.updateLifecycleState} 提交事务后的 AFTER_COMMIT
- *       回调），断言 {@code deactivated_reason} 被写入。此路径验证 V15 schema 与
+ *       回调），断言 {@code deactivated_reason} 被写入。此路径验证当前 schema 与
  *       L4SyncListener 的失活 SQL 本身可用，与 path-A 互为回归底座。</li>
  * </ol></p>
  *
@@ -146,7 +147,10 @@ class L3归档时L4规则同步失效_场景测试 {
     void L3PREFERENCE_CANCELLED应使L4preference_rules失活() {
         // 1. 用户"我是素食主义者" → L3 建立 PREFERENCE
         var pref = 构造ACTIVE偏好("饮食偏好", "素食");
-        var persistedPref = semanticMemory.upsertWithConflictDetection(pref, "scenario-session-s6");
+        var persistedPref = semanticMemory.upsertWithConflictDetection(
+                pref,
+                "scenario-session-s6",
+                MemoryWriteContext.conversation("scenario-session-s6"));
         var prefId = persistedPref.id();
 
         // 2. 触发 L3 → L4 巩固 —— 预期写 preference_rules，但当前实现不填 source_entity_id
@@ -191,7 +195,10 @@ class L3归档时L4规则同步失效_场景测试 {
     void 带source_entity_id的规则可被L4SyncListener失活() {
         // 1. 用户"我是素食主义者" → L3 PREFERENCE
         var pref = 构造ACTIVE偏好("饮食偏好", "素食");
-        var persistedPref = semanticMemory.upsertWithConflictDetection(pref, "scenario-session-s6");
+        var persistedPref = semanticMemory.upsertWithConflictDetection(
+                pref,
+                "scenario-session-s6",
+                MemoryWriteContext.conversation("scenario-session-s6"));
         var prefId = persistedPref.id();
 
         // 2. 直接 INSERT 一条带 source_entity_id 的 L4 规则（模拟"PreferenceConsolidator 若已扩字段"的效果）

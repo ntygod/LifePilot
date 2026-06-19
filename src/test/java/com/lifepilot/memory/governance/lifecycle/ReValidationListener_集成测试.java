@@ -22,12 +22,12 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link ReValidationListener} 集成测试 —— 用 Flyway 真跑一次 V15 迁移，插入 provenance
+ * {@link ReValidationListener} 集成测试 —— 用 Flyway 真跑当前迁移，插入 provenance
  * 样本，触发 listener，断言 {@code memory_revalidation_queue} 行数符合预期。
  *
  * <p>简化方案：绕过 Spring 容器，测试内部用 JdbcTemplate 直接 INSERT provenance 行
  * （及其前置的 memory_spaces / memory_entities / memory_entity_versions 最小骨架），
- * 然后手动实例化 listener + 真实 Repository。这样验证"SQL 对得上 V15 schema"的同时
+ * 然后手动实例化 listener + 真实 Repository。这样验证"SQL 对得上当前 schema"的同时
  * 避开了完整 @SpringBootTest 的启动开销。</p>
  *
  * @author zsg

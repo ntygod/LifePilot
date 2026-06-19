@@ -1,5 +1,6 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
@@ -56,7 +57,7 @@ class SemanticMemory_归档级联清向量测试 {
     void 归档实体应提交向量删除投影任务() {
         var entity = 构造实体("entity-diary", EntityType.GOAL, "写日记");
 
-        semanticMemory.archive(entity);
+        semanticMemory.archive(entity, ChangeSource.UI_EDIT);
 
         verify(projectionService).enqueueVectorDeleteAfterCommit(eq("entity-diary"));
     }
@@ -70,7 +71,7 @@ class SemanticMemory_归档级联清向量测试 {
                 vectorSearcher);
         var entity = 构造实体("entity-x", EntityType.GOAL, "X");
 
-        assertThatThrownBy(() -> memoryWithoutProjection.archive(entity))
+        assertThatThrownBy(() -> memoryWithoutProjection.archive(entity, ChangeSource.UI_EDIT))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("MemoryProjectionService 未装配");
     }

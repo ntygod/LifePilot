@@ -12,8 +12,8 @@ import java.util.Map;
  * <p>从重复的成功执行轨迹中提炼而来，包含可复用的多步操作序列、
  * 变量占位符、成功率追踪和来源轨迹引用。</p>
  *
- * <p>V15 起加入 {@code sourceEntityId}（指向 L3 源 EXPERIENCE 实体）与
- * {@code deactivatedReason}（失活原因，非 null 表示已失活）。
+ * <p>{@code sourceEntityId} 指向 L3 源 EXPERIENCE 实体，{@code deactivatedReason}
+ * 为失活原因，非 null 表示已失活。
  * {@code L4SyncListener} 通过 {@code source_entity_id} 反查模板并置
  * {@code deactivated_reason}，实现 L3 失活 → L4 级联失活。</p>
  *

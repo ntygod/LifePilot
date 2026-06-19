@@ -29,6 +29,7 @@ import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.support.MemoryQuerySignals;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolution;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.BuiltinTool;
@@ -47,6 +48,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.Objects;
 
 /**
  * 记忆管理工具提供者。
@@ -69,8 +71,8 @@ public class MemoryToolProvider {
     @Nullable private final SessionKnowledgeBaseRepository sessionKbRepo;
     @Nullable private final SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver;
     @Nullable private final MemoryRetrievalProperties memoryProperties;
-    @Nullable private final ProjectContextResolver projectContextResolver;
-    @Nullable private final ChatSessionRepository chatSessionRepository;
+    private final ProjectContextResolver projectContextResolver;
+    private final ChatSessionRepository chatSessionRepository;
     private final MemoryAccessPolicy memoryAccessPolicy;
 
     public MemoryToolProvider(HybridRetriever hybridRetriever,
@@ -79,35 +81,10 @@ public class MemoryToolProvider {
                               @Nullable DocumentRetriever documentRetriever,
                               @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
                               @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryRetrievalProperties memoryProperties) {
-        this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
-                sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties, null, null, null);
-    }
-
-    public MemoryToolProvider(HybridRetriever hybridRetriever,
-                              SemanticMemory semanticMemory,
-                              @Nullable EpisodicMemory episodicMemory,
-                              @Nullable DocumentRetriever documentRetriever,
-                              @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
-                              @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
                               @Nullable MemoryRetrievalProperties memoryProperties,
-                              @Nullable ProjectContextResolver projectContextResolver,
-                              @Nullable ChatSessionRepository chatSessionRepository) {
-        this(hybridRetriever, semanticMemory, episodicMemory, documentRetriever,
-                sessionKbRepo, sessionKnowledgeScopeResolver, memoryProperties,
-                projectContextResolver, chatSessionRepository, null);
-    }
-
-    public MemoryToolProvider(HybridRetriever hybridRetriever,
-                              SemanticMemory semanticMemory,
-                              @Nullable EpisodicMemory episodicMemory,
-                              @Nullable DocumentRetriever documentRetriever,
-                              @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
-                              @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                              @Nullable MemoryRetrievalProperties memoryProperties,
-                              @Nullable ProjectContextResolver projectContextResolver,
-                              @Nullable ChatSessionRepository chatSessionRepository,
-                              @Nullable MemoryAccessPolicy memoryAccessPolicy) {
+                              ProjectContextResolver projectContextResolver,
+                              ChatSessionRepository chatSessionRepository,
+                              MemoryAccessPolicy memoryAccessPolicy) {
         this.hybridRetriever = hybridRetriever;
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
@@ -115,9 +92,9 @@ public class MemoryToolProvider {
         this.sessionKbRepo = sessionKbRepo;
         this.sessionKnowledgeScopeResolver = sessionKnowledgeScopeResolver;
         this.memoryProperties = memoryProperties;
-        this.projectContextResolver = projectContextResolver;
-        this.chatSessionRepository = chatSessionRepository;
-        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
+        this.projectContextResolver = Objects.requireNonNull(projectContextResolver, "projectContextResolver");
+        this.chatSessionRepository = Objects.requireNonNull(chatSessionRepository, "chatSessionRepository");
+        this.memoryAccessPolicy = Objects.requireNonNull(memoryAccessPolicy, "memoryAccessPolicy");
     }
 
     public void registerTools(DynamicToolRegistry toolRegistry) {
@@ -163,7 +140,7 @@ public class MemoryToolProvider {
                                                 "complete=仅标记 GOAL/PROJECT 已完成，禁止用于偏好/习惯/自定义画像, supersede=旧实体被新实体替代, " +
                                                 "tag=建立关系, query-at-time=时间点查询, search-experience=检索执行经验")),
                                 Map.entry("query", Map.of("type", "string", "description", "搜索关键词或语义描述；search/recall/search-experience 必填；cancel 未传 entityId 时必填，若用户给出 MT-xxx/RQ-xxx 编号必须原样包含")),
-                                Map.entry("top_k", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
+                                Map.entry("topK", Map.of("type", "integer", "description", "返回数量；search/recall/search-experience 使用")),
                                 Map.entry("scope", Map.of("type", "string",
                                         "enum", List.of("memory", "knowledge"),
                                         "description", "search 时有效：memory=搜索长期记忆（默认），knowledge=搜索绑定的资料文档")),
@@ -179,7 +156,7 @@ public class MemoryToolProvider {
                                 Map.entry("description", Map.of("type", "string", "description", "实体描述")),
                                 Map.entry("conversationId", Map.of("type", "string", "description", "来源会话 ID")),
                                 Map.entry("entityId", Map.of("type", "string", "description", "实体 ID；update/delete/complete/supersede 必填，cancel 单条模式必填")),
-                                Map.entry("new_entity_id", Map.of("type", "string", "description", "supersede 专用：替代旧实体的新实体 ID，必填")),
+                                Map.entry("newEntityId", Map.of("type", "string", "description", "supersede 专用：替代旧实体的新实体 ID，必填")),
                                 Map.entry("sourceEntityId", Map.of("type", "string", "description", "tag 源实体 ID")),
                                 Map.entry("targetEntityId", Map.of("type", "string", "description", "tag 目标实体 ID")),
                                 Map.entry("relationType", Map.of("type", "string", "description", "tag 关系类型")),
@@ -194,7 +171,7 @@ public class MemoryToolProvider {
                                 "update", List.of("entityId"),
                                 "delete", List.of("entityId"),
                                 "complete", List.of("entityId"),
-                                "supersede", List.of("entityId", "new_entity_id"),
+                                "supersede", List.of("entityId", "newEntityId"),
                                 "tag", List.of("sourceEntityId", "targetEntityId"),
                                 "query-at-time", List.of("timestamp"),
                                 "search-experience", List.of("query")
@@ -216,35 +193,52 @@ public class MemoryToolProvider {
     /**
      * 从工具输入 context 中的 sessionId 反查 ProjectContext。
      *
-     * <p>resolver / chatSessionRepo 缺失、sessionId 为空或查询异常时返回 null，
-     * 调用方按 null 走 fallback（{@link MemoryReadFilter#userMemory()} 等）。</p>
+     * <p>sessionId 为空或找不到会话时解析为主账户上下文；查询或解析失败时返回 failed，
+     * 调用方必须拒绝本次记忆操作。</p>
      */
-    @Nullable
-    private ProjectContext resolveProjectContext(ToolInput input) {
-        if (projectContextResolver == null || chatSessionRepository == null) {
-            return null;
-        }
+    private ProjectContextResolution resolveProjectContext(ToolInput input) {
         String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
         if (sessionId == null || sessionId.isBlank()) {
-            return null;
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.warn("记忆工具解析主账户上下文失败，拒绝记忆操作: error={}", e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
+            }
         }
+        Optional<com.lifepilot.interaction.web.model.ChatSession> session;
         try {
-            var session = chatSessionRepository.findById(sessionId);
-            return session.map(chatSession -> projectContextResolver.resolve(chatSession.projectId())).orElse(null);
+            session = chatSessionRepository.findById(sessionId);
         } catch (Exception e) {
-            log.debug("记忆工具解析 ProjectContext 失败, 回退默认 filter: sessionId={}, error={}",
+            log.warn("记忆工具查询会话项目归属失败，拒绝记忆操作: sessionId={}, error={}",
                     sessionId, e.getMessage());
-            return null;
+            return ProjectContextResolution.failed("chat_session_lookup_failed");
+        }
+        if (session.isEmpty()) {
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.warn("记忆工具解析主账户上下文失败，拒绝记忆操作: sessionId={}, error={}",
+                        sessionId, e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
+            }
+        }
+        String projectId = session.get().projectId();
+        try {
+            return ProjectContextResolution.resolved(projectContextResolver.resolve(projectId));
+        } catch (Exception e) {
+            log.warn("记忆工具解析 ProjectContext 失败，拒绝记忆操作: sessionId={}, projectId={}, error={}",
+                    sessionId, projectId != null ? projectId : "<personal>", e.getMessage());
+            return ProjectContextResolution.failed("project_context_resolution_failed");
         }
     }
 
-    /**
-     * ctx 为 null 时按 scopes 走 fallback；非 null 时按项目/主账户 space + scope 组合。
-     *
-     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
-     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
-     */
-    private MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
+    private ToolResult projectContextFailureResult(ProjectContextResolution resolution) {
+        return ToolResult.error("项目上下文解析失败，已拒绝记忆操作以避免写入或读取错误空间: "
+                + resolution.reason());
+    }
+
+    private MemoryReadFilter toProjectFilter(ProjectContext ctx, Set<MemoryScope> scopes) {
         return memoryAccessPolicy.buildProjectReadFilter(ctx, scopes);
     }
 
@@ -255,7 +249,7 @@ public class MemoryToolProvider {
      * 主账户或 SHARED → spaceId=null 让 SemanticMemory 按 entity type 推断默认 space。
      * memoryScope 一律保留 null，避免错误限定 scope（同 RealtimeExtractor 的策略）。</p>
      */
-    private MemoryWriteContext toProjectWriteContext(@Nullable ProjectContext ctx,
+    private MemoryWriteContext toProjectWriteContext(ProjectContext ctx,
                                                      @Nullable String sessionId) {
         return memoryAccessPolicy.buildProjectWriteContext(ctx, sessionId, null, null, sessionId);
     }
@@ -265,26 +259,20 @@ public class MemoryToolProvider {
      *
      * <p>隔离项目遵循单向隔离：可以继承读取主账户记忆，但显式 update/delete/cancel
      * 等写操作只能作用于项目 space。主账户 / 非隔离项目写入默认主账户 personal +
-     * experience 空间。缺少 ProjectContext 时保留 legacy 全局行为。</p>
+     * experience 空间。</p>
      */
-    private MemoryReadFilter toWritableEntityFilter(@Nullable ProjectContext ctx) {
+    private MemoryReadFilter toWritableEntityFilter(ProjectContext ctx) {
         return memoryAccessPolicy.buildWritableEntityFilter(ctx);
     }
 
-    private Optional<TemporalEntity> findWritableEntity(String entityId, @Nullable ProjectContext ctx) {
-        if (ctx == null) {
-            return semanticMemory.findById(entityId);
-        }
+    private Optional<TemporalEntity> findWritableEntity(String entityId, ProjectContext ctx) {
         return semanticMemory.findByIds(List.of(entityId), toWritableEntityFilter(ctx))
                 .values()
                 .stream()
                 .findFirst();
     }
 
-    private Optional<TemporalEntity> findReadableEntity(String entityId, @Nullable ProjectContext ctx) {
-        if (ctx == null) {
-            return semanticMemory.findById(entityId);
-        }
+    private Optional<TemporalEntity> findReadableEntity(String entityId, ProjectContext ctx) {
         return semanticMemory.findByIds(List.of(entityId), toProjectFilter(ctx, Set.of()))
                 .values()
                 .stream()
@@ -302,9 +290,13 @@ public class MemoryToolProvider {
             if (query.isBlank()) {
                 return ToolResult.error("query 参数不能为空");
             }
-            int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
+            int topK = input.getOptionalParam("topK", Integer.class).orElse(defaultTopK);
             topK = Math.max(1, topK);
-            MemoryReadFilter filter = toProjectFilter(resolveProjectContext(input),
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            MemoryReadFilter filter = toProjectFilter(resolution.context(),
                     Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
             int candidateTopK = Math.max(topK * 3, topK);
             List<RetrievalResult> rawResults = hybridRetriever.retrieve(
@@ -347,7 +339,7 @@ public class MemoryToolProvider {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDocsDefaultTopK() : 5;
         try {
             String query = input.getParam("query", String.class);
-            int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
+            int topK = input.getOptionalParam("topK", Integer.class).orElse(defaultTopK);
             String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
             if (sessionId == null) {
                 return ToolResult.success(Map.of("results", List.of(), "count", 0,
@@ -392,7 +384,7 @@ public class MemoryToolProvider {
         int defaultTopK = memoryProperties != null ? memoryProperties.getAgenticTool().getDefaultTopK() : 10;
         try {
             String query = input.getParam("query", String.class);
-            int topK = input.getOptionalParam("top_k", Integer.class).orElse(defaultTopK);
+            int topK = input.getOptionalParam("topK", Integer.class).orElse(defaultTopK);
             String sessionId = input.getContextValue("sessionId", String.class).orElse(null);
             if (sessionId == null) {
                 return ToolResult.error("无法获取当前会话 ID");
@@ -432,7 +424,11 @@ public class MemoryToolProvider {
             var properties = deriveDueDateProperties(entityType, name, description);
             var incoming = new TemporalEntity(null, entityType, name, description, properties, 1, true,
                     now, null, conversationId, 1.0f, 0.5f, 0, null, now, now);
-            MemoryWriteContext writeContext = toProjectWriteContext(resolveProjectContext(input), conversationId);
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            MemoryWriteContext writeContext = toProjectWriteContext(resolution.context(), conversationId);
             var created = SqliteBusyRetry.execute(() ->
                     semanticMemory.upsertWithConflictDetection(incoming, conversationId, writeContext));
             return ToolResult.success(Map.of(
@@ -448,10 +444,14 @@ public class MemoryToolProvider {
     ToolResult executeUpdate(ToolInput input) {
         try {
             String entityId = input.getParam("entityId", String.class);
-            ProjectContext projectContext = resolveProjectContext(input);
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            ProjectContext projectContext = resolution.context();
             var existing = findWritableEntity(entityId, projectContext);
             if (existing.isEmpty()) {
-                if (projectContext == null || !projectContext.isolated()) {
+                if (!projectContext.isolated()) {
                     return ToolResult.error("实体不存在或不在当前可写范围内: " + entityId + "，请用 search 查找正确 ID");
                 }
                 var inherited = findReadableEntity(entityId, projectContext);
@@ -559,7 +559,11 @@ public class MemoryToolProvider {
     ToolResult executeDelete(ToolInput input) {
         try {
             String entityId = input.getParam("entityId", String.class);
-            ProjectContext projectContext = resolveProjectContext(input);
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            ProjectContext projectContext = resolution.context();
             var existing = findWritableEntity(entityId, projectContext);
             if (existing.isEmpty()) {
                 return ToolResult.error("实体不存在或不在当前可写范围内: " + entityId + "，请用 search 查找正确 ID");
@@ -623,7 +627,11 @@ public class MemoryToolProvider {
                     .map(Number::floatValue).orElse(DEFAULT_CANCEL_MIN_SCORE);
 
             int retrieveTopK = Math.max(maxArchive * 3, 10);
-            ProjectContext projectContext = resolveProjectContext(input);
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            ProjectContext projectContext = resolution.context();
             MemoryReadFilter cancelFilter = toWritableEntityFilter(projectContext);
             List<ScoredEntity> exactTargets = findExactCancelTargets(
                     query, cancelFilter, targetTypes, maxArchive);
@@ -727,7 +735,11 @@ public class MemoryToolProvider {
      * 调用方不再重复 publishEvent；状态机约束由 {@link LifecycleState#canTransitionTo} 负责。</p>
      */
     private ToolResult executeCancelSingle(ToolInput input, String entityId) {
-        ProjectContext projectContext = resolveProjectContext(input);
+        ProjectContextResolution resolution = resolveProjectContext(input);
+        if (resolution.failed()) {
+            return projectContextFailureResult(resolution);
+        }
+        ProjectContext projectContext = resolution.context();
         var existing = findWritableEntity(entityId, projectContext).orElse(null);
         if (existing == null) {
             return ToolResult.error("实体不存在或不在当前可写范围内: " + entityId);
@@ -770,7 +782,11 @@ public class MemoryToolProvider {
         if (entityId == null || entityId.isBlank()) {
             return ToolResult.error("complete 需要传入 entityId");
         }
-        ProjectContext projectContext = resolveProjectContext(input);
+        ProjectContextResolution resolution = resolveProjectContext(input);
+        if (resolution.failed()) {
+            return projectContextFailureResult(resolution);
+        }
+        ProjectContext projectContext = resolution.context();
         var existing = findWritableEntity(entityId, projectContext).orElse(null);
         if (existing == null) {
             return ToolResult.error("实体不存在或不在当前可写范围内: " + entityId);
@@ -809,19 +825,23 @@ public class MemoryToolProvider {
         String newEntityId;
         try {
             entityId = input.getParam("entityId", String.class);
-            newEntityId = input.getParam("new_entity_id", String.class);
+            newEntityId = input.getParam("newEntityId", String.class);
         } catch (Exception e) {
-            return ToolResult.error("supersede 需要 entityId 和 new_entity_id 参数");
+            return ToolResult.error("supersede 需要 entityId 和 newEntityId 参数");
         }
         if (entityId == null || entityId.isBlank()
                 || newEntityId == null || newEntityId.isBlank()) {
-            return ToolResult.error("supersede 需要 entityId 和 new_entity_id 参数");
+            return ToolResult.error("supersede 需要 entityId 和 newEntityId 参数");
         }
         if (entityId.equals(newEntityId)) {
-            return ToolResult.error("supersede 的 new_entity_id 不能与 entityId 相同");
+            return ToolResult.error("supersede 的 newEntityId 不能与 entityId 相同");
         }
 
-        ProjectContext projectContext = resolveProjectContext(input);
+        ProjectContextResolution resolution = resolveProjectContext(input);
+        if (resolution.failed()) {
+            return projectContextFailureResult(resolution);
+        }
+        ProjectContext projectContext = resolution.context();
         var existing = findWritableEntity(entityId, projectContext).orElse(null);
         if (existing == null) {
             return ToolResult.error("被替代实体不存在或不在当前可写范围内: " + entityId);
@@ -895,7 +915,11 @@ public class MemoryToolProvider {
             float strength = input.getOptionalParam("strength", Number.class).map(Number::floatValue).orElse(0.5f);
             String conversationId = input.getOptionalParam("conversationId", String.class).orElse(null);
             String sessionId = input.getContextValue("sessionId", String.class).orElse(conversationId);
-            ProjectContext projectContext = resolveProjectContext(input);
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            ProjectContext projectContext = resolution.context();
             var sourceEntity = findWritableEntity(sourceId, projectContext).orElse(null);
             var targetEntity = findWritableEntity(targetId, projectContext).orElse(null);
             if (sourceEntity == null || targetEntity == null) {
@@ -936,7 +960,11 @@ public class MemoryToolProvider {
             } catch (Exception e) {
                 return ToolResult.error("无效的时间格式，请使用 ISO 8601 格式（如 2026-01-15T10:30:00Z）");
             }
-            MemoryReadFilter filter = toProjectFilter(resolveProjectContext(input), Set.of());
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            MemoryReadFilter filter = toProjectFilter(resolution.context(), Set.of());
             List<TemporalEntity> entities = semanticMemory.queryAtTime(instant, filter);
             var typeFilter = input.getOptionalParam("entityType", String.class);
             if (typeFilter.isPresent()) {
@@ -967,14 +995,18 @@ public class MemoryToolProvider {
     ToolResult executeSearchExperience(ToolInput input) {
         try {
             String query = input.getParam("query", String.class);
-            int topK = input.getOptionalParam("top_k", Integer.class).orElse(3);
+            int topK = input.getOptionalParam("topK", Integer.class).orElse(3);
             boolean successOnly = input.getOptionalParam("successOnly", Boolean.class).orElse(false);
             if (query.isBlank()) {
                 return ToolResult.error("query 参数不能为空");
             }
 
             // 三路混合检索，限定 AGENT_EXPERIENCE scope；有 ProjectContext 时同时限定 space
-            var filter = toProjectFilter(resolveProjectContext(input), Set.of(MemoryScope.AGENT_EXPERIENCE));
+            ProjectContextResolution resolution = resolveProjectContext(input);
+            if (resolution.failed()) {
+                return projectContextFailureResult(resolution);
+            }
+            var filter = toProjectFilter(resolution.context(), Set.of(MemoryScope.AGENT_EXPERIENCE));
             List<RetrievalResult> ranked = hybridRetriever.retrieve(query, topK * 3, RetrievalWeights.DEFAULT, filter);
 
             // 批量查询完整实体（含 properties: lessons, toolsUsed 等）
@@ -1009,7 +1041,7 @@ public class MemoryToolProvider {
 
     private boolean isMainAgentContext(TemporalEntity e) {
         var ctx = e.properties().get("executionContext");
-        return ctx == null || "MAIN_AGENT".equals(ctx.toString());
+        return "MAIN_AGENT".equals(ctx != null ? ctx.toString() : null);
     }
 
     private Map<String, Object> experienceEntityToMap(TemporalEntity e) {

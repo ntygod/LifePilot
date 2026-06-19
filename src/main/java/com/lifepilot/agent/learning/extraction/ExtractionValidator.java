@@ -186,17 +186,26 @@ public class ExtractionValidator {
         if (!validateConfidence(d)) {
             return "LOW_CONFIDENCE";
         }
-        if (d.evidenceKindRaw() != null && !d.evidenceKindRaw().isBlank()) {
-            MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.parseEvidenceKind(d.evidenceKindRaw());
-            if (evidenceKind == MemoryEvidenceKind.UNKNOWN) {
-                return "UNKNOWN_EVIDENCE";
-            }
-            if (evidenceKind == MemoryEvidenceKind.CHAT_INFERRED
-                    && (d.evidenceExcerpt() == null || d.evidenceExcerpt().isBlank())) {
-                return "INFERRED_WITHOUT_EVIDENCE";
-            }
+        if (d.evidenceKindRaw() == null || d.evidenceKindRaw().isBlank()) {
+            return "EVIDENCE_KIND_MISSING";
+        }
+        MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.parseEvidenceKind(d.evidenceKindRaw());
+        if (evidenceKind == MemoryEvidenceKind.UNKNOWN) {
+            return "UNKNOWN_EVIDENCE";
+        }
+        if (evidenceKind == MemoryEvidenceKind.CHAT_INFERRED
+                && safeFloat(d.extractionConfidence()) < 0.60f) {
+            return "INFERRED_LOW_TRUST";
+        }
+        if ((evidenceKind == MemoryEvidenceKind.CHAT_INFERRED || evidenceKind == MemoryEvidenceKind.USER_EXPLICIT)
+                && (d.evidenceExcerpt() == null || d.evidenceExcerpt().isBlank())) {
+            return "EVIDENCE_EXCERPT_MISSING";
         }
         return null;
+    }
+
+    private float safeFloat(@Nullable Float value) {
+        return value != null ? value : 0.0f;
     }
 
     public record ValidationResult(

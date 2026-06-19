@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -94,7 +95,51 @@ public class MemoryProjectionOutboxRepository {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.getFirst());
     }
 
+    public List<String> findDueTaskIds(int limit, Instant processingStaleBefore) {
+        if (!isTableAvailable() || limit <= 0) {
+            return List.of();
+        }
+        String now = Instant.now().toString();
+        String staleBefore = processingStaleBefore != null
+                ? processingStaleBefore.toString()
+                : Instant.now().minusSeconds(300).toString();
+        return jdbcTemplate.queryForList(
+                """
+                SELECT id
+                FROM memory_projection_outbox
+                WHERE status = 'PENDING'
+                   OR (status = 'FAILED' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
+                   OR (status = 'PROCESSING' AND updated_at <= ?)
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                String.class,
+                now,
+                staleBefore,
+                limit);
+    }
+
     public boolean markProcessing(String id) {
+        if (!isTableAvailable()) {
+            return false;
+        }
+        int affected = jdbcTemplate.update(
+                """
+                UPDATE memory_projection_outbox
+                SET status = 'PROCESSING',
+                    updated_at = ?
+                WHERE id = ?
+                  AND status IN ('PENDING', 'FAILED', 'PROCESSING')
+                """,
+                Instant.now().toString(),
+                id);
+        return affected > 0;
+    }
+
+    public boolean markProcessing(String id, boolean reclaimProcessing) {
+        if (reclaimProcessing) {
+            return markProcessing(id);
+        }
         if (!isTableAvailable()) {
             return false;
         }

@@ -8,6 +8,7 @@ import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.controller.AgentController;
 import com.lifepilot.interaction.web.controller.MemoryController;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
@@ -31,6 +32,8 @@ import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.multiagent.model.AgentSource;
 import com.lifepilot.multiagent.registry.AgentRegistry;
+import com.lifepilot.project.context.ProjectContextResolver;
+import com.lifepilot.project.repository.ProjectRepository;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -198,8 +201,9 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
         mockMvc.perform(get("/api/memories/entities/{id}", entityId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.lifecycleState").value("ARCHIVED"));
+                .andExpect(status().isNotFound());
+        assertThat(semanticMemory.findById(entityId).orElseThrow().lifecycleState().name())
+                .isEqualTo("ARCHIVED");
     }
 
     @Test
@@ -218,7 +222,8 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 .param("topK", "5"));
 
         assertThat(response.at("/code").asInt()).isEqualTo(200);
-        assertThat(arrayItems(response.path("data"))).anySatisfy(item -> {
+        assertThat(response.at("/data/count").asInt()).isGreaterThanOrEqualTo(1);
+        assertThat(arrayItems(response.at("/data/results"))).anySatisfy(item -> {
             assertThat(item.path("entityId").asText()).isEqualTo(entityId);
             assertThat(item.path("memoryScope").asText()).isEqualTo("USER_FACT");
             assertThat(item.path("realityType").asText()).isEqualTo("UNKNOWN");
@@ -230,6 +235,7 @@ class MemorySmokeE2E_端到端冒烟测试 {
         String domainNeedle = unique("domain-only-needle");
         String userNeedle = unique("hot-user-needle");
         TemporalEntity domainEntity = persistDomainEntity(domainNeedle);
+        String domainSpaceId = memorySpaceRepository.ensureKnowledgeBaseDomainSpace("kb-smoke").id();
         JsonNode userEntity = createEntity(
                 "冒烟用户画像 " + userNeedle,
                 EntityType.PREFERENCE,
@@ -252,6 +258,7 @@ class MemorySmokeE2E_端到端冒烟测试 {
         registerSmokeAgent();
 
         mockMvc.perform(get("/api/memories/entities")
+                        .param("spaceId", domainSpaceId)
                         .param("memoryScope", "DOMAIN_MEMORY")
                         .param("q", domainNeedle))
                 .andExpect(status().isOk())
@@ -296,7 +303,7 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 now,
                 null,
                 "smoke",
-                now));
+                now), MemoryWriteContext.tool("smoke"));
 
         mockMvc.perform(get("/api/memories/relations")
                         .param("relationType", "RELATED_TO"))
@@ -501,6 +508,27 @@ class MemorySmokeE2E_端到端冒烟测试 {
             org.mockito.Mockito.lenient().when(paths.home(anyString())).thenAnswer(inv -> tmpDir.resolve(inv.getArgument(0, String.class)));
             org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(tmpDir.resolve("workspace"));
             return paths;
+        }
+
+        @Bean
+        @Primary
+        ProjectRepository smokeProjectRepository() {
+            return mock(ProjectRepository.class);
+        }
+
+        @Bean
+        @Primary
+        ProjectContextResolver smokeProjectContextResolver(ProjectRepository projectRepository,
+                                                           MemorySpaceRepository memorySpaceRepository) {
+            return new ProjectContextResolver(projectRepository, memorySpaceRepository);
+        }
+
+        @Bean
+        @Primary
+        ChatSessionRepository smokeChatSessionRepository() {
+            ChatSessionRepository repository = mock(ChatSessionRepository.class);
+            when(repository.findById(anyString())).thenReturn(java.util.Optional.empty());
+            return repository;
         }
     }
 }

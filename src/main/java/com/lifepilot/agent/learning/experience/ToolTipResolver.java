@@ -9,6 +9,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolution;
 import com.lifepilot.project.context.ProjectContextResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -45,51 +47,48 @@ public class ToolTipResolver {
     /** 单个工具最多取几条提示。 */
     private static final int MAX_TIPS_PER_TOOL = 2;
 
-    @Nullable
     private final SemanticMemory semanticMemory;
-    @Nullable
     private final ProjectContextResolver projectContextResolver;
-    @Nullable
     private final ChatSessionRepository chatSessionRepository;
     private final MemoryAccessPolicy memoryAccessPolicy;
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();
     private volatile Instant cacheRefreshedAt = Instant.EPOCH;
 
-    public ToolTipResolver(@Nullable SemanticMemory semanticMemory) {
-        this(semanticMemory, null, null, null);
-    }
-
-    public ToolTipResolver(@Nullable SemanticMemory semanticMemory,
-                           @Nullable ProjectContextResolver projectContextResolver,
-                           @Nullable ChatSessionRepository chatSessionRepository,
-                           @Nullable MemoryAccessPolicy memoryAccessPolicy) {
-        this.semanticMemory = semanticMemory;
-        this.projectContextResolver = projectContextResolver;
-        this.chatSessionRepository = chatSessionRepository;
-        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
+    public ToolTipResolver(SemanticMemory semanticMemory,
+                           ProjectContextResolver projectContextResolver,
+                           ChatSessionRepository chatSessionRepository,
+                           MemoryAccessPolicy memoryAccessPolicy) {
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory");
+        this.projectContextResolver = Objects.requireNonNull(projectContextResolver, "projectContextResolver");
+        this.chatSessionRepository = Objects.requireNonNull(chatSessionRepository, "chatSessionRepository");
+        this.memoryAccessPolicy = Objects.requireNonNull(memoryAccessPolicy, "memoryAccessPolicy");
     }
 
     /**
      * 根据工具 ID 和当前会话查询经验提示。
      *
-     * <p>会话可解析到项目上下文时，按项目读取范围检索工具级经验；缺少依赖或解析失败时
-     * 回退主账户经验读取，保持提示链路 fail-soft。</p>
+     * <p>会话可解析到项目上下文时，按项目读取范围检索工具级经验；没有会话时读取主账户经验。
+     * 项目上下文解析失败时跳过提示，避免跨项目经验泄漏。</p>
      */
     public String tipsFor(@Nullable String toolId, @Nullable String sessionId) {
-        if (semanticMemory == null || toolId == null || toolId.isBlank()) {
+        if (toolId == null || toolId.isBlank()) {
             return "";
         }
         if (Duration.between(cacheRefreshedAt, Instant.now()).compareTo(CACHE_TTL) > 0) {
             cache.clear();
             cacheRefreshedAt = Instant.now();
         }
-        ProjectContext projectContext = resolveProjectContext(sessionId);
+        ProjectContextResolution resolution = resolveProjectContext(sessionId);
+        if (resolution.failed()) {
+            return "";
+        }
+        ProjectContext projectContext = resolution.context();
         String cacheKey = toolId + "|" + contextCacheKey(projectContext);
         return cache.computeIfAbsent(cacheKey, ignored -> resolveFromMemory(toolId, projectContext));
     }
 
-    private String resolveFromMemory(String toolId, @Nullable ProjectContext projectContext) {
+    private String resolveFromMemory(String toolId, ProjectContext projectContext) {
         try {
             MemoryReadFilter filter = memoryAccessPolicy.buildProjectReadFilter(
                     projectContext, Set.of(MemoryScope.AGENT_EXPERIENCE));
@@ -122,27 +121,43 @@ public class ToolTipResolver {
         }
     }
 
-    @Nullable
-    private ProjectContext resolveProjectContext(@Nullable String sessionId) {
-        if (projectContextResolver == null || chatSessionRepository == null
-                || sessionId == null || sessionId.isBlank()) {
-            return null;
+    private ProjectContextResolution resolveProjectContext(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.debug("工具经验提示解析主账户上下文失败: error={}", e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
+            }
         }
+        java.util.Optional<com.lifepilot.interaction.web.model.ChatSession> session;
         try {
-            return chatSessionRepository.findById(sessionId)
-                    .map(session -> projectContextResolver.resolve(session.projectId()))
-                    .orElse(null);
+            session = chatSessionRepository.findById(sessionId);
         } catch (Exception e) {
-            log.debug("工具经验提示解析项目上下文失败: sessionId={}, error={}",
+            log.debug("工具经验提示查询会话项目归属失败: sessionId={}, error={}",
                     sessionId, e.getMessage());
-            return null;
+            return ProjectContextResolution.failed("chat_session_lookup_failed");
+        }
+        if (session.isEmpty()) {
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.debug("工具经验提示解析主账户上下文失败: sessionId={}, error={}",
+                        sessionId, e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
+            }
+        }
+        String projectId = session.get().projectId();
+        try {
+            return ProjectContextResolution.resolved(projectContextResolver.resolve(projectId));
+        } catch (Exception e) {
+            log.debug("工具经验提示解析项目上下文失败: sessionId={}, projectId={}, error={}",
+                    sessionId, projectId != null ? projectId : "<personal>", e.getMessage());
+            return ProjectContextResolution.failed("project_context_resolution_failed");
         }
     }
 
-    private String contextCacheKey(@Nullable ProjectContext projectContext) {
-        if (projectContext == null) {
-            return "fallback";
-        }
+    private String contextCacheKey(ProjectContext projectContext) {
         return projectContext.projectId() != null ? projectContext.projectId() : "personal";
     }
 }

@@ -3,6 +3,7 @@ package com.lifepilot.memory.forgetting;
 import com.lifepilot.agent.learning.forgetting.ForgettingEngine;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -83,7 +84,7 @@ class ForgettingEngine_访问保护测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test
@@ -98,7 +99,7 @@ class ForgettingEngine_访问保护测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test

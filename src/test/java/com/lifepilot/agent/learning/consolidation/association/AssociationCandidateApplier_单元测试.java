@@ -3,6 +3,7 @@ package com.lifepilot.agent.learning.consolidation.association;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -55,7 +56,7 @@ class AssociationCandidateApplier_单元测试 {
         var result = applier.apply(today);
 
         assertThat(result.applied()).isEqualTo(1);
-        verify(semanticMemory, times(1)).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, times(1)).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test
@@ -69,7 +70,7 @@ class AssociationCandidateApplier_单元测试 {
 
         assertThat(result.applied()).isZero();
         assertThat(result.skippedLowConfidence()).isEqualTo(1);
-        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test
@@ -84,7 +85,7 @@ class AssociationCandidateApplier_单元测试 {
 
         assertThat(result.applied()).isZero();
         assertThat(result.skippedMissingEntity()).isEqualTo(1);
-        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test
@@ -99,7 +100,7 @@ class AssociationCandidateApplier_单元测试 {
 
         assertThat(result.applied()).isZero();
         assertThat(result.skippedDuplicate()).isEqualTo(1);
-        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test

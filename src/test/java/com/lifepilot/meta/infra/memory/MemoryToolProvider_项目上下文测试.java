@@ -5,6 +5,7 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -69,7 +71,8 @@ class MemoryToolProvider_项目上下文测试 {
                 mock(SessionKnowledgeScopeResolver.class),
                 new MemoryRetrievalProperties(),
                 projectContextResolver,
-                chatSessionRepository
+                chatSessionRepository,
+                new MemoryAccessPolicy()
         );
         provider.registerTools(registry);
 
@@ -134,14 +137,54 @@ class MemoryToolProvider_项目上下文测试 {
     }
 
     @Test
-    void 无sessionId_fallback到原all过滤() {
+    void 无sessionId_通过resolver得到主账户space过滤() {
+        when(projectContextResolver.resolve(null)).thenReturn(
+                ProjectContext.personal("space-personal", "space-experience"));
+
         var tool = registry.resolve("memory").orElseThrow();
         tool.execute(new ToolInput(tool.id(),
                 Map.of("action", "cancel", "query", "x"), tool.inputSchema(), null,
                 Map.of()));
 
         MemoryReadFilter captured = captureFilter();
-        assertThat(captured.isUnrestricted()).isTrue();
+        assertThat(captured.spaceIds())
+                .containsExactlyInAnyOrder("space-personal", "space-experience");
+        assertThat(captured.restrictsScopes()).isFalse();
+    }
+
+    @Test
+    void 主账户session_通过resolver得到主账户space过滤() {
+        when(chatSessionRepository.findById("s-personal"))
+                .thenReturn(Optional.of(session("s-personal", null)));
+        when(projectContextResolver.resolve(null)).thenReturn(
+                ProjectContext.personal("space-personal", "space-experience"));
+
+        var tool = registry.resolve("memory").orElseThrow();
+        tool.execute(new ToolInput(tool.id(),
+                Map.of("action", "cancel", "query", "x"), tool.inputSchema(), null,
+                Map.of("sessionId", "s-personal")));
+
+        MemoryReadFilter captured = captureFilter();
+        assertThat(captured.spaceIds())
+                .containsExactlyInAnyOrder("space-personal", "space-experience");
+        assertThat(captured.restrictsScopes()).isFalse();
+    }
+
+    @Test
+    void 项目上下文解析失败_拒绝记忆搜索且不触发检索() {
+        when(chatSessionRepository.findById("s-fail"))
+                .thenReturn(Optional.of(session("s-fail", "proj-fail")));
+        when(projectContextResolver.resolve("proj-fail"))
+                .thenThrow(new IllegalStateException("项目缺失"));
+
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(tool.id(),
+                Map.of("action", "search", "query", "xxx"), tool.inputSchema(), null,
+                Map.of("sessionId", "s-fail")));
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("项目上下文解析失败");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
     }
 
     @Test

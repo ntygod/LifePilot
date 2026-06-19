@@ -136,13 +136,19 @@ public class GraphTraverser {
                 JOIN temporal_entities te ON te.id = g.entity_id
                 WHERE te.is_current = 1
                   AND te.id NOT IN (%s)
-                  AND te.lifecycle_state IN ('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')
+                  AND te.lifecycle_state IN %s
                   AND (te.valid_to IS NULL OR te.valid_to > ?)
                   AND (te.expires_at IS NULL OR te.expires_at > ?)
                 GROUP BY te.id
                 ORDER BY min_depth ASC, te.importance_score DESC, te.updated_at DESC
                 LIMIT ?
-                """.formatted(seedValues, trustClause, MAX_DEPTH, trustClause, startPlaceholders);
+                """.formatted(
+                        seedValues,
+                        trustClause,
+                        MAX_DEPTH,
+                        trustClause,
+                        startPlaceholders,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.recallableSqlInClause());
     }
 
     private List<Object> buildGraphParams(List<String> startEntities, int topK) {

@@ -192,17 +192,19 @@ class 主动任务取消级联清理insight_场景测试 {
                 .filter(e -> e instanceof EntityLifecycleChanged)
                 .map(e -> (EntityLifecycleChanged) e)
                 .filter(e -> e.source() == ChangeSource.PROACTIVE_CANCEL)
+                .filter(e -> e.newState() == LifecycleState.CANCELLED)
                 .toList();
         assertThat(cancelEvents)
                 .as("两条关联 insight 各发一条 source=PROACTIVE_CANCEL 的 LifecycleChanged")
                 .hasSize(2);
         assertThat(cancelEvents)
                 .allMatch(e -> e.newState() == LifecycleState.CANCELLED);
-        // task 本身（GOAL）被 archive —— markGoalFulfilled 路径的副作用，source=UI_EDIT
+        // task 本身（GOAL）被 archive —— markGoalFulfilled 路径的副作用，source=PROACTIVE_CANCEL
         var archiveEvents = publishedEvents.stream()
                 .filter(e -> e instanceof EntityLifecycleChanged)
                 .map(e -> (EntityLifecycleChanged) e)
                 .filter(e -> e.newState() == LifecycleState.ARCHIVED)
+                .filter(e -> e.source() == ChangeSource.PROACTIVE_CANCEL)
                 .toList();
         assertThat(archiveEvents)
                 .as("markGoalFulfilled 还归档 task 自身一条")
@@ -223,11 +225,23 @@ class 主动任务取消级联清理insight_场景测试 {
                 .as("即使无关联 insight，事件仍应发布（relatedInsightEntityIds=[]）")
                 .isEqualTo(1);
         // task 自身 archive 仍会发一条 LifecycleChanged，但无关联 insight
-        // 不应有 PROACTIVE_CANCEL 源的事件
+        var archiveEvents = publishedEvents.stream()
+                .filter(e -> e instanceof EntityLifecycleChanged)
+                .map(e -> (EntityLifecycleChanged) e)
+                .filter(e -> e.newState() == LifecycleState.ARCHIVED)
+                .filter(e -> e.source() == ChangeSource.PROACTIVE_CANCEL)
+                .toList();
+        assertThat(archiveEvents)
+                .as("markGoalFulfilled 仍归档 task 自身")
+                .hasSize(1);
+        assertThat(archiveEvents.getFirst().entityId()).isEqualTo(TASK_ID);
+
+        // 不应有 insight CANCELLED 事件
         assertThat(publishedEvents.stream()
                 .filter(e -> e instanceof EntityLifecycleChanged)
                 .map(e -> (EntityLifecycleChanged) e)
                 .filter(e -> e.source() == ChangeSource.PROACTIVE_CANCEL)
+                .filter(e -> e.newState() == LifecycleState.CANCELLED)
                 .count())
                 .as("无关联 insight，listener 不触发 PROACTIVE_CANCEL 级联")
                 .isZero();

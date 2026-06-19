@@ -5,6 +5,7 @@ import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,7 +96,9 @@ public class AssociationCandidateApplier {
                             MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DERIVED, relTrust),
                             relTrust);
             try {
-                SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation));
+                SqliteBusyRetry.run(() -> semanticMemory.addRelation(
+                        relation,
+                        MemoryWriteContext.consolidation("rem:" + c.seedEntityId())));
                 applied++;
             } catch (Exception e) {
                 skippedMissingEntity++;

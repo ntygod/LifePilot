@@ -88,7 +88,7 @@ public class MemoryActionDispatchExecutor extends ActionDispatchExecutor {
                 ToolExecutionSemantics.of(
                         PermissionActionType.WRITE_MEMORY,
                         ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("entityIds", "entityId", "new_entity_id")
+                        ToolScopeResolvers.exactValues("entityIds", "entityId", "newEntityId")
                 ),
                 provider::executeSupersede);
         register("tag",

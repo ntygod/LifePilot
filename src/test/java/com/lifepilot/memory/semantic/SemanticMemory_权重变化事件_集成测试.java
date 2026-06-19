@@ -6,6 +6,7 @@ import com.lifepilot.memory.governance.lifecycle.WeightSource;
 import com.lifepilot.memory.governance.lifecycle.events.EntityWeightChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -99,7 +100,7 @@ class SemanticMemory_权重变化事件_集成测试 {
     @Test
     void updateImportanceScore应发布EntityWeightChanged事件_承载source与delta() {
         var entity = 构造ACTIVE实体("entity-权重-1", EntityType.EXPERIENCE, 0.5f);
-        semanticMemory.upsertWithConflictDetection(entity, null);
+        semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         captured.clear();   // 忽略 upsert 本身可能产生的生命周期事件
 
         semanticMemory.updateImportanceScore(entity.id(), 0.2f, WeightSource.USER_FEEDBACK);
@@ -129,7 +130,7 @@ class SemanticMemory_权重变化事件_集成测试 {
     @Test
     void EFFECTIVENESS来源应原样透传() {
         var entity = 构造ACTIVE实体("entity-权重-3", EntityType.EXPERIENCE, 0.5f);
-        semanticMemory.upsertWithConflictDetection(entity, null);
+        semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         captured.clear();
 
         semanticMemory.updateImportanceScore(entity.id(), 0.75f, WeightSource.EFFECTIVENESS);

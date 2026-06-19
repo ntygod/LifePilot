@@ -101,7 +101,7 @@ public class EpisodicMemory {
                             """,
                     msg.id(),
                     sessionId,
-                    TranscriptEntryType.fromLegacyRole(msg.role()).value(),
+                    TranscriptEntryType.fromRole(msg.role()).value(),
                     msg.role(),
                     payloadJson,
                     Math.max(0, msg.tokenCount()),

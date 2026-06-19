@@ -10,6 +10,7 @@ import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,8 +72,8 @@ class GraphReasoner_集成测试 {
         插入实体("张三", EntityType.PERSON);
         插入实体("阿里", EntityType.ORGANIZATION);
         插入实体("杭州", EntityType.PLACE);
-        semanticMemory.addRelation(关系("张三", "阿里", "就职于"));
-        semanticMemory.addRelation(关系("阿里", "杭州", "位于"));
+        semanticMemory.addRelation(关系("张三", "阿里", "就职于"), relationContext());
+        semanticMemory.addRelation(关系("阿里", "杭州", "位于"), relationContext());
 
         var paths = reasoner.pathsFrom("张三", 2, null);
 
@@ -93,8 +94,8 @@ class GraphReasoner_集成测试 {
         插入实体("张三", EntityType.PERSON);
         插入实体("阿里", EntityType.ORGANIZATION);
         插入实体("杭州", EntityType.PLACE);
-        semanticMemory.addRelation(关系("张三", "阿里", "就职于"));
-        semanticMemory.addRelation(关系("阿里", "杭州", "位于"));
+        semanticMemory.addRelation(关系("张三", "阿里", "就职于"), relationContext());
+        semanticMemory.addRelation(关系("阿里", "杭州", "位于"), relationContext());
 
         var opps = reasoner.connectionOpportunities("张三", null);
 
@@ -111,9 +112,9 @@ class GraphReasoner_集成测试 {
         插入实体("张三", EntityType.PERSON);
         插入实体("阿里", EntityType.ORGANIZATION);
         插入实体("杭州", EntityType.PLACE);
-        semanticMemory.addRelation(关系("张三", "阿里", "就职于"));
-        semanticMemory.addRelation(关系("阿里", "杭州", "位于"));
-        semanticMemory.addRelation(关系("张三", "杭州", "居住于"));  // 直接边
+        semanticMemory.addRelation(关系("张三", "阿里", "就职于"), relationContext());
+        semanticMemory.addRelation(关系("阿里", "杭州", "位于"), relationContext());
+        semanticMemory.addRelation(关系("张三", "杭州", "居住于"), relationContext());  // 直接边
 
         var opps = reasoner.connectionOpportunities("张三", null);
 
@@ -123,6 +124,10 @@ class GraphReasoner_集成测试 {
     private TemporalRelation 关系(String src, String tgt, String type) {
         var now = Instant.parse(NOW);
         return new TemporalRelation(UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, now, null, "test", now);
+    }
+
+    private MemoryWriteContext relationContext() {
+        return MemoryWriteContext.unknown("test-relation");
     }
 
     private void 插入实体(String id, EntityType type) {

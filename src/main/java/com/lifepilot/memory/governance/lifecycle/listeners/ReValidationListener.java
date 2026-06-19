@@ -29,7 +29,7 @@ import java.util.List;
  *
  * <p>幂等性：同一事件重放会产生重复 PENDING 条目 —— 因设计上允许同一实体对同一 source
  * 的多次失效留痕（如先 ARCHIVED 后 CONTENT_CHANGED），检索层按 created_at 取最新即可。
- * 如需去重，可在 Repository 层加 UNIQUE 约束，目前 V15 未约束。</p>
+ * 如需去重，可在 Repository 层加 UNIQUE 约束。</p>
  *
  * @author zsg
  * @since 2026-04-23

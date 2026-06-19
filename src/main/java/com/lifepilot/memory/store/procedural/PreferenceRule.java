@@ -9,8 +9,8 @@ import java.time.Instant;
  * <p>按类别组织，带置信度评分。同一 {@code category} 和 {@code key} 组合下
  * 偏好规则唯一，重复观察会递增 {@code observationCount} 并提升 {@code confidence}。</p>
  *
- * <p>V15 起加入 {@code sourceEntityId}（指向 L3 源 PREFERENCE 实体）与
- * {@code deactivatedReason}（失活原因，非 null 表示已失活）。
+ * <p>{@code sourceEntityId} 指向 L3 源 PREFERENCE 实体，{@code deactivatedReason}
+ * 为失活原因，非 null 表示已失活。
  * {@code L4SyncListener} 通过 {@code source_entity_id} 反查规则并置
  * {@code deactivated_reason}，实现 L3 失活 → L4 级联失活。</p>
  *

@@ -1685,6 +1685,26 @@ export interface MemorySearchResult {
   spaceId: string | null
   memoryScope: string | null
   realityType: string | null
+  lifecycleState: string
+  historical: boolean
+  stale: boolean
+  needsRevalidation: boolean
+  evidenceKind: string
+  trustLevel: string
+  trustScore: number
+  evidenceCount: number
+  lastVerifiedAt: string | null
+  scoreBreakdown: Record<string, number>
+}
+
+/** 记忆搜索治理响应 */
+export interface MemorySearchResponse {
+  results: MemorySearchResult[]
+  count: number
+  rawCount: number
+  qualityFilteredCount: number
+  truncatedCount: number
+  filteredOutCount: number
 }
 
 /** 实体摘要 */

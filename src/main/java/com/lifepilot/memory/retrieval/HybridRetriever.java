@@ -56,19 +56,10 @@ public class HybridRetriever {
     private final ExecutorService virtualThreadExecutor;
     @Nullable
     private final RerankRouter rerankRouter;
-    /**
-     * V16 Task 30：批量查询 STALE provenance —— null 时回退为 needsRevalidation 全部 false，
-     * 保留向后兼容以免破坏大量手工装配 HybridRetriever 的单测。
-     */
-    @Nullable
     private final MemoryProvenanceRepository provenanceRepository;
 
     /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
 
-    /**
-     * V16 Task 30 canonical constructor — 额外接入 {@link MemoryProvenanceRepository}
-     * 用于批量判定实体是否存在 STALE provenance。
-     */
     public HybridRetriever(VectorSearcher vectorSearcher,
                            FtsSearcher ftsSearcher,
                            GraphTraverser graphTraverser,
@@ -77,7 +68,7 @@ public class HybridRetriever {
                            MemoryRetrievalProperties memoryProperties,
                            JdbcTemplate jdbcTemplate,
                            @Nullable RerankRouter rerankRouter,
-                           @Nullable MemoryProvenanceRepository provenanceRepository) {
+                           MemoryProvenanceRepository provenanceRepository) {
         this.vectorSearcher = vectorSearcher;
         this.ftsSearcher = ftsSearcher;
         this.graphTraverser = graphTraverser;
@@ -86,7 +77,7 @@ public class HybridRetriever {
         this.memoryProperties = memoryProperties;
         this.jdbcTemplate = jdbcTemplate;
         this.rerankRouter = rerankRouter;
-        this.provenanceRepository = provenanceRepository;
+        this.provenanceRepository = Objects.requireNonNull(provenanceRepository, "provenanceRepository");
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -605,7 +596,6 @@ public class HybridRetriever {
      *
      * <p>行为：
      * <ul>
-     *   <li>{@code provenanceRepository == null} 时 needsRevalidation 全部 false（向后兼容）。</li>
      *   <li>批量 IN 查询避免 N+1。</li>
      *   <li>查询失败降级：打 WARN 日志 + needsRevalidation 置 false，不影响整体检索。</li>
      * </ul>
@@ -616,27 +606,27 @@ public class HybridRetriever {
             return results;
         }
         Set<String> staleIds = Set.of();
-        if (provenanceRepository != null) {
-            try {
-                Set<String> ids = results.stream()
-                        .map(RetrievalResult::entityId)
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toSet());
-                staleIds = provenanceRepository.findStaleEntityIds(ids);
-            } catch (Exception e) {
-                log.warn("混合检索: 批量 STALE provenance 查询失败，降级为无标注, error={}", e.getMessage());
-                staleIds = Set.of();
-            }
+        try {
+            Set<String> ids = results.stream()
+                    .map(RetrievalResult::entityId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            staleIds = provenanceRepository.findStaleEntityIds(ids);
+        } catch (Exception e) {
+            log.warn("混合检索: 批量 STALE provenance 查询失败，降级为无标注, error={}", e.getMessage());
+            staleIds = Set.of();
         }
         final Set<String> finalStaleIds = staleIds;
         return results.stream()
                 .map(r -> {
                     LifecycleState state = lifecycleStateMap.get(r.entityId());
                     boolean isHistorical = state == LifecycleState.COMPLETED;
-                    boolean isStale = state == LifecycleState.REGENERATION_NEEDED;
-                    boolean needsRevalidation = finalStaleIds.contains(r.entityId());
+                    boolean isStale = state == LifecycleState.REGENERATION_NEEDED
+                            || state == LifecycleState.STALE_CANDIDATE;
+                    boolean needsRevalidation = finalStaleIds.contains(r.entityId())
+                            || state == LifecycleState.STALE_CANDIDATE;
                     if (!isHistorical && !isStale && !needsRevalidation) {
-                        return r; // 保持默认（兼容构造器 false / false / false）
+                        return r;
                     }
                     return r.withLifecycleAnnotations(isHistorical, isStale, needsRevalidation);
                 })

@@ -15,6 +15,7 @@ import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
@@ -216,7 +217,10 @@ public class ContrastiveLearner {
                 .withQuality(MemoryEvidenceKind.DERIVED, MemoryTrustLevel.DERIVED, trustScore, 1, null);
 
         SqliteBusyRetry.run(() ->
-                semanticMemory.upsertWithConflictDetection(derived, "contrastive-learning"));
+                semanticMemory.upsertWithConflictDetection(
+                        derived,
+                        "contrastive-learning",
+                        MemoryWriteContext.consolidation("contrastive-learning")));
 
         log.info("对比学习: 产出对比洞察派生实体, id={}, sources=[{}, {}], lessons={}条",
                 derived.id(), successExp.id(), failureExp.id(), lessons.size());

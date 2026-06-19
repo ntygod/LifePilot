@@ -68,7 +68,7 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
         String audnJson = """
                 [{"operation":"ADD","entityName":"喜欢咖啡","entityType":"PREFERENCE",
                   "description":"",
-                  "extractionConfidence":0.8,"importanceScore":0.5}]
+                  "extractionConfidence":0.8,"importanceScore":0.5,"evidenceKind":"USER_EXPLICIT","evidenceExcerpt":"我喜欢咖啡"}]
                 """;
         when(generationRouter.call(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(new LlmResponse(audnJson, null, null, List.of(), Map.of(), 1, 1, null, 0, "mock", "mock", 1L, false));

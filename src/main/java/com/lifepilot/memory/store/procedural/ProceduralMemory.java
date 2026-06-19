@@ -52,8 +52,7 @@ public class ProceduralMemory {
             String variablesJson = objectMapper.writeValueAsString(template.variables());
             String sourceTraceIdsJson = objectMapper.writeValueAsString(template.sourceTraceIds());
 
-            // V15 起 INSERT 需带 source_entity_id / deactivated_reason 以供 L4SyncListener
-            // 通过 source_entity_id 反查并级联失活；旧调用点默认 null（兼容 ctor 已填默认）。
+            // source_entity_id / deactivated_reason 供 L4SyncListener 反查并级联失活。
             jdbcTemplate.update(
                     """
                     INSERT INTO procedure_templates(
@@ -123,8 +122,7 @@ public class ProceduralMemory {
             String variablesJson = objectMapper.writeValueAsString(template.variables());
             String sourceTraceIdsJson = objectMapper.writeValueAsString(template.sourceTraceIds());
 
-            // V15 新增列 source_entity_id / deactivated_reason 亦支持更新，
-            // 典型场景：模板巩固去重时合并多个源 entity id，或手工置失活原因。
+            // 模板巩固去重会更新源 entity id，手工失活会写入 deactivated_reason。
             jdbcTemplate.update(
                     """
                     UPDATE procedure_templates SET
@@ -209,9 +207,7 @@ public class ProceduralMemory {
      * @param rule 偏好规则
      */
     public void savePreference(PreferenceRule rule) {
-        // V15 起 INSERT OR REPLACE 需带 source_entity_id / deactivated_reason —
-        // L4SyncListener 通过 source_entity_id 反查并置 deactivated_reason 实现失活，
-        // 若不写该列则 L3→L4 级联永不命中。
+        // source_entity_id / deactivated_reason 供 L4SyncListener 级联失活偏好规则。
         jdbcTemplate.update(
                 """
                 INSERT OR REPLACE INTO preference_rules(

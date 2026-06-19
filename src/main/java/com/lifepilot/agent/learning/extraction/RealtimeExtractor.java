@@ -221,7 +221,11 @@ public class RealtimeExtractor {
                 }
             }
             try {
-                var result = executeDecision(decision, sessionId, writeContext, summaryReadFilter);
+                var result = executeDecision(
+                        decision,
+                        sessionId,
+                        writeContext.withEvidenceExcerpt(decision.evidenceExcerpt()),
+                        summaryReadFilter);
                 if (candidateRepository != null) {
                     candidateRepository.markApplied(candidateId, result.persistedEntityId(), result.baseEntityId());
                 }

@@ -9,6 +9,8 @@ import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.project.context.ProjectContext;
 import org.springframework.lang.Nullable;
 
+import java.util.Objects;
+
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -37,15 +39,14 @@ public class MemoryAccessPolicy {
      *
      * <p>仅做空间合并与 scope 限定；overlay 遮蔽由检索/查询层在 SQL 中实现。</p>
      */
-    public MemoryReadFilter buildProjectReadFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
-        return MemoryReadFilter.fromProjectContextOrFallback(
-                ctx != null,
-                ctx != null ? ctx.projectSpaceId() : null,
-                ctx != null ? ctx.personalSpaceId() : null,
-                ctx != null ? ctx.experienceSpaceId() : null,
-                ctx != null && ctx.isolated(),
-                scopes
-        );
+    public MemoryReadFilter buildProjectReadFilter(ProjectContext ctx, Set<MemoryScope> scopes) {
+        Objects.requireNonNull(ctx, "项目上下文不能为空");
+        return MemoryReadFilter.buildForProject(
+                ctx.projectSpaceId(),
+                ctx.personalSpaceId(),
+                ctx.experienceSpaceId(),
+                ctx.isolated(),
+                scopes);
     }
 
     /**
@@ -53,10 +54,8 @@ public class MemoryAccessPolicy {
      *
      * <p>ISOLATED：仅项目 space；主账户/SHARED：personal + experience。</p>
      */
-    public MemoryReadFilter buildWritableEntityFilter(@Nullable ProjectContext ctx) {
-        if (ctx == null) {
-            return MemoryReadFilter.all();
-        }
+    public MemoryReadFilter buildWritableEntityFilter(ProjectContext ctx) {
+        Objects.requireNonNull(ctx, "项目上下文不能为空");
         if (ctx.isolated()) {
             return MemoryReadFilter.of(List.of(ctx.projectSpaceId()), Set.of());
         }
@@ -69,7 +68,7 @@ public class MemoryAccessPolicy {
      * <p>ISOLATED 项目：spaceId=projectSpaceId；主账户/SHARED：spaceId=null（由
      * SemanticMemory 按 entity type 推断默认空间）。</p>
      */
-    public MemoryWriteContext buildProjectWriteContext(@Nullable ProjectContext ctx,
+    public MemoryWriteContext buildProjectWriteContext(ProjectContext ctx,
                                                        @Nullable String sessionId,
                                                        @Nullable String turnId,
                                                        @Nullable String entryId,
@@ -90,14 +89,15 @@ public class MemoryAccessPolicy {
      * <p>用于 Web 手动编辑等非工具入口复用同一项目写入边界，同时保留正确
      * provenance origin。</p>
      */
-    public MemoryWriteContext buildProjectWriteContext(@Nullable ProjectContext ctx,
+    public MemoryWriteContext buildProjectWriteContext(ProjectContext ctx,
                                                        @Nullable String sessionId,
                                                        @Nullable String turnId,
                                                        @Nullable String entryId,
                                                        @Nullable String sourceReference,
                                                        MemoryOriginType originType,
                                                        MemoryRealityType realityType) {
-        String spaceId = (ctx != null && ctx.isolated()) ? ctx.projectSpaceId() : null;
+        Objects.requireNonNull(ctx, "项目上下文不能为空");
+        String spaceId = ctx.isolated() ? ctx.projectSpaceId() : null;
         return new MemoryWriteContext(
                 spaceId,
                 null,

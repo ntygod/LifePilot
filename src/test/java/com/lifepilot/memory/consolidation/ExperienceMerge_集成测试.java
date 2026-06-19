@@ -14,6 +14,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import com.lifepilot.prompt.PromptRegistry;
@@ -180,8 +181,10 @@ class ExperienceMerge_集成测试 {
                 "调用天气工具按城市名查询未来三天天气并汇总要点。", 0.9f, true);
         var 经验B = 构造经验实体(经验B_ID, "查询上海未来天气生成简报",
                 "调用天气工具按城市名查询未来三天天气并生成简报。", 0.85f, true);
-        var 持久化A = semanticMemory.upsertWithConflictDetection(经验A, "subtask-reflection");
-        var 持久化B = semanticMemory.upsertWithConflictDetection(经验B, "subtask-reflection");
+        var 持久化A = semanticMemory.upsertWithConflictDetection(
+                经验A, "subtask-reflection", MemoryWriteContext.consolidation("subtask-reflection"));
+        var 持久化B = semanticMemory.upsertWithConflictDetection(
+                经验B, "subtask-reflection", MemoryWriteContext.consolidation("subtask-reflection"));
 
         assertThat(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).hasSize(2);
 
@@ -226,7 +229,7 @@ class ExperienceMerge_集成测试 {
                 "SELECT status FROM memory_entities WHERE id = ?", String.class, entityId);
     }
 
-    /** 构造一条 EXPERIENCE 实体（16 参兼容构造器，properties 含 success 标志）。 */
+    /** 构造一条 EXPERIENCE 实体（基础构造器，properties 含 success 标志）。 */
     private TemporalEntity 构造经验实体(String id, String name, String description,
                                    float importance, boolean success) {
         var now = Instant.now();

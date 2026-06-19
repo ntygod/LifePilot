@@ -31,7 +31,7 @@ import static org.mockito.Mockito.mock;
 
 /**
  * {@link DerivedEntityListener} 集成测试 —— 轻量 Flyway + {@link SingleConnectionDataSource}
- * 真跑 V15/V16 迁移，不启动完整 Spring 容器。验证：
+ * 真跑当前迁移，不启动完整 Spring 容器。验证：
  * <ul>
  *   <li>源 EXPERIENCE 转 {@code SUPERSEDED} 时派生实体（CUSTOM/非画像）进入
  *       {@code REGENERATION_NEEDED} 且入队</li>

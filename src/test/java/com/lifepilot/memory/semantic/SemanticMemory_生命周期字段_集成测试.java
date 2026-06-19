@@ -6,6 +6,7 @@ import com.lifepilot.memory.governance.lifecycle.SourceType;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -34,7 +35,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>验证写入入口统一走 {@link SemanticMemory#upsertWithConflictDetection} 与
  * {@link SemanticMemory#updateLifecycleState}，读回通过 {@link TemporalEntity} 承载
- * V15 新增的 7 个生命周期字段；同时覆盖 {@link MemoryProvenanceRepository#markStale}
+ * 生命周期字段；同时覆盖 {@link MemoryProvenanceRepository#markStale}
  * 与 {@code findEntityIdsBySource} 的语义。</p>
  *
  * <p>使用文件 SQLite + 真跑 Flyway 迁移（含 V1–V16），手动装配 SemanticMemory
@@ -63,7 +64,7 @@ class SemanticMemory_生命周期字段_集成测试 {
         Files.deleteIfExists(dbPath);
         String jdbcUrl = "jdbc:sqlite:" + dbPath.toString().replace("\\", "/");
 
-        // 直接跑 Flyway 建表，覆盖 V15 新列与 V16 视图
+        // 直接跑 Flyway 建表，覆盖生命周期字段与实体视图
         Flyway.configure()
                 .dataSource(jdbcUrl, null, null)
                 .locations("classpath:db/migration")
@@ -98,7 +99,7 @@ class SemanticMemory_生命周期字段_集成测试 {
     void upsert写入带新字段的实体应能读回字段一致() {
         var entity = 构造活跃实体("test-新字段-1", EntityType.PREFERENCE);
 
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
 
         var loaded = semanticMemory.findById(persisted.id()).orElseThrow();
         assertThat(loaded.lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
@@ -114,7 +115,7 @@ class SemanticMemory_生命周期字段_集成测试 {
     @Test
     void updateLifecycleState应能改写生命周期并保留其他字段() {
         var entity = 构造活跃实体("test-新字段-2", EntityType.GOAL);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
 
         semanticMemory.updateLifecycleState(persisted.id(), LifecycleState.CANCELLED, "user-cancel");
 
@@ -155,7 +156,7 @@ class SemanticMemory_生命周期字段_集成测试 {
                 List.of("src-1", "src-2")
         );
 
-        semanticMemory.upsertWithConflictDetection(derived, null);
+        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.unknown(null));
 
         var loaded = semanticMemory.findById("test-派生-1").orElseThrow();
         assertThat(loaded.isDerived()).isTrue();
@@ -165,7 +166,7 @@ class SemanticMemory_生命周期字段_集成测试 {
     @Test
     void markStale应标记provenance并能回查实体ID() {
         var entity = 构造活跃实体("test-溯源-1", EntityType.CUSTOM);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
         插入provenance("prov-1", persisted.id(), "doc-100");
         插入provenance("prov-2", persisted.id(), "doc-100");
 
@@ -185,7 +186,7 @@ class SemanticMemory_生命周期字段_集成测试 {
 
     // ========== helpers ==========
 
-    /** 构造默认 ACTIVE + PERSISTENT 的基础实体（走 16 参兼容构造器补默认值）。 */
+    /** 构造默认 ACTIVE + PERSISTENT 的基础实体。 */
     private TemporalEntity 构造活跃实体(String id, EntityType type) {
         var now = Instant.now();
         return new TemporalEntity(
@@ -205,7 +206,7 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 now,
                 now
-                // 16 参构造器 → 生命周期字段默认 ACTIVE / PERSISTENT / 非派生
+                // 基础构造器默认 ACTIVE / PERSISTENT / 非派生
         );
     }
 

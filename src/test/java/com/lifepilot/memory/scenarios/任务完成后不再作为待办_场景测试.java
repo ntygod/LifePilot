@@ -16,6 +16,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -109,7 +110,10 @@ class 任务完成后不再作为待办_场景测试 {
     void 完成的GOAL应标COMPLETED且不出现在活跃列表() {
         // 1. 用户"加个任务：重构记忆模块"→ 建立 GOAL
         var task = 构造ACTIVE实体(EntityType.GOAL, "重构记忆模块", "拆分 SemanticMemory 的 upsert 路径");
-        var created = semanticMemory.upsertWithConflictDetection(task, "scenario-session-s3");
+        var created = semanticMemory.upsertWithConflictDetection(
+                task,
+                "scenario-session-s3",
+                MemoryWriteContext.conversation("scenario-session-s3"));
         assertThat(created).isNotNull();
         assertThat(created.lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
 
@@ -142,7 +146,10 @@ class 任务完成后不再作为待办_场景测试 {
     @DisplayName("COMPLETED 状态只能走 ARCHIVED 兜底；不可再次 COMPLETED")
     void 重复完成应被状态机拒绝() {
         var task = 构造ACTIVE实体(EntityType.GOAL, "一次性任务", null);
-        var created = semanticMemory.upsertWithConflictDetection(task, "scenario-session-s3");
+        var created = semanticMemory.upsertWithConflictDetection(
+                task,
+                "scenario-session-s3",
+                MemoryWriteContext.conversation("scenario-session-s3"));
 
         semanticMemory.updateLifecycleState(
                 created.id(), LifecycleState.COMPLETED, "user-complete", ChangeSource.TOOL_EXPLICIT);

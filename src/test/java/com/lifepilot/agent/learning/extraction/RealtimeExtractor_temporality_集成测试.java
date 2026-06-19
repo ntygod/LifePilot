@@ -109,6 +109,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "临时情绪，短期不想继续",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.5,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "EPHEMERAL"
                   }
                 ]
@@ -132,6 +134,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "短期学习计划",
                     "extractionConfidence": 0.85,
                     "importanceScore": 0.7,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "SHORT_TERM"
                   }
                 ]
@@ -157,6 +161,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "长期饮食偏好",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.8,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "PERSISTENT"
                   }
                 ]
@@ -181,7 +187,9 @@ class RealtimeExtractor_temporality_集成测试 {
                     "entityType": "ORGANIZATION",
                     "description": "用户所在公司",
                     "extractionConfidence": 0.9,
-                    "importanceScore": 0.7
+                    "importanceScore": 0.7,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述"
                   }
                 ]
                 """);
@@ -206,6 +214,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "description 足够长以通过验证",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.5,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "WEIRD_VALUE"
                   }
                 ]
@@ -232,6 +242,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "短期计划，LLM 指定结束时间",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.6,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "SHORT_TERM",
                     "expires_at": "%s"
                   }
@@ -261,6 +273,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "日期格式 LLM 胡写，走兜底",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.5,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "EPHEMERAL",
                     "expires_at": "不是合法 ISO"
                   }

@@ -176,7 +176,7 @@ public class JdbcTranscriptStore implements TranscriptStore {
         payload.put("content", content);
         String entryId = sessionTranscriptRepository.appendEntry(
                 sessionId,
-                TranscriptEntryType.fromLegacyRole(role),
+                TranscriptEntryType.fromRole(role),
                 role,
                 turnId,
                 normalizeBlank(traceId),

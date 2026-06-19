@@ -53,13 +53,17 @@ class ExtractionValidator_单元测试 {
     /** 构建一条 ADD 决策（带默认合法值） */
     private static AudnDecision addDecision(String name, String description, Float confidence) {
         return new AudnDecision(AudnOperation.ADD, name, EntityType.PERSON,
-                description, Map.of(), confidence, 0.8f, null, null, null, null);
+                description, Map.of(), confidence, 0.8f, null, null, "USER_EXPLICIT", evidence(name));
+    }
+
+    private static String evidence(String name) {
+        return name != null && !name.isBlank() ? name : "用户明确陈述";
     }
 
     /** 构建一条 UPDATE 决策 */
     private static AudnDecision updateDecision(String name, String description, Float confidence) {
         return new AudnDecision(AudnOperation.UPDATE, name, EntityType.PERSON,
-                description, Map.of(), confidence, 0.8f, null, null, null, null);
+                description, Map.of(), confidence, 0.8f, null, null, "USER_EXPLICIT", evidence(name));
     }
 
     /** 构建一条 DELETE 决策 */
@@ -327,6 +331,56 @@ class ExtractionValidator_单元测试 {
     // ------------------------------------------------------------------
     // 置信度校验
     // ------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("证据门槛")
+    class 证据门槛 {
+
+        @Test
+        void ADD缺少evidenceKind时进入拒绝候选() {
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "有效描述", Map.of(), 0.8f, 0.8f, null, null, null, "张三");
+
+            var result = validator.validateWithResult(List.of(decision));
+
+            assertThat(result.validDecisions()).isEmpty();
+            assertThat(result.rejectedDecisions()).hasSize(1);
+            assertThat(result.rejectedDecisions().getFirst().reason()).isEqualTo("EVIDENCE_KIND_MISSING");
+        }
+
+        @Test
+        void UNKNOWN证据不写主库() {
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "有效描述", Map.of(), 0.8f, 0.8f, null, null, "UNKNOWN", "张三");
+
+            var result = validator.validateWithResult(List.of(decision));
+
+            assertThat(result.validDecisions()).isEmpty();
+            assertThat(result.rejectedDecisions().getFirst().reason()).isEqualTo("UNKNOWN_EVIDENCE");
+        }
+
+        @Test
+        void USER_EXPLICIT缺少证据片段时拒绝() {
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "有效描述", Map.of(), 0.8f, 0.8f, null, null, "USER_EXPLICIT", null);
+
+            var result = validator.validateWithResult(List.of(decision));
+
+            assertThat(result.validDecisions()).isEmpty();
+            assertThat(result.rejectedDecisions().getFirst().reason()).isEqualTo("EVIDENCE_EXCERPT_MISSING");
+        }
+
+        @Test
+        void CHAT_INFERRED低于可信阈值时拒绝() {
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "有效描述", Map.of(), 0.59f, 0.8f, null, null, "CHAT_INFERRED", "张三");
+
+            var result = validator.validateWithResult(List.of(decision));
+
+            assertThat(result.validDecisions()).isEmpty();
+            assertThat(result.rejectedDecisions().getFirst().reason()).isEqualTo("INFERRED_LOW_TRUST");
+        }
+    }
 
     @Nested
     @DisplayName("置信度校验")
@@ -932,7 +986,7 @@ class ExtractionValidator_单元测试 {
         // given — jqwik 不执行 @BeforeEach，手动构造 validator
         var propValidator = new ExtractionValidator(defaultProperties());
         var decision = new AudnDecision(AudnOperation.ADD, "测试实体", EntityType.PERSON,
-                "有效描述", Map.of(), confidence, importance, null, null, null, null);
+                "有效描述", Map.of(), confidence, importance, null, null, "USER_EXPLICIT", "测试实体");
 
         // when
         var result = propValidator.normalizeScores(decision);

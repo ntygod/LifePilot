@@ -41,7 +41,7 @@ public enum TranscriptEntryType {
         return CUSTOM_CONTEXT;
     }
 
-    public static TranscriptEntryType fromLegacyRole(String role) {
+    public static TranscriptEntryType fromRole(String role) {
         if (role == null || role.isBlank()) {
             return CUSTOM_CONTEXT;
         }

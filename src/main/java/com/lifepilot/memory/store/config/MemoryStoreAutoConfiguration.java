@@ -11,6 +11,7 @@ import com.lifepilot.memory.store.event.SpringMemoryEventBus;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.projection.MemoryProjectionOutboxProcessor;
 import com.lifepilot.memory.store.projection.MemoryProjectionOutboxRepository;
+import com.lifepilot.memory.store.projection.MemoryProjectionOutboxScheduler;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
@@ -183,6 +184,14 @@ public class MemoryStoreAutoConfiguration {
             MemoryProjectionOutboxProcessor processor) {
         log.info("记忆模块: 注册 MemoryProjectionService");
         return new MemoryProjectionService(repository, processor);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public MemoryProjectionOutboxScheduler memoryProjectionOutboxScheduler(
+            MemoryProjectionOutboxProcessor processor) {
+        log.info("记忆模块: 注册 MemoryProjectionOutboxScheduler");
+        return new MemoryProjectionOutboxScheduler(processor);
     }
 
     @Bean

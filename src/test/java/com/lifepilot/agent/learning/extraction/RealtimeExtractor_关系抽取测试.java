@@ -42,9 +42,9 @@ class RealtimeExtractor_关系抽取测试 {
 
     private static final String AUDN_JSON = """
             [{"operation":"ADD","entityName":"张三","entityType":"PERSON","description":"用户同事",
-              "extractionConfidence":0.8,"importanceScore":0.6},
+              "extractionConfidence":0.8,"importanceScore":0.6,"evidenceKind":"USER_EXPLICIT","evidenceExcerpt":"张三是用户同事"},
              {"operation":"ADD","entityName":"阿里","entityType":"ORGANIZATION","description":"公司",
-              "extractionConfidence":0.8,"importanceScore":0.6}]
+              "extractionConfidence":0.8,"importanceScore":0.6,"evidenceKind":"USER_EXPLICIT","evidenceExcerpt":"阿里是公司"}]
             """;
 
     @BeforeEach

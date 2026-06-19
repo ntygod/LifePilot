@@ -12,6 +12,7 @@ import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -140,7 +141,10 @@ class MemoryMcpHandler_单元测试 {
     void tools_call_create_成功路径() {
         var sem = mock(SemanticMemory.class);
         Instant now = Instant.now();
-        when(sem.upsertWithConflictDetection(any(TemporalEntity.class), nullable(String.class)))
+        when(sem.upsertWithConflictDetection(
+                any(TemporalEntity.class),
+                nullable(String.class),
+                any(MemoryWriteContext.class)))
                 .thenReturn(new TemporalEntity(
                         "created-id", EntityType.GOAL, "学习 Rust", "描述",
                         Map.of(), 1, true, now, null, null,

@@ -21,6 +21,7 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.project.context.ProjectContextResolver;
+import com.lifepilot.project.context.ProjectContextResolution;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -87,28 +88,6 @@ public class ChatTurnService {
         this.chatSessionRepository = chatSessionRepository;
         this.projectContextResolver = projectContextResolver;
         this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
-    }
-
-    /** 便捷构造器（测试用）— 由 Spring 管理时使用主构造器。 */
-    public ChatTurnService(ChatTurnRepository chatTurnRepository,
-                           SessionTranscriptRepository transcriptRepository,
-                           ObjectMapper objectMapper,
-                           ApplicationEventPublisher eventPublisher) {
-        this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
-                null, null, null, null, null, null, null);
-    }
-
-    /** 旧版测试构造器 — 不提供 ProjectContext 依赖时使用，保持二进制兼容。 */
-    public ChatTurnService(ChatTurnRepository chatTurnRepository,
-                           SessionTranscriptRepository transcriptRepository,
-                           ObjectMapper objectMapper,
-                           ApplicationEventPublisher eventPublisher,
-                           @Nullable NotificationProperties notificationProperties,
-                           @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
-                           @Nullable ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository,
-                           @Nullable MemorySpaceRepository memorySpaceRepository) {
-        this(chatTurnRepository, transcriptRepository, objectMapper, eventPublisher,
-                null, null, chatTurnMemorySnapshotRepository, memorySpaceRepository, null, null, null);
     }
 
     public ResolvedTurnRequest prepare(String sessionId, ChatRequest request) {
@@ -318,7 +297,14 @@ public class ChatTurnService {
         }
         var personalSpace = memorySpaceRepository.ensureDefaultPersonalSpace();
         var experienceSpace = memorySpaceRepository.ensureDefaultExperienceSpace();
-        String projectSpaceId = resolveProjectSpaceId(sessionId);
+        ProjectContextResolution projectResolution = resolveProjectContext(sessionId);
+        String projectSpaceId = null;
+        if (!projectResolution.failed()) {
+            var projectContext = projectResolution.context();
+            if (projectContext.isolated()) {
+                projectSpaceId = projectContext.projectSpaceId();
+            }
+        }
         List<String> knowledgeBaseIds = sessionKnowledgeBaseRepository != null
                 ? sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId)
                 : List.of();
@@ -337,9 +323,14 @@ public class ChatTurnService {
         if (domainWriteSpaceId != null && !domainWriteSpaceId.isBlank()) {
             resolutionSource.put("resolvedDomainWriteSpaceId", domainWriteSpaceId);
         }
+        if (projectResolution.failed()) {
+            resolutionSource.put("projectResolutionFailed", true);
+            resolutionSource.put("projectResolutionReason", projectResolution.reason());
+        }
         if (projectSpaceId != null) {
             resolutionSource.put("resolvedProjectSpaceId", projectSpaceId);
         }
+        boolean learningEnabled = !projectResolution.failed();
         ChatTurnMemorySnapshot snapshot = new ChatTurnMemorySnapshot(
                 turnId,
                 sessionId,
@@ -349,9 +340,9 @@ public class ChatTurnService {
                 projectSpaceId,
                 readSpaceIds,
                 knowledgeBaseIds,
-                !knowledgeBound,
-                knowledgeBound && domainWriteSpaceId != null && !domainWriteSpaceId.isBlank(),
-                true,
+                learningEnabled && !knowledgeBound,
+                learningEnabled && knowledgeBound && domainWriteSpaceId != null && !domainWriteSpaceId.isBlank(),
+                learningEnabled,
                 resolutionSource,
                 now
         );
@@ -359,31 +350,40 @@ public class ChatTurnService {
     }
 
     /**
-     * 解析当前会话对应的项目 MemorySpace id。
+     * 解析当前会话对应的项目上下文。
      *
-     * <p>语义：仅 ISOLATED 项目对话返回非空；SHARED 项目 / 主账户对话 / 解析异常均返回 null，
-     * 下游写入路径据此走"主账户默认空间"fallback，避免污染项目域或因 resolver 缺失阻断对话。</p>
+     * <p>主账户/SHARED 项目可正常返回无项目写入目标；查询或解析失败时返回 failed 结果，
+     * 调用方据此关闭本轮自动学习，避免写入错误空间。</p>
      */
-    @Nullable
-    private String resolveProjectSpaceId(String sessionId) {
+    private ProjectContextResolution resolveProjectContext(String sessionId) {
         if (chatSessionRepository == null || projectContextResolver == null) {
-            return null;
+            log.warn("项目上下文依赖未配置，本轮自动学习关闭: sessionId={}", sessionId);
+            return ProjectContextResolution.failed("project_context_dependency_missing");
         }
+        Optional<ChatSession> session;
         try {
-            Optional<ChatSession> session = chatSessionRepository.findById(sessionId);
-            if (session.isEmpty()) {
-                return null;
-            }
-            String projectId = session.get().projectId();
-            if (projectId == null) {
-                return null;
-            }
-            var ctx = projectContextResolver.resolve(projectId);
-            return ctx.isolated() ? ctx.projectSpaceId() : null;
+            session = chatSessionRepository.findById(sessionId);
         } catch (Exception e) {
-            log.debug("解析项目空间失败，走主账户 fallback: sessionId={}, error={}",
+            log.warn("查询会话项目归属失败，本轮自动学习关闭: sessionId={}, error={}",
                     sessionId, e.getMessage());
-            return null;
+            return ProjectContextResolution.failed("chat_session_lookup_failed");
+        }
+        if (session.isEmpty()) {
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.warn("解析主账户项目上下文失败，本轮自动学习关闭: sessionId={}, error={}",
+                        sessionId, e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
+            }
+        }
+        String projectId = session.get().projectId();
+        try {
+            return ProjectContextResolution.resolved(projectContextResolver.resolve(projectId));
+        } catch (Exception e) {
+            log.warn("解析项目空间失败，本轮自动学习关闭: sessionId={}, projectId={}, error={}",
+                    sessionId, projectId != null ? projectId : "<personal>", e.getMessage());
+            return ProjectContextResolution.failed("project_context_resolution_failed");
         }
     }
 

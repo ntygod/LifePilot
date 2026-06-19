@@ -10,6 +10,7 @@ import com.lifepilot.memory.retrieval.RetrievalWeights;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -200,7 +201,10 @@ public class MemoryMcpHandler {
                 now, null, null,
                 0.8f, 0.5f, 0, null, now, now
         );
-        var created = semanticMemory.upsertWithConflictDetection(incoming, null);
+        var created = semanticMemory.upsertWithConflictDetection(
+                incoming,
+                "mcp-memory-create",
+                MemoryWriteContext.tool("mcp-memory-create"));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", created.id());

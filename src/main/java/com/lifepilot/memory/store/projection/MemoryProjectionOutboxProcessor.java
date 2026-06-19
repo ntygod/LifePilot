@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * 记忆投影 outbox 消费器。
@@ -40,13 +42,17 @@ public class MemoryProjectionOutboxProcessor {
      * 自身也按 entityId 幂等。</p>
      */
     public void processOne(String outboxId) {
+        processOne(outboxId, false);
+    }
+
+    private boolean processOne(String outboxId, boolean reclaimProcessing) {
         var taskOpt = repository.findById(outboxId);
         if (taskOpt.isEmpty()) {
-            return;
+            return false;
         }
         var task = taskOpt.get();
-        if (!repository.markProcessing(outboxId)) {
-            return;
+        if (!repository.markProcessing(outboxId, reclaimProcessing)) {
+            return false;
         }
         try {
             processTask(task);
@@ -56,6 +62,19 @@ public class MemoryProjectionOutboxProcessor {
             log.warn("记忆投影任务执行失败: id={}, projection={}, operation={}, error={}",
                     outboxId, task.projectionType(), task.operation(), e.getMessage());
         }
+        return true;
+    }
+
+    public int processDue(int limit, Duration processingTimeout) {
+        Duration timeout = processingTimeout != null ? processingTimeout : Duration.ofMinutes(5);
+        var ids = repository.findDueTaskIds(limit, Instant.now().minus(timeout));
+        int processed = 0;
+        for (String id : ids) {
+            if (processOne(id, true)) {
+                processed++;
+            }
+        }
+        return processed;
     }
 
     private void processTask(MemoryProjectionOutboxRepository.ProjectionTask task) throws Exception {

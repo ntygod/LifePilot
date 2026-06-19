@@ -1,8 +1,10 @@
 package com.lifepilot.meta.infra.memory;
 
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
@@ -14,6 +16,8 @@ import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +57,9 @@ class MemoryToolProvider_搜索消费契约测试 {
         hybridRetriever = mock(HybridRetriever.class);
         semanticMemory = mock(SemanticMemory.class);
         registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        when(projectContextResolver.resolve(null))
+                .thenReturn(ProjectContext.personal("space-personal", "space-experience"));
 
         var provider = new MemoryToolProvider(
                 hybridRetriever,
@@ -61,7 +68,10 @@ class MemoryToolProvider_搜索消费契约测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryRetrievalProperties());
+                new MemoryRetrievalProperties(),
+                projectContextResolver,
+                mock(ChatSessionRepository.class),
+                new MemoryAccessPolicy());
         provider.registerTools(registry);
     }
 
@@ -81,7 +91,7 @@ class MemoryToolProvider_搜索消费契约测试 {
 
         var tool = registry.resolve("memory").orElseThrow();
         var result = tool.execute(new ToolInput(tool.id(),
-                Map.of("action", "search", "query", "搜索", "top_k", 2),
+                Map.of("action", "search", "query", "搜索", "topK", 2),
                 tool.inputSchema(), null, Map.of()));
 
         assertThat(result.ok()).isTrue();

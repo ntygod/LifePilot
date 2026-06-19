@@ -4,11 +4,15 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.interaction.model.InteractionSource;
+import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigest;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
 import com.lifepilot.memory.consumption.hot.HotMemorySectionKind;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -107,9 +112,57 @@ class ContextAssembler_记忆消费契约测试 {
         verify(semanticMemory, never()).findByIds(any(), any());
     }
 
+    @Test
+    void 项目上下文解析失败时跳过热摘要且不回退个人记忆() {
+        var semanticMemory = mock(SemanticMemory.class);
+        when(semanticMemory.countByEntityType(any())).thenReturn(Map.of());
+        var contextEngine = mock(ContextEngine.class);
+        when(contextEngine.load(any(), anyInt())).thenReturn(ContextEngine.ContextSnapshot.empty());
+        var hotDigestService = mock(HotMemoryDigestService.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        when(chatSessionRepository.findById("session-1"))
+                .thenReturn(Optional.of(session("session-1", "project-1")));
+        when(projectContextResolver.resolve("project-1"))
+                .thenThrow(new IllegalStateException("项目缺失"));
+        var assembler = newAssembler(
+                semanticMemory,
+                contextEngine,
+                hotDigestService,
+                projectContextResolver,
+                chatSessionRepository);
+
+        var context = assembler.assemble(state("继续优化记忆"));
+
+        assertThat(context.injectedEntityIds()).isEmpty();
+        verify(hotDigestService, never()).build(any(), anyString());
+        verify(semanticMemory, never()).findCurrentByNameAndType(anyString(), any(), any());
+        verify(semanticMemory, never()).findCurrentByType(any(), any());
+        verify(semanticMemory, never()).findByIds(any(), any());
+    }
+
     private ContextAssembler newAssembler(SemanticMemory semanticMemory,
                                           ContextEngine contextEngine,
                                           HotMemoryDigestService hotDigestService) {
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        when(chatSessionRepository.findById("session-1"))
+                .thenReturn(Optional.of(session("session-1", null)));
+        when(projectContextResolver.resolve(null))
+                .thenReturn(ProjectContext.personal("space-personal", "space-experience"));
+        return newAssembler(
+                semanticMemory,
+                contextEngine,
+                hotDigestService,
+                projectContextResolver,
+                chatSessionRepository);
+    }
+
+    private ContextAssembler newAssembler(SemanticMemory semanticMemory,
+                                          ContextEngine contextEngine,
+                                          HotMemoryDigestService hotDigestService,
+                                          ProjectContextResolver projectContextResolver,
+                                          ChatSessionRepository chatSessionRepository) {
         var promptRegistry = mock(PromptRegistry.class);
         when(promptRegistry.render(anyString())).thenReturn("");
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("");
@@ -126,6 +179,8 @@ class ContextAssembler_记忆消费契约测试 {
                 null,
                 null,
                 null);
+        assembler.setProjectContextResolver(projectContextResolver);
+        assembler.setChatSessionRepository(chatSessionRepository);
         assembler.setHotMemoryDigestService(hotDigestService);
         return assembler;
     }
@@ -147,5 +202,10 @@ class ContextAssembler_记忆消费契约测试 {
                         .build())
                 .completionMode(com.lifepilot.agent.model.CompletionMode.NORMAL)
                 .build();
+    }
+
+    private ChatSession session(String id, String projectId) {
+        Instant now = Instant.now();
+        return new ChatSession(id, "title", null, 0, false, false, null, now, now, projectId);
     }
 }

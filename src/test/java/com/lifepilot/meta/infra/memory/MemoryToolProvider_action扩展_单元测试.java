@@ -1,16 +1,21 @@
 package com.lifepilot.meta.infra.memory;
 
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.retrieval.HybridRetriever;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,10 +24,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,12 +57,31 @@ class MemoryToolProvider_action扩展_单元测试 {
     private HybridRetriever hybridRetriever;
     private SemanticMemory semanticMemory;
     private DynamicToolRegistry registry;
+    private Map<String, TemporalEntity> entities;
 
     @BeforeEach
     void 初始化() {
         hybridRetriever = mock(HybridRetriever.class);
         semanticMemory = mock(SemanticMemory.class);
+        entities = new HashMap<>();
         registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        when(projectContextResolver.resolve(null))
+                .thenReturn(ProjectContext.personal("space-personal", "space-experience"));
+        when(chatSessionRepository.findById("sess-test"))
+                .thenReturn(java.util.Optional.of(session("sess-test")));
+        when(semanticMemory.findByIds(any(Collection.class), any(MemoryReadFilter.class)))
+                .thenAnswer(inv -> {
+                    Collection<String> ids = inv.getArgument(0);
+                    Map<String, TemporalEntity> result = new HashMap<>();
+                    for (String id : ids) {
+                        if (entities.containsKey(id)) {
+                            result.put(id, entities.get(id));
+                        }
+                    }
+                    return result;
+                });
 
         var provider = new MemoryToolProvider(
                 hybridRetriever,
@@ -66,7 +90,10 @@ class MemoryToolProvider_action扩展_单元测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryRetrievalProperties()
+                new MemoryRetrievalProperties(),
+                projectContextResolver,
+                chatSessionRepository,
+                new MemoryAccessPolicy()
         );
         provider.registerTools(registry);
     }
@@ -76,7 +103,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     @Test
     void complete对ACTIVE状态的GOAL有效并转COMPLETED() {
         var goal = 构造实体("goal-1", EntityType.GOAL, "学 Rust", LifecycleState.ACTIVE);
-        when(semanticMemory.findById("goal-1")).thenReturn(Optional.of(goal));
+        记忆(goal);
 
         var result = 执行工具("complete", Map.of("entityId", "goal-1"));
 
@@ -91,7 +118,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void complete对ACTIVE状态的PROJECT有效() {
         var project = 构造实体("proj-1", EntityType.PROJECT, "知微 v1",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("proj-1")).thenReturn(Optional.of(project));
+        记忆(project);
 
         var result = 执行工具("complete", Map.of("entityId", "proj-1"));
 
@@ -105,7 +132,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void complete对PREFERENCE应拒绝且不调用updateLifecycleState() {
         var pref = 构造实体("pref-1", EntityType.PREFERENCE, "深色主题",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("pref-1")).thenReturn(Optional.of(pref));
+        记忆(pref);
 
         var result = 执行工具("complete", Map.of("entityId", "pref-1"));
 
@@ -118,7 +145,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void complete对已COMPLETED实体应拒绝() {
         var goal = 构造实体("goal-done", EntityType.GOAL, "已完成目标",
                 LifecycleState.COMPLETED);
-        when(semanticMemory.findById("goal-done")).thenReturn(Optional.of(goal));
+        记忆(goal);
 
         var result = 执行工具("complete", Map.of("entityId", "goal-done"));
 
@@ -129,8 +156,6 @@ class MemoryToolProvider_action扩展_单元测试 {
 
     @Test
     void complete对不存在实体应返回错误() {
-        when(semanticMemory.findById("ghost")).thenReturn(Optional.empty());
-
         var result = 执行工具("complete", Map.of("entityId", "ghost"));
 
         assertThat(result.ok()).isFalse();
@@ -144,7 +169,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void cancel单条对PREFERENCE有效_扩覆盖所有类型() {
         var pref = 构造实体("pref-1", EntityType.PREFERENCE, "深色主题",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("pref-1")).thenReturn(Optional.of(pref));
+        记忆(pref);
 
         var result = 执行工具("cancel", Map.of("entityId", "pref-1"));
 
@@ -159,7 +184,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void cancel单条对EXPERIENCE有效() {
         var exp = 构造实体("exp-1", EntityType.EXPERIENCE, "SQLite 坑",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("exp-1")).thenReturn(Optional.of(exp));
+        记忆(exp);
 
         var result = 执行工具("cancel", Map.of("entityId", "exp-1"));
 
@@ -173,7 +198,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void cancel单条对GOAL有效() {
         var goal = 构造实体("goal-1", EntityType.GOAL, "学 Rust",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("goal-1")).thenReturn(Optional.of(goal));
+        记忆(goal);
 
         var result = 执行工具("cancel", Map.of("entityId", "goal-1"));
 
@@ -187,8 +212,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void cancel单条对非ACTIVE实体应拒绝() {
         var cancelled = 构造实体("already-cancelled", EntityType.GOAL,
                 "已取消目标", LifecycleState.CANCELLED);
-        when(semanticMemory.findById("already-cancelled"))
-                .thenReturn(Optional.of(cancelled));
+        记忆(cancelled);
 
         var result = 执行工具("cancel", Map.of("entityId", "already-cancelled"));
 
@@ -199,8 +223,6 @@ class MemoryToolProvider_action扩展_单元测试 {
 
     @Test
     void cancel单条对不存在实体应返回错误() {
-        when(semanticMemory.findById("ghost")).thenReturn(Optional.empty());
-
         var result = 执行工具("cancel", Map.of("entityId", "ghost"));
 
         assertThat(result.ok()).isFalse();
@@ -216,12 +238,11 @@ class MemoryToolProvider_action扩展_单元测试 {
                 LifecycleState.ACTIVE);
         var newEntity = 构造实体("goal-new", EntityType.GOAL, "新目标",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("goal-old")).thenReturn(Optional.of(oldEntity));
-        when(semanticMemory.findById("goal-new")).thenReturn(Optional.of(newEntity));
+        记忆(oldEntity, newEntity);
 
         var result = 执行工具("supersede", Map.of(
                 "entityId", "goal-old",
-                "new_entity_id", "goal-new"));
+                "newEntityId", "goal-new"));
 
         assertThat(result.ok()).isTrue();
         assertThat(result.<String>getData("lifecycleState")).isEqualTo("SUPERSEDED");
@@ -235,15 +256,14 @@ class MemoryToolProvider_action扩展_单元测试 {
     }
 
     @Test
-    void supersede的new_entity_id不存在应报错且不写FK() {
+    void supersede的newEntityId不存在应报错且不写FK() {
         var oldEntity = 构造实体("goal-old", EntityType.GOAL, "旧目标",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("goal-old")).thenReturn(Optional.of(oldEntity));
-        when(semanticMemory.findById("ghost-new")).thenReturn(Optional.empty());
+        记忆(oldEntity);
 
         var result = 执行工具("supersede", Map.of(
                 "entityId", "goal-old",
-                "new_entity_id", "ghost-new"));
+                "newEntityId", "ghost-new"));
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("新实体不存在");
@@ -253,11 +273,9 @@ class MemoryToolProvider_action扩展_单元测试 {
 
     @Test
     void supersede的entityId不存在应报错() {
-        when(semanticMemory.findById("ghost-old")).thenReturn(Optional.empty());
-
         var result = 执行工具("supersede", Map.of(
                 "entityId", "ghost-old",
-                "new_entity_id", "goal-new"));
+                "newEntityId", "goal-new"));
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("被替代实体不存在");
@@ -268,7 +286,7 @@ class MemoryToolProvider_action扩展_单元测试 {
     void supersede同ID拒绝避免循环() {
         var result = 执行工具("supersede", Map.of(
                 "entityId", "same",
-                "new_entity_id", "same"));
+                "newEntityId", "same"));
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("不能");
@@ -281,12 +299,11 @@ class MemoryToolProvider_action扩展_单元测试 {
                 LifecycleState.ARCHIVED);
         var newEntity = 构造实体("new", EntityType.GOAL, "新",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("old-archived")).thenReturn(Optional.of(archived));
-        when(semanticMemory.findById("new")).thenReturn(Optional.of(newEntity));
+        记忆(archived, newEntity);
 
         var result = 执行工具("supersede", Map.of(
                 "entityId", "old-archived",
-                "new_entity_id", "new"));
+                "newEntityId", "new"));
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).contains("ARCHIVED");
@@ -299,8 +316,7 @@ class MemoryToolProvider_action扩展_单元测试 {
                 LifecycleState.ACTIVE);
         var profile = 构造实体("profile-1", EntityType.CUSTOM, "__consolidated_profile",
                 LifecycleState.ACTIVE);
-        when(semanticMemory.findById("pref-1")).thenReturn(Optional.of(pref));
-        when(semanticMemory.findById("profile-1")).thenReturn(Optional.of(profile));
+        记忆(pref, profile);
 
         var result = 执行工具("tag", Map.of(
                 "sourceEntityId", "pref-1",
@@ -337,5 +353,17 @@ class MemoryToolProvider_action扩展_单元测试 {
                 state, null, null,
                 com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
                 null, false, List.of());
+    }
+
+    private void 记忆(TemporalEntity... items) {
+        for (TemporalEntity item : items) {
+            entities.put(item.id(), item);
+        }
+    }
+
+    private com.lifepilot.interaction.web.model.ChatSession session(String id) {
+        var now = Instant.now();
+        return new com.lifepilot.interaction.web.model.ChatSession(
+                id, "title", null, 0, false, false, null, now, now, null);
     }
 }

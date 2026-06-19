@@ -41,7 +41,7 @@ class ProceduralMemoryTest {
         dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
         jdbcTemplate = new JdbcTemplate(dataSource);
 
-        // 创建 procedure_templates 表（V1 + V15 新增 source_entity_id / deactivated_reason 列）
+        // 创建 procedure_templates 表，覆盖 L4 级联失活字段
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS procedure_templates (
                     template_id         TEXT PRIMARY KEY,
@@ -60,7 +60,7 @@ class ProceduralMemoryTest {
                     deactivated_reason  TEXT
                 )""");
 
-        // 创建 preference_rules 表（V1 + V15 新增 source_entity_id / deactivated_reason 列）
+        // 创建 preference_rules 表，覆盖 L4 级联失活字段
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS preference_rules (
                     rule_id             TEXT PRIMARY KEY,

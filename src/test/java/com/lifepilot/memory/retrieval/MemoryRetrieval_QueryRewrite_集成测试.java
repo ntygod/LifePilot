@@ -1,5 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
@@ -87,7 +88,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null, null);
+                null, mock(MemoryProvenanceRepository.class));
     }
 
     @Test
