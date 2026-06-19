@@ -18,8 +18,8 @@ import java.util.Map;
  * <p>连续 N 次正反馈 → 标记建议升级 → 用户确认后生效。
  * 永远不会自动升级，必须用户主动同意。</p>
  *
- * <p>Task 25（解 S14）：提供 3-arg {@link #recordNegativeFeedback(String, String, String)}
- * 重载，除调整自主度冷却外额外做"提醒 → L3 proactive_insight"反向溯源：查 {@link ReminderFeedbackRepository#findInsightEntityIdsByNotification}
+ * <p>Task 25（解 S14）：记录负反馈时可携带通知 id，
+ * 除调整自主度冷却外额外做"提醒 → L3 proactive_insight"反向溯源：查 {@link ReminderFeedbackRepository#findInsightEntityIdsByNotification}
  * 得到本次提醒依赖的 insight 实体 id 列表，对每条调
  * {@link SemanticMemory#updateImportanceScore(String, float, WeightSource)} 做固定
  * {@value #NEGATIVE_FEEDBACK_DELTA} 惩罚。连续累计后由 {@code NegativeFeedbackListener}
@@ -73,12 +73,6 @@ public class TrustUpgradeService {
      */
     @Nullable
     private final SemanticMemory semanticMemory;
-
-    /** 老构造 —— 不支持溯源的最小可用签名，保留给尚未迁移的调用点。 */
-    public TrustUpgradeService(AutonomyRepository autonomyRepository,
-                               @Nullable AgentConfigProperties config) {
-        this(autonomyRepository, config, null, null);
-    }
 
     /**
      * 完整构造 —— 注入反馈仓库与语义记忆后，
@@ -135,14 +129,6 @@ public class TrustUpgradeService {
             log.info("信任升级建议: userId={}, behavior={}, currentLevel={}, consecutivePositive={}",
                     userId, behaviorName, config.autonomyLevel(), newPositive);
         }
-    }
-
-    /**
-     * 记录负反馈（忽略/不相关）—— 不携带通知上下文的老调用入口，
-     * 保持向后兼容（如 ImplicitSignalCollector 的隐式负向信号不属于任何具体提醒）。
-     */
-    public void recordNegativeFeedback(String userId, String behaviorName) {
-        recordNegativeFeedback(userId, behaviorName, null);
     }
 
     /**

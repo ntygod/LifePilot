@@ -148,7 +148,7 @@ public class ImplicitSignalCollector {
             if (positive) {
                 trustUpgradeService.recordPositiveFeedback(userId, behaviorName);
             } else if (value < -0.3f) {
-                trustUpgradeService.recordNegativeFeedback(userId, behaviorName);
+                trustUpgradeService.recordNegativeFeedback(userId, behaviorName, null);
             }
         }
 

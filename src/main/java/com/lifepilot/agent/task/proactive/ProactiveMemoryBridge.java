@@ -45,53 +45,26 @@ public class ProactiveMemoryBridge {
     @Nullable private final EpisodicMemory episodicMemory;
     @Nullable private final ProceduralMemory proceduralMemory;
     private final GoalTrackingRepository goalTrackingRepository;
-    /**
-     * 主动任务 → L3 insight 关联查询/写入。允许为 null 以兼容未通过 JDBC
-     * 装配的单测场景；生产 AutoConfiguration 始终注入。
-     */
+    /** 主动任务 → L3 insight 关联查询/写入。 */
     @Nullable private final JdbcTemplate jdbcTemplate;
-    /** Spring 事件总线 — Task 13 发 ProactiveTaskCancelled；单测可为空。 */
-    @Nullable private ApplicationEventPublisher eventPublisher;
-    /** 记忆注意力服务（memory-proactive-foundation）—— setter 注入，空时 getAttentionItems 返回空。 */
-    @Nullable private com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
-
-    public ProactiveMemoryBridge(@Nullable SemanticMemory semanticMemory,
-                                  @Nullable EpisodicMemory episodicMemory,
-                                  @Nullable ProceduralMemory proceduralMemory,
-                                  GoalTrackingRepository goalTrackingRepository) {
-        this(semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, null);
-    }
+    /** Spring 事件总线 — Task 13 发 ProactiveTaskCancelled。 */
+    @Nullable private final ApplicationEventPublisher eventPublisher;
+    /** 记忆注意力服务（memory-proactive-foundation），空时 getAttentionItems 返回空。 */
+    @Nullable private final com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
 
     public ProactiveMemoryBridge(@Nullable SemanticMemory semanticMemory,
                                   @Nullable EpisodicMemory episodicMemory,
                                   @Nullable ProceduralMemory proceduralMemory,
                                   GoalTrackingRepository goalTrackingRepository,
-                                  @Nullable JdbcTemplate jdbcTemplate) {
+                                  @Nullable JdbcTemplate jdbcTemplate,
+                                  @Nullable ApplicationEventPublisher eventPublisher,
+                                  @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
         this.semanticMemory = semanticMemory;
         this.episodicMemory = episodicMemory;
         this.proceduralMemory = proceduralMemory;
         this.goalTrackingRepository = goalTrackingRepository;
         this.jdbcTemplate = jdbcTemplate;
-    }
-
-    /**
-     * 注入 Spring {@link ApplicationEventPublisher} — setter 注入避免破坏
-     * 现有多参构造器签名和大量手工装配测试。
-     *
-     * @param eventPublisher 事件发布器
-     */
-    public void setEventPublisher(@Nullable ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
-    }
-
-    /**
-     * 注入记忆注意力服务（memory-proactive-foundation）—— setter 注入，与本类既有
-     * {@link #setEventPublisher} 同范式，避免破坏多参构造器签名与大量手工装配测试。
-     *
-     * @param memoryAttentionService 注意力服务，null 表示注意力能力关闭
-     */
-    public void setMemoryAttentionService(
-            @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
         this.memoryAttentionService = memoryAttentionService;
     }
 

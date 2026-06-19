@@ -65,9 +65,8 @@ public class ProactiveAutoConfiguration {
             ApplicationEventPublisher eventPublisher,
             @Autowired(required = false) com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
         var bridge = new ProactiveMemoryBridge(
-                semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, jdbcTemplate);
-        bridge.setEventPublisher(eventPublisher);
-        bridge.setMemoryAttentionService(memoryAttentionService);
+                semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, jdbcTemplate,
+                eventPublisher, memoryAttentionService);
         return bridge;
     }
 

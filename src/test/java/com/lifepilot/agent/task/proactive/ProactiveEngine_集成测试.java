@@ -95,7 +95,7 @@ class ProactiveEngine_集成测试 {
 
         queuedActionRepo = new QueuedActionRepository(jdbc);
         autonomyRepo = new AutonomyRepository(jdbc);
-        trustUpgradeService = new TrustUpgradeService(autonomyRepo, null);
+        trustUpgradeService = new TrustUpgradeService(autonomyRepo, null, null, null);
         decisionGate = new DecisionGate(trustUpgradeService, null);
         deliveryEngine = new DeliveryEngine(notificationService, queuedActionRepo);
         clipboardBuffer = new ClipboardIntentBuffer();
@@ -111,7 +111,7 @@ class ProactiveEngine_集成测试 {
     /** 构建引擎，使用指定的行为插件列表。 */
     private ProactiveEngine buildEngine(List<ProactiveBehavior> behaviors) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
     }
 
     /** 构建标准 ContextPacket。 */

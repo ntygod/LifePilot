@@ -34,7 +34,7 @@ class ProactiveEngine_单元测试 {
         gate = mock(DecisionGate.class);
         delivery = mock(DeliveryEngine.class);
         engine = new ProactiveEngine(List.of(behavior), gate, delivery,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test

@@ -145,7 +145,7 @@ class ImplicitSignalCollector_单元测试 {
 
             // then — 负信号 -0.3f，value < -0.3f 才触发 recordNegativeFeedback
             // -0.3f 不满足 value < -0.3f，所以 trustUpgradeService 不收到负反馈
-            verify(trustUpgradeService, never()).recordNegativeFeedback(anyString(), anyString());
+            verify(trustUpgradeService, never()).recordNegativeFeedback(anyString(), anyString(), any());
             // 偏好回流 — 负信号 0.2f
             verify(memoryBridge).observePreference("proactive-domain", "reminder", 0.2f);
         }
@@ -198,7 +198,7 @@ class ImplicitSignalCollector_单元测试 {
 
             // then — 负信号 -0.5f → 满足 value < -0.3f → 触发负反馈
             // behaviorName 为 null，所以 trustUpgradeService 不被调用
-            verify(trustUpgradeService, never()).recordNegativeFeedback(anyString(), anyString());
+            verify(trustUpgradeService, never()).recordNegativeFeedback(anyString(), anyString(), any());
             // memoryBridge 的 observePreference 也不被调用（behaviorName 为 null）
             verify(memoryBridge, never()).observePreference(anyString(), anyString(), anyFloat());
         }
@@ -214,7 +214,7 @@ class ImplicitSignalCollector_单元测试 {
             collector.checkMissedOpportunities("user-1", "帮我查一下明天的航班");
 
             // then
-            verify(trustUpgradeService, never()).recordNegativeFeedback(anyString(), anyString());
+            verify(trustUpgradeService, never()).recordNegativeFeedback(anyString(), anyString(), any());
         }
 
         @Test

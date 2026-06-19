@@ -112,6 +112,6 @@ class DeliveryEngine_单元测试 {
     private ProactiveAction testAction(float score) {
         var candidate = new ProactiveCandidate(
                 "c1", "reminder", "topic-1", "标题", score, "理由", null);
-        return new ProactiveAction(candidate, "测试内容", DecisionGate.scoreToLevel(score), null);
+        return new ProactiveAction(candidate, "测试内容", DeliveryLevel.fromScore(score), null);
     }
 }

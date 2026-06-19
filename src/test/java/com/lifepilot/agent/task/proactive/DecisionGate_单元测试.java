@@ -120,17 +120,17 @@ class DecisionGate_单元测试 {
 
     @Test
     void 分数到投递级别映射() {
-        assertThat(DecisionGate.scoreToLevel(0.2f)).isEqualTo(DeliveryLevel.SILENT);
-        assertThat(DecisionGate.scoreToLevel(0.4f)).isEqualTo(DeliveryLevel.QUEUE);
-        assertThat(DecisionGate.scoreToLevel(0.6f)).isEqualTo(DeliveryLevel.NOTIFY);
-        assertThat(DecisionGate.scoreToLevel(0.8f)).isEqualTo(DeliveryLevel.INTERRUPT);
+        assertThat(DeliveryLevel.fromScore(0.2f)).isEqualTo(DeliveryLevel.SILENT);
+        assertThat(DeliveryLevel.fromScore(0.4f)).isEqualTo(DeliveryLevel.QUEUE);
+        assertThat(DeliveryLevel.fromScore(0.6f)).isEqualTo(DeliveryLevel.NOTIFY);
+        assertThat(DeliveryLevel.fromScore(0.8f)).isEqualTo(DeliveryLevel.INTERRUPT);
     }
 
     @Test
     void 边界值映射() {
-        assertThat(DecisionGate.scoreToLevel(0.3f)).isEqualTo(DeliveryLevel.QUEUE);
-        assertThat(DecisionGate.scoreToLevel(0.5f)).isEqualTo(DeliveryLevel.NOTIFY);
-        assertThat(DecisionGate.scoreToLevel(0.7f)).isEqualTo(DeliveryLevel.INTERRUPT);
+        assertThat(DeliveryLevel.fromScore(0.3f)).isEqualTo(DeliveryLevel.QUEUE);
+        assertThat(DeliveryLevel.fromScore(0.5f)).isEqualTo(DeliveryLevel.NOTIFY);
+        assertThat(DeliveryLevel.fromScore(0.7f)).isEqualTo(DeliveryLevel.INTERRUPT);
     }
 
     // ── 自主度与偏好约束 ──
@@ -194,7 +194,7 @@ class DecisionGate_单元测试 {
 
     @Test
     void boundary内低分候选可被NOTIFY() {
-        // 候选分数 0.4（默认 scoreToLevel → QUEUE），boundary 内 NOTIFY 阈值降到 0.35 → 应 NOTIFY
+        // 候选分数 0.4（默认阈值映射 → QUEUE），boundary 内 NOTIFY 阈值降到 0.35 → 应 NOTIFY
         var ctx = ctxWithBoundary(Instant.parse("2026-05-09T06:00:00Z"),
                 BoundaryState.IN_BOUNDARY, FocusMode.NORMAL);
         // 插件建议 NOTIFY 作为上限 — 分数只影响 boundary 动态映射
@@ -295,7 +295,7 @@ class DecisionGate_单元测试 {
     }
 
     private ProactiveAction action(float score) {
-        return action(score, DecisionGate.scoreToLevel(score));
+        return action(score, DeliveryLevel.fromScore(score));
     }
 
     private ProactiveAction action(float score, DeliveryLevel level) {

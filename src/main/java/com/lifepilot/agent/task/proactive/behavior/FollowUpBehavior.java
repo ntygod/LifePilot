@@ -127,7 +127,7 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
     }
 
     @Override
-    protected DeliveryLevel suggestLevel(ProactiveCandidate candidate) {
+    protected DeliveryLevel suggestLevel(ProactiveCandidate candidate, ContextPacket ctx) {
         return DeliveryLevel.NOTIFY;
     }
 

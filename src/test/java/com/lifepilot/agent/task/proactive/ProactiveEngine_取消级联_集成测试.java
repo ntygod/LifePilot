@@ -85,17 +85,16 @@ class ProactiveEngine_取消级联_集成测试 {
         MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 
         goalTrackingRepository = new GoalTrackingRepository(jdbcTemplate);
-        bridge = new ProactiveMemoryBridge(
-                semanticMemory, null, null, goalTrackingRepository, jdbcTemplate);
-
         captured = new ArrayList<>();
         ApplicationEventPublisher publisher = event -> captured.add(event);
-        bridge.setEventPublisher(publisher);
+        bridge = new ProactiveMemoryBridge(
+                semanticMemory, null, null, goalTrackingRepository, jdbcTemplate,
+                publisher, null);
 
         // 走 ProactiveEngine 作为对外入口，behaviors / gate / delivery 用空/mock
         engine = new ProactiveEngine(
                 List.of(), mock(DecisionGate.class), mock(DeliveryEngine.class),
-                null, null, null, null, bridge, null, null);
+                null, null, null, null, bridge, null, null, null, null, null);
     }
 
     @AfterEach

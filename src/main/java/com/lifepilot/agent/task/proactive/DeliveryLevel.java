@@ -17,6 +17,27 @@ public enum DeliveryLevel {
     NOTIFY,
     INTERRUPT;
 
+    private static final float QUEUE_THRESHOLD = 0.3f;
+    private static final float DEFAULT_NOTIFY_THRESHOLD = 0.5f;
+    private static final float DEFAULT_INTERRUPT_THRESHOLD = 0.7f;
+
+    /** 按默认阈值从候选分数推导投递级别。 */
+    public static DeliveryLevel fromScore(float score) {
+        return fromScore(score, DEFAULT_NOTIFY_THRESHOLD, DEFAULT_INTERRUPT_THRESHOLD);
+    }
+
+    /** 按指定通知/打断阈值从候选分数推导投递级别。 */
+    public static DeliveryLevel fromScore(float score, float notifyThreshold, float interruptThreshold) {
+        if (score >= interruptThreshold) return INTERRUPT;
+        if (score >= notifyThreshold) return NOTIFY;
+        if (score >= QUEUE_THRESHOLD) return QUEUE;
+        return SILENT;
+    }
+
+    public static float queueThreshold() {
+        return QUEUE_THRESHOLD;
+    }
+
     /** 是否为通知级别（NOTIFY 或 INTERRUPT）— 需要用户关注。 */
     public boolean isNotifiable() {
         return this == NOTIFY || this == INTERRUPT;

@@ -113,10 +113,6 @@ class 主动任务取消级联清理insight_场景测试 {
         MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         listener = new ProactiveTaskCancelListener(semanticMemory);
 
-        var goalTrackingRepo = new GoalTrackingRepository(jdbcTemplate);
-        bridge = new ProactiveMemoryBridge(
-                semanticMemory, null, null, goalTrackingRepo, jdbcTemplate);
-
         publishedEvents = new ArrayList<>();
         ApplicationEventPublisher forwardingPublisher = event -> {
             publishedEvents.add(event);
@@ -125,7 +121,11 @@ class 主动任务取消级联清理insight_场景测试 {
             }
         };
         semanticMemory.setEventPublisher(forwardingPublisher);
-        bridge.setEventPublisher(forwardingPublisher);
+
+        var goalTrackingRepo = new GoalTrackingRepository(jdbcTemplate);
+        bridge = new ProactiveMemoryBridge(
+                semanticMemory, null, null, goalTrackingRepo, jdbcTemplate,
+                forwardingPublisher, null);
 
         插入记忆空间(SPACE_ID);
     }

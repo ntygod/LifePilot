@@ -50,8 +50,8 @@ public abstract class AbstractLlmBehavior implements ProactiveBehavior {
     protected abstract String fallbackContent(ProactiveCandidate candidate);
 
     /** 子类指定建议的投递级别（默认根据分数）。 */
-    protected DeliveryLevel suggestLevel(ProactiveCandidate candidate) {
-        return DecisionGate.scoreToLevel(candidate.score());
+    protected DeliveryLevel suggestLevel(ProactiveCandidate candidate, ContextPacket ctx) {
+        return DeliveryLevel.fromScore(candidate.score());
     }
 
     @Override
@@ -60,7 +60,7 @@ public abstract class AbstractLlmBehavior implements ProactiveBehavior {
         for (var candidate : candidates) {
             String content = generateContent(candidate, ctx);
             if (content == null || content.isBlank()) continue;
-            actions.add(new ProactiveAction(candidate, content, suggestLevel(candidate), candidate.detail()));
+            actions.add(new ProactiveAction(candidate, content, suggestLevel(candidate, ctx), candidate.detail()));
         }
         return actions;
     }

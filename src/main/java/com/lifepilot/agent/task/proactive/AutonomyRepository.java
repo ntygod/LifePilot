@@ -6,6 +6,7 @@ import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 行为自主度仓储。
@@ -22,7 +23,8 @@ public class AutonomyRepository {
     private static final RowMapper<AutonomyConfig> ROW_MAPPER = (rs, _) -> new AutonomyConfig(
             rs.getString("user_id"),
             rs.getString("behavior_name"),
-            SafeEnum.parse(AutonomyLevel.class, rs.getString("autonomy_level"), AutonomyLevel.A),
+            AutonomyLevel.valueOf(Objects.requireNonNull(rs.getString("autonomy_level"),
+                    "autonomy_level 不能为空")),
             rs.getInt("consecutive_positive"),
             rs.getInt("consecutive_negative"),
             rs.getInt("upgrade_suggested") == 1,

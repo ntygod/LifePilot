@@ -76,39 +76,6 @@ public class ProactiveEngine {
                            @Nullable ReminderFocusStateHolder focusStateHolder,
                            @Nullable ProactiveMemoryBridge memoryBridge,
                            @Nullable TrustUpgradeService trustUpgradeService,
-                           @Nullable ImplicitSignalCollector implicitSignalCollector) {
-        this(behaviors, decisionGate, deliveryEngine, notificationProperties,
-                notificationRepository, config, focusStateHolder, memoryBridge,
-                trustUpgradeService, implicitSignalCollector, null, null, null);
-    }
-
-    public ProactiveEngine(List<ProactiveBehavior> behaviors,
-                           DecisionGate decisionGate,
-                           DeliveryEngine deliveryEngine,
-                           @Nullable NotificationProperties notificationProperties,
-                           @Nullable NotificationRepository notificationRepository,
-                           @Nullable AgentConfigProperties config,
-                           @Nullable ReminderFocusStateHolder focusStateHolder,
-                           @Nullable ProactiveMemoryBridge memoryBridge,
-                           @Nullable TrustUpgradeService trustUpgradeService,
-                           @Nullable ImplicitSignalCollector implicitSignalCollector,
-                           @Nullable BoundarySignalCollector boundarySignalCollector,
-                           @Nullable FocusStateDetector focusStateDetector) {
-        this(behaviors, decisionGate, deliveryEngine, notificationProperties,
-                notificationRepository, config, focusStateHolder, memoryBridge,
-                trustUpgradeService, implicitSignalCollector,
-                boundarySignalCollector, focusStateDetector, null);
-    }
-
-    public ProactiveEngine(List<ProactiveBehavior> behaviors,
-                           DecisionGate decisionGate,
-                           DeliveryEngine deliveryEngine,
-                           @Nullable NotificationProperties notificationProperties,
-                           @Nullable NotificationRepository notificationRepository,
-                           @Nullable AgentConfigProperties config,
-                           @Nullable ReminderFocusStateHolder focusStateHolder,
-                           @Nullable ProactiveMemoryBridge memoryBridge,
-                           @Nullable TrustUpgradeService trustUpgradeService,
                            @Nullable ImplicitSignalCollector implicitSignalCollector,
                            @Nullable BoundarySignalCollector boundarySignalCollector,
                            @Nullable FocusStateDetector focusStateDetector,
@@ -139,8 +106,7 @@ public class ProactiveEngine {
      * 等行为插件会在 {@code reason} 中直接调 {@code bridge.markGoalFulfilled}
      * 自主归档目标，如果事件只在 Engine 发，那些路径会漏事件；把事件发布
      * 下沉到 Bridge 保证所有调用路径都触发级联。若将来需要将调用强制收拢到
-     * Engine，改法是在 Bridge 的 markGoalFulfilled 上加 {@code @Deprecated}
-     * 或改包私有，再逐步迁移。</p>
+     * Engine，应直接收敛调用入口并同步更新所有行为插件。</p>
      *
      * <p>taskId 即为 L3 GOAL 实体 id。memoryBridge 为空时退化为 no-op。</p>
      *

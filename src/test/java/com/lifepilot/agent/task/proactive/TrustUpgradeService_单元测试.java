@@ -32,7 +32,7 @@ class TrustUpgradeService_单元测试 {
                     PRIMARY KEY (user_id, behavior_name)
                 )""");
         repo = new AutonomyRepository(jdbc);
-        service = new TrustUpgradeService(repo, null);
+        service = new TrustUpgradeService(repo, null, null, null);
     }
 
     @AfterEach
@@ -63,7 +63,7 @@ class TrustUpgradeService_单元测试 {
     void 负反馈重置正反馈计数() {
         service.recordPositiveFeedback("u1", "reminder");
         service.recordPositiveFeedback("u1", "reminder");
-        service.recordNegativeFeedback("u1", "reminder");
+        service.recordNegativeFeedback("u1", "reminder", null);
         var config = repo.findByUserAndBehavior("u1", "reminder");
         assertThat(config.consecutivePositive()).isZero();
         assertThat(config.consecutiveNegative()).isEqualTo(1);
@@ -74,7 +74,7 @@ class TrustUpgradeService_单元测试 {
         // 先升到 B
         repo.upsert(AutonomyConfig.defaultFor("u1", "test", AutonomyLevel.B));
         for (int i = 0; i < 3; i++) {
-            service.recordNegativeFeedback("u1", "test");
+            service.recordNegativeFeedback("u1", "test", null);
         }
         assertThat(service.getLevel("u1", "test")).isEqualTo(AutonomyLevel.A);
     }
