@@ -113,6 +113,19 @@ class ThoughtPool_持久化集成测试 {
     }
 
     @Test
+    void markExpressed应持久化会话ID() {
+        var pool = newPool();
+        pool.submit(brewing("t1", "intent-a", ThoughtKind.REMINDER, 0.8f));
+
+        pool.markExpressed("t1", "initiative-session");
+
+        var loaded = repository.findById("t1");
+        assertThat(loaded).isPresent();
+        assertThat(loaded.get().state()).isEqualTo(ThoughtState.EXPRESSED);
+        assertThat(loaded.get().conversationId()).isEqualTo("initiative-session");
+    }
+
+    @Test
     void 终态想法不应被新池恢复为活跃() {
         var pool1 = newPool();
         pool1.submit(brewing("t1", "intent-a", ThoughtKind.REMINDER, 0.3f));

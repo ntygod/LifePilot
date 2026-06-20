@@ -80,13 +80,11 @@ public class ProactiveController {
         this.initiativeEngine = initiativeEngine;
     }
 
-    // ── 主动思考触发（dev / 灰度阶段一：仅思考可观测，不表达）──
+    // ── 主动思考触发（dev：仅思考可观测，不表达）──
 
     /**
      * 手动触发一次空闲思考 —— 主动引擎基于记忆注意力（DUE_SOON/NEGLECTED/CONNECTION）产生想法，
      * 落入想法池但**不表达**（不会给用户发消息）。返回本次思考后的活跃想法快照，便于观测验证。
-     *
-     * <p>对应 initiative-activation 灰度阶段一。表达/执行链路仍未接通。</p>
      */
     @PostMapping("/think")
     public ApiResponse<Map<String, Object>> triggerThink() {

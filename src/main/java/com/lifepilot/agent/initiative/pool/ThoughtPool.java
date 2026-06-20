@@ -141,6 +141,26 @@ public class ThoughtPool {
     }
 
     /**
+     * 标记想法已表达，并记录主动对话 session。
+     */
+    public Thought markExpressed(String thoughtId, String conversationId) {
+        Thought existing = thoughts.get(thoughtId);
+        if (existing == null) {
+            throw new IllegalArgumentException("想法不存在: " + thoughtId);
+        }
+        Thought expressed = existing.withExpression(conversationId);
+        thoughts.put(thoughtId, expressed);
+        if (repository != null) {
+            try {
+                repository.markExpressed(thoughtId, conversationId);
+            } catch (Exception e) {
+                log.warn("想法池: 表达状态持久化失败, id={}, error={}", thoughtId, e.getMessage());
+            }
+        }
+        return expressed;
+    }
+
+    /**
      * 清理过期想法。
      *
      * @return 清理数量

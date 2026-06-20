@@ -1,21 +1,22 @@
 package com.lifepilot.agent.initiative.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.agent.config.AgentAutoConfiguration;
 import com.lifepilot.agent.initiative.InitiativeEngine;
 import com.lifepilot.agent.initiative.Thinker;
-import com.lifepilot.agent.initiative.execute.ActionExecutor;
-import com.lifepilot.agent.initiative.execute.ExecutionPermissionRepository;
 import com.lifepilot.agent.initiative.express.ConversationInitiator;
 import com.lifepilot.agent.initiative.gate.Gatekeeper;
 import com.lifepilot.agent.initiative.pool.ThoughtPool;
 import com.lifepilot.agent.initiative.pool.ThoughtRepository;
 import com.lifepilot.agent.initiative.signal.InitiativeEventListener;
 import com.lifepilot.agent.initiative.thinker.DefaultThinker;
-import com.lifepilot.memory.store.entity.SemanticMemory;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.Nullable;
+import com.lifepilot.agent.orchestration.AgentOrchestrator;
+import com.lifepilot.memory.config.MemoryAutoConfiguration;
+import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -30,8 +31,9 @@ import java.time.LocalTime;
  * @author zsg
  * @since 2026-06-01
  */
-@AutoConfiguration
+@AutoConfiguration(after = {AgentAutoConfiguration.class, MemoryAutoConfiguration.class})
 @EnableConfigurationProperties(InitiativeProperties.class)
+@ConditionalOnBean({AgentOrchestrator.class, MemoryAttentionService.class})
 @ConditionalOnProperty(prefix = "lifepilot.initiative", name = "enabled",
         havingValue = "true")
 public class InitiativeAutoConfiguration {
@@ -82,29 +84,23 @@ public class InitiativeAutoConfiguration {
     @ConditionalOnMissingBean
     public InitiativeEngine initiativeEngine(ThoughtPool thoughtPool,
                                              Gatekeeper gatekeeper,
-                                             @Nullable Thinker thinker) {
-        log.info("主动引擎: 注册 InitiativeEngine, thinker={}",
-                thinker != null ? "available" : "unavailable");
-        return new InitiativeEngine(thoughtPool, gatekeeper, thinker);
+                                             Thinker thinker,
+                                             ConversationInitiator conversationInitiator) {
+        log.info("主动引擎: 注册 InitiativeEngine");
+        return new InitiativeEngine(thoughtPool, gatekeeper, thinker, conversationInitiator);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public DefaultThinker defaultThinker(
-            @Nullable SemanticMemory semanticMemory,
-            @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
-        log.info("主动引擎: 注册 DefaultThinker, semanticMemory={}, attention={}",
-                semanticMemory != null ? "available" : "unavailable",
-                memoryAttentionService != null ? "available" : "unavailable");
-        return new DefaultThinker(semanticMemory, memoryAttentionService);
+    public DefaultThinker defaultThinker(MemoryAttentionService memoryAttentionService) {
+        log.info("主动引擎: 注册 DefaultThinker");
+        return new DefaultThinker(memoryAttentionService);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ConversationInitiator conversationInitiator(
-            @Nullable com.lifepilot.agent.orchestration.AgentOrchestrator agentOrchestrator) {
-        log.info("主动引擎: 注册 ConversationInitiator, orchestrator={}",
-                agentOrchestrator != null ? "available" : "unavailable");
+    public ConversationInitiator conversationInitiator(AgentOrchestrator agentOrchestrator) {
+        log.info("主动引擎: 注册 ConversationInitiator");
         return new ConversationInitiator(agentOrchestrator);
     }
 
@@ -121,22 +117,5 @@ public class InitiativeAutoConfiguration {
                                                ObjectMapper objectMapper) {
         log.info("主动引擎: 注册 ThoughtRepository");
         return new ThoughtRepository(jdbcTemplate, objectMapper);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ExecutionPermissionRepository executionPermissionRepository(
-            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
-        log.info("主动引擎: 注册 ExecutionPermissionRepository");
-        return new ExecutionPermissionRepository(jdbcTemplate);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public ActionExecutor actionExecutor(
-            @Nullable com.lifepilot.agent.orchestration.AgentOrchestrator agentOrchestrator) {
-        log.info("主动引擎: 注册 ActionExecutor, orchestrator={}",
-                agentOrchestrator != null ? "available" : "unavailable");
-        return new ActionExecutor(agentOrchestrator);
     }
 }

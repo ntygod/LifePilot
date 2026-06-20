@@ -1,6 +1,7 @@
 package com.lifepilot.agent.initiative;
 
 import com.lifepilot.agent.initiative.gate.Gatekeeper;
+import com.lifepilot.agent.initiative.express.ConversationInitiator;
 import com.lifepilot.agent.initiative.model.Signal;
 import com.lifepilot.agent.initiative.model.Thought;
 import com.lifepilot.agent.initiative.model.ThoughtState;
@@ -9,14 +10,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
-import java.time.Duration;
 import java.util.List;
 
 /**
  * 主动引擎 — 事件驱动的主动思考 + 对话发起。
  *
- * <p>替代旧的 {@code ProactiveEngine} 心跳巡检模式。核心流程：
- * Signal → Thinker → ThoughtPool → Gatekeeper → ConversationInitiator</p>
+ * <p>核心流程：Signal → Thinker → ThoughtPool → Gatekeeper → ConversationInitiator。</p>
  *
  * <p>设计原则：
  * <ul>
@@ -35,15 +34,17 @@ public class InitiativeEngine {
 
     private final ThoughtPool thoughtPool;
     private final Gatekeeper gatekeeper;
-    @Nullable
     private final Thinker thinker;
+    private final ConversationInitiator conversationInitiator;
 
     public InitiativeEngine(ThoughtPool thoughtPool,
                             Gatekeeper gatekeeper,
-                            @Nullable Thinker thinker) {
+                            Thinker thinker,
+                            ConversationInitiator conversationInitiator) {
         this.thoughtPool = thoughtPool;
         this.gatekeeper = gatekeeper;
         this.thinker = thinker;
+        this.conversationInitiator = conversationInitiator;
     }
 
     /**
@@ -52,10 +53,6 @@ public class InitiativeEngine {
      * @param signal 外部事件信号
      */
     public void processSignal(Signal signal) {
-        if (thinker == null) {
-            log.debug("主动引擎: Thinker 不可用，跳过信号处理");
-            return;
-        }
         try {
             var thought = thinker.processSignal(signal);
             thought.ifPresent(t -> {
@@ -90,11 +87,17 @@ public class InitiativeEngine {
         for (Thought thought : ready) {
             var decision = gatekeeper.evaluate(thought, context);
             if (decision instanceof Gatekeeper.Decision.Express express) {
-                // 标记为已表达
-                thoughtPool.transition(thought.id(), ThoughtState.EXPRESSED);
-                log.info("主动引擎: 想法表达, intentKey={}, urgency={}",
-                        thought.intentKey(), express.urgency());
-                return thought;
+                try {
+                    String sessionId = conversationInitiator.initiate(thought);
+                    Thought expressedThought = thoughtPool.markExpressed(thought.id(), sessionId);
+                    log.info("主动引擎: 想法表达, intentKey={}, urgency={}, sessionId={}",
+                            thought.intentKey(), express.urgency(), sessionId);
+                    return expressedThought;
+                } catch (Exception e) {
+                    log.warn("主动引擎: 想法表达失败, intentKey={}, error={}",
+                            thought.intentKey(), e.getMessage());
+                    return null;
+                }
             }
             if (decision instanceof Gatekeeper.Decision.Dismiss dismiss) {
                 thoughtPool.transition(thought.id(), ThoughtState.DISMISSED);
@@ -110,7 +113,6 @@ public class InitiativeEngine {
      * 空闲思考 — 在用户不活跃时主动回顾记忆、发现关联。
      */
     public void idleThink() {
-        if (thinker == null) return;
         try {
             var thoughts = thinker.idleThink();
             for (var thought : thoughts) {

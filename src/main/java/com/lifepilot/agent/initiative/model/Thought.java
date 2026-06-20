@@ -56,6 +56,11 @@ public record Thought(
                 createdAt, matureAt, newState, conversationId, lastReinforcedAt);
     }
 
+    public Thought withExpression(String newConversationId) {
+        return new Thought(id, intentKey, kind, summary, evidence, confidence, maturity,
+                createdAt, matureAt, ThoughtState.EXPRESSED, newConversationId, lastReinforcedAt);
+    }
+
     public Thought withMaturity(float newMaturity) {
         ThoughtState newState = newMaturity >= 0.6f && state == ThoughtState.BREWING
                 ? ThoughtState.READY : state;

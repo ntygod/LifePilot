@@ -91,6 +91,12 @@ public class ThoughtRepository {
                 newState.name(), expressedAt, resolvedAt, id);
     }
 
+    public void markExpressed(String id, String conversationId) {
+        jdbcTemplate.update(
+                "UPDATE initiative_thoughts SET state = ?, conversation_id = ?, expressed_at = COALESCE(expressed_at, ?) WHERE id = ?",
+                ThoughtState.EXPRESSED.name(), conversationId, Instant.now().toString(), id);
+    }
+
     public void updateMaturity(String id, float maturity, ThoughtState state) {
         jdbcTemplate.update(
                 "UPDATE initiative_thoughts SET maturity = ?, state = ? WHERE id = ?",

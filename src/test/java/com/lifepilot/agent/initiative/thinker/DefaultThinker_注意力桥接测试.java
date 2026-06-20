@@ -34,7 +34,7 @@ class DefaultThinker_注意力桥接测试 {
                 item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.8f),
                 item(AttentionKind.NEGLECTED, "g2", "学小提琴", 0.6f),
                 item(AttentionKind.CONNECTION, "g3", "网易", 0.7f)));
-        var thinker = new DefaultThinker(null, attention);
+        var thinker = new DefaultThinker(attention);
 
         var thoughts = thinker.idleThink();
 
@@ -48,7 +48,7 @@ class DefaultThinker_注意力桥接测试 {
         var attention = mock(MemoryAttentionService.class);
         when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
                 item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.9f)));
-        var thinker = new DefaultThinker(null, attention);
+        var thinker = new DefaultThinker(attention);
 
         var thoughts = thinker.idleThink();
 
@@ -64,14 +64,17 @@ class DefaultThinker_注意力桥接测试 {
         var attention = mock(MemoryAttentionService.class);
         when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
                 item(AttentionKind.EVOLVING, "g1", "演进中目标", 0.5f)));
-        var thinker = new DefaultThinker(null, attention);
+        var thinker = new DefaultThinker(attention);
 
         assertThat(thinker.idleThink()).isEmpty();
     }
 
     @Test
-    void 注意力服务不可用时回退且无异常() {
-        var thinker = new DefaultThinker(null, null);  // 无 semanticMemory + 无 attention
+    void 注意力计算失败时返回空列表() {
+        var attention = mock(MemoryAttentionService.class);
+        when(attention.computeAttention(any(), anyInt())).thenThrow(new IllegalStateException("索引暂不可用"));
+        var thinker = new DefaultThinker(attention);
+
         assertThat(thinker.idleThink()).isEmpty();
     }
 }

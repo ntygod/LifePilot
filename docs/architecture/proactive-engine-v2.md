@@ -211,28 +211,27 @@ Agent：上次你说已经背完了あ行和か行，正在さ行。要从さ行
 │                                      │  (表达门控)    │           │
 │                                      └───────┬───────┘           │
 │                                               │                   │
-│                                    ┌──────────┴──────────┐       │
-│                                    ▼                     ▼       │
-│                           ┌───────────────┐    ┌──────────────┐  │
-│                           │  Conversation  │    │    Action     │  │
-│                           │   Initiator    │    │   Executor    │  │
-│                           │  (对话发起器)  │    │ (主动执行器)  │  │
-│                           └───────┬───────┘    └──────┬───────┘  │
-│                                   │                    │          │
-└───────────────────────────────────┼────────────────────┼──────────┘
-                                    │                    │
-                                    ▼                    ▼
-                           ┌───────────────┐    ┌───────────────┐
-                           │ MessageGateway │    │AgentOrchestrator│
-                           │ (发起对话)     │    │ (后台执行任务) │
-                           └───────────────┘    └───────────────┘
-                                    │                    │
-                              ┌─────┼─────┐              │
-                              ▼     ▼     ▼              ▼
-                         ┌──────┐┌──────┐┌──────┐  ┌──────────┐
-                         │ Web  ││ 飞书 ││ 钉钉 │  │ 执行结果  │
-                         │ SSE  ││Channel││Channel│  │ 通知用户  │
-                         └──────┘└──────┘└──────┘  └──────────┘
+│                                               ▼                   │
+│                                      ┌───────────────┐           │
+│                                      │ Conversation  │           │
+│                                      │  Initiator    │           │
+│                                      │ (对话发起器)  │           │
+│                                      └───────┬───────┘           │
+│                                               │                   │
+└───────────────────────────────────────────────┼───────────────────┘
+                                                │
+                                                ▼
+                                       ┌─────────────────┐
+                                       │AgentOrchestrator│
+                                       │  (发起对话)     │
+                                       └────────┬────────┘
+                                                │
+                                          ┌─────┼─────┐
+                                          ▼     ▼     ▼
+                                     ┌──────┐┌──────┐┌──────┐
+                                     │ Web  ││ 飞书 ││ 钉钉 │
+                                     │ SSE  ││Channel││Channel│
+                                     └──────┘└──────┘└──────┘
 ```
 
 ### 5.2 五个核心组件
@@ -242,9 +241,8 @@ Agent：上次你说已经背完了あ行和か行，正在さ行。要从さ行
 | **Signal Sources** | 收集事件信号，不做决策 | 被动接收 Spring Event |
 | **Thinker** | 将信号转化为想法，或在空闲时主动思考 | 事件驱动 + 空闲调度 |
 | **Thought Pool** | 管理所有想法的生命周期 | 被动存储 + 定期清理 |
-| **Gatekeeper** | 判断"现在是否适合表达/执行这个想法" | 被 Thinker 或定时器触发 |
+| **Gatekeeper** | 判断"现在是否适合表达这个想法" | 被 Thinker 或定时器触发 |
 | **Conversation Initiator** | 将对话类想法转化为一段对话并发起 | 被 Gatekeeper 放行后触发 |
-| **Action Executor** | 将执行类想法直接后台执行，事后通知用户 | 被 Gatekeeper 放行后触发（需授权） |
 
 ---
 
@@ -650,176 +648,14 @@ public record DeliveryStrategy(
 
 ---
 
-## 11. Action Executor（主动执行器）
+## 11. 主动执行（暂不实现）
 
-### 11.1 设计原则
+当前主动发起层只做"想法 → 门控 → 主动对话"闭环，不保留后台直接执行路径。
 
-对话发起是第一阶段的核心能力，但完整的主动引擎还需要**直接行动**的能力——在用户信任足够高的情况下，系统不需要先问，可以直接做事，事后通知结果。
-
-Action Executor 是 Conversation Initiator 的平行组件，两者在 Gatekeeper 之后分流：
-
-```
-Gatekeeper 放行 (Express)
-  │
-  ├─ thought.kind ∈ {对话类} → Conversation Initiator（发起对话）
-  │
-  └─ thought.kind == AUTO_EXECUTE → Action Executor（直接执行）
-       │
-       ├─ 检查执行授权（ExecutionPermission）
-       │     ├─ 有授权 → 继续
-       │     └─ 无授权 → 降级为 Conversation Initiator（先问再做）
-       │
-       ├─ 构造 AgentRequest
-       │     ├─ source = InteractionSource.initiative(thoughtId)
-       │     ├─ systemPrompt = 任务指令 + Evidence 上下文
-       │     ├─ allowedToolIds = 白名单（仅低风险工具）
-       │     └─ budget = 受限预算
-       │
-       ├─ 调用 AgentOrchestrator.run()（非流式，后台执行）
-       │
-       ├─ 执行完成 → 生成结果摘要
-       │
-       └─ 通知用户执行结果（轻量消息，可展开查看详情）
-```
-
-### 11.2 ThoughtKind 扩展
-
-```java
-public enum ThoughtKind {
-    // --- 对话类（第一阶段）---
-    REMINDER,       // 提醒：某件事快到期了、该做了
-    FOLLOW_UP,      // 追问：之前聊过的事，想知道进展
-    INSIGHT,        // 洞察：发现了有价值的关联或模式
-    PREPARATION,    // 准备：即将到来的事件需要提前准备
-    CONCERN,        // 关切：注意到用户可能遇到了问题
-    SUGGESTION,     // 建议：基于积累的了解，有一个建议想提
-
-    // --- 执行类（第二阶段扩展）---
-    AUTO_EXECUTE    // 自主执行：直接行动，事后通知
-}
-```
-
-### 11.3 执行授权模型
-
-主动执行不是无条件的，它需要用户的明确授权。授权按**行为模式**粒度管理：
-
-```java
-/**
- * 主动执行授权。
- *
- * <p>用户可以通过对话自然地授权："以后这种事你直接做就行"，
- * 系统记录为一条 ExecutionPermission。</p>
- */
-public record ExecutionPermission(
-    String id,
-    String userId,
-    String actionPattern,    // 行为模式标识，如 "daily_summary" / "weekly_report"
-    String description,      // 人类可读描述："每天早上整理今日待办"
-    List<String> allowedTools, // 允许使用的工具白名单
-    RiskLevel maxRisk,       // 允许的最高风险级别（最高 MEDIUM）
-    boolean active,
-    Instant grantedAt,
-    @Nullable Instant revokedAt
-) {}
-```
-
-**授权获取方式：**
-
-1. **对话中自然授权**：用户说"以后每天早上帮我整理待办就行"→ Agent 识别为授权意图 → 确认后记录
-2. **设置页面授权**：用户在 Web UI 的主动行为设置中手动开启
-3. **首次询问后授权**：第一次以对话形式询问，用户说"下次直接做"→ 记录授权
-
-**授权约束：**
-
-- `maxRisk` 最高只能是 `MEDIUM`，HIGH/CRITICAL 工具永远需要对话确认
-- 授权可随时撤销（对话中说"别自动做了"或设置页面关闭）
-- 每次执行结果都会通知用户，用户可以追溯和撤销
-
-### 11.4 执行结果通知
-
-执行完成后，系统通过轻量消息通知用户：
-
-```
-✅ 已完成：今日待办整理
-
-整理了 5 项待办事项，其中 2 项标记为高优先级。
-点击查看详情 →
-```
-
-通知的特点：
-- **简短**：一句话说清楚做了什么
-- **可展开**：用户点击后进入对话，可以追问细节或修改
-- **可撤销**：如果执行了可逆操作，提供撤销入口
-
-### 11.5 适合主动执行的场景
-
-| 场景 | actionPattern | 说明 |
-|------|--------------|------|
-| 每日待办整理 | `daily_summary` | 早上汇总今日待办并发送 |
-| 周报草稿生成 | `weekly_report` | 每周五下午生成周报草稿 |
-| 日历冲突检测 | `calendar_conflict` | 发现冲突后自动调整提醒 |
-| 知识库自动归档 | `kb_archive` | 过期文档自动归档 |
-| 习惯数据记录 | `habit_log` | 根据对话自动记录习惯完成情况 |
-
-### 11.6 不适合主动执行的场景
-
-- 涉及外部通信（发消息给别人、发邮件）
-- 涉及金钱操作（支付、转账）
-- 涉及不可逆删除
-- 用户从未明确授权过的新行为
-
-### 11.7 数据模型
-
-```sql
-CREATE TABLE initiative_permissions (
-    id              TEXT PRIMARY KEY,
-    user_id         TEXT NOT NULL,
-    action_pattern  TEXT NOT NULL,
-    description     TEXT NOT NULL,
-    allowed_tools   TEXT,          -- JSON 数组
-    max_risk        TEXT NOT NULL DEFAULT 'LOW',
-    active          INTEGER NOT NULL DEFAULT 1,
-    granted_at      TEXT NOT NULL,
-    revoked_at      TEXT,
-    
-    UNIQUE(user_id, action_pattern)
-);
-
-CREATE TABLE initiative_executions (
-    id              TEXT PRIMARY KEY,
-    thought_id      TEXT NOT NULL REFERENCES initiative_thoughts(id),
-    permission_id   TEXT NOT NULL REFERENCES initiative_permissions(id),
-    action_pattern  TEXT NOT NULL,
-    status          TEXT NOT NULL,  -- RUNNING / COMPLETED / FAILED / REVERTED
-    result_summary  TEXT,
-    trace_id        TEXT,           -- 关联 Agent 轨迹
-    started_at      TEXT NOT NULL,
-    completed_at    TEXT,
-    notified_at     TEXT,
-    user_response   TEXT            -- ACKNOWLEDGED / REVERTED / EXPANDED
-);
-
-CREATE INDEX idx_executions_thought ON initiative_executions(thought_id);
-CREATE INDEX idx_executions_user ON initiative_executions(action_pattern, status);
-```
-
-### 11.8 与对话模式的协同
-
-两种模式不是互斥的，而是一个渐进信任的过程：
-
-```
-第一次：系统以对话形式提出建议
-  → 用户说"好的，帮我做"
-  → Agent 执行
-
-第二次：系统再次以对话形式提出
-  → 用户说"以后这种事直接做就行"
-  → 系统记录 ExecutionPermission
-
-第三次起：系统直接执行，事后通知
-  → 用户满意 → 继续
-  → 用户不满意 → 撤销授权，回到对话模式
-```
+原因：
+- 通用型个人助手的主动能力应先建立在轻量、可回应的对话上，避免用户感觉系统在背后自作主张。
+- 直接执行需要独立的授权、风险分级、结果追溯和撤销模型；这些能力尚未进入当前实现范围。
+- 因此代码中不保留执行器、执行授权或执行记录表，后续若重新引入，应作为独立 spec 重新设计并一次性接通。
 
 ---
 
@@ -1093,12 +929,6 @@ initiative/
 │   ├── ConversationInitiator.java  // 对话发起器
 │   ├── OpeningGenerator.java       // 开场白生成
 │   └── ChannelRouter.java          // 渠道路由
-├── execute/
-│   ├── ActionExecutor.java         // 主动执行器
-│   ├── ExecutionPermission.java    // 执行授权
-│   ├── ExecutionPermissionRepository.java
-│   ├── ExecutionRecord.java        // 执行记录
-│   └── ExecutionResultNotifier.java // 结果通知
 ├── learn/
 │   ├── OutcomeCollector.java       // 结果收集
 │   ├── OutcomeRepository.java      // 结果持久化
@@ -1113,10 +943,8 @@ initiative/
 新增 Flyway 迁移脚本：
 - `V{next}__create_initiative_thoughts.sql`
 - `V{next}__create_initiative_outcomes.sql`
-- `V{next}__create_initiative_permissions.sql`
-- `V{next}__create_initiative_executions.sql`
 
-旧表 `proactive_*` 不删除，保留历史数据。
+当前只持久化想法与对话结果。
 
 ---
 
@@ -1126,15 +954,14 @@ initiative/
 |------|------|------|
 | 核心抽象 | Thought（想法） | 比"候选提醒"更自然，有生命周期，有成熟度 |
 | 触发方式 | 事件驱动 + 空闲思考 | 消除无意义的定时巡检，在正确的时刻响应 |
-| 输出形式 | 发起对话 / 直接执行 | 对话让用户可以自然回应；执行让系统真正帮用户做事 |
+| 输出形式 | 发起对话 | 对话让用户可以自然回应，符合轻量个人助手定位 |
 | 去重粒度 | intentKey（意图级） | 从根本上解决重复打扰 |
 | 门控方式 | 纯规则硬约束 | 简单可预测，不依赖 LLM 判断时机 |
 | 学习方式 | 对话结果 → 偏好衰减 | 比 LinUCB 简单得多，冷启动友好 |
 | 渠道投递 | 复用 MessageGateway + ChannelDeliveryDispatcher | 不重新发明轮子 |
-| 与 Agent 引擎关系 | 主动对话/执行 = 正常 AgentRequest | 复用全部 Agent 能力 |
+| 与 Agent 引擎关系 | 主动对话 = 正常 AgentRequest | 复用全部 Agent 能力 |
 | 旧系统处理 | 完全删除 | 不兼容，不迁移，干净重来 |
 | 空闲思考 | 独立 LLM 场景 + token 预算 | 可配置为便宜模型，控制成本 |
-| 主动执行授权 | 按行为模式粒度 + 用户显式授权 | 渐进信任，安全可控 |
 | 证据关联 | Evidence 精确指向记忆实体/对话 | Agent 可回溯原始信息，回答用户追问 |
 
 ---
@@ -1146,10 +973,10 @@ initiative/
 | 代码量 | ~40 个类 + 8 个插件 | ~25 个类，结构更简单 |
 | LLM 调用 | 每次心跳可能多次（Gate 3 + 文案生成） | 空闲思考 + 开场白生成（可控） |
 | 决策复杂度 | 三级管线 + LinUCB + 评分模型 | 成熟度模型 + 硬规则门控 |
-| 用户感知 | 收到通知 → 点有用/没用 | 收到对话 → 自然回应；或直接看到执行结果 |
+| 用户感知 | 收到通知 → 点有用/没用 | 收到对话 → 自然回应 |
 | 重复问题 | 候选级冷却（同一候选可被不同插件重复检测） | 意图级去重（同一件事只说一次） |
 | 可调试性 | 复杂（三级管线 + 8 插件 + Bandit） | 简单（想法池可直接查看所有想法状态） |
-| 执行能力 | 无（只能通知） | 有（授权后可直接执行任务） |
+| 执行能力 | 无（只能通知） | 无（当前只发起对话） |
 | 证据追溯 | 弱（文案中提及但无法回溯） | 强（Evidence 精确指向记忆，Agent 可检索原始数据） |
 
 ---

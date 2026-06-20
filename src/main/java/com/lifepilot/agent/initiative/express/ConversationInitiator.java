@@ -8,7 +8,6 @@ import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.model.InteractionSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.util.UUID;
 
@@ -25,10 +24,9 @@ public class ConversationInitiator {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationInitiator.class);
 
-    @Nullable
     private final AgentOrchestrator agentOrchestrator;
 
-    public ConversationInitiator(@Nullable AgentOrchestrator agentOrchestrator) {
+    public ConversationInitiator(AgentOrchestrator agentOrchestrator) {
         this.agentOrchestrator = agentOrchestrator;
     }
 
@@ -36,36 +34,27 @@ public class ConversationInitiator {
      * 发起主动对话。
      *
      * @param thought 要表达的想法
-     * @return 创建的对话 session ID（AgentOrchestrator 不可用时返回 null）
+     * @return 创建的对话 session ID
      */
-    @Nullable
     public String initiate(Thought thought) {
         String opening = generateOpening(thought);
         String context = buildInitiativeContext(thought);
+        String sessionId = "initiative-" + UUID.randomUUID().toString().substring(0, 8);
+        var request = new AgentRequest(
+                opening,
+                sessionId,
+                InteractionSource.system("initiative:" + thought.id()),
+                null, null, null, null,
+                context,
+                null, null, 0, null, null, null, null, null, null
+        );
 
-        if (agentOrchestrator == null) {
-            log.info("主动对话: AgentOrchestrator 不可用，仅生成开场白: '{}'", opening);
-            return null;
+        AgentResponse response = agentOrchestrator.run(request);
+        if (response.sessionId() == null || response.sessionId().isBlank()) {
+            throw new IllegalStateException("主动对话未返回 sessionId");
         }
-
-        try {
-            String sessionId = "initiative-" + UUID.randomUUID().toString().substring(0, 8);
-            var request = new AgentRequest(
-                    opening,
-                    sessionId,
-                    InteractionSource.system("initiative:" + thought.id()),
-                    null, null, null, null,
-                    context, // systemPrompt override
-                    null, null, 0, null, null, null, null, null, null
-            );
-
-            AgentResponse response = agentOrchestrator.run(request);
-            log.info("主动对话发起成功: intentKey={}, sessionId={}", thought.intentKey(), sessionId);
-            return response.sessionId();
-        } catch (Exception e) {
-            log.warn("主动对话发起失败: intentKey={}, error={}", thought.intentKey(), e.getMessage());
-            return null;
-        }
+        log.info("主动对话发起成功: intentKey={}, sessionId={}", thought.intentKey(), response.sessionId());
+        return response.sessionId();
     }
 
     /**
