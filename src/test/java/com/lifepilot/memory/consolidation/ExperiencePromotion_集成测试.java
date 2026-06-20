@@ -2,6 +2,7 @@ package com.lifepilot.memory.consolidation;
 
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.ExperiencePromoter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.config.MemoryStoreProperties;
@@ -15,6 +16,7 @@ import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
+import com.lifepilot.prompt.PromptRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -107,7 +110,8 @@ class ExperiencePromotion_集成测试 {
                     return List.of(new VectorSearchResult(templateId, 1.0f));
                 });
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionService projectionService =
                 MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);

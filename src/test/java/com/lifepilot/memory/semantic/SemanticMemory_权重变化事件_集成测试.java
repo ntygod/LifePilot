@@ -1,5 +1,6 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.WeightSource;
@@ -8,6 +9,7 @@ import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
+import com.lifepilot.prompt.PromptRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 
 /**
  * {@link SemanticMemory#updateImportanceScore} 事件发布集成测试（Task 11 修补 B）。
@@ -78,7 +81,8 @@ class SemanticMemory_权重变化事件_集成测试 {
         lenient().when(vectorSearcher.searchEntities(any(), any(Integer.class), any(Float.class)))
                 .thenReturn(List.of());
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 

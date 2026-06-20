@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -35,7 +36,7 @@ import static org.mockito.Mockito.when;
 /**
  * ConflictDetector 三级冲突检测引擎单元测试。
  *
- * <p>覆盖精确匹配、语义匹配、LLM 消歧义三个阶段的正常路径与降级行为。</p>
+ * <p>覆盖精确匹配、语义匹配、LLM 消歧义三个阶段的正常路径与失败处理。</p>
  *
  * @author zsg
  * @since 2026-04-03
@@ -371,7 +372,7 @@ class ConflictDetector_单元测试 {
         }
 
         @Test
-        void LLM返回非JSON文本_包含true_降级为文本匹配_视为冲突() {
+        void LLM返回非JSON文本_即使包含true也不视为冲突() {
             // given
             var newEntity = buildEntity("new-1", "张三", EntityType.PERSON, "工程师");
             var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "程序员");
@@ -391,8 +392,8 @@ class ConflictDetector_单元测试 {
             // when
             var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
 
-            // then — 文本包含 "true"（大小写不敏感），视为冲突
-            assertThat(result).isPresent();
+            // then — 非结构化输出不能被文本猜测为冲突
+            assertThat(result).isEmpty();
         }
 
         @Test
@@ -455,29 +456,11 @@ class ConflictDetector_单元测试 {
     class 降级行为 {
 
         @Test
-        void 无_GenerationRouter时_语义匹配超阈值直接视为冲突_不调用LLM() {
-            // given — 构造时 generationRouter 为 null
-            detector = new ConflictDetector(
-                    jdbcTemplate, vectorSearcher, null, SEMANTIC_THRESHOLD, promptRegistry);
-            var newEntity = buildEntity("new-1", "小张", EntityType.PERSON, "前端");
-            var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "前端开发");
-
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any()))
-                    .thenReturn(List.of());
-            when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
-                    .thenReturn(List.of(new VectorSearchResult("existing-1", 0.92f)));
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), eq(TEST_SPACE_ID)))
-                    .thenReturn(List.of(candidate));
-
-            // when
-            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
-
-            // then
-            assertThat(result).isPresent();
-            assertThat(result.get().id()).isEqualTo("existing-1");
-            verifyNoInteractions(generationRouter);
+        void 缺少GenerationRouter时构造器拒绝创建() {
+            assertThatThrownBy(() -> new ConflictDetector(
+                    jdbcTemplate, vectorSearcher, null, SEMANTIC_THRESHOLD, promptRegistry))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("generationRouter 不能为空");
         }
 
         @Test
@@ -605,7 +588,7 @@ class ConflictDetector_单元测试 {
         void 带spaceId的语义匹配和实体查找传递spaceId() {
             // given
             detector = new ConflictDetector(
-                    jdbcTemplate, vectorSearcher, null, SEMANTIC_THRESHOLD, promptRegistry);
+                    jdbcTemplate, vectorSearcher, generationRouter, SEMANTIC_THRESHOLD, promptRegistry);
             var newEntity = buildEntity("new-1", "小张", EntityType.PERSON, "前端");
             var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "前端开发");
 
@@ -619,6 +602,12 @@ class ConflictDetector_单元测试 {
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
                     eq("existing-1"), eq("space-A")))
                     .thenReturn(List.of(candidate));
+            when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
+                    .thenReturn("判断prompt");
+            when(generationRouter.call(
+                    eq("knowledge_extraction"), anyString(), isNull(), isNull(), isNull(),
+                    any(), isNull()))
+                    .thenReturn(buildLlmResponse("{\"isSame\": true, \"confidence\": 0.9}"));
 
             // when
             var result = detector.detectConflict(newEntity, "space-A");

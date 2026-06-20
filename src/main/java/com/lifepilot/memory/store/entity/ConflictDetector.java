@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -29,7 +30,6 @@ public class ConflictDetector {
 
     private final JdbcTemplate jdbcTemplate;
     private final VectorSearcher vectorSearcher;
-    @Nullable
     private final GenerationRouter generationRouter;
     private final float semanticMatchThreshold;
     private final PromptRegistry promptRegistry;
@@ -39,20 +39,20 @@ public class ConflictDetector {
      *
      * @param jdbcTemplate           主数据库 JdbcTemplate
      * @param vectorSearcher         向量检索器
-     * @param llmRouter              LLM 路由器（可选，用于消歧义）
+     * @param generationRouter       LLM 路由器，用于语义候选消歧义
      * @param semanticMatchThreshold 语义匹配阈值
      * @param promptRegistry         提示词注册中心
      */
     public ConflictDetector(JdbcTemplate jdbcTemplate,
                             VectorSearcher vectorSearcher,
-                            @Nullable GenerationRouter generationRouter,
+                            GenerationRouter generationRouter,
                             float semanticMatchThreshold,
                             PromptRegistry promptRegistry) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.vectorSearcher = vectorSearcher;
-        this.generationRouter = generationRouter;
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "vectorSearcher 不能为空");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter 不能为空");
         this.semanticMatchThreshold = semanticMatchThreshold;
-        this.promptRegistry = promptRegistry;
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "promptRegistry 不能为空");
     }
 
     /**
@@ -86,23 +86,16 @@ public class ConflictDetector {
                 var candidate = findEntityById(topResult.entityId(), spaceId);
                 if (candidate.isPresent()) {
                     // 第三级：LLM 消歧义
-                    if (generationRouter != null) {
-                        try {
-                            boolean isSame = llmDisambiguate(newEntity, candidate.get());
-                            if (isSame) {
-                                log.debug("冲突检测: LLM 确认同一实体, name={}, candidateId={}",
-                                        newEntity.name(), candidate.get().id());
-                                return candidate;
-                            }
-                        } catch (Exception e) {
-                            log.warn("冲突检测: LLM 消歧义失败，降级为仅精确匹配, error={}", e.getMessage());
-                            return Optional.empty();
+                    try {
+                        boolean isSame = llmDisambiguate(newEntity, candidate.get());
+                        if (isSame) {
+                            log.debug("冲突检测: LLM 确认同一实体, name={}, candidateId={}",
+                                    newEntity.name(), candidate.get().id());
+                            return candidate;
                         }
-                    } else {
-                        // 无 LLM 时，语义匹配超过阈值直接视为冲突
-                        log.debug("冲突检测: 语义匹配命中（无 LLM 消歧义）, similarity={}",
-                                topResult.similarity());
-                        return candidate;
+                    } catch (Exception e) {
+                        log.warn("冲突检测: LLM 消歧义失败，降级为仅精确匹配, error={}", e.getMessage());
+                        return Optional.empty();
                     }
                 }
             }
@@ -162,9 +155,7 @@ public class ConflictDetector {
             log.debug("冲突检测: LLM 消歧义结果, isSame={}, confidence={}", isSame, confidence);
             return isSame && confidence >= 0.6;
         } catch (Exception e) {
-            // JSON 解析失败时降级为旧逻辑
-            log.debug("冲突检测: LLM 消歧义 JSON 解析失败，降级为文本匹配, content={}", content);
-            return content.toLowerCase().contains("true");
+            throw new IllegalStateException("冲突消歧响应不是合法 JSON", e);
         }
     }
 

@@ -1,6 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.proactive.behavior.BehaviorActivationPolicy;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.events.ProactiveTaskCancelled;
@@ -12,6 +13,7 @@ import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.prompt.PromptRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,7 +83,8 @@ class ProactiveEngine_取消级联_集成测试 {
         lenient().when(vectorSearcher.searchEntities(any(), any(Integer.class), any(Float.class)))
                 .thenReturn(List.of());
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
 

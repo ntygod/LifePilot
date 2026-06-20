@@ -141,7 +141,7 @@ public class MemoryStoreAutoConfiguration {
     public ConflictDetector conflictDetector(
             JdbcTemplate jdbcTemplate,
             VectorSearcher vectorSearcher,
-            @Nullable GenerationRouter generationRouter,
+            GenerationRouter generationRouter,
             MemoryStoreProperties properties,
             PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 ConflictDetector, semanticMatchThreshold={}",

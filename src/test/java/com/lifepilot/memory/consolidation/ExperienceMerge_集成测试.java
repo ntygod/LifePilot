@@ -145,7 +145,8 @@ class ExperienceMerge_集成测试 {
         // 提示词桩：LLM 已被 mock，提示词内容无关紧要。
         when(promptRegistry.render(any(), any())).thenReturn("merge-prompt");
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, generationRouter, 0.92f, promptRegistry);
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionService projectionService =
                 MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
