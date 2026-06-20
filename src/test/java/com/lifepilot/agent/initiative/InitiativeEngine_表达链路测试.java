@@ -8,6 +8,7 @@ import com.lifepilot.agent.initiative.model.Thought;
 import com.lifepilot.agent.initiative.model.ThoughtKind;
 import com.lifepilot.agent.initiative.model.ThoughtState;
 import com.lifepilot.agent.initiative.pool.ThoughtPool;
+import com.lifepilot.agent.initiative.pool.ThoughtRepository;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
@@ -40,7 +41,9 @@ class InitiativeEngine_表达链路测试 {
             new MaturityModel.Config(0.6f, 0.5f, 0.15f, 0.15f, 48.0, 24.0, 72.0));
 
     private ThoughtPool pool() {
-        return new ThoughtPool(10, Duration.ofHours(72), Duration.ofHours(48), null, MATURITY_MODEL);
+        var repository = mock(ThoughtRepository.class);
+        when(repository.findByState(any(ThoughtState.class))).thenReturn(List.of());
+        return new ThoughtPool(10, Duration.ofHours(72), Duration.ofHours(48), repository, MATURITY_MODEL);
     }
 
     private Gatekeeper gatekeeper() {

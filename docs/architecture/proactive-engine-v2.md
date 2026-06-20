@@ -2,7 +2,7 @@
 
 > **文档性质**：架构设计文档（重新设计）
 > **模块归属**：`com.lifepilot.agent.initiative`（新包名，与旧 `agent.task.proactive` 完全独立）
-> **最后更新**：2026-05-14
+> **最后更新**：2026-06-20
 > **替代**：`com.lifepilot.agent.task.proactive`（整体废弃）
 
 ---
@@ -40,7 +40,7 @@
 1. **主动行为 = 发起对话**：每次主动介入都是一段可以展开的对话，不是一条死消息
 2. **事件驱动 + 空闲思考**：不再定时巡检，而是被事件唤醒或在空闲时主动思考
 3. **意图级去重**：同一个"想法"从形成到表达只有一次机会，表达后无论结果如何都不再重复
-4. **渠道无关**：主动发起的对话通过统一的 MessageGateway 投递，适配所有已接入渠道
+4. **渠道无关**：主动发起复用正常 Agent 会话链路，不在主动层维护独立投递分支
 5. **可观测**：每个意图的生命周期（形成 → 成熟 → 表达 → 结果）完整可追溯
 6. **克制优先**：宁可少说一句，不多说一句。默认保守，信任积累后逐步放开
 
@@ -510,13 +510,11 @@ public sealed interface GatekeeperDecision permits
 
 门控规则（按优先级）：
 
-1. **静默时段**：配置的安静时间内 → Wait
+1. **静默时段**：配置的安静时间内 → Wait（除非 CRITICAL）
 2. **每日额度**：今天已表达 ≥ 配置上限 → Wait（除非 urgency=CRITICAL）
 3. **用户正在对话中** → Wait（不打断正在进行的对话）
-4. **间隔太短**：距上次表达 < 最小间隔 → Wait
-5. **专注状态**：用户处于 FOCUS_MODE → Wait（除非 urgency=CRITICAL）
-6. **任务边界窗口**：用户刚完成对话/任务 → 优先 Express（黄金时机）
-7. **用户刚回来**：用户从不活跃变为活跃 → 适合 Express
+4. **间隔太短**：距上次表达 < 最小间隔 → Wait（除非 urgency=CRITICAL）
+5. **通过硬门控** → Express
 
 ### 9.4 表达紧急度
 
@@ -540,16 +538,13 @@ public enum ExpressUrgency {
 ```yaml
 lifepilot:
   initiative:
-    gatekeeper:
-      # 每日最大主动对话数
-      daily-max-expressions: 3
-      # 两次表达之间的最小间隔
-      min-interval-minutes: 60
-      # 静默时段
-      quiet-hours-start: "23:00"
-      quiet-hours-end: "08:00"
-      # 任务边界窗口（对话/任务结束后的黄金时间）
-      boundary-window-minutes: 10
+    # 每日最大主动对话数
+    daily-max-expressions: 3
+    # 两次表达之间的最小间隔
+    min-interval-minutes: 60
+    # 静默时段
+    quiet-hours-start: "23:00"
+    quiet-hours-end: "08:00"
 ```
 
 ---
@@ -577,15 +572,15 @@ Gatekeeper 放行
   │     ├─ 内容：说清楚"为什么现在跟你说这个"
   │     └─ 结尾：留出对话空间（提问或建议）
   │
-  ├─ 3. 创建对话会话
-  │     ├─ 新建 session（source = INITIATIVE）
-  │     ├─ 注入 system prompt（包含想法上下文）
-  │     └─ 关联 Thought ID
+  ├─ 3. 构造 AgentRequest
+  │     ├─ sessionId = initiative-*
+  │     ├─ source = system("initiative:{thoughtId}")
+  │     └─ systemPrompt 注入想法上下文
   │
-  ├─ 4. 通过 MessageGateway 投递开场白
-  │     ├─ Web 渠道：SSE 推送新对话消息
-  │     ├─ IM 渠道：通过 ChannelDeliveryDispatcher 发送
-  │     └─ 多渠道：按用户偏好选择主渠道
+  ├─ 4. 调用 AgentOrchestrator
+  │     ├─ 主动开场白作为用户可见输入
+  │     ├─ 复用正常 Agent 循环与工具能力
+  │     └─ 不在 initiative 内维护独立投递/fallback 分支
   │
   └─ 5. 更新 Thought 状态 → EXPRESSED
         └─ 记录 conversationId，等待后续交互
@@ -628,22 +623,11 @@ Gatekeeper 放行
 
 Agent 在这个 session 中拥有完整的工具能力（记忆、Skill、MCP 等），可以真正帮用户做事。
 
-### 10.5 渠道投递策略
+### 10.5 渠道边界
 
-```java
-public record DeliveryStrategy(
-    String primaryChannel,       // 主渠道（用户最近活跃的渠道）
-    boolean allowFallback,       // 主渠道不可达时是否降级
-    @Nullable String fallbackChannel  // 降级渠道
-) {}
-```
-
-渠道选择逻辑：
-1. 用户当前正在使用的渠道（如果有活跃 session）→ 在该渠道发起
-2. 用户最近使用的渠道 → 在该渠道发起
-3. 默认 Web 渠道 → SSE 推送
-
-对于 IM 渠道（飞书/钉钉/企微），开场白作为一条普通消息发送。用户回复后自动进入对话模式。
+主动层只负责把想法转成一段正常 Agent 对话：`Thought → AgentRequest → AgentOrchestrator`。
+具体消息投递、前端展示和外部 IM 适配由现有交互层处理，initiative 包内不保留
+`DeliveryStrategy`、fallbackChannel 或专用渠道路由。
 
 
 ---
@@ -736,16 +720,15 @@ CREATE INDEX idx_outcomes_type ON initiative_outcomes(outcome_type);
 | 集成点 | 方式 | 说明 |
 |--------|------|------|
 | 发起对话 | 构造 AgentRequest + 调用 AgentOrchestrator | 主动发起的对话走完整 Agent 循环 |
-| InteractionSource | 新增 `InteractionSource.initiative(thoughtId)` | 标识来源为主动引擎 |
+| InteractionSource | `InteractionSource.system("initiative:{thoughtId}")` | 标识来源为主动引擎 |
 | 对话结束回调 | 订阅 ConversationCompletedEvent | 收集对话结果用于学习 |
 
 ### 13.3 消息网关 / 通知
 
 | 集成点 | 方式 | 说明 |
 |--------|------|------|
-| Web 渠道 | SSE 推送新对话事件 | 前端收到后展示为新对话气泡 |
-| IM 渠道 | ChannelDeliveryDispatcher | 作为普通消息发送到用户的 IM |
-| 渠道选择 | 查询用户最近活跃渠道 | 选择最合适的投递渠道 |
+| Agent 会话链路 | AgentOrchestrator | 主动层不直接投递消息 |
+| Web/IM 展示 | 交互层现有机制 | 后续如需多渠道偏好，在交互层统一扩展 |
 
 ### 13.4 工作流 / 定时任务
 
@@ -817,31 +800,21 @@ lifepilot:
     # 总开关
     enabled: true
 
-    # 信号源
-    signals:
-      # 时间流逝检查间隔（用于到期类提醒）
-      time-check-interval-minutes: 60
-      # 空闲检测阈值
-      idle-threshold-minutes: 30
-
-    # 思考器
-    thinker:
-      # 空闲思考开关
-      idle-thinking-enabled: true
-      # 每次空闲思考的 token 预算
-      idle-thinking-max-tokens: 2000
-      # 每天最多空闲思考几次
-      idle-thinking-max-daily: 4
-      # 思考用的 LLM 场景
-      llm-scene: thinking
-
     # 想法池
-    thought-pool:
-      max-active-thoughts: 20
-      brewing-ttl-hours: 72
-      ready-ttl-hours: 48
-      expressed-cooldown-days: 7
-      dismissed-cooldown-days: 3
+    max-active-thoughts: 20
+    brewing-ttl-hours: 72
+    ready-ttl-hours: 48
+
+    # 表达门控
+    daily-max-expressions: 3
+    min-interval-minutes: 60
+    quiet-hours-start: "23:00"
+    quiet-hours-end: "08:00"
+
+    # 空闲思考
+    idle-thinking-enabled: true
+    idle-threshold-minutes: 30
+    idle-thinking-max-daily: 4
 
     # 想法成熟度演化（thought-maturity-evolution）
     maturity:
@@ -853,22 +826,6 @@ lifepilot:
       decay-grace-hours: 24           # 衰减宽限期（期内不衰减）
       deadline-pull-window-hours: 72  # 截止升温窗口
 
-    # 表达门控
-    gatekeeper:
-      daily-max-expressions: 3
-      min-interval-minutes: 60
-      quiet-hours-start: "23:00"
-      quiet-hours-end: "08:00"
-      boundary-window-minutes: 10
-
-    # 对话发起
-    initiator:
-      # 开场白生成的 LLM 场景
-      llm-scene: chat
-      # 开场白最大长度（字符）
-      max-opening-length: 200
-      # 无回应超时（超时后标记为 IGNORED）
-      no-response-timeout-hours: 24
 ```
 
 ---
@@ -958,7 +915,7 @@ initiative/
 | 去重粒度 | intentKey（意图级） | 从根本上解决重复打扰 |
 | 门控方式 | 纯规则硬约束 | 简单可预测，不依赖 LLM 判断时机 |
 | 学习方式 | 对话结果 → 偏好衰减 | 比 LinUCB 简单得多，冷启动友好 |
-| 渠道投递 | 复用 MessageGateway + ChannelDeliveryDispatcher | 不重新发明轮子 |
+| 渠道投递 | 复用正常 Agent 会话链路 | 主动层不维护独立渠道/fallback 分支 |
 | 与 Agent 引擎关系 | 主动对话 = 正常 AgentRequest | 复用全部 Agent 能力 |
 | 旧系统处理 | 完全删除 | 不兼容，不迁移，干净重来 |
 | 空闲思考 | 独立 LLM 场景 + token 预算 | 可配置为便宜模型，控制成本 |
@@ -1005,5 +962,4 @@ initiative/
 3. **主动行为的 A2UI 支持**：开场白是否可以包含 UI 组件（如待办列表、日历卡片）？
 4. **语音渠道**：如果未来接入语音，主动发起的对话如何处理？
 5. **与工作流的边界**：复杂的主动行为（如每周复盘）是否应该走工作流而非 Initiative？
-6. **执行链路的可逆性**：AUTO_EXECUTE 执行的操作如何支持撤销？需要工具层面的 undo 能力？
-7. **授权的自然语言理解**：用户说"以后这种事直接做"时，如何准确识别"这种事"的边界？
+6. **后台执行边界**：如果未来重新引入非对话式后台执行，需要独立 spec 一次性设计授权、审计和撤销模型。
