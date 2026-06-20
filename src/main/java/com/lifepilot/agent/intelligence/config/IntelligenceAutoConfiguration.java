@@ -29,26 +29,36 @@ public class IntelligenceAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public CapabilityAssessor capabilityAssessor() {
+    public CapabilityAssessor capabilityAssessor(IntelligenceProperties properties) {
         log.info("智能层: 注册 CapabilityAssessor");
-        return new CapabilityAssessor();
+        return new CapabilityAssessor(properties.getToolHealthWindowSize());
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public EnvironmentPerceptor environmentPerceptor(CapabilityAssessor capabilityAssessor) {
+    public EnvironmentPerceptor environmentPerceptor(
+            CapabilityAssessor capabilityAssessor,
+            IntelligenceProperties properties) {
         log.info("智能层: 注册 EnvironmentPerceptor");
-        return new EnvironmentPerceptor(capabilityAssessor);
+        return new EnvironmentPerceptor(capabilityAssessor, properties.getEnvironmentCacheTtlSeconds());
     }
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "lifepilot.intelligence", name = "decision-signal-enabled",
+            havingValue = "true", matchIfMissing = true)
     public AdaptiveDecisionEngine adaptiveDecisionEngine(
             CapabilityAssessor capabilityAssessor,
             EnvironmentPerceptor environmentPerceptor,
+            IntelligenceProperties properties,
             @Nullable IntentMatcher intentMatcher) {
-        log.info("智能层: 注册 AdaptiveDecisionEngine, intentMatcher={}",
-                intentMatcher != null ? "available" : "unavailable");
-        return new AdaptiveDecisionEngine(capabilityAssessor, environmentPerceptor, intentMatcher);
+        log.info("智能层: 注册 AdaptiveDecisionEngine, intentMatcher={}, minExperienceConfidence={}",
+                intentMatcher != null ? "available" : "unavailable",
+                properties.getMinExperienceConfidence());
+        return new AdaptiveDecisionEngine(
+                capabilityAssessor,
+                environmentPerceptor,
+                intentMatcher,
+                properties.getMinExperienceConfidence());
     }
 }

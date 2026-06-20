@@ -2,13 +2,12 @@ package com.lifepilot.agent.intelligence;
 
 import com.lifepilot.agent.intelligence.model.EnvironmentState;
 import com.lifepilot.agent.intelligence.model.ToolHealth;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 环境感知器 — 感知当前执行环境状态，为决策提供上下文。
@@ -21,34 +20,37 @@ import java.util.Set;
  */
 public class EnvironmentPerceptor {
 
-    private static final Logger log = LoggerFactory.getLogger(EnvironmentPerceptor.class);
-    private static final long CACHE_TTL_MS = 60_000; // 60 秒缓存
-
     private final CapabilityAssessor capabilityAssessor;
+    private final long cacheTtlMs;
 
-    private volatile EnvironmentState cachedState;
-    private volatile long cachedAt;
+    private final ConcurrentHashMap<Set<String>, CachedEnvironmentState> cache = new ConcurrentHashMap<>();
 
-    public EnvironmentPerceptor(CapabilityAssessor capabilityAssessor) {
+    public EnvironmentPerceptor(CapabilityAssessor capabilityAssessor, int cacheTtlSeconds) {
+        if (cacheTtlSeconds <= 0) {
+            throw new IllegalArgumentException("环境感知缓存时间必须大于 0 秒");
+        }
         this.capabilityAssessor = capabilityAssessor;
+        this.cacheTtlMs = cacheTtlSeconds * 1000L;
     }
 
     /**
-     * 感知当前环境状态。结果缓存 60 秒。
+     * 感知当前环境状态。结果按工具集合缓存，避免不同工具集互相污染。
      *
      * @param relevantToolIds 当前任务可能用到的工具 ID 集合
      * @return 环境状态快照
      */
     public EnvironmentState perceive(Set<String> relevantToolIds) {
         long now = System.currentTimeMillis();
-        if (cachedState != null && (now - cachedAt) < CACHE_TTL_MS) {
-            return cachedState;
+        Set<String> cacheKey = Set.copyOf(relevantToolIds);
+        var cached = cache.get(cacheKey);
+        if (cached != null && (now - cached.cachedAt()) < cacheTtlMs) {
+            return cached.state();
         }
 
         var timeContext = EnvironmentState.TimeContext.now();
 
         Map<String, ToolHealth> toolHealthMap = new HashMap<>();
-        for (String toolId : relevantToolIds) {
+        for (String toolId : cacheKey) {
             toolHealthMap.put(toolId, capabilityAssessor.getToolHealth(toolId));
         }
 
@@ -59,8 +61,7 @@ public class EnvironmentPerceptor {
                 Instant.now()
         );
 
-        this.cachedState = state;
-        this.cachedAt = now;
+        cache.put(cacheKey, new CachedEnvironmentState(state, now));
         return state;
     }
 
@@ -69,5 +70,8 @@ public class EnvironmentPerceptor {
      */
     public EnvironmentState perceive() {
         return perceive(Set.of());
+    }
+
+    private record CachedEnvironmentState(EnvironmentState state, long cachedAt) {
     }
 }

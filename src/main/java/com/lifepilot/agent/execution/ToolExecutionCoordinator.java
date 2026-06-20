@@ -634,7 +634,7 @@ public class ToolExecutionCoordinator {
             });
         }
 
-        // 智能层：记录工具执行结果到 CapabilityAssessor（异步，不阻塞主链路）
+        // 智能层：轻量记录工具执行结果到 CapabilityAssessor。
         if (capabilityAssessor != null) {
             long latencyMs = outcome.duration().toMillis();
             String error = outcome.success() ? null : outcome.observationOutput();

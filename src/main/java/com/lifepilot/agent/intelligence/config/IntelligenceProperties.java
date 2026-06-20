@@ -21,11 +21,11 @@ public class IntelligenceProperties {
     /** 决策信号注入开关，默认 true。 */
     private boolean decisionSignalEnabled = true;
 
-    /** 经验匹配最低置信度（低于此值不注入），默认 0.6。 */
+    /** 经验匹配最低置信度，低于此值不注入决策信号，默认 0.6。 */
     private float minExperienceConfidence = 0.6f;
 
-    /** 能力评估缓存时间（秒），默认 60。 */
-    private int capabilityCacheTtlSeconds = 60;
+    /** 环境感知缓存时间（秒），默认 60。 */
+    private int environmentCacheTtlSeconds = 60;
 
     /** 工具健康滑动窗口大小，默认 20。 */
     private int toolHealthWindowSize = 20;

@@ -33,25 +33,30 @@ import java.util.Set;
 public class AdaptiveDecisionEngine {
 
     private static final Logger log = LoggerFactory.getLogger(AdaptiveDecisionEngine.class);
-    private static final float MIN_EXPERIENCE_CONFIDENCE = 0.6f;
 
     private final CapabilityAssessor capabilityAssessor;
     private final EnvironmentPerceptor environmentPerceptor;
     @Nullable
     private final IntentMatcher intentMatcher;
+    private final float minExperienceConfidence;
 
     public AdaptiveDecisionEngine(CapabilityAssessor capabilityAssessor,
                                   EnvironmentPerceptor environmentPerceptor,
-                                  @Nullable IntentMatcher intentMatcher) {
+                                  @Nullable IntentMatcher intentMatcher,
+                                  float minExperienceConfidence) {
+        if (minExperienceConfidence < 0.0f || minExperienceConfidence > 1.0f) {
+            throw new IllegalArgumentException("经验匹配最低置信度必须在 0 到 1 之间");
+        }
         this.capabilityAssessor = capabilityAssessor;
         this.environmentPerceptor = environmentPerceptor;
         this.intentMatcher = intentMatcher;
+        this.minExperienceConfidence = minExperienceConfidence;
     }
 
     /**
      * 构建决策增强信号 — 在 ContextAssembler.assemble() 中调用。
      *
-     * <p>返回结构化的决策信号，由 ContextAssembler 格式化后注入系统提示词。</p>
+     * <p>返回结构化的决策信号，由 ContextAssembler 格式化后注入上下文消息。</p>
      *
      * @param goal             用户目标/意图文本
      * @param availableToolIds 当前可用工具集
@@ -70,7 +75,7 @@ public class AdaptiveDecisionEngine {
             var environmentHint = formatEnvironmentHint(environment);
 
             // 4. 检测风险
-            var risks = detectRisks(availableToolIds, environment);
+            var risks = detectRisks(environment);
 
             var signal = new DecisionSignal(experienceHint, toolHints, risks, environmentHint);
 
@@ -138,7 +143,7 @@ public class AdaptiveDecisionEngine {
         }
         try {
             var match = intentMatcher.match(goal);
-            if (match.isEmpty() || match.get().score() < MIN_EXPERIENCE_CONFIDENCE) {
+            if (match.isEmpty() || match.get().score() < minExperienceConfidence) {
                 return null;
             }
             var template = match.get().template();
@@ -171,7 +176,7 @@ public class AdaptiveDecisionEngine {
         return hints;
     }
 
-    private List<DecisionSignal.RiskWarning> detectRisks(Set<String> toolIds, EnvironmentState env) {
+    private List<DecisionSignal.RiskWarning> detectRisks(EnvironmentState env) {
         var risks = new ArrayList<DecisionSignal.RiskWarning>();
 
         // 检测不健康工具

@@ -22,6 +22,11 @@ public record DecisionSignal(
     /** 环境提示。 */
     @Nullable String environmentHint
 ) {
+    public DecisionSignal {
+        toolHints = List.copyOf(toolHints);
+        risks = List.copyOf(risks);
+    }
+
     public boolean isEmpty() {
         return experienceHint == null && toolHints.isEmpty() && risks.isEmpty()
                 && (environmentHint == null || environmentHint.isBlank());

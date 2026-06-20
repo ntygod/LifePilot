@@ -86,7 +86,7 @@ ReactAgentLoop.asyncPostProcess（Virtual Thread）
 ```
 ToolExecutionCoordinator 每次工具执行后 → capabilityAssessor.recordExecution(toolId, success, latency, error)
 ContextAssembler.buildDecisionSignalSection() → adaptiveDecisionEngine.buildDecisionSignal(goal, toolIds)
-   → 有不健康工具/环境提示时，注入 <decision_context> 到系统提示词（无信号则返回 null 不注入）
+   → 有经验/不健康工具/环境提示时，注入 <decision_context> 上下文消息（无信号则返回 null 不注入）
 ```
 
 ---

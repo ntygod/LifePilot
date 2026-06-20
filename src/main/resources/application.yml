@@ -61,7 +61,7 @@ lifepilot:
     enabled: true
     decision-signal-enabled: true
     min-experience-confidence: 0.6
-    capability-cache-ttl-seconds: 60
+    environment-cache-ttl-seconds: 60
     tool-health-window-size: 20
   # ===== 主动引擎配置 =====
   initiative:
