@@ -59,7 +59,7 @@ public class ProactiveController {
     @Nullable
     private final AgentConfigProperties agentConfig;
 
-    /** 主动引擎（initiative）—— 仅当 lifepilot.initiative.enabled=true 时存在。 */
+    /** 主动引擎（initiative）—— 默认启用，但缺少依赖或显式关闭时不存在。 */
     @Nullable
     private final com.lifepilot.agent.initiative.InitiativeEngine initiativeEngine;
 
@@ -90,7 +90,7 @@ public class ProactiveController {
     public ApiResponse<Map<String, Object>> triggerThink() {
         if (initiativeEngine == null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "主动引擎未启用（lifepilot.initiative.enabled=false）");
+                    "主动引擎不可用（请检查 lifepilot.initiative.enabled 和 Agent/记忆依赖）");
         }
         initiativeEngine.idleThink();
         var thoughts = initiativeEngine.snapshotActiveThoughts();

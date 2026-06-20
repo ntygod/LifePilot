@@ -111,4 +111,18 @@ class ThoughtPool_演化单元测试 {
 
         assertThat(p.findById("t1").orElseThrow().state()).isEqualTo(ThoughtState.DISMISSED);
     }
+
+    @Test
+    void cleanup_READY无成熟时间时按创建时间过期() {
+        var p = new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(1), null, MODEL);
+        Instant createdAt = Instant.now().minus(Duration.ofHours(2));
+        var ev = new Evidence("memory_entity", "e-ready", null, "摘要", "hint", createdAt, 0.8f);
+        p.submit(new Thought("t1", "intent-ready", ThoughtKind.FOLLOW_UP, "概要", List.of(ev),
+                0.8f, 0.8f, createdAt, null, ThoughtState.READY, null, createdAt));
+
+        int cleaned = p.cleanup();
+
+        assertThat(cleaned).isEqualTo(1);
+        assertThat(p.findById("t1").orElseThrow().state()).isEqualTo(ThoughtState.DISMISSED);
+    }
 }

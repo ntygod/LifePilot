@@ -30,9 +30,14 @@ public class DefaultThinker implements Thinker {
 
     /** 记忆注意力服务（memory-proactive-foundation）—— 空闲思考的"该关注什么"来源。 */
     private final MemoryAttentionService memoryAttentionService;
+    private final float readyThreshold;
 
-    public DefaultThinker(MemoryAttentionService memoryAttentionService) {
+    public DefaultThinker(MemoryAttentionService memoryAttentionService, float readyThreshold) {
+        if (readyThreshold < 0.0f || readyThreshold > 1.0f) {
+            throw new IllegalArgumentException("想法就绪阈值必须在 0 到 1 之间");
+        }
         this.memoryAttentionService = memoryAttentionService;
+        this.readyThreshold = readyThreshold;
     }
 
     @Override
@@ -41,7 +46,7 @@ public class DefaultThinker implements Thinker {
             case Signal.ConversationEnded ended -> processConversationEnded(ended);
             case Signal.TimeElapsed elapsed -> processTimeElapsed(elapsed);
             case Signal.MemoryChanged changed -> processMemoryChanged(changed);
-            case Signal.UserReturned returned -> Optional.empty(); // 暂不处理
+            case Signal.UserReturned returned -> processUserReturned(returned);
             case Signal.IdleDetected idle -> Optional.empty(); // 由 idleThink() 处理
         };
     }
@@ -93,7 +98,7 @@ public class DefaultThinker implements Thinker {
                 maturity,
                 now,
                 matureAt,
-                maturity >= 0.6f ? ThoughtState.READY : ThoughtState.BREWING,
+                maturity >= readyThreshold ? ThoughtState.READY : ThoughtState.BREWING,
                 null,
                 now);
     }
@@ -103,8 +108,7 @@ public class DefaultThinker implements Thinker {
     }
 
     private Optional<Thought> processConversationEnded(Signal.ConversationEnded signal) {
-        // 对话结束后暂不自动生成想法（避免过度打扰）
-        // 后续可以分析对话摘要，检测是否有未完成的承诺
+        // 对话结束事件只作为表达窗口；避免从摘要规则派生高噪声想法。
         return Optional.empty();
     }
 
@@ -142,7 +146,12 @@ public class DefaultThinker implements Thinker {
     }
 
     private Optional<Thought> processMemoryChanged(Signal.MemoryChanged signal) {
-        // 记忆变化暂不触发想法（避免噪音）
+        // 记忆变化由 MemoryAttentionService 聚合后在 idleThink 中消费，避免单条写入直接打扰用户。
+        return Optional.empty();
+    }
+
+    private Optional<Thought> processUserReturned(Signal.UserReturned signal) {
+        // 用户回归只改变表达时机，不直接生成新想法。
         return Optional.empty();
     }
 }

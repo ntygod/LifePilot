@@ -23,6 +23,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import java.time.Duration;
+import java.time.Clock;
 import java.time.LocalTime;
 
 /**
@@ -35,7 +36,7 @@ import java.time.LocalTime;
 @EnableConfigurationProperties(InitiativeProperties.class)
 @ConditionalOnBean({AgentOrchestrator.class, MemoryAttentionService.class})
 @ConditionalOnProperty(prefix = "lifepilot.initiative", name = "enabled",
-        havingValue = "true")
+        havingValue = "true", matchIfMissing = true)
 public class InitiativeAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(InitiativeAutoConfiguration.class);
@@ -76,7 +77,8 @@ public class InitiativeAutoConfiguration {
                 props.getDailyMaxExpressions(),
                 Duration.ofMinutes(props.getMinIntervalMinutes()),
                 LocalTime.parse(props.getQuietHoursStart()),
-                LocalTime.parse(props.getQuietHoursEnd())
+                LocalTime.parse(props.getQuietHoursEnd()),
+                Clock.systemDefaultZone()
         );
     }
 
@@ -92,9 +94,10 @@ public class InitiativeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public DefaultThinker defaultThinker(MemoryAttentionService memoryAttentionService) {
+    public DefaultThinker defaultThinker(MemoryAttentionService memoryAttentionService,
+                                         InitiativeProperties props) {
         log.info("主动引擎: 注册 DefaultThinker");
-        return new DefaultThinker(memoryAttentionService);
+        return new DefaultThinker(memoryAttentionService, props.getMaturity().getReadyThreshold());
     }
 
     @Bean

@@ -15,8 +15,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,7 +44,8 @@ class InitiativeEngine_表达链路测试 {
     }
 
     private Gatekeeper gatekeeper() {
-        return new Gatekeeper(10, Duration.ZERO, LocalTime.of(23, 0), LocalTime.of(8, 0));
+        return new Gatekeeper(10, Duration.ZERO, LocalTime.of(1, 0), LocalTime.of(2, 0),
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private Thought readyReminder(String id) {

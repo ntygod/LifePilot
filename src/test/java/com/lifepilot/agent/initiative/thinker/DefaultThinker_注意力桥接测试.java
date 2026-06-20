@@ -34,7 +34,7 @@ class DefaultThinker_注意力桥接测试 {
                 item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.8f),
                 item(AttentionKind.NEGLECTED, "g2", "学小提琴", 0.6f),
                 item(AttentionKind.CONNECTION, "g3", "网易", 0.7f)));
-        var thinker = new DefaultThinker(attention);
+        var thinker = new DefaultThinker(attention, 0.6f);
 
         var thoughts = thinker.idleThink();
 
@@ -48,7 +48,7 @@ class DefaultThinker_注意力桥接测试 {
         var attention = mock(MemoryAttentionService.class);
         when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
                 item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.9f)));
-        var thinker = new DefaultThinker(attention);
+        var thinker = new DefaultThinker(attention, 0.6f);
 
         var thoughts = thinker.idleThink();
 
@@ -64,7 +64,7 @@ class DefaultThinker_注意力桥接测试 {
         var attention = mock(MemoryAttentionService.class);
         when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
                 item(AttentionKind.EVOLVING, "g1", "演进中目标", 0.5f)));
-        var thinker = new DefaultThinker(attention);
+        var thinker = new DefaultThinker(attention, 0.6f);
 
         assertThat(thinker.idleThink()).isEmpty();
     }
@@ -73,8 +73,20 @@ class DefaultThinker_注意力桥接测试 {
     void 注意力计算失败时返回空列表() {
         var attention = mock(MemoryAttentionService.class);
         when(attention.computeAttention(any(), anyInt())).thenThrow(new IllegalStateException("索引暂不可用"));
-        var thinker = new DefaultThinker(attention);
+        var thinker = new DefaultThinker(attention, 0.6f);
 
         assertThat(thinker.idleThink()).isEmpty();
+    }
+
+    @Test
+    void 就绪阈值升高时高分注意力仍可保持酝酿() {
+        var attention = mock(MemoryAttentionService.class);
+        when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
+                item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.9f)));
+        var thinker = new DefaultThinker(attention, 0.95f);
+
+        var thoughts = thinker.idleThink();
+
+        assertThat(thoughts).singleElement().satisfies(t -> assertThat(t.isReady()).isFalse());
     }
 }

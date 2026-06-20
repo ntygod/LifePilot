@@ -37,7 +37,7 @@ public record Thought(
     @Nullable Instant lastReinforcedAt
 ) {
     public boolean isReady() {
-        return state == ThoughtState.READY && maturity >= 0.6f;
+        return state == ThoughtState.READY;
     }
 
     public boolean isExpired(java.time.Duration maxBrewingTtl, java.time.Duration maxReadyTtl) {
@@ -45,8 +45,9 @@ public record Thought(
         if (state == ThoughtState.BREWING) {
             return java.time.Duration.between(createdAt, now).compareTo(maxBrewingTtl) > 0;
         }
-        if (state == ThoughtState.READY && matureAt != null) {
-            return java.time.Duration.between(matureAt, now).compareTo(maxReadyTtl) > 0;
+        if (state == ThoughtState.READY) {
+            Instant readySince = matureAt != null ? matureAt : createdAt;
+            return java.time.Duration.between(readySince, now).compareTo(maxReadyTtl) > 0;
         }
         return false;
     }

@@ -7,10 +7,10 @@ import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * Initiative Engine 事件监听器 — 将 Spring Event 转化为 Signal 并驱动主动引擎。
@@ -30,7 +30,7 @@ public class InitiativeEventListener {
     private final InitiativeEngine engine;
     private volatile Instant lastExpressedAt;
     private volatile int todayExpressedCount;
-    private volatile int todayDate;
+    private volatile LocalDate countedDate;
 
     public InitiativeEventListener(InitiativeEngine engine) {
         this.engine = engine;
@@ -84,18 +84,18 @@ public class InitiativeEventListener {
     }
 
     private int getTodayCount() {
-        int today = java.time.LocalDate.now().getDayOfYear();
-        if (today != todayDate) {
-            todayDate = today;
+        LocalDate today = LocalDate.now();
+        if (!today.equals(countedDate)) {
+            countedDate = today;
             todayExpressedCount = 0;
         }
         return todayExpressedCount;
     }
 
     private void incrementTodayCount() {
-        int today = java.time.LocalDate.now().getDayOfYear();
-        if (today != todayDate) {
-            todayDate = today;
+        LocalDate today = LocalDate.now();
+        if (!today.equals(countedDate)) {
+            countedDate = today;
             todayExpressedCount = 0;
         }
         todayExpressedCount++;
