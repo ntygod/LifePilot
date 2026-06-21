@@ -1,5 +1,6 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
 import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
@@ -8,8 +9,12 @@ import com.lifepilot.agent.task.proactive.behavior.MemoryAttentionBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.reminder.ReminderBehavior;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.notification.NotificationService;
 import com.lifepilot.notification.config.NotificationProperties;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -32,6 +37,11 @@ class ProactiveAutoConfiguration_集成测试 {
         var notificationProperties = mock(NotificationProperties.class);
         when(notificationProperties.getDefaultUserId()).thenReturn("test-user");
         var memoryBridge = mock(ProactiveMemoryBridge.class);
+        var agentConfig = new AgentConfigProperties();
+        var generationRouter = mock(GenerationRouter.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var semanticMemory = mock(SemanticMemory.class);
+        var episodicMemory = mock(EpisodicMemory.class);
 
         var config = new ProactiveAutoConfiguration();
 
@@ -62,11 +72,12 @@ class ProactiveAutoConfiguration_集成测试 {
         assertThat(scheduleExtractor).isNotNull();
 
         // ── 行为插件 Bean ──
-        FollowUpBehavior followUpBehavior = config.followUpBehavior(memoryBridge, null, null, null);
+        FollowUpBehavior followUpBehavior = config.followUpBehavior(
+                memoryBridge, generationRouter, promptRegistry, agentConfig);
         assertThat(followUpBehavior).isNotNull();
         assertThat(followUpBehavior.name()).isEqualTo("follow-up");
 
-        InsightBehavior insightBehavior = config.insightBehavior(null, null, null);
+        InsightBehavior insightBehavior = config.insightBehavior(semanticMemory, generationRouter, promptRegistry);
         assertThat(insightBehavior).isNotNull();
         assertThat(insightBehavior.name()).isEqualTo("insight");
 
@@ -78,7 +89,7 @@ class ProactiveAutoConfiguration_集成测试 {
         assertThat(memoryAttentionBehavior).isNotNull();
         assertThat(memoryAttentionBehavior.name()).isEqualTo("memory-attention");
 
-        ReportBehavior reportBehavior = config.reportBehavior(null, null, null, null);
+        ReportBehavior reportBehavior = config.reportBehavior(episodicMemory, generationRouter, agentConfig, promptRegistry);
         assertThat(reportBehavior).isNotNull();
         assertThat(reportBehavior.name()).isEqualTo("report");
 
@@ -97,6 +108,11 @@ class ProactiveAutoConfiguration_集成测试 {
         var notificationProperties = mock(NotificationProperties.class);
         when(notificationProperties.getDefaultUserId()).thenReturn("test-user");
         var memoryBridge = mock(ProactiveMemoryBridge.class);
+        var agentConfig = new AgentConfigProperties();
+        var generationRouter = mock(GenerationRouter.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var semanticMemory = mock(SemanticMemory.class);
+        var episodicMemory = mock(EpisodicMemory.class);
 
         var config = new ProactiveAutoConfiguration();
 
@@ -110,11 +126,11 @@ class ProactiveAutoConfiguration_集成测试 {
         var activationPolicy = config.behaviorActivationPolicy();
 
         var behaviors = java.util.List.<ProactiveBehavior>of(
-                config.followUpBehavior(memoryBridge, null, null, null),
-                config.insightBehavior(null, null, null),
+                config.followUpBehavior(memoryBridge, generationRouter, promptRegistry, agentConfig),
+                config.insightBehavior(semanticMemory, generationRouter, promptRegistry),
                 config.clipboardBehavior(buffer),
                 config.memoryAttentionBehavior(memoryBridge),
-                config.reportBehavior(null, null, null, null)
+                config.reportBehavior(episodicMemory, generationRouter, agentConfig, promptRegistry)
         );
 
         ProactiveEngine engine = config.proactiveEngine(
@@ -145,17 +161,22 @@ class ProactiveAutoConfiguration_集成测试 {
     void 行为插件名称唯一() {
         var config = new ProactiveAutoConfiguration();
         var memoryBridge = mock(ProactiveMemoryBridge.class);
+        var agentConfig = new AgentConfigProperties();
+        var generationRouter = mock(GenerationRouter.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var semanticMemory = mock(SemanticMemory.class);
+        var episodicMemory = mock(EpisodicMemory.class);
         var jdbcTemplate = mock(JdbcTemplate.class);
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
         var trustUpgrade = config.trustUpgradeService(autonomyRepo, null, null, null);
         var buffer = config.clipboardIntentBuffer();
 
         var behaviors = java.util.List.<ProactiveBehavior>of(
-                config.followUpBehavior(memoryBridge, null, null, null),
-                config.insightBehavior(null, null, null),
+                config.followUpBehavior(memoryBridge, generationRouter, promptRegistry, agentConfig),
+                config.insightBehavior(semanticMemory, generationRouter, promptRegistry),
                 config.clipboardBehavior(buffer),
                 config.memoryAttentionBehavior(memoryBridge),
-                config.reportBehavior(null, null, null, null)
+                config.reportBehavior(episodicMemory, generationRouter, agentConfig, promptRegistry)
         );
 
         var names = behaviors.stream().map(ProactiveBehavior::name).toList();

@@ -7,7 +7,6 @@ import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.time.*;
 import java.util.*;
@@ -27,25 +26,25 @@ public class ReportBehavior extends AbstractLlmBehavior {
     private static final DayOfWeek WEEKLY_REPORT_DAY = DayOfWeek.FRIDAY;
     private static final String PROMPT_KEY = "generation/proactive-report";
 
-    @Nullable private final EpisodicMemory episodicMemory;
-    @Nullable private final AgentConfigProperties config;
+    private final EpisodicMemory episodicMemory;
+    private final AgentConfigProperties config;
 
-    public ReportBehavior(@Nullable EpisodicMemory episodicMemory,
-                          @Nullable GenerationRouter generationRouter,
-                          @Nullable AgentConfigProperties config,
-                          @Nullable PromptRegistry promptRegistry) {
+    public ReportBehavior(EpisodicMemory episodicMemory,
+                          GenerationRouter generationRouter,
+                          AgentConfigProperties config,
+                          PromptRegistry promptRegistry) {
         super(generationRouter, promptRegistry);
-        this.episodicMemory = episodicMemory;
-        this.config = config;
+        this.episodicMemory = Objects.requireNonNull(episodicMemory, "情节记忆不能为空");
+        this.config = Objects.requireNonNull(config, "Agent 配置不能为空");
     }
 
     private int dailyReportHour() {
-        return config != null ? config.getTask().getProactiveEngineDailyReportHour() : 20;
+        return config.getTask().getProactiveEngineDailyReportHour();
     }
 
     @Override
     protected Duration llmTimeout() {
-        return Duration.ofSeconds(config != null ? config.getTask().getProactiveEngineLlmTimeoutSeconds() : 15);
+        return Duration.ofSeconds(config.getTask().getProactiveEngineLlmTimeoutSeconds());
     }
 
     @Override
@@ -111,20 +110,11 @@ public class ReportBehavior extends AbstractLlmBehavior {
     }
 
     @Override
-    protected String fallbackContent(ProactiveCandidate candidate) {
-        String reportType = candidate.detail() instanceof String s ? s : "daily";
-        return "weekly".equals(reportType)
-                ? "本周你和我聊了不少话题，要看看本周总结吗？"
-                : "今天的对话有一些值得回顾的内容，要看看今日小结吗？";
-    }
-
-    @Override
     protected DeliveryLevel suggestLevel(ProactiveCandidate candidate, ContextPacket ctx) {
         return DeliveryLevel.NOTIFY;
     }
 
     private String gatherConversationSummaries(Duration lookback) {
-        if (episodicMemory == null) return "";
         try {
             var recent = episodicMemory.getRecent(lookback);
             if (recent.isEmpty()) return "";

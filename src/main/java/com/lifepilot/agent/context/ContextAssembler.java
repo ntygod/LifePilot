@@ -662,7 +662,7 @@ public class ContextAssembler {
      * 构建决策信号文本，由 AdaptiveDecisionEngine 生成并注入上下文消息。
      *
      * <p>智能层 Phase 1：将历史经验、工具能力、环境状态等信号注入 LLM 上下文，
-     * 让 LLM 基于更丰富的信息做出更好的决策。失败时静默降级，不影响主流程。</p>
+     * 让 LLM 基于更丰富的信息做出更好的决策。辅助信号失败时记录日志并跳过本段。</p>
      */
     @Nullable
     private String buildDecisionSignalSection(ReactAgentState state) {
@@ -678,7 +678,7 @@ public class ContextAssembler {
             }
             return null;
         } catch (Exception e) {
-            log.debug("决策信号构建失败，静默跳过: {}", e.getMessage());
+            log.warn("决策信号构建失败，跳过本轮信号注入: {}", e.getMessage());
             return null;
         }
     }

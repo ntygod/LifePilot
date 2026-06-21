@@ -10,6 +10,7 @@ import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -36,20 +37,19 @@ public class AdaptiveDecisionEngine {
 
     private final CapabilityAssessor capabilityAssessor;
     private final EnvironmentPerceptor environmentPerceptor;
-    @Nullable
     private final IntentMatcher intentMatcher;
     private final float minExperienceConfidence;
 
     public AdaptiveDecisionEngine(CapabilityAssessor capabilityAssessor,
                                   EnvironmentPerceptor environmentPerceptor,
-                                  @Nullable IntentMatcher intentMatcher,
+                                  IntentMatcher intentMatcher,
                                   float minExperienceConfidence) {
         if (minExperienceConfidence < 0.0f || minExperienceConfidence > 1.0f) {
             throw new IllegalArgumentException("经验匹配最低置信度必须在 0 到 1 之间");
         }
-        this.capabilityAssessor = capabilityAssessor;
-        this.environmentPerceptor = environmentPerceptor;
-        this.intentMatcher = intentMatcher;
+        this.capabilityAssessor = Objects.requireNonNull(capabilityAssessor, "能力评估器不能为空");
+        this.environmentPerceptor = Objects.requireNonNull(environmentPerceptor, "环境感知器不能为空");
+        this.intentMatcher = Objects.requireNonNull(intentMatcher, "意图匹配器不能为空");
         this.minExperienceConfidence = minExperienceConfidence;
     }
 
@@ -63,33 +63,28 @@ public class AdaptiveDecisionEngine {
      * @return 决策信号（可能为空信号，表示无额外建议）
      */
     public DecisionSignal buildDecisionSignal(String goal, Set<String> availableToolIds) {
-        try {
-            // 1. 匹配历史经验
-            var experienceHint = matchExperience(goal);
+        // 1. 匹配历史经验
+        var experienceHint = matchExperience(goal);
 
-            // 2. 评估工具能力
-            var toolHints = assessTools(availableToolIds);
+        // 2. 评估工具能力
+        var toolHints = assessTools(availableToolIds);
 
-            // 3. 感知环境
-            var environment = environmentPerceptor.perceive(availableToolIds);
-            var environmentHint = formatEnvironmentHint(environment);
+        // 3. 感知环境
+        var environment = environmentPerceptor.perceive(availableToolIds);
+        var environmentHint = formatEnvironmentHint(environment);
 
-            // 4. 检测风险
-            var risks = detectRisks(environment);
+        // 4. 检测风险
+        var risks = detectRisks(environment);
 
-            var signal = new DecisionSignal(experienceHint, toolHints, risks, environmentHint);
+        var signal = new DecisionSignal(experienceHint, toolHints, risks, environmentHint);
 
-            if (!signal.isEmpty()) {
-                log.debug("决策引擎: 生成信号, experience={}, tools={}, risks={}",
-                        experienceHint != null ? experienceHint.templateName() : "none",
-                        toolHints.size(), risks.size());
-            }
-
-            return signal;
-        } catch (Exception e) {
-            log.warn("决策引擎: 构建信号失败，降级为空信号: {}", e.getMessage());
-            return DecisionSignal.empty();
+        if (!signal.isEmpty()) {
+            log.debug("决策引擎: 生成信号, experience={}, tools={}, risks={}",
+                    experienceHint != null ? experienceHint.templateName() : "none",
+                    toolHints.size(), risks.size());
         }
+
+        return signal;
     }
 
     /**
@@ -138,25 +133,20 @@ public class AdaptiveDecisionEngine {
 
     @Nullable
     private DecisionSignal.ExperienceHint matchExperience(String goal) {
-        if (intentMatcher == null || goal == null || goal.isBlank()) {
+        if (goal == null || goal.isBlank()) {
             return null;
         }
-        try {
-            var match = intentMatcher.match(goal);
-            if (match.isEmpty() || match.get().score() < minExperienceConfidence) {
-                return null;
-            }
-            var template = match.get().template();
-            return new DecisionSignal.ExperienceHint(
-                    template.name(),
-                    match.get().score(),
-                    template.description() != null ? template.description() : template.name(),
-                    template.successRate() < 0.7f ? "历史成功率偏低(" + template.successRate() + ")" : null
-            );
-        } catch (Exception e) {
-            log.debug("决策引擎: IntentMatcher 查询失败: {}", e.getMessage());
+        var match = intentMatcher.match(goal);
+        if (match.isEmpty() || match.get().score() < minExperienceConfidence) {
             return null;
         }
+        var template = match.get().template();
+        return new DecisionSignal.ExperienceHint(
+                template.name(),
+                match.get().score(),
+                template.description() != null ? template.description() : template.name(),
+                template.successRate() < 0.7f ? "历史成功率偏低(" + template.successRate() + ")" : null
+        );
     }
 
     private List<DecisionSignal.ToolCapabilityHint> assessTools(Set<String> toolIds) {

@@ -1,5 +1,6 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ClipboardIntentBuffer;
 import com.lifepilot.agent.task.proactive.behavior.FollowUpBehavior;
@@ -9,8 +10,12 @@ import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntentType;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +28,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +60,9 @@ class ProactiveEngine_集成测试 {
     private DecisionGate decisionGate;
     private DeliveryEngine deliveryEngine;
     private ClipboardIntentBuffer clipboardBuffer;
+    private GenerationRouter generationRouter;
+    private PromptRegistry promptRegistry;
+    private AgentConfigProperties agentConfig;
 
     @BeforeEach
     void 初始化() {
@@ -100,6 +109,13 @@ class ProactiveEngine_集成测试 {
         decisionGate = new DecisionGate(trustUpgradeService, null);
         deliveryEngine = new DeliveryEngine(notificationService, queuedActionRepo);
         clipboardBuffer = new ClipboardIntentBuffer();
+        generationRouter = mock(GenerationRouter.class);
+        promptRegistry = mock(PromptRegistry.class);
+        agentConfig = new AgentConfigProperties();
+        when(promptRegistry.render(anyString(), anyMap())).thenReturn("prompt");
+        when(generationRouter.call(eq("chat"), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any(java.time.Duration.class)))
+                .thenReturn(llmResponse("这件事最近进展怎么样？"));
     }
 
     @AfterEach
@@ -125,11 +141,20 @@ class ProactiveEngine_集成测试 {
                 BoundaryState.UNKNOWN, FocusMode.NORMAL);
     }
 
+    private FollowUpBehavior followUp(ProactiveMemoryBridge bridge) {
+        return new FollowUpBehavior(bridge, generationRouter, promptRegistry, agentConfig);
+    }
+
+    private LlmResponse llmResponse(String content) {
+        return new LlmResponse(content, null, null, List.of(), Map.of(),
+                1, 1, null, 0, "mock", "mock", 1L, false);
+    }
+
     // ── 测试用例 ──
 
     @Test
     void 心跳SILENT_用户空闲时跳过检测() {
-        var followUp = new FollowUpBehavior(mock(ProactiveMemoryBridge.class), null, null, null);
+        var followUp = followUp(mock(ProactiveMemoryBridge.class));
         var engine = buildEngine(List.of(followUp));
 
         Instant now = Instant.now();
@@ -146,7 +171,7 @@ class ProactiveEngine_集成测试 {
 
     @Test
     void 心跳FAST_无候选时快速返回() {
-        var followUp = new FollowUpBehavior(mock(ProactiveMemoryBridge.class), null, null, null);
+        var followUp = followUp(mock(ProactiveMemoryBridge.class));
         var clipboard = new ClipboardBehavior(clipboardBuffer);
         var engine = buildEngine(List.of(followUp, clipboard));
 
@@ -171,7 +196,7 @@ class ProactiveEngine_集成测试 {
         when(bridge.getActiveGoals()).thenReturn(List.of(goal));
         when(bridge.enrichGoalContext(anyString(), anyString())).thenReturn("");
 
-        var followUp = new FollowUpBehavior(bridge, null, null, null);
+        var followUp = followUp(bridge);
         var engine = buildEngine(List.of(followUp));
 
         var ctx = buildCtx(now, null, null, 30, null, null);
@@ -258,7 +283,7 @@ class ProactiveEngine_集成测试 {
         when(bridge.getActiveGoals()).thenReturn(List.of(goal));
         when(bridge.enrichGoalContext(anyString(), anyString())).thenReturn("");
 
-        var followUp = new FollowUpBehavior(bridge, null, null, null);
+        var followUp = followUp(bridge);
         var engine = buildEngine(List.of(followUp));
 
         var ctx = buildCtx(now, null, null, 30, null, null);

@@ -1,14 +1,21 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.modelservice.model.GenerationCapability;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.*;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -16,12 +23,20 @@ import static org.mockito.Mockito.*;
 class ReportBehavior_单元测试 {
 
     EpisodicMemory episodicMemory;
+    GenerationRouter generationRouter;
+    PromptRegistry promptRegistry;
     ReportBehavior behavior;
 
     @BeforeEach
     void setUp() {
         episodicMemory = mock(EpisodicMemory.class);
-        behavior = new ReportBehavior(episodicMemory, null, null, null);
+        generationRouter = mock(GenerationRouter.class);
+        promptRegistry = mock(PromptRegistry.class);
+        when(promptRegistry.render(anyString(), anyMap())).thenReturn("prompt");
+        when(generationRouter.call(eq("chat"), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any(Duration.class)))
+                .thenReturn(llmResponse("今天主要推进了项目计划，并明确了下一步。"));
+        behavior = new ReportBehavior(episodicMemory, generationRouter, new AgentConfigProperties(), promptRegistry);
     }
 
     @Test
@@ -78,9 +93,34 @@ class ReportBehavior_单元测试 {
         assertThat(actions).isEmpty();
     }
 
+    @Test
+    void reason_有对话时使用LLM生成报告() {
+        when(episodicMemory.getRecent(any(Duration.class))).thenReturn(List.of(conversation("项目计划有新进展")));
+        var candidate = new ProactiveCandidate("c1", "report", "daily-report",
+                "今日小结", 0.5f, "每日报告时段", "daily");
+
+        var actions = behavior.reason(List.of(candidate), testCtx());
+
+        assertThat(actions).hasSize(1);
+        assertThat(actions.getFirst().content()).contains("项目计划");
+        verify(promptRegistry, atLeastOnce()).render(eq("generation/proactive-report"), anyMap());
+        verify(generationRouter, atLeastOnce()).call(eq("chat"), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any(Duration.class));
+    }
+
     private ContextPacket testCtx() {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
                 null, null, 0, 5, null, null, 30, null, null,
                 BoundaryState.UNKNOWN, FocusMode.NORMAL);
+    }
+
+    private ConversationRecord conversation(String summary) {
+        var now = Instant.now();
+        return new ConversationRecord("c1", "s1", "项目计划", summary, List.of(), now.minusSeconds(600), now);
+    }
+
+    private LlmResponse llmResponse(String content) {
+        return new LlmResponse(content, null, null, List.of(), Map.of(),
+                1, 1, null, 0, "mock", "mock", 1L, false);
     }
 }

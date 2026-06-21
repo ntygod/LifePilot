@@ -29,6 +29,7 @@ import com.lifepilot.notification.config.NotificationProperties;
 import com.lifepilot.prompt.PromptRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
@@ -140,18 +141,20 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({GenerationRouter.class, PromptRegistry.class, AgentConfigProperties.class})
     public FollowUpBehavior followUpBehavior(ProactiveMemoryBridge memoryBridge,
-                                              @Autowired(required = false) GenerationRouter generationRouter,
-                                              @Autowired(required = false) PromptRegistry promptRegistry,
-                                              @Autowired(required = false) AgentConfigProperties config) {
+                                              GenerationRouter generationRouter,
+                                              PromptRegistry promptRegistry,
+                                              AgentConfigProperties config) {
         return new FollowUpBehavior(memoryBridge, generationRouter, promptRegistry, config);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public InsightBehavior insightBehavior(@Autowired(required = false) SemanticMemory semanticMemory,
-                                           @Autowired(required = false) GenerationRouter generationRouter,
-                                           @Autowired(required = false) PromptRegistry promptRegistry) {
+    @ConditionalOnBean({SemanticMemory.class, GenerationRouter.class, PromptRegistry.class})
+    public InsightBehavior insightBehavior(SemanticMemory semanticMemory,
+                                           GenerationRouter generationRouter,
+                                           PromptRegistry promptRegistry) {
         return new InsightBehavior(semanticMemory, generationRouter, promptRegistry);
     }
 
@@ -171,11 +174,12 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({EpisodicMemory.class, GenerationRouter.class, PromptRegistry.class, AgentConfigProperties.class})
     public ReportBehavior reportBehavior(
-            @Autowired(required = false) EpisodicMemory episodicMemory,
-            @Autowired(required = false) GenerationRouter generationRouter,
-            @Autowired(required = false) AgentConfigProperties config,
-            @Autowired(required = false) PromptRegistry promptRegistry) {
+            EpisodicMemory episodicMemory,
+            GenerationRouter generationRouter,
+            AgentConfigProperties config,
+            PromptRegistry promptRegistry) {
         return new ReportBehavior(episodicMemory, generationRouter, config, promptRegistry);
     }
 

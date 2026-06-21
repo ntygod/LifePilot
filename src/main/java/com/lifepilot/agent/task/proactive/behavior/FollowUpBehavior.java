@@ -12,7 +12,6 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -22,7 +21,7 @@ import java.util.*;
  * 主动追问行为插件 — 基于 L3 目标实体追踪用户未完成的目标。
  *
  * <p>detect: 查询 L3 GOAL 实体，过滤创建超过 24h 且追问次数合理的。
- * reason: 使用 LLM 生成自然追问（带回退模板），自动注入画像/经验 + 目标上下文。</p>
+ * reason: 使用 LLM 生成自然追问，自动注入画像/经验 + 目标上下文。</p>
  *
  * @author zsg
  * @since 2026-04-14
@@ -33,31 +32,31 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
     private static final String PROMPT_KEY = "generation/proactive-follow-up";
 
     private final ProactiveMemoryBridge memoryBridge;
-    @Nullable private final AgentConfigProperties config;
+    private final AgentConfigProperties config;
 
     public FollowUpBehavior(ProactiveMemoryBridge memoryBridge,
-                            @Nullable GenerationRouter generationRouter,
-                            @Nullable PromptRegistry promptRegistry,
-                            @Nullable AgentConfigProperties config) {
+                            GenerationRouter generationRouter,
+                            PromptRegistry promptRegistry,
+                            AgentConfigProperties config) {
         super(generationRouter, promptRegistry);
-        this.memoryBridge = memoryBridge;
-        this.config = config;
+        this.memoryBridge = Objects.requireNonNull(memoryBridge, "主动记忆桥接不能为空");
+        this.config = Objects.requireNonNull(config, "Agent 配置不能为空");
     }
 
     private Duration minAge() {
-        return Duration.ofHours(config != null ? config.getTask().getProactiveEngineFollowUpMinAgeHours() : 24);
+        return Duration.ofHours(config.getTask().getProactiveEngineFollowUpMinAgeHours());
     }
 
     @Override
     public BehaviorLayer layer() { return BehaviorLayer.FACT_DRIVEN; }
 
     private int maxCheckCount() {
-        return config != null ? config.getTask().getProactiveEngineFollowUpMaxCheckCount() : 5;
+        return config.getTask().getProactiveEngineFollowUpMaxCheckCount();
     }
 
     @Override
     protected Duration llmTimeout() {
-        return Duration.ofSeconds(config != null ? config.getTask().getProactiveEngineLlmTimeoutSeconds() : 15);
+        return Duration.ofSeconds(config.getTask().getProactiveEngineLlmTimeoutSeconds());
     }
 
     @Override
@@ -119,11 +118,6 @@ public class FollowUpBehavior extends AbstractLlmBehavior {
             }
         }
         return vars;
-    }
-
-    @Override
-    protected String fallbackContent(ProactiveCandidate candidate) {
-        return "你之前提到过「" + candidate.title() + "」，进展怎么样了？";
     }
 
     @Override

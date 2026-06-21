@@ -4,10 +4,10 @@ import com.lifepilot.agent.intelligence.AdaptiveDecisionEngine;
 import com.lifepilot.agent.intelligence.CapabilityAssessor;
 import com.lifepilot.agent.intelligence.EnvironmentPerceptor;
 import com.lifepilot.memory.store.procedural.IntentMatcher;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -45,15 +45,15 @@ public class IntelligenceAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(IntentMatcher.class)
     @ConditionalOnProperty(prefix = "lifepilot.intelligence", name = "decision-signal-enabled",
             havingValue = "true", matchIfMissing = true)
     public AdaptiveDecisionEngine adaptiveDecisionEngine(
             CapabilityAssessor capabilityAssessor,
             EnvironmentPerceptor environmentPerceptor,
             IntelligenceProperties properties,
-            @Nullable IntentMatcher intentMatcher) {
-        log.info("智能层: 注册 AdaptiveDecisionEngine, intentMatcher={}, minExperienceConfidence={}",
-                intentMatcher != null ? "available" : "unavailable",
+            IntentMatcher intentMatcher) {
+        log.info("智能层: 注册 AdaptiveDecisionEngine, minExperienceConfidence={}",
                 properties.getMinExperienceConfidence());
         return new AdaptiveDecisionEngine(
                 capabilityAssessor,

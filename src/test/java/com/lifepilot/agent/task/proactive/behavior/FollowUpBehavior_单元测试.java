@@ -1,11 +1,17 @@
 package com.lifepilot.agent.task.proactive.behavior;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.*;
 import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
+import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.modelservice.model.GenerationCapability;
+import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
@@ -17,12 +23,20 @@ import static org.mockito.Mockito.*;
 class FollowUpBehavior_单元测试 {
 
     ProactiveMemoryBridge memoryBridge;
+    GenerationRouter generationRouter;
+    PromptRegistry promptRegistry;
     FollowUpBehavior behavior;
 
     @BeforeEach
     void setUp() {
         memoryBridge = mock(ProactiveMemoryBridge.class);
-        behavior = new FollowUpBehavior(memoryBridge, null, null, null);
+        generationRouter = mock(GenerationRouter.class);
+        promptRegistry = mock(PromptRegistry.class);
+        when(promptRegistry.render(anyString(), anyMap())).thenReturn("prompt");
+        when(generationRouter.call(eq("chat"), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any(Duration.class)))
+                .thenReturn(llmResponse("买耳机这件事最近进展怎么样？"));
+        behavior = new FollowUpBehavior(memoryBridge, generationRouter, promptRegistry, new AgentConfigProperties());
     }
 
     @Test
@@ -67,7 +81,7 @@ class FollowUpBehavior_单元测试 {
     }
 
     @Test
-    void reason_使用回退模板生成追问() {
+    void reason_使用LLM生成追问() {
         var goal = new GoalView("e1", "买耳机", null, 0.5f, 3,
                 Instant.now().minusSeconds(3 * 86400), 1, null, Map.of());
         when(memoryBridge.enrichGoalContext("e1", "买耳机")).thenReturn("");
@@ -113,5 +127,10 @@ class FollowUpBehavior_单元测试 {
         return new ContextPacket("u1", Instant.now(), ZoneId.of("Asia/Shanghai"),
                 null, null, 0, 5, null, null, 30, null, null,
                 BoundaryState.UNKNOWN, FocusMode.NORMAL);
+    }
+
+    private LlmResponse llmResponse(String content) {
+        return new LlmResponse(content, null, null, List.of(), Map.of(),
+                1, 1, null, 0, "mock", "mock", 1L, false);
     }
 }

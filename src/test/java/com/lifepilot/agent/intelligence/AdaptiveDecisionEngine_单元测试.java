@@ -59,6 +59,16 @@ class AdaptiveDecisionEngine_单元测试 {
                 .hasMessageContaining("经验匹配最低置信度");
     }
 
+    @Test
+    void 构造器应拒绝缺少意图匹配器() {
+        var assessor = new CapabilityAssessor(10);
+        var perceptor = new EnvironmentPerceptor(assessor, 60);
+
+        assertThatThrownBy(() -> new AdaptiveDecisionEngine(assessor, perceptor, null, 0.8f))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("意图匹配器不能为空");
+    }
+
     private AdaptiveDecisionEngine newEngine(IntentMatcher intentMatcher, float minExperienceConfidence) {
         var assessor = new CapabilityAssessor(10);
         return new AdaptiveDecisionEngine(

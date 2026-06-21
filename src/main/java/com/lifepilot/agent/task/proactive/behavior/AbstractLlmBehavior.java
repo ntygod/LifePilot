@@ -14,12 +14,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * LLM 行为插件基类 — 抽取 reason() 公共逻辑（模板方法模式）。
+ * LLM 行为插件基类 — 抽取 reason() 公共逻辑。
  *
- * <p>子类只需实现 {@link #buildPromptVariables}（构建 prompt 变量）
- * 和 {@link #fallbackContent}（LLM 不可用时的回退文案）。</p>
+ * <p>子类提供 prompt key 和变量，基类统一完成提示词渲染与生成调用。</p>
  *
  * @author zsg
  * @since 2026-04-14
@@ -28,13 +28,13 @@ public abstract class AbstractLlmBehavior implements ProactiveBehavior {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractLlmBehavior.class);
 
-    @Nullable protected final GenerationRouter generationRouter;
-    @Nullable protected final PromptRegistry promptRegistry;
+    protected final GenerationRouter generationRouter;
+    protected final PromptRegistry promptRegistry;
 
-    protected AbstractLlmBehavior(@Nullable GenerationRouter generationRouter,
-                                   @Nullable PromptRegistry promptRegistry) {
-        this.generationRouter = generationRouter;
-        this.promptRegistry = promptRegistry;
+    protected AbstractLlmBehavior(GenerationRouter generationRouter,
+                                  PromptRegistry promptRegistry) {
+        this.generationRouter = Objects.requireNonNull(generationRouter, "生成路由器不能为空");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "提示词注册表不能为空");
     }
 
     /** 子类提供的 prompt 模板 key（如 "generation/proactive-follow-up"）。 */
@@ -45,9 +45,6 @@ public abstract class AbstractLlmBehavior implements ProactiveBehavior {
 
     /** 子类构建 prompt 变量。 */
     protected abstract Map<String, Object> buildPromptVariables(ProactiveCandidate candidate, ContextPacket ctx);
-
-    /** LLM 不可用时的回退文案。 */
-    protected abstract String fallbackContent(ProactiveCandidate candidate);
 
     /** 子类指定建议的投递级别（默认根据分数）。 */
     protected DeliveryLevel suggestLevel(ProactiveCandidate candidate, ContextPacket ctx) {
@@ -65,29 +62,30 @@ public abstract class AbstractLlmBehavior implements ProactiveBehavior {
         return actions;
     }
 
-    /** 生成内容：LLM 优先 → 回退模板。画像和经验自动注入 prompt context。 */
+    /** 生成内容：画像和经验自动注入 prompt context。 */
+    @Nullable
     protected String generateContent(ProactiveCandidate candidate, ContextPacket ctx) {
-        if (generationRouter != null && promptRegistry != null) {
-            try {
-                var vars = new java.util.HashMap<>(buildPromptVariables(candidate, ctx));
-                // 自动注入画像和反思经验 — 让 LLM "懂"用户
-                if (ctx.userProfile() != null) {
-                    vars.put("userProfile", ctx.userProfile());
-                }
-                if (ctx.recentExperience() != null) {
-                    vars.put("recentExperience", ctx.recentExperience());
-                }
-                String prompt = promptRegistry.render(promptKey(), vars);
-                LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
-                        GenerationCapability.CHAT, llmTimeout());
-                if (response != null && !response.content().isBlank()) {
-                    return response.content().strip();
-                }
-            } catch (Exception e) {
-                log.debug("{}: LLM 生成失败，使用回退模板: {}", name(), e.getMessage());
+        try {
+            var vars = new java.util.HashMap<>(buildPromptVariables(candidate, ctx));
+            // 自动注入画像和反思经验 — 让 LLM "懂"用户
+            if (ctx.userProfile() != null) {
+                vars.put("userProfile", ctx.userProfile());
             }
+            if (ctx.recentExperience() != null) {
+                vars.put("recentExperience", ctx.recentExperience());
+            }
+            String prompt = promptRegistry.render(promptKey(), vars);
+            LlmResponse response = generationRouter.call("chat", prompt, null, null, null,
+                    GenerationCapability.CHAT, llmTimeout());
+            if (response != null && response.content() != null && !response.content().isBlank()) {
+                return response.content().strip();
+            }
+            log.debug("{}: LLM 返回空内容，跳过候选: topic={}", name(), candidate.topicKey());
+        } catch (Exception e) {
+            log.debug("{}: LLM 生成失败，跳过候选: topic={}, error={}",
+                    name(), candidate.topicKey(), e.getMessage());
         }
-        return fallbackContent(candidate);
+        return null;
     }
 
     /** 格式化当前时间（供 prompt 变量使用）。 */

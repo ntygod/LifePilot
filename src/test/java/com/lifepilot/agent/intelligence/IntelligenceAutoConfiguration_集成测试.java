@@ -1,11 +1,13 @@
 package com.lifepilot.agent.intelligence;
 
 import com.lifepilot.agent.intelligence.config.IntelligenceAutoConfiguration;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * IntelligenceAutoConfiguration 集成测试。
@@ -16,7 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class IntelligenceAutoConfiguration_集成测试 {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(IntelligenceAutoConfiguration.class));
+            .withConfiguration(AutoConfigurations.of(IntelligenceAutoConfiguration.class))
+            .withBean(IntentMatcher.class, () -> mock(IntentMatcher.class));
 
     @Test
     void 默认应注册智能层组件() {
@@ -25,6 +28,17 @@ class IntelligenceAutoConfiguration_集成测试 {
             assertThat(context).hasSingleBean(EnvironmentPerceptor.class);
             assertThat(context).hasSingleBean(AdaptiveDecisionEngine.class);
         });
+    }
+
+    @Test
+    void 缺少意图匹配器时不注册决策引擎() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(IntelligenceAutoConfiguration.class))
+                .run(context -> {
+                    assertThat(context).hasSingleBean(CapabilityAssessor.class);
+                    assertThat(context).hasSingleBean(EnvironmentPerceptor.class);
+                    assertThat(context).doesNotHaveBean(AdaptiveDecisionEngine.class);
+                });
     }
 
     @Test

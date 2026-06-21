@@ -8,7 +8,6 @@ import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -18,7 +17,7 @@ import java.util.*;
  * 洞察推送行为插件 — 基于语义记忆中的实体变化检测模式趋势。
  *
  * <p>detect: 查询最近新增/更新的实体（目标、习惯、话题），识别变化趋势。
- * reason: 使用 LLM 生成可解释的洞察（带回退模板），自动注入画像/经验。</p>
+ * reason: 使用 LLM 生成可解释的洞察，自动注入画像/经验。</p>
  *
  * @author zsg
  * @since 2026-04-14
@@ -31,13 +30,13 @@ public class InsightBehavior extends AbstractLlmBehavior {
     private static final Set<EntityType> WATCHED_TYPES = Set.of(
             EntityType.GOAL, EntityType.HABIT, EntityType.TOPIC, EntityType.PROJECT);
 
-    @Nullable private final SemanticMemory semanticMemory;
+    private final SemanticMemory semanticMemory;
 
-    public InsightBehavior(@Nullable SemanticMemory semanticMemory,
-                           @Nullable GenerationRouter generationRouter,
-                           @Nullable PromptRegistry promptRegistry) {
+    public InsightBehavior(SemanticMemory semanticMemory,
+                           GenerationRouter generationRouter,
+                           PromptRegistry promptRegistry) {
         super(generationRouter, promptRegistry);
-        this.semanticMemory = semanticMemory;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "语义记忆不能为空");
     }
 
     @Override
@@ -51,8 +50,6 @@ public class InsightBehavior extends AbstractLlmBehavior {
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
-        if (semanticMemory == null) return List.of();
-
         var candidates = new ArrayList<ProactiveCandidate>();
         Instant recentSince = ctx.now().minus(RECENT_WINDOW);
 
@@ -89,12 +86,6 @@ public class InsightBehavior extends AbstractLlmBehavior {
                 "changeType", candidate.rationale(),
                 "changeDetail", candidate.title(),
                 "relatedTopics", "");
-    }
-
-    @Override
-    protected String fallbackContent(ProactiveCandidate candidate) {
-        String entityName = candidate.title().replaceAll("^[^:]+:\\s*", "");
-        return "最近你在关注「" + entityName + "」方面有新的变化，想聊聊吗？";
     }
 
     private float computeScore(TemporalEntity entity, Instant now) {
