@@ -5,6 +5,7 @@ import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -77,7 +79,7 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
         extractor = new RealtimeExtractor(
                 generationRouter, semanticMemory, props, validator,
                 jdbcTemplate, promptRegistry, snapshotRepository,
-                null, null, null, null, null);
+                Clock.systemUTC(), new MemoryAccessPolicy(), null, null, null);
     }
 
     @Test

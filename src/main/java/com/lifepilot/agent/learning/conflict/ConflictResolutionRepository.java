@@ -10,14 +10,14 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 冲突裁决队列访问层 — 操作 V15 引入的 {@code conflict_resolution_queue} 表。
+ * 冲突裁决队列访问层 — 操作 {@code conflict_resolution_queue} 表。
  *
  * <p>生命周期：
  * <ol>
  *     <li>{@link #enqueue} 在主 upsert 产出新实体后入队，状态 {@code PENDING}；</li>
  *     <li>{@link ConflictResolutionService} 异步拉起 LLM 裁决后，成功走
  *         {@link #markResolved}，失败走 {@link #markFailed}；</li>
- *     <li>Phase 3 Task 28 的重试 Cron 通过 {@link #findFailedRetriable} 拉取
+ *     <li>重试 Cron 通过 {@link #findFailedRetriable} 拉取
  *         可重试项再次入队。</li>
  * </ol>
  *
@@ -80,7 +80,7 @@ public class ConflictResolutionRepository {
     }
 
     /**
-     * 裁决失败时标记为 {@code FAILED} 并累计 attempt_count —— 供 Phase 3 重试 Cron
+     * 裁决失败时标记为 {@code FAILED} 并累计 attempt_count —— 供重试 Cron
      * 判断是否继续重试。
      *
      * @param id     队列项 id
@@ -99,7 +99,7 @@ public class ConflictResolutionRepository {
     }
 
     /**
-     * 查询可重试的 {@code FAILED} 项 — Phase 3 Task 28 ConflictResolutionRetry Cron 使用。
+     * 查询可重试的 {@code FAILED} 项，供 ConflictResolutionRetry Cron 使用。
      *
      * @param maxAttempts 最大重试次数（即 attempt_count &lt; maxAttempts 才返回）
      * @return 符合条件的队列项，按 created_at 升序

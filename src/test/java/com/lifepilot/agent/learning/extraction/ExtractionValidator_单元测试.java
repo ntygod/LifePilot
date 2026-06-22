@@ -833,6 +833,20 @@ class ExtractionValidator_单元测试 {
             assertThat(result.description()).isEqualTo("项目描述");
             assertThat(result.properties()).isEqualTo(properties);
         }
+
+        @Test
+        void 非法temporality应进入拒绝候选() {
+            var decision = new AudnDecision(AudnOperation.ADD, "临时状态", EntityType.GOAL,
+                    "描述足够长以通过基础校验", Map.of(), 0.9f, 0.5f,
+                    "TEMP", null, "USER_EXPLICIT", "用户明确陈述");
+
+            var result = validator.validateWithResult(List.of(decision));
+
+            assertThat(result.validDecisions()).isEmpty();
+            assertThat(result.rejectedDecisions())
+                    .singleElement()
+                    .satisfies(rejected -> assertThat(rejected.reason()).isEqualTo("INVALID_TEMPORALITY"));
+        }
     }
 
     // ------------------------------------------------------------------

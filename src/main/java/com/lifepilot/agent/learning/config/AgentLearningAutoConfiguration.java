@@ -57,6 +57,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -121,19 +122,17 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public RelationExtractionStep relationExtractionStep(@Nullable GenerationRouter generationRouter,
+    @ConditionalOnBean(GenerationRouter.class)
+    public RelationExtractionStep relationExtractionStep(GenerationRouter generationRouter,
                                                          PromptRegistry promptRegistry) {
-        if (generationRouter == null) {
-            log.warn("记忆模块: GenerationRouter 不可用，RelationExtractionStep 将无法抽取关系");
-            return null;
-        }
         log.info("记忆模块: 注册 RelationExtractionStep");
         return new RelationExtractionStep(generationRouter, promptRegistry, properties);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public RealtimeExtractor realtimeExtractor(@Nullable GenerationRouter generationRouter,
+    @ConditionalOnBean(GenerationRouter.class)
+    public RealtimeExtractor realtimeExtractor(GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
@@ -144,10 +143,7 @@ public class AgentLearningAutoConfiguration {
                                                @Nullable MemoryExtractionCandidateRepository candidateRepository,
                                                @Nullable MemoryInjectionDetector injectionDetector,
                                                @Nullable RelationExtractionStep relationExtractionStep) {
-        if (generationRouter == null) {
-            log.warn("记忆模块: GenerationRouter 不可用，RealtimeExtractor 将无法执行提取");
-        }
-        log.info("记忆模块: 注册 RealtimeExtractor, generationRouterAvailable={}", generationRouter != null ? "yes" : "no");
+        log.info("记忆模块: 注册 RealtimeExtractor");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
                 jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy,
                 candidateRepository, injectionDetector, relationExtractionStep);
@@ -163,22 +159,22 @@ public class AgentLearningAutoConfiguration {
     }
 
     /**
-     * Task 24：语义冲突裁决服务。注入到 {@link SemanticMemory} 后，
-     * upsert 末尾会异步触发 LLM 裁决（REPLACE / COEXIST / TIMELINE）。
+     * 语义冲突裁决服务。注入到 {@link SemanticMemory} 后，upsert 末尾会异步触发
+     * LLM 裁决（REPLACE / COEXIST / TIMELINE）。
      *
      * <p>采用 setter 注入挂到 semanticMemory 上，避免构造器循环依赖
      * （ConflictResolutionService 的 applyVerdict 路径需要回调 semanticMemory）。
      */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(GenerationRouter.class)
     public ConflictResolutionService conflictResolutionService(
-            @Nullable GenerationRouter generationRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             VectorSearcher vectorSearcher,
             ConflictResolutionRepository conflictResolutionRepository,
             SemanticMemory semanticMemory) {
-        log.info("记忆模块: 注册 ConflictResolutionService, generationRouterAvailable={}",
-                generationRouter != null ? "yes" : "no");
+        log.info("记忆模块: 注册 ConflictResolutionService");
         var service = new ConflictResolutionService(
                 generationRouter, promptRegistry, vectorSearcher,
                 conflictResolutionRepository, semanticMemory);

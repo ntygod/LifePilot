@@ -4,10 +4,10 @@ import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository;
 import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
@@ -34,6 +34,7 @@ import java.util.List;
  * @since 2026-04-23
  */
 @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnBean(ConflictResolutionService.class)
 @Component
 public class ConflictResolutionRetry {
 
@@ -43,12 +44,11 @@ public class ConflictResolutionRetry {
     private static final int MAX_ATTEMPTS = 3;
 
     private final ConflictResolutionRepository queueRepository;
-    @Nullable
     private final ConflictResolutionService resolutionService;
     private final SemanticMemory semanticMemory;
 
     public ConflictResolutionRetry(ConflictResolutionRepository queueRepository,
-                                   @Nullable ConflictResolutionService resolutionService,
+                                   ConflictResolutionService resolutionService,
                                    SemanticMemory semanticMemory) {
         this.queueRepository = queueRepository;
         this.resolutionService = resolutionService;
@@ -70,10 +70,6 @@ public class ConflictResolutionRetry {
      * 测试友好入口 —— 与 {@link #retry()} 共享逻辑，方便手动触发和单元测试直接调用。
      */
     public void retryNow() {
-        if (resolutionService == null) {
-            log.debug("ConflictResolutionRetry 冲突裁决服务不可用，跳过");
-            return;
-        }
         var pending = queueRepository.findFailedRetriable(MAX_ATTEMPTS);
         if (pending.isEmpty()) {
             log.debug("ConflictResolutionRetry 无可重试项，跳过");

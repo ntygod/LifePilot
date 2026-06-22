@@ -59,7 +59,6 @@ public class RealtimeExtractor {
     /** SHORT_TERM 类记忆的默认 TTL — 30 天后 expires_at 触发 Cron 回收。 */
     private static final Duration SHORT_TERM_TTL = Duration.ofDays(30);
 
-    @Nullable
     private final GenerationRouter generationRouter;
     private final SemanticMemory semanticMemory;
     private final ExtractionValidator extractionValidator;
@@ -69,7 +68,7 @@ public class RealtimeExtractor {
     private final PromptRegistry promptRegistry;
     @Nullable
     private final ChatTurnMemorySnapshotRepository snapshotRepository;
-    /** Task 23：时钟注入 — 用于非持久性实体自动推导 {@code expires_at}，便于单测注入固定时钟。 */
+    /** 时钟注入 — 用于非持久性实体自动推导 {@code expires_at}，便于单测注入固定时钟。 */
     private final Clock clock;
     private final MemoryAccessPolicy memoryAccessPolicy;
     @Nullable
@@ -83,21 +82,20 @@ public class RealtimeExtractor {
     private final boolean relationExtractionEnabled;
 
     /**
-     * 唯一构造器 —— 注入全部协作依赖。可选依赖允许传 null：
-     * {@code clock} 为 null 时退化为 {@link Clock#systemUTC()}，
-     * {@code memoryAccessPolicy} 为 null 时使用默认放行策略，
-     * {@code candidateRepository}/{@code injectionDetector}/{@code relationExtractionStep}
-     * 为 null 时对应能力关闭。
+     * 唯一构造器 —— 注入全部协作依赖。
+     *
+     * <p>{@code candidateRepository}/{@code injectionDetector}/{@code relationExtractionStep}
+     * 为 null 时对应增强能力关闭。</p>
      */
-    public RealtimeExtractor(@Nullable GenerationRouter generationRouter,
+    public RealtimeExtractor(GenerationRouter generationRouter,
                              SemanticMemory semanticMemory,
                              AgentLearningProperties properties,
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
                              @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
-                             @Nullable Clock clock,
-                             @Nullable MemoryAccessPolicy memoryAccessPolicy,
+                             Clock clock,
+                             MemoryAccessPolicy memoryAccessPolicy,
                              @Nullable MemoryExtractionCandidateRepository candidateRepository,
                              @Nullable MemoryInjectionDetector injectionDetector,
                              @Nullable RelationExtractionStep relationExtractionStep) {
@@ -109,8 +107,8 @@ public class RealtimeExtractor {
         this.jdbcTemplate = jdbcTemplate;
         this.promptRegistry = promptRegistry;
         this.snapshotRepository = snapshotRepository;
-        this.clock = clock != null ? clock : Clock.systemUTC();
-        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
+        this.clock = clock;
+        this.memoryAccessPolicy = memoryAccessPolicy;
         this.candidateRepository = candidateRepository;
         this.injectionDetector = injectionDetector;
         this.relationExtractionStep = relationExtractionStep;
@@ -152,10 +150,6 @@ public class RealtimeExtractor {
 
     void extract(String sessionId, @Nullable String turnId, String userMessage, String aiResponse) {
         if (userMessage == null || userMessage.isBlank()) return;
-        if (generationRouter == null) {
-            log.debug("实时实体提取: GenerationRouter 不可用，跳过");
-            return;
-        }
         ChatTurnMemorySnapshot snapshot = resolveSnapshot(sessionId, turnId);
         MemoryWriteContext writeContext = memoryAccessPolicy.resolveAutoLearningWriteContext(snapshot, sessionId, turnId);
         if (writeContext == null) {
@@ -377,22 +371,17 @@ public class RealtimeExtractor {
         }
     }
 
-    /** 解析 LLM 返回的 AUDN 决策，兼容数组 [...] 和对象 {"decisions":[...]} 两种格式。 */
+    /** 解析 LLM 返回的 AUDN 决策数组。 */
     private List<AudnDecision> parseAudnResponse(String content) {
         if (content == null || content.isBlank()) return List.of();
         String repaired = JsonOutputParser.repairJson(content);
-        if (repaired.stripLeading().startsWith("[")) {
-            // LLM 直接返回数组格式
-            try {
-                return MAPPER.readValue(repaired,
-                        MAPPER.getTypeFactory().constructCollectionType(List.class, AudnDecision.class));
-            } catch (Exception e) {
-                log.warn("AUDN 数组格式解析失败，尝试对象格式: {}", e.getMessage());
-            }
+        try {
+            return MAPPER.readValue(repaired,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, AudnDecision.class));
+        } catch (Exception e) {
+            log.warn("AUDN 数组解析失败: {}", e.getMessage());
+            return List.of();
         }
-        // 尝试对象格式 {"decisions": [...]}
-        var result = JsonOutputParser.parse(repaired, AudnDecisionList.class);
-        return result != null ? result.decisions() : List.of();
     }
 
     /** 构建增强版 AUDN 提示词：注入已有实体上下文 + 提取标准 + 评分要求。 */
@@ -478,7 +467,6 @@ public class RealtimeExtractor {
         var now = Instant.now();
         float confidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float importance = safeFloat(decision.importanceScore(), 0.5f);
-        // Task 23：从 LLM 响应解析 temporality / expires_at，非持久类自动推导过期时间
         Temporality temporality = resolveTemporality(decision);
         Instant expiresAt = resolveExpiresAt(decision, temporality);
         var entity = withDecisionQuality(new TemporalEntity(
@@ -531,7 +519,6 @@ public class RealtimeExtractor {
         float newConfidence = safeFloat(decision.extractionConfidence(), 0.5f);
         float newImportance = safeFloat(decision.importanceScore(), 0.5f);
 
-        // Task 23：UPDATE 也要携带 temporality / expires_at，LLM 未给则保留 old 的持久度
         Temporality temporality = decision.temporalityRaw() != null && !decision.temporalityRaw().isBlank()
                 ? resolveTemporality(decision)
                 : old.temporality();
@@ -704,8 +691,8 @@ public class RealtimeExtractor {
      *
      * <p>规则：</p>
      * <ul>
-     *   <li>null / 空串 / 非法值 → {@link Temporality#PERSISTENT}（兜底）；</li>
-     *   <li>大小写不敏感，允许 {@code "ephemeral"} / {@code "Short_Term"} 等变体。</li>
+     *   <li>null / 空串 → {@link Temporality#PERSISTENT}；</li>
+     *   <li>其他值必须已通过 {@link ExtractionValidator} 校验。</li>
      * </ul>
      */
     private Temporality resolveTemporality(AudnDecision decision) {
@@ -713,13 +700,7 @@ public class RealtimeExtractor {
         if (raw == null || raw.isBlank()) {
             return Temporality.PERSISTENT;
         }
-        try {
-            return Temporality.valueOf(raw.toUpperCase().trim());
-        } catch (IllegalArgumentException ex) {
-            log.warn("AUDN: 非法 temporality 值={} entity={}，降级为 PERSISTENT",
-                    raw, decision.entityName());
-            return Temporality.PERSISTENT;
-        }
+        return Temporality.valueOf(raw.trim());
     }
 
     /**
@@ -817,17 +798,6 @@ public class RealtimeExtractor {
             case PREFERENCE, HABIT, GOAL, SKILL -> MemoryScope.USER_PROFILE;
             default -> MemoryScope.USER_FACT;
         };
-    }
-
-    /**
-     * AUDN 决策列表包装 — 用于 LLM 结构化输出反序列化。
-     *
-     * @param decisions 决策列表
-     */
-    public record AudnDecisionList(List<AudnDecision> decisions) {
-        public AudnDecisionList {
-            decisions = decisions != null ? List.copyOf(decisions) : List.of();
-        }
     }
 
     private record DecisionExecutionResult(@Nullable String persistedEntityId,

@@ -6,6 +6,7 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
@@ -32,6 +33,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -43,7 +46,7 @@ import static org.mockito.Mockito.when;
  *   <li>给 SHORT_TERM 未给 expires_at → 自动填 now + 30 天；</li>
  *   <li>给 PERSISTENT → expires_at 留 null；</li>
  *   <li>LLM 未给 temporality → 默认 PERSISTENT；</li>
- *   <li>LLM 给非法 temporality → 降级为 PERSISTENT；</li>
+ *   <li>LLM 给非法 temporality → 拒绝写入；</li>
  *   <li>LLM 显式提供 expires_at → 尊重该值，不走自动推导。</li>
  * </ul>
  *
@@ -89,7 +92,7 @@ class RealtimeExtractor_temporality_集成测试 {
                 promptRegistry,
                 snapshotRepo,
                 FIXED_CLOCK,
-                null,
+                new MemoryAccessPolicy(),
                 null,
                 null,
                 null
@@ -201,10 +204,10 @@ class RealtimeExtractor_temporality_集成测试 {
         assertThat(captured.expiresAt()).isNull();
     }
 
-    // ---------------- LLM 非法 temporality → 降级 PERSISTENT ----------------
+    // ---------------- LLM 非法 temporality → 拒绝写入 ----------------
 
     @Test
-    void LLM给非法temporality应降级为PERSISTENT() {
+    void LLM给非法temporality应拒绝写入() {
         给出LLM响应("""
                 [
                   {
@@ -223,9 +226,7 @@ class RealtimeExtractor_temporality_集成测试 {
 
         extractor.extract("sess-5", "turn-5", "测试非法值", null);
 
-        var captured = 捕获upsert实体();
-        assertThat(captured.temporality()).isEqualTo(Temporality.PERSISTENT);
-        assertThat(captured.expiresAt()).isNull();
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
     }
 
     // ---------------- LLM 显式提供 expires_at → 尊重 ----------------

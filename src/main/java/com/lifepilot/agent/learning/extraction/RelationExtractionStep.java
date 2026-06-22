@@ -99,22 +99,19 @@ public class RelationExtractionStep {
         }
     }
 
-    /** 解析 LLM 返回的关系列表，兼容数组 [...] 与对象 {"relations":[...]} 两种格式。 */
+    /** 解析 LLM 返回的关系数组。 */
     private List<ExtractedRelation> parseRelations(@Nullable String content) {
         if (content == null || content.isBlank()) {
             return List.of();
         }
         String repaired = JsonOutputParser.repairJson(content);
-        if (repaired.stripLeading().startsWith("[")) {
-            try {
-                return MAPPER.readValue(repaired,
-                        MAPPER.getTypeFactory().constructCollectionType(List.class, ExtractedRelation.class));
-            } catch (Exception e) {
-                log.warn("关系抽取数组格式解析失败，尝试对象格式: {}", e.getMessage());
-            }
+        try {
+            return MAPPER.readValue(repaired,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, ExtractedRelation.class));
+        } catch (Exception e) {
+            log.warn("关系数组解析失败: {}", e.getMessage());
+            return List.of();
         }
-        var wrapped = JsonOutputParser.parse(repaired, ExtractedRelationList.class);
-        return wrapped != null && wrapped.relations() != null ? wrapped.relations() : List.of();
     }
 
     /** 抽取出的单条关系。 */
@@ -140,11 +137,4 @@ public class RelationExtractionStep {
         }
     }
 
-    /** 对象包裹格式 {"relations": [...]}。 */
-    record ExtractedRelationList(List<ExtractedRelation> relations) {
-        @JsonCreator
-        ExtractedRelationList(@JsonProperty("relations") List<ExtractedRelation> relations) {
-            this.relations = relations;
-        }
-    }
 }

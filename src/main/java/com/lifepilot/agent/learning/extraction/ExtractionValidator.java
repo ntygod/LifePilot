@@ -3,6 +3,7 @@ package com.lifepilot.agent.learning.extraction;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.semantic.AudnDecision;
 import com.lifepilot.memory.semantic.AudnOperation;
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ import java.util.List;
  *   <li>entityName 非空且长度在 [1, maxEntityNameLength] 之间</li>
  *   <li>ADD 类型的 description 非空且长度 >= minDescriptionLength</li>
  *   <li>extractionConfidence >= minExtractionConfidence</li>
+ *   <li>temporality 若存在，必须是 EPHEMERAL / SHORT_TERM / PERSISTENT</li>
  *   <li>单次提取数量不超过 maxEntitiesPerExtraction</li>
  *   <li>null 或越界的 confidence/importance 修正为 0.5f</li>
  * </ul></p>
@@ -186,6 +188,9 @@ public class ExtractionValidator {
         if (!validateConfidence(d)) {
             return "LOW_CONFIDENCE";
         }
+        if (!validateTemporality(d)) {
+            return "INVALID_TEMPORALITY";
+        }
         if (d.evidenceKindRaw() == null || d.evidenceKindRaw().isBlank()) {
             return "EVIDENCE_KIND_MISSING";
         }
@@ -202,6 +207,21 @@ public class ExtractionValidator {
             return "EVIDENCE_EXCERPT_MISSING";
         }
         return null;
+    }
+
+    private boolean validateTemporality(AudnDecision d) {
+        String raw = d.temporalityRaw();
+        if (raw == null || raw.isBlank()) {
+            return true;
+        }
+        try {
+            Temporality.valueOf(raw.trim());
+            return true;
+        } catch (IllegalArgumentException ex) {
+            log.debug("ExtractionValidator: 丢弃非法 temporality 决策, entityName={}, temporality={}",
+                    d.entityName(), raw);
+            return false;
+        }
     }
 
     private float safeFloat(@Nullable Float value) {

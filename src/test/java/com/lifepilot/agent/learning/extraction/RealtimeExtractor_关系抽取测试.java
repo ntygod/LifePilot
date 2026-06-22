@@ -3,6 +3,7 @@ package com.lifepilot.agent.learning.extraction;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -77,7 +79,7 @@ class RealtimeExtractor_关系抽取测试 {
         extractor = new RealtimeExtractor(
                 generationRouter, semanticMemory, props, validator,
                 mock(JdbcTemplate.class), promptRegistry, snapshotRepository,
-                null, null, null, null, relationExtractionStep);
+                Clock.systemUTC(), new MemoryAccessPolicy(), null, null, relationExtractionStep);
     }
 
     private ChatTurnMemorySnapshot snapshot(String turnId) {

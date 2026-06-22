@@ -19,7 +19,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * RelationExtractionStep 单元测试 —— 验证关系 JSON 解析、端点不足跳过、降级容错。
+ * RelationExtractionStep 单元测试 —— 验证关系 JSON 数组解析、端点不足跳过、降级容错。
  *
  * @author zsg
  * @since 2026-06-06
@@ -43,7 +43,7 @@ class RelationExtractionStep_单元测试 {
     }
 
     @Test
-    void 数组格式关系应被正确解析() {
+    void 关系数组应被正确解析() {
         String json = """
                 [{"sourceName":"张三","targetName":"阿里","relationType":"就职于",
                   "strength":0.9,"evidence":"张三在阿里工作"}]
@@ -62,7 +62,7 @@ class RelationExtractionStep_单元测试 {
     }
 
     @Test
-    void 对象包裹格式关系应被正确解析() {
+    void 对象包裹格式应按非契约输出丢弃() {
         String json = """
                 {"relations":[{"sourceName":"张三","targetName":"北京","relationType":"居住于","strength":0.8}]}
                 """;
@@ -71,8 +71,7 @@ class RelationExtractionStep_单元测试 {
 
         var relations = step.extract("用户: 张三住在北京", List.of("张三 [PERSON]", "北京 [PLACE]"));
 
-        assertThat(relations).hasSize(1);
-        assertThat(relations.getFirst().relationType()).isEqualTo("居住于");
+        assertThat(relations).isEmpty();
     }
 
     @Test
