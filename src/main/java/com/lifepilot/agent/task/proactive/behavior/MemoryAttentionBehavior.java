@@ -5,15 +5,16 @@ import com.lifepilot.agent.task.proactive.DeliveryLevel;
 import com.lifepilot.agent.task.proactive.ProactiveAction;
 import com.lifepilot.agent.task.proactive.ProactiveBehavior;
 import com.lifepilot.agent.task.proactive.ProactiveCandidate;
-import com.lifepilot.agent.task.proactive.ProactiveMemoryBridge;
 import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
 import com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionItem;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -27,10 +28,10 @@ public class MemoryAttentionBehavior implements ProactiveBehavior {
     private static final Logger log = LoggerFactory.getLogger(MemoryAttentionBehavior.class);
     private static final int MAX_ATTENTION_ITEMS = 5;
 
-    private final ProactiveMemoryBridge memoryBridge;
+    private final MemoryAttentionService memoryAttentionService;
 
-    public MemoryAttentionBehavior(ProactiveMemoryBridge memoryBridge) {
-        this.memoryBridge = memoryBridge;
+    public MemoryAttentionBehavior(MemoryAttentionService memoryAttentionService) {
+        this.memoryAttentionService = Objects.requireNonNull(memoryAttentionService, "记忆注意力服务不能为空");
     }
 
     @Override
@@ -45,7 +46,7 @@ public class MemoryAttentionBehavior implements ProactiveBehavior {
 
     @Override
     public List<ProactiveCandidate> detect(ContextPacket ctx) {
-        var items = memoryBridge.getAttentionItems(MAX_ATTENTION_ITEMS);
+        var items = memoryAttentionService.computeAttention(MemoryReadFilter.userMemory(), MAX_ATTENTION_ITEMS);
         if (items.isEmpty()) {
             return List.of();
         }

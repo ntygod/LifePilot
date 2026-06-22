@@ -1,5 +1,6 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
@@ -107,7 +108,7 @@ class TrustUpgradeService_溯源_集成测试 {
 
         feedbackRepo = new ReminderFeedbackRepository(jdbcTemplate);
         var autonomyRepo = new AutonomyRepository(jdbcTemplate);
-        trustService = new TrustUpgradeService(autonomyRepo, null, feedbackRepo, semanticMemory);
+        trustService = new TrustUpgradeService(autonomyRepo, new AgentConfigProperties(), feedbackRepo, semanticMemory);
 
         插入记忆空间(SPACE_ID);
     }

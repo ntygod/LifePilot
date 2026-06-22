@@ -7,8 +7,10 @@ import com.lifepilot.agent.initiative.model.ThoughtKind;
 import com.lifepilot.agent.initiative.model.ThoughtState;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,7 +32,8 @@ class ThoughtPool_演化单元测试 {
             new MaturityModel.Config(0.6f, 0.5f, 0.15f, 0.15f, 48.0, 24.0, 72.0));
 
     private ThoughtPool pool() {
-        return new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(48), emptyRepository(), MODEL);
+        return new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(48), emptyRepository(),
+                MODEL, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private ThoughtRepository emptyRepository() {
@@ -123,13 +126,14 @@ class ThoughtPool_演化单元测试 {
 
     @Test
     void cleanup_READY无成熟时间时按创建时间过期() {
-        var p = new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(1), emptyRepository(), MODEL);
-        Instant createdAt = Instant.now().minus(Duration.ofHours(2));
+        var p = new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(1), emptyRepository(),
+                MODEL, Clock.fixed(NOW, ZoneOffset.UTC));
+        Instant createdAt = NOW.minus(Duration.ofHours(2));
         var ev = new Evidence("memory_entity", "e-ready", null, "摘要", "hint", createdAt, 0.8f);
         p.submit(new Thought("t1", "intent-ready", ThoughtKind.FOLLOW_UP, "概要", List.of(ev),
                 0.8f, 0.8f, createdAt, null, ThoughtState.READY, null, createdAt));
 
-        int cleaned = p.cleanup();
+        int cleaned = p.cleanup(NOW);
 
         assertThat(cleaned).isEqualTo(1);
         assertThat(p.findById("t1").orElseThrow().state()).isEqualTo(ThoughtState.DISMISSED);

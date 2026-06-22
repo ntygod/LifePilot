@@ -3,6 +3,7 @@ package com.lifepilot.memory.scenarios;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.task.proactive.AutonomyRepository;
 import com.lifepilot.agent.task.proactive.TrustUpgradeService;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRecord;
@@ -66,7 +67,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *       账本 3 行 delta&lt;0 + cumulative 序列 {0.0, -0.5, -1.0}。</li>
  * </ol>
  *
- * <p><b>降级说明</b>：不走 @SpringBootTest（同 B16/B17）；
+ * <p><b>测试装配说明</b>：不走 @SpringBootTest（同 B16/B17）；
  * {@link NegativeFeedbackListener} 是 {@code @TransactionalEventListener(AFTER_COMMIT)}，
  * 单测以 lambda publisher 同步转发。
  *
@@ -128,7 +129,7 @@ class 提醒反馈溯源到insight_场景测试 {
         var autonomyRepo = new AutonomyRepository(jdbcTemplate);
         // TrustUpgradeService 完整 4-arg 构造 —— 启用 3-arg recordNegativeFeedback 溯源路径
         trustUpgradeService = new TrustUpgradeService(
-                autonomyRepo, /*config*/ null, reminderFeedbackRepo, semanticMemory);
+                autonomyRepo, new AgentConfigProperties(), reminderFeedbackRepo, semanticMemory);
 
         publishedEvents = new ArrayList<>();
         ApplicationEventPublisher forwardingPublisher = event -> {

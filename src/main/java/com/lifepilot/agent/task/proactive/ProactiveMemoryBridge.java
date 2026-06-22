@@ -16,7 +16,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.lang.Nullable;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -28,9 +27,6 @@ import java.util.stream.Collectors;
 /**
  * 主动引擎记忆桥接 — 从 L2/L3/L4 记忆模块消费数据的唯一入口。
  *
- * <p>所有记忆 bean 均可为 null（记忆模块可能未启用），
- * null 时返回空列表或默认值，不抛异常。</p>
- *
  * @author zsg
  * @since 2026-04-15
  */
@@ -41,72 +37,33 @@ public class ProactiveMemoryBridge {
     /** 偏好加权平均的衰减因子（新观察权重 30%，旧值权重 70%）。 */
     private static final float PREFERENCE_ALPHA = 0.3f;
 
-    @Nullable private final SemanticMemory semanticMemory;
-    @Nullable private final EpisodicMemory episodicMemory;
-    @Nullable private final ProceduralMemory proceduralMemory;
+    private final SemanticMemory semanticMemory;
+    private final EpisodicMemory episodicMemory;
+    private final ProceduralMemory proceduralMemory;
     private final GoalTrackingRepository goalTrackingRepository;
     /** 主动任务 → L3 insight 关联查询/写入。 */
-    @Nullable private final JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate jdbcTemplate;
     /** Spring 事件总线 — Task 13 发 ProactiveTaskCancelled。 */
-    @Nullable private final ApplicationEventPublisher eventPublisher;
-    /** 记忆注意力服务（memory-proactive-foundation），空时 getAttentionItems 返回空。 */
-    @Nullable private final com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public ProactiveMemoryBridge(@Nullable SemanticMemory semanticMemory,
-                                  @Nullable EpisodicMemory episodicMemory,
-                                  @Nullable ProceduralMemory proceduralMemory,
-                                  GoalTrackingRepository goalTrackingRepository,
-                                  @Nullable JdbcTemplate jdbcTemplate,
-                                  @Nullable ApplicationEventPublisher eventPublisher,
-                                  @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
-        this.semanticMemory = semanticMemory;
-        this.episodicMemory = episodicMemory;
-        this.proceduralMemory = proceduralMemory;
-        this.goalTrackingRepository = goalTrackingRepository;
-        this.jdbcTemplate = jdbcTemplate;
-        this.eventPublisher = eventPublisher;
-        this.memoryAttentionService = memoryAttentionService;
-    }
-
-    /**
-     * 获取记忆主动浮现的注意力清单 —— 主动引擎消费"现在该关注什么"的统一入口。
-     *
-     * <p>按主账户画像范围读取；服务未注入时返回空列表。</p>
-     *
-     * @param topN 返回上限
-     * @return 注意力项列表（按 score 降序）
-     */
-    public List<com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionItem> getAttentionItems(int topN) {
-        if (memoryAttentionService == null) {
-            return List.of();
-        }
-        try {
-            // 与 /api/memories/attention 一致：{USER_PROFILE, USER_FACT}；均不含 DOMAIN_MEMORY，虚构/知识库记忆不浮现
-            return memoryAttentionService.computeAttention(MemoryReadFilter.userMemory(), topN);
-        } catch (Exception e) {
-            log.debug("记忆桥接: 注意力清单获取失败: {}", e.getMessage());
-            return List.of();
-        }
-    }
-
-    /**
-     * memory-staleness spec：L3 实体进入 STALE_CANDIDATE / ARCHIVED 等非活跃态时被调用。
-     *
-     * <p>当前 Bridge 本身无缓存，只做日志记录作为未来扩展 hook：后续若为
-     * getActiveGoals / getPreferences 等热路径加入缓存，可在此方法中清理对应条目。</p>
-     *
-     * @param entityId L3 实体 id
-     */
-    public void invalidateCacheForEntity(String entityId) {
-        if (entityId == null || entityId.isBlank()) return;
-        log.debug("主动引擎桥: 收到 L3 实体生命周期失效信号 entityId={} (hook 暂无缓存)", entityId);
+    public ProactiveMemoryBridge(SemanticMemory semanticMemory,
+                                 EpisodicMemory episodicMemory,
+                                 ProceduralMemory proceduralMemory,
+                                 GoalTrackingRepository goalTrackingRepository,
+                                 JdbcTemplate jdbcTemplate,
+                                 ApplicationEventPublisher eventPublisher) {
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "语义记忆不能为空");
+        this.episodicMemory = Objects.requireNonNull(episodicMemory, "情节记忆不能为空");
+        this.proceduralMemory = Objects.requireNonNull(proceduralMemory, "程序记忆不能为空");
+        this.goalTrackingRepository = Objects.requireNonNull(goalTrackingRepository, "目标追踪仓库不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        this.eventPublisher = Objects.requireNonNull(eventPublisher, "事件发布器不能为空");
     }
 
     // ── 目标查询（替代 IntentMemoryService） ──
 
     /** 获取用户活跃目标 — L3 GOAL 实体 + 引擎追踪状态合并。 */
     public List<GoalView> getActiveGoals() {
-        if (semanticMemory == null) return List.of();
         try {
             // TODO(plan-1-后续): 接入 ProjectContext，主动任务按所属项目读取目标；
             // Plan 1 先按主账户维度读取，隔离项目的活跃目标暂不参与 proactive 追问。
@@ -123,18 +80,16 @@ public class ProactiveMemoryBridge {
     /** 递增目标追问次数 + L3 访问计数。 */
     public void incrementCheckCount(String entityId) {
         goalTrackingRepository.incrementCheckCount(entityId);
-        if (semanticMemory != null) {
-            try {
-                semanticMemory.incrementAccessCount(entityId);
-            } catch (Exception e) {
-                log.debug("记忆桥接: L3 访问计数更新跳过: {}", e.getMessage());
-            }
+        try {
+            semanticMemory.incrementAccessCount(entityId);
+        } catch (Exception e) {
+            log.debug("记忆桥接: L3 访问计数更新跳过: {}", e.getMessage());
         }
     }
 
     /**
      * 标记目标完成 — 归档 L3 实体 + 清理追踪 + 发
-     * {@link com.lifepilot.memory.lifecycle.events.ProactiveTaskCancelled}。
+     * {@link ProactiveTaskCancelled}。
      *
      * <p>事件 payload 中 {@code relatedInsightEntityIds} 来自
      * {@link #findInsightEntityIdsByTask(String)}，在归档前查询以避免
@@ -155,13 +110,11 @@ public class ProactiveMemoryBridge {
     public void markGoalFulfilled(String entityId) {
         // 归档前先查关联 insight，避免外键级联清理掉关联行
         List<String> relatedInsightIds = findInsightEntityIdsByTask(entityId);
-        if (semanticMemory != null) {
-            try {
-                semanticMemory.findById(entityId)
-                        .ifPresent(entity -> semanticMemory.archive(entity, ChangeSource.PROACTIVE_CANCEL));
-            } catch (Exception e) {
-                log.debug("记忆桥接: 目标归档失败: {}", e.getMessage());
-            }
+        try {
+            semanticMemory.findById(entityId)
+                    .ifPresent(entity -> semanticMemory.archive(entity, ChangeSource.PROACTIVE_CANCEL));
+        } catch (Exception e) {
+            log.debug("记忆桥接: 目标归档失败: {}", e.getMessage());
         }
         goalTrackingRepository.deleteByEntityId(entityId);
         publishAfterCommit(new ProactiveTaskCancelled(entityId, relatedInsightIds));
@@ -170,7 +123,7 @@ public class ProactiveMemoryBridge {
     }
 
     /**
-     * 事务提交后发布事件；无活跃事务时立即发布（fallback，保持单测/手工装配可用）。
+     * 事务提交后发布事件；无活跃事务时立即发布。
      *
      * <p>与 {@link SemanticMemory} 的同名方法语义一致：
      * 回滚路径下不产生幻觉事件，避免下游 listener 基于幻觉事件更新派生存储。</p>
@@ -178,9 +131,6 @@ public class ProactiveMemoryBridge {
      * @param event Spring ApplicationEvent
      */
     private void publishAfterCommit(Object event) {
-        if (eventPublisher == null) {
-            return;
-        }
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -212,12 +162,9 @@ public class ProactiveMemoryBridge {
      * 它们与特定 goal 无关。</p>
      *
      * @param taskId 主动任务 id（即 GOAL 实体 id）
-     * @return 关联的 insight 实体 id 列表；JdbcTemplate 未注入或表不存在时返回空
+     * @return 关联的 insight 实体 id 列表；表不存在时返回空
      */
     public List<String> findInsightEntityIdsByTask(String taskId) {
-        if (jdbcTemplate == null) {
-            return List.of();
-        }
         try {
             return jdbcTemplate.queryForList(
                     "SELECT entity_id FROM proactive_task_insight_links WHERE task_id = ?",
@@ -238,9 +185,6 @@ public class ProactiveMemoryBridge {
      * @param entityId L3 insight 实体 id
      */
     public void linkInsightToTask(String taskId, String entityId) {
-        if (jdbcTemplate == null) {
-            return;
-        }
         try {
             jdbcTemplate.update(
                     """
@@ -264,53 +208,49 @@ public class ProactiveMemoryBridge {
         var sb = new StringBuilder();
 
         // 实体演变历史
-        if (semanticMemory != null) {
-            try {
-                var history = semanticMemory.getChangeHistory(goalName, EntityType.GOAL);
-                if (history.size() > 1) {
-                    sb.append("目标演变：\n");
-                    for (var version : history) {
-                        sb.append("- ").append(version.validFrom()).append(" ");
-                        sb.append(version.description() != null ? version.description() : version.name());
-                        sb.append(" (重要度:").append(String.format("%.1f", version.importanceScore())).append(")\n");
-                    }
+        try {
+            var history = semanticMemory.getChangeHistory(goalName, EntityType.GOAL);
+            if (history.size() > 1) {
+                sb.append("目标演变：\n");
+                for (var version : history) {
+                    sb.append("- ").append(version.validFrom()).append(" ");
+                    sb.append(version.description() != null ? version.description() : version.name());
+                    sb.append(" (重要度:").append(String.format("%.1f", version.importanceScore())).append(")\n");
                 }
-            } catch (Exception e) {
-                log.debug("记忆桥接: 历史查询跳过: {}", e.getMessage());
             }
+        } catch (Exception e) {
+            log.debug("记忆桥接: 历史查询跳过: {}", e.getMessage());
+        }
 
-            // 关联实体
-            try {
-                var related = semanticMemory.findRelated(entityId, 2);
-                if (!related.isEmpty()) {
-                    sb.append("相关：");
-                    sb.append(related.stream()
-                            .limit(5)
-                            .map(e -> "[" + e.type().label() + "] " + e.name())
-                            .collect(Collectors.joining("、")));
-                    sb.append("\n");
-                }
-            } catch (Exception e) {
-                log.debug("记忆桥接: 关联查询跳过: {}", e.getMessage());
+        // 关联实体
+        try {
+            var related = semanticMemory.findRelated(entityId, 2);
+            if (!related.isEmpty()) {
+                sb.append("相关：");
+                sb.append(related.stream()
+                        .limit(5)
+                        .map(e -> "[" + e.type().label() + "] " + e.name())
+                        .collect(Collectors.joining("、")));
+                sb.append("\n");
             }
+        } catch (Exception e) {
+            log.debug("记忆桥接: 关联查询跳过: {}", e.getMessage());
         }
 
         // 最近相关对话
-        if (episodicMemory != null) {
-            try {
-                var conversations = episodicMemory.search(goalName);
-                if (!conversations.isEmpty()) {
-                    sb.append("相关对话：\n");
-                    conversations.stream().limit(3).forEach(conv -> {
-                        String summary = conv.summary() != null ? conv.summary() : conv.goal();
-                        if (summary != null && !summary.isBlank()) {
-                            sb.append("- ").append(summary).append("\n");
-                        }
-                    });
-                }
-            } catch (Exception e) {
-                log.debug("记忆桥接: 对话检索跳过: {}", e.getMessage());
+        try {
+            var conversations = episodicMemory.search(goalName);
+            if (!conversations.isEmpty()) {
+                sb.append("相关对话：\n");
+                conversations.stream().limit(3).forEach(conv -> {
+                    String summary = conv.summary() != null ? conv.summary() : conv.goal();
+                    if (summary != null && !summary.isBlank()) {
+                        sb.append("- ").append(summary).append("\n");
+                    }
+                });
             }
+        } catch (Exception e) {
+            log.debug("记忆桥接: 对话检索跳过: {}", e.getMessage());
         }
 
         return sb.toString();
@@ -322,39 +262,22 @@ public class ProactiveMemoryBridge {
     private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
 
     /**
-     * 获取用户画像 — 优先读巩固后的连贯画像，降级拼接零散实体。
+     * 获取用户画像 — 读取巩固后的连贯画像。
      *
      * <p>巩固画像由 UserProfileConsolidator 在定时巩固管线中 LLM 生成，
-     * 是一段 200 字的第三人称自然语言描述。如果尚未生成过，则降级为
-     * 从 L3 零散实体拼接列表形式。</p>
+     * 是一段 200 字的第三人称自然语言描述。</p>
      */
     public String getUserPortrait() {
-        if (semanticMemory == null) return "";
         try {
             // TODO(plan-1-后续): 接入 ProjectContext，按当前项目读取画像；
-            // Plan 1 先按主账户维度读取巩固画像和零散实体。
-            // 优先读巩固后的画像
+            // Plan 1 先按主账户维度读取巩固画像。
             var consolidated = semanticMemory.findCurrentByNameAndType(
                     CONSOLIDATED_PROFILE_NAME, EntityType.CUSTOM, MemoryReadFilter.userProfile());
             if (consolidated.isPresent()) {
                 var desc = consolidated.get().description();
                 if (desc != null && !desc.isBlank()) return desc;
             }
-
-            // 降级：拼接零散实体
-            var filter = MemoryReadFilter.userProfile();
-            var sb = new StringBuilder();
-            for (var type : List.of(EntityType.PREFERENCE, EntityType.HABIT, EntityType.GOAL, EntityType.SKILL)) {
-                var entities = semanticMemory.findCurrentByType(type, filter);
-                for (var entity : entities) {
-                    sb.append("- [").append(type.label()).append("] ").append(entity.name());
-                    if (entity.description() != null && !entity.description().isBlank()) {
-                        sb.append(": ").append(entity.description());
-                    }
-                    sb.append("\n");
-                }
-            }
-            return sb.toString();
+            return "";
         } catch (Exception e) {
             log.debug("记忆桥接: 画像组装失败: {}", e.getMessage());
             return "";
@@ -365,7 +288,6 @@ public class ProactiveMemoryBridge {
 
     /** 获取最近 Agent 经验 — 从 L3 EXPERIENCE 实体。 */
     public String getRecentExperiences() {
-        if (semanticMemory == null) return "";
         try {
             // TODO(plan-1-后续): 接入 ProjectContext，按当前项目读取经验；
             // Plan 1 先按主账户维度读取所有 agent 经验。
@@ -386,7 +308,6 @@ public class ProactiveMemoryBridge {
 
     /** 查询偏好规则。 */
     public List<PreferenceRule> getPreferences(String category) {
-        if (proceduralMemory == null) return List.of();
         try {
             return proceduralMemory.getPreferences(category);
         } catch (Exception e) {
@@ -401,7 +322,6 @@ public class ProactiveMemoryBridge {
      * <p>如果已有同 category+key 的规则，用 EWMA 更新；否则新建。</p>
      */
     public synchronized void observePreference(String category, String key, float signal) {
-        if (proceduralMemory == null) return;
         try {
             var existing = proceduralMemory.findPreference(category, key);
             Instant now = Instant.now();
@@ -441,7 +361,6 @@ public class ProactiveMemoryBridge {
      * @param evidence 证据描述
      */
     public void syncInsightToL3(String category, String key, float value, String evidence) {
-        if (semanticMemory == null) return;
         try {
             String entityName = "proactive_insight_" + category + "_" + key;
             String description = "主动引擎洞察: %s/%s, 信号=%.2f, 证据=%s".formatted(category, key, value, evidence);

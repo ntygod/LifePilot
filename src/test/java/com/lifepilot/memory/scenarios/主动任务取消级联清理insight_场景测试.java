@@ -15,6 +15,8 @@ import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -45,8 +47,8 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  * <p><b>实施路径</b>：
  * <ol>
  *   <li>SQLite + Flyway 真跑 V1-V18（含 V17 {@code proactive_task_insight_links}）；</li>
- *   <li>{@link ProactiveMemoryBridge} 直接构造（EpisodicMemory / ProceduralMemory 均传 null，
- *       对 S10 路径无影响）；</li>
+ *   <li>{@link ProactiveMemoryBridge} 直接构造（EpisodicMemory / ProceduralMemory 用 mock，
+ *       S10 路径只消费 L3 与事件总线）；</li>
  *   <li>用 {@link ProactiveMemoryBridge#linkInsightToTask(String, String)} 写 V17 关联表；</li>
  *   <li>事件总线：lambda 捕获 {@link ProactiveTaskCancelled} →
  *       {@link ProactiveTaskCancelListener#onCancelled}（模拟
@@ -124,8 +126,8 @@ class 主动任务取消级联清理insight_场景测试 {
 
         var goalTrackingRepo = new GoalTrackingRepository(jdbcTemplate);
         bridge = new ProactiveMemoryBridge(
-                semanticMemory, null, null, goalTrackingRepo, jdbcTemplate,
-                forwardingPublisher, null);
+                semanticMemory, mock(EpisodicMemory.class), mock(ProceduralMemory.class),
+                goalTrackingRepo, jdbcTemplate, forwardingPublisher);
 
         插入记忆空间(SPACE_ID);
     }

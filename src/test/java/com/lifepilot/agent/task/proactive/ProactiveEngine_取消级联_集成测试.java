@@ -11,6 +11,8 @@ import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.episodic.EpisodicMemory;
+import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.entity.VersionMerger;
 import com.lifepilot.prompt.PromptRegistry;
@@ -92,8 +94,8 @@ class ProactiveEngine_取消级联_集成测试 {
         captured = new ArrayList<>();
         ApplicationEventPublisher publisher = event -> captured.add(event);
         bridge = new ProactiveMemoryBridge(
-                semanticMemory, null, null, goalTrackingRepository, jdbcTemplate,
-                publisher, null);
+                semanticMemory, mock(EpisodicMemory.class), mock(ProceduralMemory.class),
+                goalTrackingRepository, jdbcTemplate, publisher);
 
         // 走 ProactiveEngine 作为对外入口，behaviors / gate / delivery 用空/mock
         engine = new ProactiveEngine(

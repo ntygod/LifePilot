@@ -217,16 +217,6 @@ class ImplicitSignalCollector_单元测试 {
             verify(trustUpgradeService, never()).recordNegativeFeedback(anyString(), anyString(), any());
         }
 
-        @Test
-        void memoryBridge为null时不崩溃() {
-            // given — 无记忆桥接的 collector
-            var collectorNoMemory = new ImplicitSignalCollector(null, trustUpgradeService);
-
-            // when & then — 不抛异常
-            assertThatCode(() ->
-                    collectorNoMemory.checkMissedOpportunities("user-1", "健身计划")
-            ).doesNotThrowAnyException();
-        }
     }
 
     // ── onDelivered 边界场景 ──
@@ -340,48 +330,4 @@ class ImplicitSignalCollector_单元测试 {
         }
     }
 
-    // ── 双依赖为 null 的安全性 ──
-
-    @Nested
-    class 依赖为null {
-
-        @Test
-        void 两个依赖都为null时全流程不崩溃() {
-            var safeCollector = new ImplicitSignalCollector(null, null);
-
-            var action = 构造Action("insight", "topic-测试话题");
-            var result = 构造Result("n-safe", Instant.now().minus(Duration.ofMinutes(3)));
-            safeCollector.onDelivered("user-1", action, result);
-
-            // 参与信号 — recordSignal 内部跳过 null 依赖
-            assertThatCode(() ->
-                    safeCollector.onConversationCompleted("user-1", "测试话题很有趣")
-            ).doesNotThrowAnyException();
-
-            // 忽略信号
-            var oldResult = 构造Result("n-old", Instant.now().minus(Duration.ofHours(5)));
-            safeCollector.onDelivered("user-1", action, oldResult);
-            assertThatCode(() ->
-                    safeCollector.checkIgnoredDeliveries("user-1")
-            ).doesNotThrowAnyException();
-
-            // 未命中检测
-            assertThatCode(() ->
-                    safeCollector.checkMissedOpportunities("user-1", "随便什么")
-            ).doesNotThrowAnyException();
-        }
-
-        @Test
-        void trustUpgradeService为null时参与信号仍写偏好() {
-            var collectorNoTrust = new ImplicitSignalCollector(memoryBridge, null);
-
-            var action = 构造Action("insight", "topic-天气预报");
-            var result = 构造Result("n-nt", Instant.now().minus(Duration.ofMinutes(3)));
-            collectorNoTrust.onDelivered("user-1", action, result);
-            collectorNoTrust.onConversationCompleted("user-1", "今天天气预报说要下雨");
-
-            // 偏好回流仍然工作
-            verify(memoryBridge).observePreference("proactive-domain", "insight", 0.8f);
-        }
-    }
 }

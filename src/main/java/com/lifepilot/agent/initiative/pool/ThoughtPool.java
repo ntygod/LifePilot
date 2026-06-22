@@ -7,6 +7,7 @@ import com.lifepilot.agent.initiative.model.ThoughtState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -33,16 +34,19 @@ public class ThoughtPool {
     private final ThoughtRepository repository;
     /** 成熟度演化模型（thought-maturity-evolution）—— 强化、截止升温、停滞衰减的确定性计算。 */
     private final MaturityModel maturityModel;
+    private final Clock clock;
     private final ConcurrentHashMap<String, Thought> thoughts = new ConcurrentHashMap<>();
 
     public ThoughtPool(int maxActiveThoughts, Duration brewingTtl, Duration readyTtl,
                        ThoughtRepository repository,
-                       MaturityModel maturityModel) {
+                       MaturityModel maturityModel,
+                       Clock clock) {
         this.maxActiveThoughts = maxActiveThoughts;
         this.brewingTtl = brewingTtl;
         this.readyTtl = readyTtl;
         this.repository = Objects.requireNonNull(repository, "想法持久化仓库不能为空");
         this.maturityModel = Objects.requireNonNull(maturityModel, "成熟度模型不能为空");
+        this.clock = Objects.requireNonNull(clock, "想法池时钟不能为空");
         loadActiveFromRepository();
     }
 
@@ -80,7 +84,7 @@ public class ThoughtPool {
             float newConfidence = Math.max(existing.confidence(), thought.confidence());
             var newState = maturityModel.resolveState(newMaturity, existing.state());
             var merged = existing.reinforcedWith(
-                    mergedEvidence, newMaturity, newConfidence, newState, Instant.now());
+                    mergedEvidence, newMaturity, newConfidence, newState, Instant.now(clock));
             persist(merged);
             thoughts.put(merged.id(), merged);
             log.debug("想法池: 强化已有想法, intentKey={}, maturity={}->{}, weight={}",
@@ -146,7 +150,7 @@ public class ThoughtPool {
      *
      * @return 清理数量
      */
-    public int cleanup() {
+    public int cleanup(Instant now) {
         int cleaned = 0;
         for (var entry : thoughts.entrySet()) {
             var thought = entry.getValue();
@@ -154,7 +158,7 @@ public class ThoughtPool {
                 // 终态想法保留一段时间后清理（用于冷却期判断）
                 continue;
             }
-            if (thought.isExpired(brewingTtl, readyTtl)) {
+            if (thought.isExpired(brewingTtl, readyTtl, now)) {
                 repository.updateState(entry.getKey(), ThoughtState.DISMISSED);
                 thoughts.put(entry.getKey(), thought.withState(ThoughtState.DISMISSED));
                 cleaned++;

@@ -56,21 +56,29 @@ public class InitiativeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public Clock initiativeClock() {
+        return Clock.systemDefaultZone();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ThoughtPool thoughtPool(InitiativeProperties props, ThoughtRepository thoughtRepository,
-                                   com.lifepilot.agent.initiative.maturity.MaturityModel maturityModel) {
+                                   com.lifepilot.agent.initiative.maturity.MaturityModel maturityModel,
+                                   Clock clock) {
         log.info("主动引擎: 注册 ThoughtPool, maxActive={}", props.getMaxActiveThoughts());
         return new ThoughtPool(
                 props.getMaxActiveThoughts(),
                 Duration.ofHours(props.getBrewingTtlHours()),
                 Duration.ofHours(props.getReadyTtlHours()),
                 thoughtRepository,
-                maturityModel
+                maturityModel,
+                clock
         );
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public Gatekeeper gatekeeper(InitiativeProperties props) {
+    public Gatekeeper gatekeeper(InitiativeProperties props, Clock clock) {
         log.info("主动引擎: 注册 Gatekeeper, dailyMax={}, minInterval={}min",
                 props.getDailyMaxExpressions(), props.getMinIntervalMinutes());
         return new Gatekeeper(
@@ -78,7 +86,7 @@ public class InitiativeAutoConfiguration {
                 Duration.ofMinutes(props.getMinIntervalMinutes()),
                 LocalTime.parse(props.getQuietHoursStart()),
                 LocalTime.parse(props.getQuietHoursEnd()),
-                Clock.systemDefaultZone()
+                clock
         );
     }
 
@@ -87,9 +95,10 @@ public class InitiativeAutoConfiguration {
     public InitiativeEngine initiativeEngine(ThoughtPool thoughtPool,
                                              Gatekeeper gatekeeper,
                                              Thinker thinker,
-                                             ConversationInitiator conversationInitiator) {
+                                             ConversationInitiator conversationInitiator,
+                                             Clock clock) {
         log.info("主动引擎: 注册 InitiativeEngine");
-        return new InitiativeEngine(thoughtPool, gatekeeper, thinker, conversationInitiator);
+        return new InitiativeEngine(thoughtPool, gatekeeper, thinker, conversationInitiator, clock);
     }
 
     @Bean

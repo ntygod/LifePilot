@@ -40,8 +40,7 @@ public record Thought(
         return state == ThoughtState.READY;
     }
 
-    public boolean isExpired(java.time.Duration maxBrewingTtl, java.time.Duration maxReadyTtl) {
-        Instant now = Instant.now();
+    public boolean isExpired(java.time.Duration maxBrewingTtl, java.time.Duration maxReadyTtl, Instant now) {
         if (state == ThoughtState.BREWING) {
             return java.time.Duration.between(createdAt, now).compareTo(maxBrewingTtl) > 0;
         }

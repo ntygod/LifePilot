@@ -13,6 +13,7 @@ import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -163,6 +164,13 @@ class ProactiveEngine_单元测试 {
         var result = engine.heartbeat(ctx);
 
         assertThat(result).isEqualTo(DetectionLevel.FULL);
+    }
+
+    @Test
+    void 完成主动任务_无记忆桥接时明确失败() {
+        assertThatThrownBy(() -> engine.markGoalFulfilled("goal-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("主动记忆桥接");
     }
 
     // ── helpers ──

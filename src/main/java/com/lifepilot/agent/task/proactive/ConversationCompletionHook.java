@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.Nullable;
 
+import java.util.Objects;
+
 /**
  * 对话完成钩子 — 在每轮对话结束后触发隐式信号检测、摘要生成和画像巩固。
  *
@@ -18,16 +20,16 @@ public class ConversationCompletionHook {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationCompletionHook.class);
 
-    @Nullable private final ImplicitSignalCollector implicitSignalCollector;
-    @Nullable private final ConversationSummaryGenerator summaryGenerator;
-    @Nullable private final UserProfileConsolidator userProfileConsolidator;
+    private final ImplicitSignalCollector implicitSignalCollector;
+    private final ConversationSummaryGenerator summaryGenerator;
+    private final UserProfileConsolidator userProfileConsolidator;
 
-    public ConversationCompletionHook(@Nullable ImplicitSignalCollector implicitSignalCollector,
-                                      @Nullable ConversationSummaryGenerator summaryGenerator,
-                                      @Nullable UserProfileConsolidator userProfileConsolidator) {
-        this.implicitSignalCollector = implicitSignalCollector;
-        this.summaryGenerator = summaryGenerator;
-        this.userProfileConsolidator = userProfileConsolidator;
+    public ConversationCompletionHook(ImplicitSignalCollector implicitSignalCollector,
+                                      ConversationSummaryGenerator summaryGenerator,
+                                      UserProfileConsolidator userProfileConsolidator) {
+        this.implicitSignalCollector = Objects.requireNonNull(implicitSignalCollector, "隐式信号采集器不能为空");
+        this.summaryGenerator = Objects.requireNonNull(summaryGenerator, "对话摘要生成器不能为空");
+        this.userProfileConsolidator = Objects.requireNonNull(userProfileConsolidator, "用户画像巩固器不能为空");
     }
 
     /**
@@ -37,7 +39,7 @@ public class ConversationCompletionHook {
      * @param conversationSummary 对话摘要或最后几条消息
      */
     public void onConversationCompleted(String userId, @Nullable String conversationSummary) {
-        if (implicitSignalCollector == null || conversationSummary == null) return;
+        if (conversationSummary == null) return;
 
         // 投递后参与检测（用户是否因通知而发起对话）
         try {
@@ -63,21 +65,17 @@ public class ConversationCompletionHook {
             onConversationCompleted(event.getUserId(), event.getSummary());
 
             // 对话摘要生成
-            if (summaryGenerator != null) {
-                try {
-                    summaryGenerator.generateIfNeeded(event.getSessionId());
-                } catch (Exception e) {
-                    log.debug("对话完成钩子: 摘要生成跳过: {}", e.getMessage());
-                }
+            try {
+                summaryGenerator.generateIfNeeded(event.getSessionId());
+            } catch (Exception e) {
+                log.debug("对话完成钩子: 摘要生成跳过: {}", e.getMessage());
             }
 
             // 画像巩固（内置防抖，距上次不到 2 小时自动跳过）
-            if (userProfileConsolidator != null) {
-                try {
-                    userProfileConsolidator.consolidate();
-                } catch (Exception e) {
-                    log.debug("对话完成钩子: 画像巩固跳过: {}", e.getMessage());
-                }
+            try {
+                userProfileConsolidator.consolidate();
+            } catch (Exception e) {
+                log.debug("对话完成钩子: 画像巩固跳过: {}", e.getMessage());
             }
         });
     }

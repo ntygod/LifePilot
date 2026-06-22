@@ -19,6 +19,7 @@ import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
 import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -31,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -47,6 +49,7 @@ import java.util.List;
  * @since 2026-04-14
  */
 @AutoConfiguration(after = {ReminderAutoConfiguration.class, NotificationAutoConfiguration.class})
+@EnableConfigurationProperties(AgentConfigProperties.class)
 public class ProactiveAutoConfiguration {
 
     @Bean
@@ -57,29 +60,17 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, EpisodicMemory.class, ProceduralMemory.class})
     public ProactiveMemoryBridge proactiveMemoryBridge(
-            @Autowired(required = false) SemanticMemory semanticMemory,
-            @Autowired(required = false) EpisodicMemory episodicMemory,
-            @Autowired(required = false) ProceduralMemory proceduralMemory,
+            SemanticMemory semanticMemory,
+            EpisodicMemory episodicMemory,
+            ProceduralMemory proceduralMemory,
             GoalTrackingRepository goalTrackingRepository,
             JdbcTemplate jdbcTemplate,
-            ApplicationEventPublisher eventPublisher,
-            @Autowired(required = false) com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
-        var bridge = new ProactiveMemoryBridge(
+            ApplicationEventPublisher eventPublisher) {
+        return new ProactiveMemoryBridge(
                 semanticMemory, episodicMemory, proceduralMemory, goalTrackingRepository, jdbcTemplate,
-                eventPublisher, memoryAttentionService);
-        return bridge;
-    }
-
-    /**
-     * memory-staleness spec C-P0-1：L3 生命周期事件 → 主动引擎缓存失效。
-     * ProactiveMemoryBridge 通过 ObjectProvider 注入允许其缺失时监听器仍能启动。
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    public com.lifepilot.agent.task.proactive.cache.ProactiveCacheInvalidator proactiveCacheInvalidator(
-            org.springframework.beans.factory.ObjectProvider<ProactiveMemoryBridge> bridgeProvider) {
-        return new com.lifepilot.agent.task.proactive.cache.ProactiveCacheInvalidator(bridgeProvider);
+                eventPublisher);
     }
 
     @Bean
@@ -96,13 +87,12 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({ReminderFeedbackRepository.class, SemanticMemory.class, AgentConfigProperties.class})
     public TrustUpgradeService trustUpgradeService(AutonomyRepository autonomyRepository,
-                                                     @Autowired(required = false) AgentConfigProperties config,
-                                                     @Autowired(required = false) ReminderFeedbackRepository reminderFeedbackRepository,
-                                                     @Autowired(required = false) SemanticMemory semanticMemory) {
-        // Task 25（解 S14）：注入 ReminderFeedbackRepository + SemanticMemory 后
-        // recordNegativeFeedback(userId, behaviorName, notificationId) 可溯源到
-        // L3 proactive_insight_* 实体做 importanceScore 惩罚
+                                                   AgentConfigProperties config,
+                                                   ReminderFeedbackRepository reminderFeedbackRepository,
+                                                   SemanticMemory semanticMemory) {
+        // Task 25（解 S14）：负反馈可溯源到 L3 proactive_insight_* 实体做 importanceScore 惩罚。
         return new TrustUpgradeService(autonomyRepository, config,
                 reminderFeedbackRepository, semanticMemory);
     }
@@ -110,17 +100,14 @@ public class ProactiveAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DecisionGate proactiveDecisionGate(@Autowired(required = false) TrustUpgradeService trustUpgradeService,
-                                               @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
-                                               @Autowired(required = false) AgentConfigProperties config) {
-        if (config != null) {
-            return new DecisionGate(
-                    trustUpgradeService, memoryBridge,
-                    config.getTask().getProactiveEngineBoundaryNotifyDelta(),
-                    config.getTask().getProactiveEngineBoundaryInterruptDelta(),
-                    config.getTask().getProactiveEngineOutOfBoundaryDelta()
-            );
-        }
-        return new DecisionGate(trustUpgradeService, memoryBridge);
+                                              @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
+                                              AgentConfigProperties config) {
+        return new DecisionGate(
+                trustUpgradeService, memoryBridge,
+                config.getTask().getProactiveEngineBoundaryNotifyDelta(),
+                config.getTask().getProactiveEngineBoundaryInterruptDelta(),
+                config.getTask().getProactiveEngineOutOfBoundaryDelta()
+        );
     }
 
     @Bean
@@ -141,7 +128,7 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({GenerationRouter.class, PromptRegistry.class, AgentConfigProperties.class})
+    @ConditionalOnBean({ProactiveMemoryBridge.class, GenerationRouter.class, PromptRegistry.class, AgentConfigProperties.class})
     public FollowUpBehavior followUpBehavior(ProactiveMemoryBridge memoryBridge,
                                               GenerationRouter generationRouter,
                                               PromptRegistry promptRegistry,
@@ -168,8 +155,9 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MemoryAttentionBehavior memoryAttentionBehavior(ProactiveMemoryBridge memoryBridge) {
-        return new MemoryAttentionBehavior(memoryBridge);
+    @ConditionalOnBean(MemoryAttentionService.class)
+    public MemoryAttentionBehavior memoryAttentionBehavior(MemoryAttentionService memoryAttentionService) {
+        return new MemoryAttentionBehavior(memoryAttentionService);
     }
 
     @Bean
@@ -193,10 +181,11 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({ImplicitSignalCollector.class, ConversationSummaryGenerator.class, UserProfileConsolidator.class})
     public ConversationCompletionHook conversationCompletionHook(
-            @Autowired(required = false) ImplicitSignalCollector implicitSignalCollector,
-            @Autowired(required = false) ConversationSummaryGenerator summaryGenerator,
-            @Autowired(required = false) UserProfileConsolidator userProfileConsolidator) {
+            ImplicitSignalCollector implicitSignalCollector,
+            ConversationSummaryGenerator summaryGenerator,
+            UserProfileConsolidator userProfileConsolidator) {
         return new ConversationCompletionHook(implicitSignalCollector, summaryGenerator, userProfileConsolidator);
     }
 
@@ -204,9 +193,10 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({ProactiveMemoryBridge.class, TrustUpgradeService.class})
     public ImplicitSignalCollector implicitSignalCollector(
-            @Autowired(required = false) ProactiveMemoryBridge memoryBridge,
-            @Autowired(required = false) TrustUpgradeService trustUpgradeService) {
+            ProactiveMemoryBridge memoryBridge,
+            TrustUpgradeService trustUpgradeService) {
         return new ImplicitSignalCollector(
                 memoryBridge, trustUpgradeService);
     }
@@ -218,9 +208,9 @@ public class ProactiveAutoConfiguration {
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
             name = "lifepilot.agent.task.boundary-signal-enabled", matchIfMissing = true)
     public BoundarySignalCollector boundarySignalCollector(
-            @Autowired(required = false) AgentConfigProperties config,
+            AgentConfigProperties config,
             @Autowired(required = false) com.lifepilot.notification.config.NotificationProperties notificationProperties) {
-        int window = config != null ? config.getTask().getBoundaryWindowMinutes() : 10;
+        int window = config.getTask().getBoundaryWindowMinutes();
         return new BoundarySignalCollector(window, notificationProperties);
     }
 
@@ -228,9 +218,9 @@ public class ProactiveAutoConfiguration {
     @ConditionalOnMissingBean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
             name = "lifepilot.agent.task.focus-detection-enabled", matchIfMissing = true)
-    public FocusStateDetector focusStateDetector(@Autowired(required = false) AgentConfigProperties config) {
-        int density = config != null ? config.getTask().getFocusMessageDensityThreshold() : 5;
-        int interval = config != null ? config.getTask().getFocusMessageIntervalSeconds() : 40;
+    public FocusStateDetector focusStateDetector(AgentConfigProperties config) {
+        int density = config.getTask().getFocusMessageDensityThreshold();
+        int interval = config.getTask().getFocusMessageIntervalSeconds();
         return new FocusStateDetector(density, interval);
     }
 
@@ -244,26 +234,24 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({ReminderExecutionRepository.class, AgentConfigProperties.class})
     public ProactiveTrainingReplayService proactiveTrainingReplayService(
-            @Autowired(required = false) ReminderExecutionRepository executionRepository,
-            @Autowired(required = false) AgentConfigProperties config) {
-        if (executionRepository == null || config == null) return null;
+            ReminderExecutionRepository executionRepository,
+            AgentConfigProperties config) {
         return new ProactiveTrainingReplayService(executionRepository, config.getTask());
     }
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({SharedScheduler.class, ProactiveTrainingReplayService.class, AgentConfigProperties.class})
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
             name = "lifepilot.agent.task.proactive-training-enabled", havingValue = "true")
     public ProactiveTrainingScheduler proactiveTrainingScheduler(
-            @Autowired(required = false) SharedScheduler sharedScheduler,
-            @Autowired(required = false) ProactiveTrainingReplayService replayService,
+            SharedScheduler sharedScheduler,
+            ProactiveTrainingReplayService replayService,
             ProactiveFewShotLibrary library,
-            @Autowired(required = false) AgentConfigProperties config,
+            AgentConfigProperties config,
             @Autowired(required = false) com.lifepilot.notification.config.NotificationProperties notificationProperties) {
-        if (sharedScheduler == null || replayService == null || config == null) {
-            return null;
-        }
         var scheduler = new ProactiveTrainingScheduler(
                 sharedScheduler.heartbeat(), replayService, library,
                 config.getTask(), notificationProperties);
@@ -281,10 +269,10 @@ public class ProactiveAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({ReminderExecutionRepository.class, AgentConfigProperties.class})
     public GoldilocksWindowCalculator goldilocksWindowCalculator(
-            @Autowired(required = false) ReminderExecutionRepository executionRepository,
-            @Autowired(required = false) AgentConfigProperties config) {
-        if (executionRepository == null || config == null) return null;
+            ReminderExecutionRepository executionRepository,
+            AgentConfigProperties config) {
         return new GoldilocksWindowCalculator(executionRepository, config.getTask());
     }
 
@@ -292,11 +280,9 @@ public class ProactiveAutoConfiguration {
     @ConditionalOnMissingBean
     public GateThreeReasoner gateThreeReasoner(
             ProactiveFewShotLibrary fewShotLibrary,
-            @Autowired(required = false) AgentConfigProperties config,
+            AgentConfigProperties config,
             @Autowired(required = false) com.lifepilot.notification.config.NotificationProperties notificationProperties) {
-        AgentConfigProperties.TaskConfig taskConfig =
-                config != null ? config.getTask() : new AgentConfigProperties().getTask();
-        return new GateThreeReasoner(fewShotLibrary, taskConfig, notificationProperties);
+        return new GateThreeReasoner(fewShotLibrary, config.getTask(), notificationProperties);
     }
 
     // ── 引擎 ──

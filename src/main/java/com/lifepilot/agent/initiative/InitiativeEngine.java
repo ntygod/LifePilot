@@ -10,7 +10,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 主动引擎 — 事件驱动的主动思考 + 对话发起。
@@ -36,15 +39,18 @@ public class InitiativeEngine {
     private final Gatekeeper gatekeeper;
     private final Thinker thinker;
     private final ConversationInitiator conversationInitiator;
+    private final Clock clock;
 
     public InitiativeEngine(ThoughtPool thoughtPool,
                             Gatekeeper gatekeeper,
                             Thinker thinker,
-                            ConversationInitiator conversationInitiator) {
+                            ConversationInitiator conversationInitiator,
+                            Clock clock) {
         this.thoughtPool = thoughtPool;
         this.gatekeeper = gatekeeper;
         this.thinker = thinker;
         this.conversationInitiator = conversationInitiator;
+        this.clock = Objects.requireNonNull(clock, "主动引擎时钟不能为空");
     }
 
     /**
@@ -74,10 +80,11 @@ public class InitiativeEngine {
      */
     @Nullable
     public Thought tryExpress(Gatekeeper.GatekeeperContext context) {
+        Instant now = Instant.now(clock);
         // 清理过期想法
-        thoughtPool.cleanup();
+        thoughtPool.cleanup(now);
         // 成熟度演化：截止升温 / 停滞衰减，并应用状态迁移
-        thoughtPool.evolve(java.time.Instant.now());
+        thoughtPool.evolve(now);
 
         // 获取就绪想法
         List<Thought> ready = thoughtPool.getReadyThoughts();
@@ -119,7 +126,7 @@ public class InitiativeEngine {
                 thoughtPool.submit(thought);
             }
             // 演化：让本轮新想法与旧想法的成熟度/状态在同一时点对齐
-            thoughtPool.evolve(java.time.Instant.now());
+            thoughtPool.evolve(Instant.now(clock));
             if (!thoughts.isEmpty()) {
                 log.debug("主动引擎: 空闲思考产出 {} 个想法", thoughts.size());
             }

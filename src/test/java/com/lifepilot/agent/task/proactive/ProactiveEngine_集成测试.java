@@ -9,9 +9,11 @@ import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntent;
 import com.lifepilot.agent.task.reminder.ReminderClipboardIntentType;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.agent.task.reminder.ReminderFocusState;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.notification.NotificationRequest;
 import com.lifepilot.notification.NotificationService;
@@ -103,15 +105,16 @@ class ProactiveEngine_集成测试 {
         notificationService = mock(NotificationService.class);
         when(notificationService.send(any())).thenReturn(List.of("notif-" + UUID.randomUUID()));
 
+        agentConfig = new AgentConfigProperties();
         queuedActionRepo = new QueuedActionRepository(jdbc);
         autonomyRepo = new AutonomyRepository(jdbc);
-        trustUpgradeService = new TrustUpgradeService(autonomyRepo, null, null, null);
+        trustUpgradeService = new TrustUpgradeService(autonomyRepo, agentConfig,
+                mock(ReminderFeedbackRepository.class), mock(SemanticMemory.class));
         decisionGate = new DecisionGate(trustUpgradeService, null);
         deliveryEngine = new DeliveryEngine(notificationService, queuedActionRepo);
         clipboardBuffer = new ClipboardIntentBuffer();
         generationRouter = mock(GenerationRouter.class);
         promptRegistry = mock(PromptRegistry.class);
-        agentConfig = new AgentConfigProperties();
         when(promptRegistry.render(anyString(), anyMap())).thenReturn("prompt");
         when(generationRouter.call(eq("chat"), anyString(), isNull(), isNull(), isNull(),
                 eq(GenerationCapability.CHAT), any(java.time.Duration.class)))
@@ -128,7 +131,7 @@ class ProactiveEngine_集成测试 {
     /** 构建引擎，使用指定的行为插件列表。 */
     private ProactiveEngine buildEngine(List<ProactiveBehavior> behaviors) {
         return new ProactiveEngine(behaviors, decisionGate, deliveryEngine,
-                null, null, null, null, null, null, null, null, null,
+                null, null, agentConfig, null, null, null, null, null, null,
                 new BehaviorActivationPolicy());
     }
 

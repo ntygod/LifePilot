@@ -43,7 +43,8 @@ class InitiativeEngine_表达链路测试 {
     private ThoughtPool pool() {
         var repository = mock(ThoughtRepository.class);
         when(repository.findByState(any(ThoughtState.class))).thenReturn(List.of());
-        return new ThoughtPool(10, Duration.ofHours(72), Duration.ofHours(48), repository, MATURITY_MODEL);
+        return new ThoughtPool(10, Duration.ofHours(72), Duration.ofHours(48), repository,
+                MATURITY_MODEL, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private Gatekeeper gatekeeper() {
@@ -83,7 +84,8 @@ class InitiativeEngine_表达链路测试 {
         var orchestrator = mock(AgentOrchestrator.class);
         when(orchestrator.run(any(AgentRequest.class)))
                 .thenReturn(new AgentResponse("trace-1", "initiative-session", "已发起", 0, 0, null));
-        var engine = new InitiativeEngine(pool, gatekeeper(), thinker, new ConversationInitiator(orchestrator));
+        var engine = new InitiativeEngine(pool, gatekeeper(), thinker, new ConversationInitiator(orchestrator),
+                Clock.fixed(NOW, ZoneOffset.UTC));
 
         var expressed = engine.tryExpress(new Gatekeeper.GatekeeperContext(false, 0, null));
 
@@ -111,7 +113,8 @@ class InitiativeEngine_表达链路测试 {
         var thinker = mock(Thinker.class);
         var orchestrator = mock(AgentOrchestrator.class);
         when(orchestrator.run(any(AgentRequest.class))).thenThrow(new IllegalStateException("模型不可用"));
-        var engine = new InitiativeEngine(pool, gatekeeper(), thinker, new ConversationInitiator(orchestrator));
+        var engine = new InitiativeEngine(pool, gatekeeper(), thinker, new ConversationInitiator(orchestrator),
+                Clock.fixed(NOW, ZoneOffset.UTC));
 
         var expressed = engine.tryExpress(new Gatekeeper.GatekeeperContext(false, 0, null));
 

@@ -10,8 +10,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,7 +73,8 @@ class ThoughtPool_持久化集成测试 {
         return new ThoughtPool(10, Duration.ofHours(6), Duration.ofHours(24), repository,
                 new com.lifepilot.agent.initiative.maturity.MaturityModel(
                         new com.lifepilot.agent.initiative.maturity.MaturityModel.Config(
-                                0.6f, 0.5f, 0.15f, 0.15f, 48.0, 24.0, 72.0)));
+                                0.6f, 0.5f, 0.15f, 0.15f, 48.0, 24.0, 72.0)),
+                Clock.fixed(Instant.parse("2026-06-07T00:00:00Z"), ZoneOffset.UTC));
     }
 
     @Test

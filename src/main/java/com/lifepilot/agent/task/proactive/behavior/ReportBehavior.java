@@ -99,7 +99,7 @@ public class ReportBehavior extends AbstractLlmBehavior {
     }
 
     /**
-     * 覆写内容生成 — 无对话摘要时返回 null（跳过报告），有摘要时走基类 LLM+回退流程。
+     * 覆写内容生成 — 无对话摘要时返回 null（跳过报告），有摘要时走基类 LLM 生成流程。
      */
     @Override
     protected String generateContent(ProactiveCandidate candidate, ContextPacket ctx) {

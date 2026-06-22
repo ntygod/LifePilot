@@ -41,16 +41,16 @@ public class ImplicitSignalCollector {
     /** recentDeliveries 硬上限，防止内存膨胀。 */
     private static final int MAX_RECENT_DELIVERIES = 500;
 
-    @Nullable private final ProactiveMemoryBridge memoryBridge;
-    @Nullable private final TrustUpgradeService trustUpgradeService;
+    private final ProactiveMemoryBridge memoryBridge;
+    private final TrustUpgradeService trustUpgradeService;
 
     /** 最近投递记录：notificationId → (behaviorName, topicKey, deliveredAt) */
     private final Map<String, DeliveryRecord> recentDeliveries = new ConcurrentHashMap<>();
 
-    public ImplicitSignalCollector(@Nullable ProactiveMemoryBridge memoryBridge,
-                                   @Nullable TrustUpgradeService trustUpgradeService) {
-        this.memoryBridge = memoryBridge;
-        this.trustUpgradeService = trustUpgradeService;
+    public ImplicitSignalCollector(ProactiveMemoryBridge memoryBridge,
+                                   TrustUpgradeService trustUpgradeService) {
+        this.memoryBridge = Objects.requireNonNull(memoryBridge, "主动记忆桥接不能为空");
+        this.trustUpgradeService = Objects.requireNonNull(trustUpgradeService, "信任升级服务不能为空");
     }
 
     /** 引擎投递后调用 — 记录投递事件以便后续检测参与度。 */
@@ -119,8 +119,6 @@ public class ImplicitSignalCollector {
 
     /** 对话完成后调用 — 未命中检测。 */
     public void checkMissedOpportunities(String userId, String conversationContent) {
-        if (memoryBridge == null) return;
-
         var goals = memoryBridge.getActiveGoals();
         for (var goal : goals) {
             if (isRelated(conversationContent, goal.goal())) {
@@ -144,7 +142,7 @@ public class ImplicitSignalCollector {
         boolean positive = value > 0;
 
         // 信任回流
-        if (trustUpgradeService != null && behaviorName != null) {
+        if (behaviorName != null) {
             if (positive) {
                 trustUpgradeService.recordPositiveFeedback(userId, behaviorName);
             } else if (value < -0.3f) {
@@ -153,7 +151,7 @@ public class ImplicitSignalCollector {
         }
 
         // 偏好回流 — 写入 L4
-        if (memoryBridge != null && behaviorName != null) {
+        if (behaviorName != null) {
             float signal = positive ? 0.8f : 0.2f;
             memoryBridge.observePreference("proactive-domain", behaviorName, signal);
             // L3 回写 — 使洞察可被 HybridRetriever 检索

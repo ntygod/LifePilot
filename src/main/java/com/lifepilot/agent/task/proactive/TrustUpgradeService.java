@@ -11,6 +11,7 @@ import org.springframework.lang.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 信任升级服务 — 追踪反馈并在连续正反馈后建议升级自主度。
@@ -31,9 +32,6 @@ import java.util.Map;
 public class TrustUpgradeService {
 
     private static final Logger log = LoggerFactory.getLogger(TrustUpgradeService.class);
-
-    private static final int DEFAULT_UPGRADE_THRESHOLD = 5;
-    private static final Duration DEFAULT_DOWNGRADE_COOLDOWN = Duration.ofDays(7);
 
     /**
      * 每次"无用"反馈对关联 insight 实体施加的 importance 惩罚步长。
@@ -57,46 +55,37 @@ public class TrustUpgradeService {
     );
 
     private final AutonomyRepository autonomyRepository;
-    @Nullable
     private final AgentConfigProperties config;
-    /**
-     * 反馈仓库 —— 注入后 {@link #recordNegativeFeedback(String, String, String)}
-     * 才能反查 notification → insight 关联；单测可为 null 跳过溯源路径。
-     */
-    @Nullable
+    /** 反馈仓库 —— 用于反查 notification → insight 关联。 */
     private final ReminderFeedbackRepository reminderFeedbackRepository;
-    /**
-     * 语义记忆 —— 注入后 {@link #recordNegativeFeedback(String, String, String)}
-     * 才能对 insight 实体做 importanceScore 惩罚；单测可为 null 跳过溯源路径。
-     */
-    @Nullable
+    /** 语义记忆 —— 用于对 insight 实体做 importanceScore 惩罚。 */
     private final SemanticMemory semanticMemory;
 
     /**
-     * 完整构造 —— 注入反馈仓库与语义记忆后，
+     * 完整构造 —— 注入反馈仓库与语义记忆，
      * {@link #recordNegativeFeedback(String, String, String)} 会溯源到 insight 实体做惩罚。
      *
      * @param autonomyRepository         自主度仓库
-     * @param config                     配置（可空）
-     * @param reminderFeedbackRepository 反馈仓库（可空，为空时溯源路径静默跳过）
-     * @param semanticMemory             语义记忆（可空，为空时溯源路径静默跳过）
+     * @param config                     Agent 配置
+     * @param reminderFeedbackRepository 反馈仓库
+     * @param semanticMemory             语义记忆
      */
     public TrustUpgradeService(AutonomyRepository autonomyRepository,
-                               @Nullable AgentConfigProperties config,
-                               @Nullable ReminderFeedbackRepository reminderFeedbackRepository,
-                               @Nullable SemanticMemory semanticMemory) {
-        this.autonomyRepository = autonomyRepository;
-        this.config = config;
-        this.reminderFeedbackRepository = reminderFeedbackRepository;
-        this.semanticMemory = semanticMemory;
+                               AgentConfigProperties config,
+                               ReminderFeedbackRepository reminderFeedbackRepository,
+                               SemanticMemory semanticMemory) {
+        this.autonomyRepository = Objects.requireNonNull(autonomyRepository, "自主度仓库不能为空");
+        this.config = Objects.requireNonNull(config, "Agent 配置不能为空");
+        this.reminderFeedbackRepository = Objects.requireNonNull(reminderFeedbackRepository, "提醒反馈仓库不能为空");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "语义记忆不能为空");
     }
 
     private int upgradeThreshold() {
-        return config != null ? config.getTask().getProactiveEngineTrustUpgradeThreshold() : DEFAULT_UPGRADE_THRESHOLD;
+        return config.getTask().getProactiveEngineTrustUpgradeThreshold();
     }
 
     private Duration downgradeCooldown() {
-        return config != null ? Duration.ofDays(config.getTask().getProactiveEngineTrustDowngradeCooldownDays()) : DEFAULT_DOWNGRADE_COOLDOWN;
+        return Duration.ofDays(config.getTask().getProactiveEngineTrustDowngradeCooldownDays());
     }
 
     /** 获取行为的当前自主度（不存在则用默认值）。 */
@@ -136,13 +125,13 @@ public class TrustUpgradeService {
      * <p>溯源流程：
      * <ol>
      *   <li>按传入行为调整 autonomy 冷却（沿用老语义）</li>
-     *   <li>若 {@code notificationId} 非空且仓库 / 语义记忆都注入了，查
+     *   <li>若 {@code notificationId} 非空，查
      *       {@link ReminderFeedbackRepository#findInsightEntityIdsByNotification} 得到关联 insight 列表</li>
      *   <li>对每条关联实体调 {@link SemanticMemory#updateImportanceScore} 施加
      *       {@value #NEGATIVE_FEEDBACK_DELTA} 惩罚 —— 事件自动驱动 NegativeFeedbackListener 累计判定</li>
      * </ol>
      *
-     * <p>任一依赖缺失 / 无关联 insight / 单条惩罚失败 —— 均静默跳过，不让反馈主流程挂掉。</p>
+     * <p>无关联 insight / 单条惩罚失败 —— 均不让反馈主流程挂掉。</p>
      *
      * @param userId         用户 ID
      * @param behaviorName   行为名
@@ -183,7 +172,6 @@ public class TrustUpgradeService {
      */
     private void applyInsightFeedbackPenalty(@Nullable String notificationId) {
         if (notificationId == null || notificationId.isBlank()) return;
-        if (reminderFeedbackRepository == null || semanticMemory == null) return;
         try {
             var insightIds = reminderFeedbackRepository.findInsightEntityIdsByNotification(notificationId);
             for (var insightId : insightIds) {

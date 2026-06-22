@@ -105,14 +105,13 @@ public class ProactiveEngine {
      * <p>Bridge 负责归档与事件发布，确保所有调用路径都能触发取消级联。
      * 若将来需要将调用强制收拢到 Engine，应直接收敛调用入口并同步更新所有行为插件。</p>
      *
-     * <p>taskId 即为 L3 GOAL 实体 id。memoryBridge 为空时退化为 no-op。</p>
+     * <p>taskId 即为 L3 GOAL 实体 id。</p>
      *
      * @param taskId 主动任务 id（即 GOAL 实体 id）
      */
     public void markGoalFulfilled(String taskId) {
         if (memoryBridge == null) {
-            log.debug("主动引擎: markGoalFulfilled 无记忆桥接, 跳过, taskId={}", taskId);
-            return;
+            throw new IllegalStateException("完成主动任务需要主动记忆桥接");
         }
         memoryBridge.markGoalFulfilled(taskId);
     }

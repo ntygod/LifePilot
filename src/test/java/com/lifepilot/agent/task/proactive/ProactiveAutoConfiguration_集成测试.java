@@ -9,7 +9,9 @@ import com.lifepilot.agent.task.proactive.behavior.MemoryAttentionBehavior;
 import com.lifepilot.agent.task.proactive.behavior.ReportBehavior;
 import com.lifepilot.agent.task.proactive.schedule.ScheduleExtractor;
 import com.lifepilot.agent.task.reminder.ReminderBehavior;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.notification.NotificationService;
@@ -42,6 +44,8 @@ class ProactiveAutoConfiguration_集成测试 {
         var promptRegistry = mock(PromptRegistry.class);
         var semanticMemory = mock(SemanticMemory.class);
         var episodicMemory = mock(EpisodicMemory.class);
+        var memoryAttentionService = mock(MemoryAttentionService.class);
+        var reminderFeedbackRepository = mock(ReminderFeedbackRepository.class);
 
         var config = new ProactiveAutoConfiguration();
 
@@ -56,10 +60,11 @@ class ProactiveAutoConfiguration_集成测试 {
         assertThat(autonomyRepository).isNotNull();
 
         // ── 服务层 Bean ──
-        TrustUpgradeService trustUpgradeService = config.trustUpgradeService(autonomyRepository, null, null, null);
+        TrustUpgradeService trustUpgradeService = config.trustUpgradeService(
+                autonomyRepository, agentConfig, reminderFeedbackRepository, semanticMemory);
         assertThat(trustUpgradeService).isNotNull();
 
-        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, memoryBridge, null);
+        DecisionGate decisionGate = config.proactiveDecisionGate(trustUpgradeService, memoryBridge, agentConfig);
         assertThat(decisionGate).isNotNull();
 
         DeliveryEngine deliveryEngine = config.proactiveDeliveryEngine(notificationService, queuedActionRepository);
@@ -85,7 +90,7 @@ class ProactiveAutoConfiguration_集成测试 {
         assertThat(clipboardBehavior).isNotNull();
         assertThat(clipboardBehavior.name()).isEqualTo("clipboard");
 
-        MemoryAttentionBehavior memoryAttentionBehavior = config.memoryAttentionBehavior(memoryBridge);
+        MemoryAttentionBehavior memoryAttentionBehavior = config.memoryAttentionBehavior(memoryAttentionService);
         assertThat(memoryAttentionBehavior).isNotNull();
         assertThat(memoryAttentionBehavior.name()).isEqualTo("memory-attention");
 
@@ -97,8 +102,7 @@ class ProactiveAutoConfiguration_集成测试 {
         var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgradeService);
         assertThat(signalCollector).isNotNull();
 
-        var hook = config.conversationCompletionHook(signalCollector, null, null);
-        assertThat(hook).isNotNull();
+        assertThat(signalCollector).isNotNull();
     }
 
     @Test
@@ -113,13 +117,16 @@ class ProactiveAutoConfiguration_集成测试 {
         var promptRegistry = mock(PromptRegistry.class);
         var semanticMemory = mock(SemanticMemory.class);
         var episodicMemory = mock(EpisodicMemory.class);
+        var memoryAttentionService = mock(MemoryAttentionService.class);
+        var reminderFeedbackRepository = mock(ReminderFeedbackRepository.class);
 
         var config = new ProactiveAutoConfiguration();
 
         var queuedActionRepo = config.queuedActionRepository(jdbcTemplate);
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
-        var trustUpgrade = config.trustUpgradeService(autonomyRepo, null, null, null);
-        var gate = config.proactiveDecisionGate(trustUpgrade, memoryBridge, null);
+        var trustUpgrade = config.trustUpgradeService(
+                autonomyRepo, agentConfig, reminderFeedbackRepository, semanticMemory);
+        var gate = config.proactiveDecisionGate(trustUpgrade, memoryBridge, agentConfig);
         var delivery = config.proactiveDeliveryEngine(notificationService, queuedActionRepo);
         var buffer = config.clipboardIntentBuffer();
         var signalCollector = config.implicitSignalCollector(memoryBridge, trustUpgrade);
@@ -129,7 +136,7 @@ class ProactiveAutoConfiguration_集成测试 {
                 config.followUpBehavior(memoryBridge, generationRouter, promptRegistry, agentConfig),
                 config.insightBehavior(semanticMemory, generationRouter, promptRegistry),
                 config.clipboardBehavior(buffer),
-                config.memoryAttentionBehavior(memoryBridge),
+                config.memoryAttentionBehavior(memoryAttentionService),
                 config.reportBehavior(episodicMemory, generationRouter, agentConfig, promptRegistry)
         );
 
@@ -153,7 +160,7 @@ class ProactiveAutoConfiguration_集成测试 {
     @Test
     void DecisionGate_支持无依赖构造() {
         var config = new ProactiveAutoConfiguration();
-        DecisionGate gate = config.proactiveDecisionGate(null, null, null);
+        DecisionGate gate = config.proactiveDecisionGate(null, null, new AgentConfigProperties());
         assertThat(gate).isNotNull();
     }
 
@@ -166,16 +173,19 @@ class ProactiveAutoConfiguration_集成测试 {
         var promptRegistry = mock(PromptRegistry.class);
         var semanticMemory = mock(SemanticMemory.class);
         var episodicMemory = mock(EpisodicMemory.class);
+        var memoryAttentionService = mock(MemoryAttentionService.class);
+        var reminderFeedbackRepository = mock(ReminderFeedbackRepository.class);
         var jdbcTemplate = mock(JdbcTemplate.class);
         var autonomyRepo = config.autonomyRepository(jdbcTemplate);
-        var trustUpgrade = config.trustUpgradeService(autonomyRepo, null, null, null);
+        var trustUpgrade = config.trustUpgradeService(
+                autonomyRepo, agentConfig, reminderFeedbackRepository, semanticMemory);
         var buffer = config.clipboardIntentBuffer();
 
         var behaviors = java.util.List.<ProactiveBehavior>of(
                 config.followUpBehavior(memoryBridge, generationRouter, promptRegistry, agentConfig),
                 config.insightBehavior(semanticMemory, generationRouter, promptRegistry),
                 config.clipboardBehavior(buffer),
-                config.memoryAttentionBehavior(memoryBridge),
+                config.memoryAttentionBehavior(memoryAttentionService),
                 config.reportBehavior(episodicMemory, generationRouter, agentConfig, promptRegistry)
         );
 

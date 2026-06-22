@@ -1,5 +1,8 @@
 package com.lifepilot.agent.task.proactive;
 
+import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class TrustUpgradeService_单元测试 {
 
@@ -32,7 +36,8 @@ class TrustUpgradeService_单元测试 {
                     PRIMARY KEY (user_id, behavior_name)
                 )""");
         repo = new AutonomyRepository(jdbc);
-        service = new TrustUpgradeService(repo, null, null, null);
+        service = new TrustUpgradeService(repo, new AgentConfigProperties(),
+                mock(ReminderFeedbackRepository.class), mock(SemanticMemory.class));
     }
 
     @AfterEach

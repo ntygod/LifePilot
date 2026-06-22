@@ -2,11 +2,12 @@ package com.lifepilot.agent.task.proactive.behavior;
 
 import com.lifepilot.agent.task.proactive.ContextPacket;
 import com.lifepilot.agent.task.proactive.DeliveryLevel;
-import com.lifepilot.agent.task.proactive.ProactiveMemoryBridge;
 import com.lifepilot.agent.task.proactive.boundary.BoundaryState;
 import com.lifepilot.agent.task.proactive.boundary.FocusMode;
+import com.lifepilot.memory.consumption.attention.MemoryAttentionService;
 import com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionItem;
 import com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionKind;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,13 +21,13 @@ import static org.mockito.Mockito.when;
 
 class MemoryAttentionBehavior_单元测试 {
 
-    ProactiveMemoryBridge memoryBridge;
+    MemoryAttentionService memoryAttentionService;
     MemoryAttentionBehavior behavior;
 
     @BeforeEach
     void setUp() {
-        memoryBridge = mock(ProactiveMemoryBridge.class);
-        behavior = new MemoryAttentionBehavior(memoryBridge);
+        memoryAttentionService = mock(MemoryAttentionService.class);
+        behavior = new MemoryAttentionBehavior(memoryAttentionService);
     }
 
     @Test
@@ -37,7 +38,7 @@ class MemoryAttentionBehavior_单元测试 {
 
     @Test
     void detect_注意力项生成候选并跳过EVOLVING() {
-        when(memoryBridge.getAttentionItems(5)).thenReturn(List.of(
+        when(memoryAttentionService.computeAttention(MemoryReadFilter.userMemory(), 5)).thenReturn(List.of(
                 item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.8f, null),
                 item(AttentionKind.EVOLVING, "g2", "演进目标", 0.7f, null)
         ));
