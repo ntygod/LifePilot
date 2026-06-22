@@ -14,6 +14,7 @@ import com.lifepilot.memory.store.projection.MemoryProjectionOutboxRepository;
 import com.lifepilot.memory.store.projection.MemoryProjectionOutboxScheduler;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.SemanticMemory;
@@ -156,6 +157,15 @@ public class MemoryStoreAutoConfiguration {
                                                        ObjectMapper objectMapper) {
         log.info("记忆模块: 注册 MemorySpaceRepository");
         return new MemorySpaceRepository(jdbcTemplate, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ChatTurnMemorySnapshotRepository chatTurnMemorySnapshotRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
+        log.info("记忆模块: 注册 ChatTurnMemorySnapshotRepository");
+        return new ChatTurnMemorySnapshotRepository(jdbcTemplate, objectMapper);
     }
 
     @Bean

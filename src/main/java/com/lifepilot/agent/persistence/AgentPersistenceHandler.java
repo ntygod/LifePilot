@@ -411,6 +411,10 @@ public class AgentPersistenceHandler {
             var extractionFuture = CompletableFuture.runAsync(() -> {
                 try {
                     if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                        if (finalState.turnId() == null || finalState.turnId().isBlank()) {
+                            log.debug("实时记忆抽取跳过：缺少轮次 ID, sessionId={}", finalState.sessionId());
+                            return;
+                        }
                         String userMessageForExtraction = normalizeUserMessageForExtraction(finalState.goal());
                         if (userMessageForExtraction == null || userMessageForExtraction.isBlank()) {
                             log.debug("实时记忆抽取跳过：无可治理用户文本, sessionId={}", finalState.sessionId());

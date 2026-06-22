@@ -5,6 +5,7 @@ import com.lifepilot.interaction.web.model.ChatRequest;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.ChatTurnRepository;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.store.scope.MemorySpace;
@@ -58,7 +59,7 @@ class ChatTurnService_项目上下文失败测试 {
                 memorySpaceRepository,
                 chatSessionRepository,
                 projectContextResolver,
-                null);
+                new MemoryAccessPolicy());
 
         service.prepare("session-1", new ChatRequest(
                 "turn-1",

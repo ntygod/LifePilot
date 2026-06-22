@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ChatTurnMemorySnapshotRepository 项目空间字段（V18）集成测试 ——
+ * ChatTurnMemorySnapshotRepository 项目空间字段集成测试 ——
  * 验证 project_space_id 列的 insert / upsert / 回读与 null 默认语义。
  *
  * <p>采用内存 SQLite + 手动建表策略，与同目录 MemorySpaceRepository_项目空间集成测试保持一致，
@@ -34,7 +34,7 @@ class ChatTurnMemorySnapshotRepository_项目空间字段测试 {
     void setUp() {
         dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-        // V1 chat_turn_memory_snapshots 结构 + V18 新增 project_space_id 列
+        // 当前 chat_turn_memory_snapshots 表结构
         jdbc.execute("""
                 CREATE TABLE chat_turn_memory_snapshots (
                     turn_id                          TEXT PRIMARY KEY,

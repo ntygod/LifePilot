@@ -66,7 +66,6 @@ public class RealtimeExtractor {
     private final int existingEntitySummaryLimit;
     private final JdbcTemplate jdbcTemplate;
     private final PromptRegistry promptRegistry;
-    @Nullable
     private final ChatTurnMemorySnapshotRepository snapshotRepository;
     /** 时钟注入 — 用于非持久性实体自动推导 {@code expires_at}，便于单测注入固定时钟。 */
     private final Clock clock;
@@ -93,7 +92,7 @@ public class RealtimeExtractor {
                              ExtractionValidator extractionValidator,
                              JdbcTemplate jdbcTemplate,
                              PromptRegistry promptRegistry,
-                             @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                             ChatTurnMemorySnapshotRepository snapshotRepository,
                              Clock clock,
                              MemoryAccessPolicy memoryAccessPolicy,
                              @Nullable MemoryExtractionCandidateRepository candidateRepository,
@@ -115,18 +114,7 @@ public class RealtimeExtractor {
         this.relationExtractionEnabled = properties.getExtraction().isRelationExtractionEnabled();
     }
 
-    /**
-     * 异步提取对话中的关键实体并写入 L3。
-     *
-     * @param sessionId   会话 ID
-     * @param userMessage 用户消息
-     * @param aiResponse  AI 响应
-     */
-    public void extractAsync(String sessionId, String userMessage, String aiResponse) {
-        extractAsync(sessionId, null, userMessage, aiResponse);
-    }
-
-    public void extractAsync(String sessionId, @Nullable String turnId, String userMessage, String aiResponse) {
+    public void extractAsync(String sessionId, String turnId, String userMessage, String aiResponse) {
         Thread.startVirtualThread(() -> {
             try {
                 extract(sessionId, turnId, userMessage, aiResponse);
@@ -137,18 +125,7 @@ public class RealtimeExtractor {
         });
     }
 
-    /**
-     * 同步提取逻辑（供测试调用）。
-     *
-     * @param sessionId   会话 ID
-     * @param userMessage 用户消息
-     * @param aiResponse  AI 响应
-     */
-    void extract(String sessionId, String userMessage, String aiResponse) {
-        extract(sessionId, null, userMessage, aiResponse);
-    }
-
-    void extract(String sessionId, @Nullable String turnId, String userMessage, String aiResponse) {
+    void extract(String sessionId, String turnId, String userMessage, String aiResponse) {
         if (userMessage == null || userMessage.isBlank()) return;
         ChatTurnMemorySnapshot snapshot = resolveSnapshot(sessionId, turnId);
         MemoryWriteContext writeContext = memoryAccessPolicy.resolveAutoLearningWriteContext(snapshot, sessionId, turnId);
@@ -767,9 +744,9 @@ public class RealtimeExtractor {
     }
 
     @Nullable
-    private ChatTurnMemorySnapshot resolveSnapshot(String sessionId, @Nullable String turnId) {
-        if (snapshotRepository == null || turnId == null || turnId.isBlank()) {
-            log.debug("实时实体提取: 缺少轮次作用域快照能力，跳过自动学习, sessionId={}, turnId={}",
+    private ChatTurnMemorySnapshot resolveSnapshot(String sessionId, String turnId) {
+        if (turnId.isBlank()) {
+            log.debug("实时实体提取: 缺少 turnId，跳过自动学习, sessionId={}, turnId={}",
                     sessionId, turnId);
             return null;
         }

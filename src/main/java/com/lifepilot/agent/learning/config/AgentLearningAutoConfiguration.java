@@ -137,7 +137,7 @@ public class AgentLearningAutoConfiguration {
                                                ExtractionValidator extractionValidator,
                                                JdbcTemplate jdbcTemplate,
                                                PromptRegistry promptRegistry,
-                                               @Nullable ChatTurnMemorySnapshotRepository snapshotRepository,
+                                               ChatTurnMemorySnapshotRepository snapshotRepository,
                                                Clock clock,
                                                MemoryAccessPolicy memoryAccessPolicy,
                                                @Nullable MemoryExtractionCandidateRepository candidateRepository,

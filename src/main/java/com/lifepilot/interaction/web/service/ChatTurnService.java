@@ -63,6 +63,7 @@ public class ChatTurnService {
     private final ChatSessionRepository chatSessionRepository;
     @Nullable
     private final ProjectContextResolver projectContextResolver;
+    @Nullable
     private final MemoryAccessPolicy memoryAccessPolicy;
 
     @Autowired
@@ -87,7 +88,7 @@ public class ChatTurnService {
         this.memorySpaceRepository = memorySpaceRepository;
         this.chatSessionRepository = chatSessionRepository;
         this.projectContextResolver = projectContextResolver;
-        this.memoryAccessPolicy = memoryAccessPolicy != null ? memoryAccessPolicy : new MemoryAccessPolicy();
+        this.memoryAccessPolicy = memoryAccessPolicy;
     }
 
     public ResolvedTurnRequest prepare(String sessionId, ChatRequest request) {
@@ -295,6 +296,9 @@ public class ChatTurnService {
         if (chatTurnMemorySnapshotRepository == null || memorySpaceRepository == null) {
             return;
         }
+        if (memoryAccessPolicy == null) {
+            throw new IllegalStateException("MemoryAccessPolicy 未装配，无法生成记忆快照");
+        }
         var personalSpace = memorySpaceRepository.ensureDefaultPersonalSpace();
         var experienceSpace = memorySpaceRepository.ensureDefaultExperienceSpace();
         ProjectContextResolution projectResolution = resolveProjectContext(sessionId);
@@ -425,8 +429,7 @@ public class ChatTurnService {
      *   <li>{@code model_id} / {@code provider_id} / {@code tokens} —— 调用元数据（对账、排障）。</li>
      * </ul>
      *
-     * <p>仅在对应字段非空 / 非默认值时写入；旧 payload 反序列化时缺这些字段
-     * 走 {@code Map.get} 默认 null，向后兼容自然成立。
+     * <p>仅在对应字段非空 / 非默认值时写入；读取方按字段是否存在决定是否启用对应能力。</p>
      *
      * @param response LLM 响应富字段
      * @return 可序列化为 payload_json 的 Map（保留字段插入序）
@@ -464,11 +467,6 @@ public class ChatTurnService {
             @Nullable String preferredProvider,
             @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride
     ) {
-        public TurnRequestSnapshot(String content,
-                                   @Nullable List<String> attachmentIds,
-                                   @Nullable String preferredProvider) {
-            this(content, attachmentIds, preferredProvider, null);
-        }
     }
 
     public record ResolvedTurnRequest(
@@ -479,12 +477,5 @@ public class ChatTurnService {
             @Nullable String preferredProvider,
             @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride
     ) {
-        public ResolvedTurnRequest(String turnId,
-                                   ChatTurnAction action,
-                                   String content,
-                                   @Nullable List<String> attachmentIds,
-                                   @Nullable String preferredProvider) {
-            this(turnId, action, content, attachmentIds, preferredProvider, null);
-        }
     }
 }
