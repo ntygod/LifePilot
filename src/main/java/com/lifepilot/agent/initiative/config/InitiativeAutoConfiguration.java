@@ -104,9 +104,10 @@ public class InitiativeAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public DefaultThinker defaultThinker(MemoryAttentionService memoryAttentionService,
-                                         InitiativeProperties props) {
+                                         InitiativeProperties props,
+                                         Clock clock) {
         log.info("主动引擎: 注册 DefaultThinker");
-        return new DefaultThinker(memoryAttentionService, props.getMaturity().getReadyThreshold());
+        return new DefaultThinker(memoryAttentionService, props.getMaturity().getReadyThreshold(), clock);
     }
 
     @Bean
@@ -118,9 +119,9 @@ public class InitiativeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public InitiativeEventListener initiativeEventListener(InitiativeEngine engine) {
+    public InitiativeEventListener initiativeEventListener(InitiativeEngine engine, Clock clock) {
         log.info("主动引擎: 注册 InitiativeEventListener");
-        return new InitiativeEventListener(engine);
+        return new InitiativeEventListener(engine, clock);
     }
 
     @Bean

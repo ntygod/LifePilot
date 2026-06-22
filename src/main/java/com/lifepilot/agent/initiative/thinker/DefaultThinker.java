@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
 
@@ -31,13 +32,15 @@ public class DefaultThinker implements Thinker {
     /** 记忆注意力服务（memory-proactive-foundation）—— 空闲思考的"该关注什么"来源。 */
     private final MemoryAttentionService memoryAttentionService;
     private final float readyThreshold;
+    private final Clock clock;
 
-    public DefaultThinker(MemoryAttentionService memoryAttentionService, float readyThreshold) {
+    public DefaultThinker(MemoryAttentionService memoryAttentionService, float readyThreshold, Clock clock) {
         if (readyThreshold < 0.0f || readyThreshold > 1.0f) {
             throw new IllegalArgumentException("想法就绪阈值必须在 0 到 1 之间");
         }
-        this.memoryAttentionService = memoryAttentionService;
+        this.memoryAttentionService = Objects.requireNonNull(memoryAttentionService, "记忆注意力服务不能为空");
         this.readyThreshold = readyThreshold;
+        this.clock = Objects.requireNonNull(clock, "默认思考器时钟不能为空");
     }
 
     @Override
@@ -82,7 +85,7 @@ public class DefaultThinker implements Thinker {
         }
         float confidence = clamp01(item.score());
         float maturity = clamp01(0.5f + item.score() * 0.45f);
-        Instant now = Instant.now();
+        Instant now = Instant.now(clock);
         var evidence = new Evidence(
                 "memory_entity", item.entityId(), null,
                 item.reason(), item.name(), now, confidence);
@@ -117,7 +120,7 @@ public class DefaultThinker implements Thinker {
 
         // 取第一个即将到期的事项生成提醒想法
         String deadline = signal.upcomingDeadlines().getFirst();
-        Instant now = Instant.now();
+        Instant now = Instant.now(clock);
         var evidence = new Evidence(
                 "time_elapsed",
                 "deadline:" + deadline,

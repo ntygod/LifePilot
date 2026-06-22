@@ -8,9 +8,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Objects;
 
 /**
  * Initiative Engine 事件监听器 — 将 Spring Event 转化为 Signal 并驱动主动引擎。
@@ -28,12 +30,14 @@ public class InitiativeEventListener {
     private static final Logger log = LoggerFactory.getLogger(InitiativeEventListener.class);
 
     private final InitiativeEngine engine;
+    private final Clock clock;
     private volatile Instant lastExpressedAt;
     private volatile int todayExpressedCount;
     private volatile LocalDate countedDate;
 
-    public InitiativeEventListener(InitiativeEngine engine) {
-        this.engine = engine;
+    public InitiativeEventListener(InitiativeEngine engine, Clock clock) {
+        this.engine = Objects.requireNonNull(engine, "主动引擎不能为空");
+        this.clock = Objects.requireNonNull(clock, "主动事件监听器时钟不能为空");
     }
 
     /**
@@ -49,7 +53,7 @@ public class InitiativeEventListener {
                 var signal = new Signal.ConversationEnded(
                         event.getSessionId(),
                         event.getSummary(),
-                        Instant.now()
+                        Instant.now(clock)
                 );
                 engine.processSignal(signal);
 
@@ -57,7 +61,7 @@ public class InitiativeEventListener {
                 var context = buildGatekeeperContext();
                 var expressed = engine.tryExpress(context);
                 if (expressed != null) {
-                    lastExpressedAt = Instant.now();
+                    lastExpressedAt = Instant.now(clock);
                     incrementTodayCount();
                     log.info("主动引擎: 对话结束后表达想法, intentKey={}",
                             expressed.intentKey());
@@ -74,7 +78,7 @@ public class InitiativeEventListener {
      */
     private Gatekeeper.GatekeeperContext buildGatekeeperContext() {
         Duration timeSinceLastExpress = lastExpressedAt != null
-                ? Duration.between(lastExpressedAt, Instant.now())
+                ? Duration.between(lastExpressedAt, Instant.now(clock))
                 : null;
         return new Gatekeeper.GatekeeperContext(
                 false, // 对话刚结束，用户不在对话中
@@ -84,7 +88,7 @@ public class InitiativeEventListener {
     }
 
     private int getTodayCount() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         if (!today.equals(countedDate)) {
             countedDate = today;
             todayExpressedCount = 0;
@@ -93,7 +97,7 @@ public class InitiativeEventListener {
     }
 
     private void incrementTodayCount() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         if (!today.equals(countedDate)) {
             countedDate = today;
             todayExpressedCount = 0;
