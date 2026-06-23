@@ -132,7 +132,7 @@ class CompactionEngine_集成测试 {
 
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper);
         transcriptRepository = new SessionTranscriptRepository(jdbcTemplate, objectMapper, sessionStoreRepository, null);
-        memoryDocumentRepository = new MemoryDocumentRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
+        memoryDocumentRepository = new MemoryDocumentRepository(jdbcTemplate, sessionStoreRepository);
     }
 
     @Test

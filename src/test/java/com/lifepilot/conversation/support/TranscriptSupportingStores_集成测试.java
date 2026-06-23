@@ -159,7 +159,7 @@ class TranscriptSupportingStores_集成测试 {
         var objectMapper = new ObjectMapper();
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, objectMapper, eventBus);
         artifactRepository = new SessionArtifactRepository(jdbcTemplate, objectMapper, sessionStoreRepository, eventBus);
-        memoryDocumentRepository = new MemoryDocumentRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
+        memoryDocumentRepository = new MemoryDocumentRepository(jdbcTemplate, sessionStoreRepository);
         contextReportRepository = new ContextReportRepository(jdbcTemplate, objectMapper, sessionStoreRepository);
     }
 

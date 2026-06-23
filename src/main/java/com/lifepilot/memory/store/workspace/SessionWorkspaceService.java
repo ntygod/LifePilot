@@ -2,8 +2,6 @@ package com.lifepilot.memory.store.workspace;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 
@@ -22,8 +20,6 @@ import java.util.UUID;
  * @since 2026-03-20
  */
 public class SessionWorkspaceService {
-
-    private static final Logger log = LoggerFactory.getLogger(SessionWorkspaceService.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -272,8 +268,7 @@ public class SessionWorkspaceService {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            log.warn("工作区 payload 序列化失败，降级为 null: error={}", e.getMessage());
-            return null;
+            throw new IllegalStateException("工作区 payload 序列化失败", e);
         }
     }
 

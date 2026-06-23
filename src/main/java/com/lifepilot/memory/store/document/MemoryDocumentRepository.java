@@ -1,12 +1,7 @@
 package com.lifepilot.memory.store.document;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.memory.consumption.compression.TokenEstimator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
@@ -27,10 +22,7 @@ import java.util.UUID;
 @Repository
 public class MemoryDocumentRepository {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryDocumentRepository.class);
-
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
     private final SessionStoreRepository sessionStoreRepository;
 
     public record MemoryDocumentRow(
@@ -58,17 +50,9 @@ public class MemoryDocumentRepository {
     }
 
     public MemoryDocumentRepository(JdbcTemplate jdbcTemplate,
-                                    ObjectMapper objectMapper,
                                     SessionStoreRepository sessionStoreRepository) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
         this.sessionStoreRepository = sessionStoreRepository;
-    }
-
-    @Autowired
-    public MemoryDocumentRepository(JdbcTemplate jdbcTemplate,
-                                    SessionStoreRepository sessionStoreRepository) {
-        this(jdbcTemplate, new ObjectMapper(), sessionStoreRepository);
     }
 
     public String upsert(String namespace,
@@ -198,13 +182,4 @@ public class MemoryDocumentRepository {
         );
     }
 
-    @SuppressWarnings("unused")
-    private String toJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
-            log.warn("对象序列化失败: error={}", e.getMessage());
-            return "{}";
-        }
-    }
 }
