@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
@@ -271,5 +272,44 @@ class SemanticMemory_实体版本集成测试 {
 
         verify(vectorSearcher).upsertEntityVector("entity-hero", persisted.textRepresentation());
         verify(vectorSearcher).upsertEntityVector("entity-hero", updated.textRepresentation());
+    }
+
+    @Test
+    void countByEntityType_实体类型被污染时应失败() {
+        String now = Instant.parse("2026-06-23T10:00:00Z").toString();
+        jdbcTemplate.update("""
+                INSERT INTO memory_entities (
+                    id, space_id, memory_scope, entity_type, canonical_name, normalized_name,
+                    first_seen_at, last_seen_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                "entity-broken-type",
+                "space-1",
+                "USER_PROFILE",
+                "BROKEN_TYPE",
+                "污染实体",
+                "污染实体",
+                now,
+                now,
+                now,
+                now);
+        jdbcTemplate.update("""
+                INSERT INTO memory_entity_versions (
+                    id, entity_id, version_no, description, is_current,
+                    valid_from, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                "version-broken-type",
+                "entity-broken-type",
+                1,
+                "实体类型被污染",
+                1,
+                now,
+                now,
+                now);
+
+        assertThatThrownBy(() -> semanticMemory.countByEntityType(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("BROKEN_TYPE");
     }
 }

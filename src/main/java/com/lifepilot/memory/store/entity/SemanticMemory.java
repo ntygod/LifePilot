@@ -992,13 +992,16 @@ public class SemanticMemory {
         var rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         Map<EntityType, Integer> result = new java.util.EnumMap<>(EntityType.class);
         for (var row : rows) {
+            String rawType = (String) row.get("type");
+            if (rawType == null || rawType.isBlank()) {
+                throw new IllegalStateException("语义记忆: type 不能为空");
+            }
             try {
-                EntityType type = EntityType.valueOf((String) row.get("type"));
+                EntityType type = EntityType.valueOf(rawType);
                 int count = ((Number) row.get("cnt")).intValue();
                 result.put(type, count);
             } catch (IllegalArgumentException e) {
-                // 未知的实体类型，跳过
-                log.debug("语义记忆: 忽略未知实体类型, type={}", row.get("type"));
+                throw new IllegalStateException("语义记忆: type 包含未知值: " + rawType, e);
             }
         }
         return result;
