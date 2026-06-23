@@ -82,17 +82,22 @@ public class MemoryProjectionOutboxProcessor {
             throw new IllegalArgumentException("未知投影类型: " + task.projectionType());
         }
         Map<String, Object> payload = objectMapper.readValue(task.payloadJson(), MAP_TYPE);
-        String entityId = String.valueOf(payload.get("entityId"));
+        String entityId = requireText(payload, "entityId");
         switch (task.operation()) {
             case "UPSERT" -> {
-                Object text = payload.get("text");
-                if (text == null || text.toString().isBlank()) {
-                    throw new IllegalArgumentException("VECTOR UPSERT 缺少 text");
-                }
-                vectorSearcher.upsertEntityVector(entityId, text.toString());
+                String text = requireText(payload, "text");
+                vectorSearcher.upsertEntityVector(entityId, text);
             }
             case "DELETE" -> vectorSearcher.deleteEntityVector(entityId);
             default -> throw new IllegalArgumentException("未知投影操作: " + task.operation());
         }
+    }
+
+    private String requireText(Map<String, Object> payload, String fieldName) {
+        Object value = payload.get(fieldName);
+        if (value == null || value.toString().isBlank()) {
+            throw new IllegalArgumentException("投影 payload 缺少 " + fieldName);
+        }
+        return value.toString();
     }
 }

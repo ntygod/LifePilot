@@ -1,14 +1,13 @@
 package com.lifepilot.memory.store.projection;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,12 +21,8 @@ import java.util.UUID;
  */
 public class MemoryProjectionOutboxRepository {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryProjectionOutboxRepository.class);
-
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
-    @Nullable
-    private Boolean tableAvailable;
 
     public MemoryProjectionOutboxRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
@@ -39,9 +34,6 @@ public class MemoryProjectionOutboxRepository {
                           String projectionType,
                           String operation,
                           Map<String, Object> payload) {
-        if (!isTableAvailable()) {
-            throw new IllegalStateException("memory_projection_outbox 表不存在，禁止绕过 outbox 写派生索引");
-        }
         String id = UUID.randomUUID().toString();
         String now = Instant.now().toString();
         try {
@@ -58,7 +50,7 @@ public class MemoryProjectionOutboxRepository {
                     aggregateId,
                     projectionType,
                     operation,
-                    objectMapper.writeValueAsString(payload),
+                    objectMapper.writeValueAsString(Objects.requireNonNull(payload, "payload 不能为空")),
                     "PENDING",
                     0,
                     now,
@@ -71,9 +63,6 @@ public class MemoryProjectionOutboxRepository {
     }
 
     public Optional<ProjectionTask> findById(String id) {
-        if (!isTableAvailable()) {
-            return Optional.empty();
-        }
         var rows = jdbcTemplate.query(
                 """
                 SELECT id, aggregate_type, aggregate_id, projection_type,
@@ -96,7 +85,7 @@ public class MemoryProjectionOutboxRepository {
     }
 
     public List<String> findDueTaskIds(int limit, Instant processingStaleBefore) {
-        if (!isTableAvailable() || limit <= 0) {
+        if (limit <= 0) {
             return List.of();
         }
         String now = Instant.now().toString();
@@ -120,9 +109,6 @@ public class MemoryProjectionOutboxRepository {
     }
 
     public boolean markProcessing(String id) {
-        if (!isTableAvailable()) {
-            return false;
-        }
         int affected = jdbcTemplate.update(
                 """
                 UPDATE memory_projection_outbox
@@ -140,9 +126,6 @@ public class MemoryProjectionOutboxRepository {
         if (reclaimProcessing) {
             return markProcessing(id);
         }
-        if (!isTableAvailable()) {
-            return false;
-        }
         int affected = jdbcTemplate.update(
                 """
                 UPDATE memory_projection_outbox
@@ -157,9 +140,6 @@ public class MemoryProjectionOutboxRepository {
     }
 
     public void markProcessed(String id) {
-        if (!isTableAvailable()) {
-            return;
-        }
         String now = Instant.now().toString();
         jdbcTemplate.update(
                 """
@@ -176,9 +156,6 @@ public class MemoryProjectionOutboxRepository {
     }
 
     public void markFailed(String id, int previousAttemptCount, @Nullable String errorMessage) {
-        if (!isTableAvailable()) {
-            return;
-        }
         String now = Instant.now().toString();
         int nextAttempt = previousAttemptCount + 1;
         Instant nextAttemptAt = Instant.now().plusSeconds(Math.min(300, 5L * nextAttempt));
@@ -200,29 +177,11 @@ public class MemoryProjectionOutboxRepository {
     }
 
     public int countByStatus(String status) {
-        if (!isTableAvailable()) {
-            return 0;
-        }
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM memory_projection_outbox WHERE status = ?",
                 Integer.class,
                 status);
         return count != null ? count : 0;
-    }
-
-    public boolean isTableAvailable() {
-        if (tableAvailable != null) {
-            return tableAvailable;
-        }
-        try {
-            Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory_projection_outbox'",
-                    Integer.class);
-            tableAvailable = count != null && count > 0;
-        } catch (Exception e) {
-            tableAvailable = false;
-        }
-        return tableAvailable;
     }
 
     public record ProjectionTask(

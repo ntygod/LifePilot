@@ -1,5 +1,6 @@
 package com.lifepilot.memory.governance.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.governance.server.MemoryMcpHandler;
@@ -44,9 +45,9 @@ public class MemoryGovernanceAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MemoryEventRecorder memoryEventRecorder(JdbcTemplate jdbcTemplate) {
+    public MemoryEventRecorder memoryEventRecorder(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         log.info("记忆模块: 注册 MemoryEventRecorder");
-        return new MemoryEventRecorder(jdbcTemplate);
+        return new MemoryEventRecorder(jdbcTemplate, objectMapper);
     }
 
     @Bean
