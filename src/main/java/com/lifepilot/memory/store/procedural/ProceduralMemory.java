@@ -343,17 +343,18 @@ public class ProceduralMemory {
      * ResultSet 行映射为 ProcedureTemplate。
      */
     private ProcedureTemplate mapRowToTemplate(ResultSet rs) throws SQLException {
+        String templateId = rs.getString("template_id");
         String stepsJson = rs.getString("steps_json");
         String variablesJson = rs.getString("variables_json");
         String sourceTraceIdsJson = rs.getString("source_trace_ids_json");
         String lastUsedAtStr = rs.getString("last_used_at");
 
-        List<TemplateStep> steps = deserializeSteps(stepsJson);
-        Map<String, String> variables = deserializeVariables(variablesJson);
-        List<String> sourceTraceIds = deserializeStringList(sourceTraceIdsJson);
+        List<TemplateStep> steps = deserializeSteps(templateId, stepsJson);
+        Map<String, String> variables = deserializeVariables(templateId, variablesJson);
+        List<String> sourceTraceIds = deserializeStringList(templateId, sourceTraceIdsJson);
 
         return new ProcedureTemplate(
-                rs.getString("template_id"),
+                templateId,
                 rs.getString("name"),
                 rs.getString("description"),
                 rs.getString("trigger_intent"),
@@ -371,41 +372,42 @@ public class ProceduralMemory {
     }
 
     /** 反序列化 steps_json 为 List<TemplateStep>。 */
-    private List<TemplateStep> deserializeSteps(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
+    private List<TemplateStep> deserializeSteps(String templateId, String json) {
+        requireJson("steps_json", templateId, json);
         try {
             return List.copyOf(objectMapper.readValue(json, new TypeReference<List<TemplateStep>>() {}));
         } catch (JsonProcessingException e) {
-            log.warn("程序记忆: steps_json 反序列化失败, json={}", json);
-            return List.of();
+            throw new IllegalStateException(
+                    "程序记忆: steps_json 反序列化失败, templateId=" + templateId, e);
         }
     }
 
     /** 反序列化 variables_json 为 Map<String, String>。 */
-    private Map<String, String> deserializeVariables(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
+    private Map<String, String> deserializeVariables(String templateId, String json) {
+        requireJson("variables_json", templateId, json);
         try {
             return Map.copyOf(objectMapper.readValue(json, new TypeReference<Map<String, String>>() {}));
         } catch (JsonProcessingException e) {
-            log.warn("程序记忆: variables_json 反序列化失败, json={}", json);
-            return Map.of();
+            throw new IllegalStateException(
+                    "程序记忆: variables_json 反序列化失败, templateId=" + templateId, e);
         }
     }
 
     /** 反序列化 source_trace_ids_json 为 List<String>。 */
-    private List<String> deserializeStringList(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
+    private List<String> deserializeStringList(String templateId, String json) {
+        requireJson("source_trace_ids_json", templateId, json);
         try {
             return List.copyOf(objectMapper.readValue(json, new TypeReference<List<String>>() {}));
         } catch (JsonProcessingException e) {
-            log.warn("程序记忆: source_trace_ids_json 反序列化失败, json={}", json);
-            return List.of();
+            throw new IllegalStateException(
+                    "程序记忆: source_trace_ids_json 反序列化失败, templateId=" + templateId, e);
+        }
+    }
+
+    private void requireJson(String columnName, String templateId, String json) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException(
+                    "程序记忆: " + columnName + " 不能为空, templateId=" + templateId);
         }
     }
 }

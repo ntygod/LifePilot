@@ -258,27 +258,19 @@ public class MemoryQueryApi {
 
     @SuppressWarnings("unchecked")
     private ProcedureTemplate mapTemplateRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        String templateId = rs.getString("template_id");
         String stepsJson = rs.getString("steps_json");
-        List<TemplateStep> steps = List.of();
-        if (stepsJson != null && !stepsJson.isBlank()) {
-            try { steps = MAPPER.readValue(stepsJson, new TypeReference<>() {}); }
-            catch (Exception ignored) {}
-        }
+        List<TemplateStep> steps = parseRequiredJson(
+                "steps_json", templateId, stepsJson, new TypeReference<List<TemplateStep>>() {});
         String varsJson = rs.getString("variables_json");
-        Map<String, String> variables = Map.of();
-        if (varsJson != null && !varsJson.isBlank()) {
-            try { variables = MAPPER.readValue(varsJson, new TypeReference<Map<String, String>>() {}); }
-            catch (Exception ignored) {}
-        }
+        Map<String, String> variables = parseRequiredJson(
+                "variables_json", templateId, varsJson, new TypeReference<Map<String, String>>() {});
         String sourceTraceJson = rs.getString("source_trace_ids_json");
-        List<String> sourceTraceIds = List.of();
-        if (sourceTraceJson != null && !sourceTraceJson.isBlank()) {
-            try { sourceTraceIds = MAPPER.readValue(sourceTraceJson, new TypeReference<List<String>>() {}); }
-            catch (Exception ignored) {}
-        }
+        List<String> sourceTraceIds = parseRequiredJson(
+                "source_trace_ids_json", templateId, sourceTraceJson, new TypeReference<List<String>>() {});
         String lastUsedStr = rs.getString("last_used_at");
         return new ProcedureTemplate(
-                rs.getString("template_id"), rs.getString("name"),
+                templateId, rs.getString("name"),
                 rs.getString("description"), rs.getString("trigger_intent"),
                 steps, variables,
                 rs.getFloat("success_rate"), rs.getInt("use_count"),
@@ -288,6 +280,23 @@ public class MemoryQueryApi {
                 Instant.parse(rs.getString("updated_at")),
                 rs.getString("source_entity_id"),
                 rs.getString("deactivated_reason"));
+    }
+
+    private static <T> T parseRequiredJson(
+            String columnName,
+            String templateId,
+            String json,
+            TypeReference<T> typeReference) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 不能为空, templateId=" + templateId);
+        }
+        try {
+            return MAPPER.readValue(json, typeReference);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 解析失败, templateId=" + templateId, e);
+        }
     }
 
     // ========== 内部辅助 ==========

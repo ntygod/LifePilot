@@ -33,9 +33,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * {@link SemanticMemory} 生命周期字段集成测试（Task B3 重构版）。
@@ -82,10 +80,6 @@ class SemanticMemory_生命周期字段_集成测试 {
         dataSource = new SingleConnectionDataSource(jdbcUrl, true);
         jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("PRAGMA foreign_keys = ON");
-
-        // 向量检索 mock — 冲突检测阶段无命中即可
-        when(vectorSearcher.searchEntities(any(), any(Integer.class), any(Float.class)))
-                .thenReturn(List.of());
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
@@ -404,6 +398,26 @@ class SemanticMemory_生命周期字段_集成测试 {
                 .hasMessageContaining(persisted.id());
     }
 
+    @ParameterizedTest(name = "MemoryQueryApi 模板 {0} 被污染时读取应失败")
+    @CsvSource({
+            "steps_json, {不是合法JSON",
+            "variables_json, {不是合法JSON",
+            "source_trace_ids_json, {不是合法JSON"
+    })
+    void MemoryQueryApi模板Json字段被污染时读取应失败(String columnName, String invalidValue) {
+        String sourceEntityId = "source-query-api-template-" + columnName;
+        String templateId = "tpl-query-api-broken-" + columnName;
+        插入procedureTemplate(templateId, sourceEntityId);
+        jdbcTemplate.update("UPDATE procedure_templates SET " + columnName + " = ? WHERE template_id = ?",
+                invalidValue, templateId);
+
+        assertThatThrownBy(() -> queryApi.findProcedureBySourceEntity(sourceEntityId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MemoryQueryApi")
+                .hasMessageContaining(columnName)
+                .hasMessageContaining(templateId);
+    }
+
     @Test
     void markStale应标记provenance并能回查实体ID() {
         var entity = 构造活跃实体("test-溯源-1", EntityType.CUSTOM);
@@ -466,5 +480,31 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null, null, null,
                 null, documentId, null,
                 0.5d, now);
+    }
+
+    private void 插入procedureTemplate(String templateId, String sourceEntityId) {
+        var now = Instant.now().toString();
+        jdbcTemplate.update("""
+                INSERT INTO procedure_templates(
+                    template_id, name, description, trigger_intent,
+                    steps_json, variables_json, success_rate, use_count,
+                    last_used_at, source_trace_ids_json, source_entity_id,
+                    deactivated_reason, created_at, updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                templateId,
+                "测试模板",
+                "用于验证 L4 模板读取严格性",
+                "测试触发意图",
+                "[]",
+                "{}",
+                0.8f,
+                1,
+                null,
+                "[]",
+                sourceEntityId,
+                null,
+                now,
+                now);
     }
 }

@@ -6,6 +6,8 @@ import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * ChatTurnMemorySnapshotRepository 项目空间字段集成测试 ——
@@ -29,13 +32,14 @@ class ChatTurnMemorySnapshotRepository_项目空间字段测试 {
 
     private ChatTurnMemorySnapshotRepository repository;
     private SingleConnectionDataSource dataSource;
+    private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void setUp() {
         dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
-        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbcTemplate = new JdbcTemplate(dataSource);
         // 当前 chat_turn_memory_snapshots 表结构
-        jdbc.execute("""
+        jdbcTemplate.execute("""
                 CREATE TABLE chat_turn_memory_snapshots (
                     turn_id                          TEXT PRIMARY KEY,
                     session_id                       TEXT NOT NULL,
@@ -51,7 +55,7 @@ class ChatTurnMemorySnapshotRepository_项目空间字段测试 {
                     resolution_source_json           TEXT NOT NULL DEFAULT '{}',
                     created_at                       TEXT NOT NULL
                 )""");
-        repository = new ChatTurnMemorySnapshotRepository(jdbc, new ObjectMapper());
+        repository = new ChatTurnMemorySnapshotRepository(jdbcTemplate, new ObjectMapper());
     }
 
     @AfterEach
@@ -89,6 +93,23 @@ class ChatTurnMemorySnapshotRepository_项目空间字段测试 {
         var found = repository.findByTurnId("turn-3");
         assertThat(found).isPresent();
         assertThat(found.get().projectSpaceId()).isEqualTo("project-space-xyz");
+    }
+
+    @ParameterizedTest(name = "{0} 被污染时读取快照应失败")
+    @CsvSource({
+            "read_space_ids_json, {不是合法JSON",
+            "effective_knowledge_base_ids_json, {不是合法JSON",
+            "resolution_source_json, {不是合法JSON"
+    })
+    void json字段被污染时读取快照应失败(String columnName, String invalidValue) {
+        repository.save(newSnapshot("turn-broken-json", "project-space-abc"));
+        jdbcTemplate.update("UPDATE chat_turn_memory_snapshots SET " + columnName + " = ? WHERE turn_id = ?",
+                invalidValue, "turn-broken-json");
+
+        assertThatThrownBy(() -> repository.findByTurnId("turn-broken-json"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(columnName)
+                .hasMessageContaining("turn-broken-json");
     }
 
     private ChatTurnMemorySnapshot newSnapshot(String turnId, String projectSpaceId) {

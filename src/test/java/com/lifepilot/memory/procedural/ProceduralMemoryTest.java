@@ -8,6 +8,8 @@ import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -17,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -229,6 +232,25 @@ class ProceduralMemoryTest {
         assertThat(found.get().steps()).isEmpty();
         assertThat(found.get().variables()).isEmpty();
         assertThat(found.get().sourceTraceIds()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0} 被污染时读取模板应失败")
+    @CsvSource({
+            "steps_json, {不是合法JSON",
+            "variables_json, {不是合法JSON",
+            "source_trace_ids_json, {不是合法JSON"
+    })
+    void 模板Json字段被污染时读取应失败(String columnName, String invalidValue) {
+        var now = Instant.now();
+        var template = createSimpleTemplate("tpl-json-broken-" + columnName, "污染模板", now);
+        proceduralMemory.save(template);
+        jdbcTemplate.update("UPDATE procedure_templates SET " + columnName + " = ? WHERE template_id = ?",
+                invalidValue, template.templateId());
+
+        assertThatThrownBy(() -> proceduralMemory.findById(template.templateId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(columnName)
+                .hasMessageContaining(template.templateId());
     }
 
     // --- 成功率追踪测试 ---
