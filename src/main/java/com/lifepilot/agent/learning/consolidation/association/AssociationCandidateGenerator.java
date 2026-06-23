@@ -23,8 +23,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * REM 式联想候选生成器。
@@ -49,9 +47,6 @@ public class AssociationCandidateGenerator {
 
     /** Prompt 模板 key（不依赖 PromptRegistry 资源；本地 hardcoded 更稳定）。 */
     private static final String SCENE = "memory_rem_association";
-
-    private static final Pattern JSON_ARRAY_PATTERN = Pattern.compile(
-            "\\[.*?\\]", Pattern.DOTALL);
 
     private final SemanticMemory semanticMemory;
     @Nullable private final HybridRetriever hybridRetriever;
@@ -105,12 +100,8 @@ public class AssociationCandidateGenerator {
         var types = properties.getRem().getSeedTypes();
         List<TemporalEntity> all = new ArrayList<>();
         for (String typeName : types) {
-            try {
-                EntityType type = EntityType.valueOf(typeName);
-                all.addAll(semanticMemory.findCurrentByType(type));
-            } catch (IllegalArgumentException e) {
-                log.debug("REM 联想: 未知实体类型 {}", typeName);
-            }
+            EntityType type = parseSeedType(typeName);
+            all.addAll(semanticMemory.findCurrentByType(type));
         }
         return all.stream()
                 .filter(e -> e.description() != null && !e.description().isBlank())
@@ -154,10 +145,9 @@ public class AssociationCandidateGenerator {
 
     /** 解析 LLM 输出为 AssociationCandidate 列表。 */
     List<AssociationCandidate> parseResponse(String content, String seedId, Instant now) {
-        String json = extractJsonArray(content);
-        if (json == null) return List.of();
+        if (content == null || content.isBlank()) return List.of();
         try {
-            List<Map<String, Object>> raw = mapper.readValue(json, new TypeReference<>() {});
+            List<Map<String, Object>> raw = mapper.readValue(content, new TypeReference<>() {});
             List<AssociationCandidate> list = new ArrayList<>();
             for (var entry : raw) {
                 try {
@@ -165,12 +155,7 @@ public class AssociationCandidateGenerator {
                     String targetId = strVal(entry.get("targetId"));
                     String typeStr = strVal(entry.get("relationType"));
                     if (sourceId == null || targetId == null || typeStr == null) continue;
-                    AssociationType type;
-                    try {
-                        type = AssociationType.valueOf(typeStr.trim().toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        type = AssociationType.RELATED_TO;
-                    }
+                    AssociationType type = parseAssociationType(typeStr);
                     float confidence = floatVal(entry.get("confidence"), 0.0f);
                     String evidence = strVal(entry.get("evidence"));
                     list.add(new AssociationCandidate(
@@ -214,11 +199,6 @@ public class AssociationCandidateGenerator {
         return sb.toString();
     }
 
-    private String extractJsonArray(String content) {
-        Matcher m = JSON_ARRAY_PATTERN.matcher(content);
-        return m.find() ? m.group() : null;
-    }
-
     @Nullable
     private static String strVal(Object o) {
         if (o == null) return null;
@@ -233,6 +213,25 @@ public class AssociationCandidateGenerator {
             return Float.parseFloat(o.toString());
         } catch (NumberFormatException e) {
             return fallback;
+        }
+    }
+
+    private static AssociationType parseAssociationType(String raw) {
+        try {
+            return AssociationType.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("未知关系类型: " + raw, e);
+        }
+    }
+
+    private static EntityType parseSeedType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("REM seedTypes 不能包含空值");
+        }
+        try {
+            return EntityType.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("未知 REM seedTypes 实体类型: " + raw, e);
         }
     }
 }

@@ -1,7 +1,6 @@
 package com.lifepilot.agent.learning.extraction;
 
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
@@ -351,9 +350,8 @@ public class RealtimeExtractor {
     /** 解析 LLM 返回的 AUDN 决策数组。 */
     private List<AudnDecision> parseAudnResponse(String content) {
         if (content == null || content.isBlank()) return List.of();
-        String repaired = JsonOutputParser.repairJson(content);
         try {
-            return MAPPER.readValue(repaired,
+            return MAPPER.readValue(content,
                     MAPPER.getTypeFactory().constructCollectionType(List.class, AudnDecision.class));
         } catch (Exception e) {
             log.warn("AUDN 数组解析失败: {}", e.getMessage());

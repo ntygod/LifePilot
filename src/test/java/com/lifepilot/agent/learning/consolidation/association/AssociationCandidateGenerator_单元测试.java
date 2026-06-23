@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -96,6 +97,19 @@ class AssociationCandidateGenerator_单元测试 {
     }
 
     @Test
+    void seedTypes包含未知实体类型时应失败() {
+        var sem = mock(SemanticMemory.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setSeedTypes(java.util.Set.of("GOAL", "UNKNOWN_TYPE"));
+
+        var gen = new AssociationCandidateGenerator(sem, null, null, props);
+
+        assertThatThrownBy(gen::selectSeeds)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未知 REM seedTypes 实体类型: UNKNOWN_TYPE");
+    }
+
+    @Test
     void LLM返回有效JSON时能解析出候选() {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
@@ -110,8 +124,8 @@ class AssociationCandidateGenerator_单元测试 {
         when(retriever.retrieve(anyString(), anyInt(), any()))
                 .thenReturn(List.of(retrievalResult("n1", "Rust 书籍")));
 
-        String llmJson = "一些前缀文字 [{\"sourceId\":\"n1\",\"targetId\":\"g1\","
-                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85,\"evidence\":\"书籍是学习资源\"}] 尾部";
+        String llmJson = "[{\"sourceId\":\"n1\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85,\"evidence\":\"书籍是学习资源\"}]";
         when(router.call(anyString(), anyString(), any(), any(), any(),
                 eq(GenerationCapability.CHAT), any(), anyBoolean()))
                 .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock", 0, false));
@@ -148,6 +162,30 @@ class AssociationCandidateGenerator_单元测试 {
     }
 
     @Test
+    void LLM返回带前后缀的JSON时返回空() {
+        var sem = mock(SemanticMemory.class);
+        var retriever = mock(HybridRetriever.class);
+        var router = mock(GenerationRouter.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setEnabled(true);
+        props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
+
+        when(sem.findCurrentByType(EntityType.GOAL))
+                .thenReturn(List.of(entity("g1", 0.8f, "学习 Rust")));
+        when(retriever.retrieve(anyString(), anyInt(), any()))
+                .thenReturn(List.of(retrievalResult("n1", "Rust 书籍")));
+        String llmJson = "前缀 [{\"sourceId\":\"n1\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85}] 后缀";
+        when(router.call(anyString(), anyString(), any(), any(), any(),
+                eq(GenerationCapability.CHAT), any(), anyBoolean()))
+                .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(),
+                        0, 0, null, 0, "mock", "mock", 0, false));
+
+        var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
+        assertThat(gen.generate()).isEmpty();
+    }
+
+    @Test
     void LLM异常时返回空_不抛() {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
@@ -169,7 +207,7 @@ class AssociationCandidateGenerator_单元测试 {
     }
 
     @Test
-    void 未知关系类型降级为RELATED_TO() {
+    void 未知关系类型应丢弃该条候选() {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
@@ -190,8 +228,7 @@ class AssociationCandidateGenerator_单元测试 {
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
         var result = gen.generate();
 
-        assertThat(result).hasSize(1);
-        assertThat(result.getFirst().relationType()).isEqualTo(AssociationType.RELATED_TO);
+        assertThat(result).isEmpty();
     }
 
     private TemporalEntity entity(String id, float importance, String desc) {

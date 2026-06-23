@@ -6,12 +6,14 @@ import com.lifepilot.agent.learning.consolidation.association.AssociationType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * AssociationCandidateStore 单元测试。
@@ -60,6 +62,31 @@ class AssociationCandidateStore_单元测试 {
     void 不存在的日期返回空列表(@TempDir Path tempDir) {
         var store = new AssociationCandidateStore(tempDir);
         assertThat(store.load(LocalDate.of(2020, 1, 1))).isEmpty();
+    }
+
+    @Test
+    void 候选文件损坏时load应失败(@TempDir Path tempDir) throws Exception {
+        var store = new AssociationCandidateStore(tempDir);
+        var date = LocalDate.of(2026, 6, 23);
+        Files.writeString(store.fileFor(date), "{不是合法JSON");
+
+        assertThatThrownBy(() -> store.load(date))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("REM 联想: 读取失败 date=2026-06-23");
+    }
+
+    @Test
+    void 候选文件损坏时save不应覆盖旧文件(@TempDir Path tempDir) throws Exception {
+        var store = new AssociationCandidateStore(tempDir);
+        var date = LocalDate.of(2026, 6, 23);
+        var file = store.fileFor(date);
+        Files.writeString(file, "{不是合法JSON");
+
+        assertThatThrownBy(() -> store.save(date, List.of(
+                new AssociationCandidate("a", "b", AssociationType.CAUSES, 0.9f, null, "seed", null))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("REM 联想: 读取失败 date=2026-06-23");
+        assertThat(Files.readString(file)).isEqualTo("{不是合法JSON");
     }
 
     @Test

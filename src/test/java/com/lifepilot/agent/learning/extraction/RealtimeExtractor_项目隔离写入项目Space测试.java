@@ -122,6 +122,27 @@ class RealtimeExtractor_项目隔离写入项目Space测试 {
         verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
     }
 
+    @Test
+    void markdown包裹Audn响应_按非契约输出跳过写入() {
+        String turnId = "turn-markdown-json";
+        when(snapshotRepository.findByTurnId(turnId))
+                .thenReturn(Optional.of(newSnapshot(turnId, null)));
+        String fencedJson = """
+                ```json
+                [{"operation":"ADD","entityName":"喜欢咖啡","entityType":"PREFERENCE",
+                  "description":"","extractionConfidence":0.8,"importanceScore":0.5,
+                  "evidenceKind":"USER_EXPLICIT","evidenceExcerpt":"我喜欢咖啡"}]
+                ```
+                """;
+        when(generationRouter.call(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
+                .thenReturn(new LlmResponse(fencedJson, null, null, List.of(), Map.of(),
+                        1, 1, null, 0, "mock", "mock", 1L, false));
+
+        extractor.extract("session-main", turnId, "我喜欢咖啡", "好的");
+
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+    }
+
     private ChatTurnMemorySnapshot newSnapshot(String turnId, String projectSpaceId) {
         return new ChatTurnMemorySnapshot(
                 turnId,

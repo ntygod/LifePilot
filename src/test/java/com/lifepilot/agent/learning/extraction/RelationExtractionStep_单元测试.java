@@ -75,6 +75,21 @@ class RelationExtractionStep_单元测试 {
     }
 
     @Test
+    void markdown包裹格式应按非契约输出丢弃() {
+        String json = """
+                ```json
+                [{"sourceName":"张三","targetName":"北京","relationType":"居住于","strength":0.8}]
+                ```
+                """;
+        when(generationRouter.call(any(), any(), any(), any(), any(), any(), any(), anyBoolean()))
+                .thenReturn(resp(json));
+
+        var relations = step.extract("用户: 张三住在北京", List.of("张三 [PERSON]", "北京 [PLACE]"));
+
+        assertThat(relations).isEmpty();
+    }
+
+    @Test
     void 实体不足两个时不调用LLM() {
         var relations = step.extract("用户: 我喜欢咖啡", List.of("咖啡 [PREFERENCE]"));
 

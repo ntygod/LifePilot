@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
@@ -104,9 +103,8 @@ public class RelationExtractionStep {
         if (content == null || content.isBlank()) {
             return List.of();
         }
-        String repaired = JsonOutputParser.repairJson(content);
         try {
-            return MAPPER.readValue(repaired,
+            return MAPPER.readValue(content,
                     MAPPER.getTypeFactory().constructCollectionType(List.class, ExtractedRelation.class));
         } catch (Exception e) {
             log.warn("关系数组解析失败: {}", e.getMessage());

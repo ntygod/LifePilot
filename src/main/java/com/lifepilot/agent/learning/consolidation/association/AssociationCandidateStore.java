@@ -55,11 +55,11 @@ public class AssociationCandidateStore {
             mapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), merged);
             log.debug("REM 联想: 已保存 date={}, count={}, path={}", date, candidates.size(), file);
         } catch (IOException e) {
-            log.warn("REM 联想: 保存失败 date={}, error={}", date, e.getMessage());
+            throw new IllegalStateException("REM 联想: 保存失败 date=" + date, e);
         }
     }
 
-    /** 读取指定日期的候选；文件不存在或读取失败返回空列表。 */
+    /** 读取指定日期的候选；文件不存在代表当天无候选。 */
     public List<AssociationCandidate> load(LocalDate date) {
         if (date == null) return List.of();
         Path file = fileFor(date);
@@ -67,8 +67,7 @@ public class AssociationCandidateStore {
         try {
             return mapper.readValue(file.toFile(), LIST_TYPE);
         } catch (IOException e) {
-            log.warn("REM 联想: 读取失败 date={}, error={}", date, e.getMessage());
-            return List.of();
+            throw new IllegalStateException("REM 联想: 读取失败 date=" + date + ", path=" + file, e);
         }
     }
 
