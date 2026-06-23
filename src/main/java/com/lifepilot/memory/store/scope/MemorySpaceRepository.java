@@ -191,28 +191,28 @@ public class MemorySpaceRepository {
     }
 
     private MemorySpace mapRow(ResultSet rs, int rowNum) throws SQLException {
+        String id = rs.getString("id");
         return new MemorySpace(
-                rs.getString("id"),
+                id,
                 rs.getString("space_key"),
                 MemorySpaceType.valueOf(rs.getString("space_type")),
                 rs.getString("display_name"),
                 rs.getString("owner_type"),
                 rs.getString("owner_id"),
-                readJsonMap(rs.getString("metadata_json")),
+                readJsonMap(id, rs.getString("metadata_json")),
                 Instant.parse(rs.getString("created_at")),
                 Instant.parse(rs.getString("updated_at"))
         );
     }
 
-    private Map<String, Object> readJsonMap(@Nullable String json) {
+    private Map<String, Object> readJsonMap(String spaceId, @Nullable String json) {
         if (json == null || json.isBlank()) {
-            return Map.of();
+            throw new IllegalStateException("记忆空间 metadata_json 不能为空, spaceId=" + spaceId);
         }
         try {
             return objectMapper.readValue(json, MAP_TYPE);
         } catch (JsonProcessingException e) {
-            log.warn("解析记忆空间 metadata_json 失败: {}", e.getMessage());
-            return Map.of();
+            throw new IllegalStateException("解析记忆空间 metadata_json 失败, spaceId=" + spaceId, e);
         }
     }
 

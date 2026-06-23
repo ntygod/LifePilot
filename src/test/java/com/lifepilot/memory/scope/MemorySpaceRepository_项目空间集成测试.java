@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * MemorySpaceRepository 项目空间功能集成测试 —— 验证 PROJECT 类型记忆空间的
@@ -26,14 +27,15 @@ class MemorySpaceRepository_项目空间集成测试 {
 
     private MemorySpaceRepository repository;
     private SingleConnectionDataSource dataSource;
+    private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void setUp() {
         dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
-        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("PRAGMA foreign_keys = ON");
+        jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate.execute("PRAGMA foreign_keys = ON");
         // 与 V1__init_schema.sql 中 memory_spaces 表结构保持一致
-        jdbc.execute("""
+        jdbcTemplate.execute("""
                 CREATE TABLE memory_spaces (
                     id            TEXT PRIMARY KEY,
                     space_key     TEXT NOT NULL UNIQUE,
@@ -45,7 +47,7 @@ class MemorySpaceRepository_项目空间集成测试 {
                     created_at    TEXT NOT NULL,
                     updated_at    TEXT NOT NULL
                 )""");
-        repository = new MemorySpaceRepository(jdbc, new ObjectMapper());
+        repository = new MemorySpaceRepository(jdbcTemplate, new ObjectMapper());
     }
 
     @AfterEach
@@ -80,5 +82,17 @@ class MemorySpaceRepository_项目空间集成测试 {
         repository.deleteById(created.id());
 
         assertThat(repository.findById(created.id())).isEmpty();
+    }
+
+    @Test
+    void metadataJson被污染时读取应失败() {
+        MemorySpace created = repository.ensureProjectSpace("project-test-broken-metadata");
+        jdbcTemplate.update("UPDATE memory_spaces SET metadata_json = ? WHERE id = ?",
+                "{不是合法JSON", created.id());
+
+        assertThatThrownBy(() -> repository.findById(created.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("metadata_json")
+                .hasMessageContaining(created.id());
     }
 }

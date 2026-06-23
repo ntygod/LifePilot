@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * InjectionRecordRepository 集成测试。
@@ -19,11 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InjectionRecordRepository_集成测试 {
 
     private InjectionRecordRepository repository;
+    private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void setUp() {
         var dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
-        var jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("PRAGMA foreign_keys = ON");
 
         jdbcTemplate.execute("""
@@ -116,5 +118,33 @@ class InjectionRecordRepository_集成测试 {
 
         assertThat(repository.findEntityIdsBySourceTraceIdAndType("trace-exp", "EXPERIENCE"))
                 .containsExactlyInAnyOrder("exp-1", "exp-2");
+    }
+
+    @Test
+    void sourceEntry注入记录Json被污染时查询应失败() {
+        repository.save("entry-1", "session-1", "trace-1", java.util.List.of("e1", "e2"));
+        jdbcTemplate.update("""
+                UPDATE memory_injection_records
+                SET entity_ids_json = ?
+                WHERE source_entry_id = ?
+                """, "{不是合法JSON", "entry-1");
+
+        assertThatThrownBy(() -> repository.findEntityIdsBySourceEntryId("entry-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sourceEntryId=entry-1");
+    }
+
+    @Test
+    void sourceTrace注入记录Json被污染时查询应失败() {
+        repository.saveWithType("trace-exp", "session-1", java.util.List.of("exp-1", "exp-2"), "EXPERIENCE");
+        jdbcTemplate.update("""
+                UPDATE memory_injection_records
+                SET entity_ids_json = ?
+                WHERE source_trace_id = ?
+                """, "{不是合法JSON", "trace-exp");
+
+        assertThatThrownBy(() -> repository.findEntityIdsBySourceTraceIdAndType("trace-exp", "EXPERIENCE"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sourceTraceId=trace-exp");
     }
 }

@@ -4,12 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -22,7 +21,6 @@ import java.util.UUID;
  */
 public class InjectionRecordRepository {
 
-    private static final Logger log = LoggerFactory.getLogger(InjectionRecordRepository.class);
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
 
     private final JdbcTemplate jdbcTemplate;
@@ -46,7 +44,8 @@ public class InjectionRecordRepository {
                      @Nullable String sourceTraceId,
                      List<String> entityIds) {
         try {
-            var entityIdsJson = objectMapper.writeValueAsString(entityIds);
+            var entityIdsJson = objectMapper.writeValueAsString(List.copyOf(
+                    Objects.requireNonNull(entityIds, "entityIds 不能为空")));
             jdbcTemplate.update(
                     """
                     INSERT INTO memory_injection_records (
@@ -62,7 +61,7 @@ public class InjectionRecordRepository {
                     Instant.now().toString()
             );
         } catch (JsonProcessingException e) {
-            log.warn("注入记录序列化失败: sourceEntryId={}, error={}", sourceEntryId, e.getMessage());
+            throw new IllegalStateException("注入记录序列化失败: sourceEntryId=" + sourceEntryId, e);
         }
     }
 
@@ -94,7 +93,8 @@ public class InjectionRecordRepository {
                              List<String> entityIds,
                              String entityType) {
         try {
-            var entityIdsJson = objectMapper.writeValueAsString(entityIds);
+            var entityIdsJson = objectMapper.writeValueAsString(List.copyOf(
+                    Objects.requireNonNull(entityIds, "entityIds 不能为空")));
             jdbcTemplate.update(
                     """
                     INSERT INTO memory_injection_records (
@@ -110,7 +110,7 @@ public class InjectionRecordRepository {
                     Instant.now().toString()
             );
         } catch (JsonProcessingException e) {
-            log.warn("注入记录序列化失败: sourceTraceId={}, error={}", sourceTraceId, e.getMessage());
+            throw new IllegalStateException("注入记录序列化失败: sourceTraceId=" + sourceTraceId, e);
         }
     }
 
@@ -149,11 +149,13 @@ public class InjectionRecordRepository {
     }
 
     private List<String> deserializeSingleRow(String json, String provenance) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException("注入记录 entity_ids_json 不能为空: " + provenance);
+        }
         try {
             return objectMapper.readValue(json, STRING_LIST_TYPE);
         } catch (JsonProcessingException e) {
-            log.warn("注入记录反序列化失败: provenance={}, error={}", provenance, e.getMessage());
-            return List.of();
+            throw new IllegalStateException("注入记录反序列化失败: " + provenance, e);
         }
     }
 
