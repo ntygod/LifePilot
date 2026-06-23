@@ -1,5 +1,6 @@
 package com.lifepilot.agent.learning.trace;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.LlmCallStep;
@@ -21,8 +22,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * AgentTraceWriter 单元测试 — 验证轨迹落库的 SQL 与关键字段映射。
@@ -114,5 +117,21 @@ class AgentTraceWriter_单元测试 {
                 "memory", "search", null, null, true, null, RiskLevel.LOW);
         // 不应抛出
         writer.persist(buildRecord(List.of(tool)));
+    }
+
+    @Test
+    @DisplayName("action_json 序列化失败时不写入空步骤")
+    void persist_actionJson序列化失败_不写空步骤() throws Exception {
+        ObjectMapper failingMapper = mock(ObjectMapper.class);
+        when(failingMapper.writeValueAsString(any()))
+                .thenThrow(new JsonProcessingException("序列化失败") {});
+        writer = new AgentTraceWriter(jdbcTemplate, failingMapper);
+        var tool = new ToolCallStep(0, Instant.now(), Duration.ofMillis(1),
+                "memory", "search", null, null, true, null, RiskLevel.LOW);
+
+        writer.persist(buildRecord(List.of(tool)));
+
+        verify(jdbcTemplate).update(contains("INSERT INTO agent_traces"), any(Object[].class));
+        verify(jdbcTemplate, never()).update(contains("INSERT INTO agent_trace_steps"), any(Object[].class));
     }
 }

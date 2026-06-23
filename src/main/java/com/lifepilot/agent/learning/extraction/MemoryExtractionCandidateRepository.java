@@ -1,5 +1,6 @@
 package com.lifepilot.agent.learning.extraction;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
@@ -63,6 +64,7 @@ public class MemoryExtractionCandidateRepository {
         String id = UUID.randomUUID().toString();
         String now = Instant.now().toString();
         Quality quality = qualityOf(decision);
+        String decisionJson = serializeDecision(decision);
         try {
             jdbcTemplate.update(
                     """
@@ -82,7 +84,7 @@ public class MemoryExtractionCandidateRepository {
                     decision.operation() != null ? decision.operation().name() : "UNKNOWN",
                     decision.entityName() != null ? decision.entityName() : "",
                     decision.entityType() != null ? decision.entityType().name() : "CUSTOM",
-                    serializeDecision(decision),
+                    decisionJson,
                     candidateStatus,
                     validationStatus,
                     rejectionReason,
@@ -150,8 +152,9 @@ public class MemoryExtractionCandidateRepository {
     private String serializeDecision(AudnDecision decision) {
         try {
             return objectMapper.writeValueAsString(decision);
-        } catch (Exception e) {
-            return "{}";
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(
+                    "记忆提取候选 decision_json 序列化失败: entity=" + decision.entityName(), e);
         }
     }
 

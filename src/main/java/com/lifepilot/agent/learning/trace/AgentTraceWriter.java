@@ -1,5 +1,6 @@
 package com.lifepilot.agent.learning.trace;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.observability.trace.GuardrailStep;
 import com.lifepilot.observability.trace.LlmCallStep;
@@ -152,7 +153,7 @@ public class AgentTraceWriter {
         return null;
     }
 
-    /** action_json 为 NOT NULL 列：写入按步骤类型提炼的小摘要，序列化失败降级为 {}。 */
+    /** action_json 为 NOT NULL 列：写入按步骤类型提炼的小摘要。 */
     private String buildActionJson(TraceStep step) {
         Map<String, Object> summary = new HashMap<>();
         summary.put("type", step.typeName());
@@ -171,8 +172,9 @@ public class AgentTraceWriter {
         }
         try {
             return objectMapper.writeValueAsString(summary);
-        } catch (Exception e) {
-            return "{}";
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(
+                    "学习轨迹: action_json 序列化失败, stepIndex=" + step.stepIndex(), e);
         }
     }
 
