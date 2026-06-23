@@ -235,9 +235,10 @@ public class MemoryStoreAutoConfiguration {
     @ConditionalOnBean(MemoryProjectionService.class)
     public ProceduralMemory proceduralMemory(
             JdbcTemplate jdbcTemplate,
-            MemoryProjectionService projectionService) {
+            MemoryProjectionService projectionService,
+            ObjectMapper objectMapper) {
         log.info("记忆模块: 注册 ProceduralMemory");
-        return new ProceduralMemory(jdbcTemplate, projectionService);
+        return new ProceduralMemory(jdbcTemplate, projectionService, objectMapper);
     }
 
     @Bean

@@ -27,7 +27,6 @@ public class GraphTraverser {
     private static final int MAX_DEPTH = 2;
 
     private final JdbcTemplate jdbcTemplate;
-    private Boolean overlayTableAvailable;
     /** 关系最低可信分门控；trust_score < 此值的边被跳过（NULL 历史边放行）。 */
     private final float minRelationTrust;
 
@@ -212,7 +211,7 @@ public class GraphTraverser {
     private void appendOverlaySuppression(StringBuilder sql,
                                           List<Object> params,
                                           MemoryReadFilter filter) {
-        if (!filter.restrictsSpaces() || !isOverlayTableAvailable()) {
+        if (!filter.restrictsSpaces()) {
             return;
         }
         sql.append(" AND NOT EXISTS (")
@@ -224,21 +223,6 @@ public class GraphTraverser {
                 .append(buildPlaceholders(filter.spaceIds().size()))
                 .append("))");
         params.addAll(filter.spaceIds());
-    }
-
-    private boolean isOverlayTableAvailable() {
-        if (overlayTableAvailable != null) {
-            return overlayTableAvailable;
-        }
-        try {
-            Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory_entity_overlays'",
-                    Integer.class);
-            overlayTableAvailable = count != null && count > 0;
-        } catch (Exception e) {
-            overlayTableAvailable = false;
-        }
-        return overlayTableAvailable;
     }
 
     private String buildPlaceholders(int count) {

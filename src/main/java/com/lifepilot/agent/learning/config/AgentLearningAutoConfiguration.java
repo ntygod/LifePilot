@@ -153,9 +153,10 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ConflictResolutionRepository conflictResolutionRepository(JdbcTemplate jdbcTemplate) {
+    public ConflictResolutionRepository conflictResolutionRepository(JdbcTemplate jdbcTemplate,
+                                                                     ObjectMapper objectMapper) {
         log.info("记忆模块: 注册 ConflictResolutionRepository");
-        return new ConflictResolutionRepository(jdbcTemplate);
+        return new ConflictResolutionRepository(jdbcTemplate, objectMapper);
     }
 
     /**

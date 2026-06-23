@@ -3,7 +3,6 @@ package com.lifepilot.agent.learning.conflict;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.generation.router.GenerationRouter;
-import com.lifepilot.generation.support.JsonOutputParser;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
@@ -228,17 +227,16 @@ public class ConflictResolutionService {
         return sb.toString();
     }
 
-    /** 解析 LLM 返回的严格 JSON，兼容 markdown 包裹与内部引号转义问题。 */
+    /** 解析 LLM 返回的严格 JSON。 */
     private ConflictVerdict parseVerdict(String raw) {
         if (raw == null || raw.isBlank()) {
             throw new IllegalStateException("LLM 返回空内容");
         }
-        String repaired = JsonOutputParser.repairJson(raw);
         try {
-            JsonNode node = OBJECT_MAPPER.readTree(repaired);
+            JsonNode node = OBJECT_MAPPER.readTree(raw);
             String verdictStr = node.path("verdict").asText("").trim().toUpperCase();
             if (verdictStr.isEmpty()) {
-                throw new IllegalStateException("LLM 响应缺 verdict 字段: " + repaired);
+                throw new IllegalStateException("LLM 响应缺 verdict 字段: " + raw);
             }
             ConflictVerdict.Kind kind;
             try {
@@ -255,7 +253,7 @@ public class ConflictResolutionService {
             String rationale = node.path("rationale").asText("");
             return new ConflictVerdict(kind, targetId, rationale);
         } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
-            throw new IllegalStateException("verdict JSON 解析失败: " + repaired, ex);
+            throw new IllegalStateException("verdict JSON 解析失败: " + raw, ex);
         }
     }
 

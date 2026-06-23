@@ -91,8 +91,6 @@ public class SemanticMemory {
     @Nullable
     private ConflictResolutionService conflictResolutionService;
     @Nullable
-    private Boolean overlayTableAvailable;
-    @Nullable
     private MemoryProjectionService projectionService;
 
     @Nullable
@@ -1559,10 +1557,6 @@ public class SemanticMemory {
                                      String overlaySpaceId,
                                      @Nullable String originSpaceId,
                                      String overlayKind) {
-        if (!isOverlayTableAvailable()) {
-            log.debug("语义记忆: overlay 表不存在，跳过 lineage 记录, overlayEntityId={}", overlayEntityId);
-            return;
-        }
         var now = Instant.now().toString();
         jdbcTemplate.update(
                 """
@@ -1725,7 +1719,7 @@ public class SemanticMemory {
                                           List<Object> params,
                                           MemoryReadFilter filter,
                                           String outerTableName) {
-        if (!filter.restrictsSpaces() || !isOverlayTableAvailable()) {
+        if (!filter.restrictsSpaces()) {
             return;
         }
         sql.append(" AND NOT EXISTS (")
@@ -1739,21 +1733,6 @@ public class SemanticMemory {
                 .append(buildPlaceholders(filter.spaceIds().size()))
                 .append("))");
         params.addAll(filter.spaceIds());
-    }
-
-    private boolean isOverlayTableAvailable() {
-        if (overlayTableAvailable != null) {
-            return overlayTableAvailable;
-        }
-        try {
-            Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory_entity_overlays'",
-                    Integer.class);
-            overlayTableAvailable = count != null && count > 0;
-        } catch (Exception e) {
-            overlayTableAvailable = false;
-        }
-        return overlayTableAvailable;
     }
 
     private String buildPlaceholders(int count) {

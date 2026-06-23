@@ -1,5 +1,6 @@
 package com.lifepilot.memory.procedural;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
@@ -92,7 +93,7 @@ class ProceduralMemoryTest {
                 )""");
 
         projectionService = mock(MemoryProjectionService.class);
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService, new ObjectMapper());
     }
 
     @AfterEach

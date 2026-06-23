@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.llm.LlmResponse;
@@ -121,7 +122,7 @@ class 冲突记忆被新版替代_场景测试 {
         MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
 
-        var queueRepo = new ConflictResolutionRepository(jdbcTemplate);
+        var queueRepo = new ConflictResolutionRepository(jdbcTemplate, new ObjectMapper());
         lenient().when(promptRegistry.render(anyString(), any())).thenReturn("冲突裁决 prompt body");
         conflictResolutionService = new ConflictResolutionService(
                 generationRouter, promptRegistry, vectorSearcher, queueRepo, semanticMemory);

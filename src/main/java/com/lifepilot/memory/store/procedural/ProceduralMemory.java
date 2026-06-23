@@ -13,6 +13,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -33,10 +34,11 @@ public class ProceduralMemory {
     private final ObjectMapper objectMapper;
 
     public ProceduralMemory(JdbcTemplate jdbcTemplate,
-                            MemoryProjectionService projectionService) {
+                            MemoryProjectionService projectionService,
+                            ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.projectionService = projectionService;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
 
     // ========== 模板 CRUD ==========

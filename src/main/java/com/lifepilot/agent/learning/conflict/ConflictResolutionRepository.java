@@ -6,7 +6,9 @@ import com.lifepilot.memory.semantic.ConflictVerdict;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -26,12 +28,12 @@ import java.util.UUID;
  */
 public class ConflictResolutionRepository {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    public ConflictResolutionRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public ConflictResolutionRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
 
     /**
@@ -42,12 +44,27 @@ public class ConflictResolutionRepository {
      * @return 新建队列项的 id
      */
     public String enqueue(String newEntityId, List<String> candidateIds) {
+        Objects.requireNonNull(newEntityId, "newEntityId 不能为空");
+        if (newEntityId.isBlank()) {
+            throw new IllegalArgumentException("newEntityId 不能为空");
+        }
+        if (candidateIds == null || candidateIds.isEmpty()) {
+            throw new IllegalArgumentException("candidateIds 不能为空");
+        }
+        var normalizedCandidateIds = candidateIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(candidateId -> !candidateId.isBlank())
+                .toList();
+        if (normalizedCandidateIds.size() != candidateIds.size()) {
+            throw new IllegalArgumentException("candidateIds 不能包含空值");
+        }
         var id = UUID.randomUUID().toString();
         String candidatesJson;
         try {
-            candidatesJson = OBJECT_MAPPER.writeValueAsString(candidateIds);
+            candidatesJson = objectMapper.writeValueAsString(normalizedCandidateIds);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("候选列表 JSON 序列化失败: " + candidateIds, e);
+            throw new IllegalStateException("候选列表 JSON 序列化失败: " + normalizedCandidateIds, e);
         }
         jdbcTemplate.update(
                 """
@@ -114,10 +131,22 @@ public class ConflictResolutionRepository {
                 """,
                 (rs, rowNum) -> {
                     var json = rs.getString("candidate_entity_ids");
+                    if (json == null || json.isBlank()) {
+                        throw new IllegalStateException(
+                                "候选列表不能为空, id=" + rs.getString("id"));
+                    }
                     List<String> candidates;
                     try {
-                        var array = OBJECT_MAPPER.readValue(json, String[].class);
-                        candidates = List.of(array);
+                        var array = objectMapper.readValue(json, String[].class);
+                        if (array == null || array.length == 0
+                                || Arrays.stream(array).anyMatch(candidateId ->
+                                candidateId == null || candidateId.isBlank())) {
+                            throw new IllegalStateException(
+                                    "候选列表不能为空, id=" + rs.getString("id"));
+                        }
+                        candidates = Arrays.stream(array)
+                                .map(String::trim)
+                                .toList();
                     } catch (JsonProcessingException e) {
                         throw new IllegalStateException(
                                 "候选列表反序列化失败, id=" + rs.getString("id"), e);

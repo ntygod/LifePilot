@@ -1,5 +1,6 @@
 package com.lifepilot.memory.consolidation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.ExperiencePromoter;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -115,7 +116,7 @@ class ExperiencePromotion_集成测试 {
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionService projectionService =
                 MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService, new ObjectMapper());
         experiencePromoter = new ExperiencePromoter(semanticMemory, proceduralMemory, new AgentLearningProperties());
         intentMatcher = new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, new MemoryStoreProperties());
     }

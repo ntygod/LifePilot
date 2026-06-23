@@ -1,5 +1,6 @@
 package com.lifepilot.memory.store.entity;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -27,6 +28,7 @@ import java.util.Optional;
 public class ConflictDetector {
 
     private static final Logger log = LoggerFactory.getLogger(ConflictDetector.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
     private final VectorSearcher vectorSearcher;
@@ -148,8 +150,7 @@ public class ConflictDetector {
                 null);
         var content = response.content().trim();
         try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            var node = mapper.readTree(content);
+            var node = MAPPER.readTree(content);
             boolean isSame = node.path("isSame").asBoolean(false);
             double confidence = node.path("confidence").asDouble(0.0);
             log.debug("冲突检测: LLM 消歧义结果, isSame={}, confidence={}", isSame, confidence);
@@ -166,8 +167,7 @@ public class ConflictDetector {
         Map<String, Object> properties = Map.of();
         if (propsJson != null && !propsJson.isBlank()) {
             try {
-                properties = new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readValue(propsJson, Map.class);
+                properties = MAPPER.readValue(propsJson, Map.class);
             } catch (Exception e) {
                 throw new IllegalStateException(
                         "冲突检测: properties_json 解析失败, id=" + rs.getString("id"), e);
