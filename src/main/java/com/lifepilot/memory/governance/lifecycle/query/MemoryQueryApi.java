@@ -13,8 +13,6 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.procedural.TemplateStep;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -39,7 +37,6 @@ import java.util.Optional;
 @Service
 public class MemoryQueryApi {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryQueryApi.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<Map<String, Object>> PROPERTIES_TYPE = new TypeReference<>() {};
 
@@ -129,7 +126,8 @@ public class MemoryQueryApi {
             try {
                 properties = MAPPER.readValue(propsJson, PROPERTIES_TYPE);
             } catch (Exception e) {
-                log.warn("MemoryQueryApi: properties_json 解析失败, id={}", rs.getString("id"));
+                throw new IllegalStateException(
+                        "MemoryQueryApi: properties_json 解析失败, id=" + rs.getString("id"), e);
             }
         }
         String validToStr = rs.getString("valid_to");
@@ -142,7 +140,8 @@ public class MemoryQueryApi {
                 derivationSources = MAPPER.readValue(
                         derivationSourcesJson, new TypeReference<List<String>>() {});
             } catch (Exception e) {
-                log.warn("MemoryQueryApi: derivation_sources 解析失败, id={}", rs.getString("id"));
+                throw new IllegalStateException(
+                        "MemoryQueryApi: derivation_sources 解析失败, id=" + rs.getString("id"), e);
             }
         }
         LifecycleState lifecycleState = parseLifecycleState(rs.getString("lifecycle_state"));
@@ -175,24 +174,25 @@ public class MemoryQueryApi {
     }
 
     private static LifecycleState parseLifecycleState(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return LifecycleState.ACTIVE;
-        }
-        try {
-            return LifecycleState.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            return LifecycleState.ACTIVE;
-        }
+        return parseRequiredEnum("lifecycle_state", raw, LifecycleState.class);
     }
 
     private static Temporality parseTemporality(String raw) {
+        return parseRequiredEnum("temporality", raw, Temporality.class);
+    }
+
+    private static <E extends Enum<E>> E parseRequiredEnum(
+            String columnName,
+            String raw,
+            Class<E> enumType) {
         if (raw == null || raw.isBlank()) {
-            return Temporality.PERSISTENT;
+            throw new IllegalStateException("MemoryQueryApi: " + columnName + " 不能为空");
         }
         try {
-            return Temporality.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            return Temporality.PERSISTENT;
+            return Enum.valueOf(enumType, raw);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 包含未知值: " + raw, ex);
         }
     }
 

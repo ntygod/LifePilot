@@ -3,6 +3,7 @@ package com.lifepilot.memory.semantic;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.query.MemoryQueryApi;
 import com.lifepilot.memory.governance.lifecycle.SourceType;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -16,6 +17,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,6 +32,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -58,6 +62,7 @@ class SemanticMemory_生命周期字段_集成测试 {
     private JdbcTemplate jdbcTemplate;
     private SemanticMemory semanticMemory;
     private MemoryProvenanceRepository provenanceRepository;
+    private MemoryQueryApi queryApi;
     private Path dbPath;
 
     @BeforeEach
@@ -87,6 +92,7 @@ class SemanticMemory_生命周期字段_集成测试 {
         semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
         provenanceRepository = new MemoryProvenanceRepository(jdbcTemplate);
+        queryApi = new MemoryQueryApi(semanticMemory, provenanceRepository, jdbcTemplate);
     }
 
     @AfterEach
@@ -165,6 +171,237 @@ class SemanticMemory_生命周期字段_集成测试 {
         var loaded = semanticMemory.findById("test-派生-1").orElseThrow();
         assertThat(loaded.isDerived()).isTrue();
         assertThat(loaded.derivationSources()).containsExactly("src-1", "src-2");
+    }
+
+    @ParameterizedTest(name = "{0} 被污染时读取应失败")
+    @CsvSource({
+            "lifecycle_state, BROKEN_STATE",
+            "temporality, BROKEN_TEMPORALITY",
+            "evidence_kind, BROKEN_EVIDENCE",
+            "trust_level, BROKEN_TRUST"
+    })
+    void 枚举字段被污染时读取应失败(String columnName, String invalidValue) {
+        var entity = 构造活跃实体("test-非法枚举-" + columnName, EntityType.PREFERENCE);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        jdbcTemplate.update("UPDATE memory_entities SET " + columnName + " = ? WHERE id = ?",
+                invalidValue, persisted.id());
+
+        assertThatThrownBy(() -> semanticMemory.findById(persisted.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(columnName)
+                .hasMessageContaining(invalidValue);
+    }
+
+    @Test
+    void derivationSources被污染时读取应失败() {
+        var derived = new TemporalEntity(
+                "test-非法血缘",
+                EntityType.PREFERENCE,
+                "非法血缘实体",
+                "用于验证派生来源读取严格性",
+                Map.of(),
+                1,
+                true,
+                Instant.now(),
+                null,
+                null,
+                1.0f,
+                0.6f,
+                0,
+                null,
+                Instant.now(),
+                Instant.now(),
+                LifecycleState.ACTIVE,
+                null,
+                null,
+                Temporality.PERSISTENT,
+                null,
+                true,
+                List.of("src-1")
+        );
+        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.unknown(null));
+        jdbcTemplate.update("UPDATE memory_entities SET derivation_sources = ? WHERE id = ?",
+                "{不是合法JSON", derived.id());
+
+        assertThatThrownBy(() -> semanticMemory.findById(derived.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("derivation_sources");
+    }
+
+    @Test
+    void propertiesJson被污染时读取应失败() {
+        var entity = new TemporalEntity(
+                "test-非法属性",
+                EntityType.CUSTOM,
+                "非法属性实体",
+                "用于验证属性读取严格性",
+                Map.of("key", "value"),
+                1,
+                true,
+                Instant.now(),
+                null,
+                null,
+                1.0f,
+                0.5f,
+                0,
+                null,
+                Instant.now(),
+                Instant.now()
+        );
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        jdbcTemplate.update("""
+                UPDATE memory_entity_versions
+                SET properties_json = ?
+                WHERE entity_id = ? AND is_current = 1
+                """, "{不是合法JSON", persisted.id());
+
+        assertThatThrownBy(() -> semanticMemory.findById(persisted.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("properties_json")
+                .hasMessageContaining(persisted.id());
+    }
+
+    @ParameterizedTest(name = "MemoryQueryApi {0} 被污染时读取版本应失败")
+    @CsvSource({
+            "lifecycle_state, BROKEN_STATE",
+            "temporality, BROKEN_TEMPORALITY"
+    })
+    void MemoryQueryApi枚举字段被污染时读取版本应失败(String columnName, String invalidValue) {
+        var entity = 构造活跃实体("test-query-api-非法枚举-" + columnName, EntityType.PREFERENCE);
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        jdbcTemplate.update("UPDATE memory_entities SET " + columnName + " = ? WHERE id = ?",
+                invalidValue, persisted.id());
+
+        assertThatThrownBy(() -> queryApi.findAllVersions(persisted.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MemoryQueryApi")
+                .hasMessageContaining(columnName)
+                .hasMessageContaining(invalidValue);
+    }
+
+    @Test
+    void MemoryQueryApi的derivationSources被污染时读取版本应失败() {
+        var derived = new TemporalEntity(
+                "test-query-api-非法血缘",
+                EntityType.PREFERENCE,
+                "查询门面非法血缘实体",
+                "用于验证查询门面派生来源读取严格性",
+                Map.of(),
+                1,
+                true,
+                Instant.now(),
+                null,
+                null,
+                1.0f,
+                0.6f,
+                0,
+                null,
+                Instant.now(),
+                Instant.now(),
+                LifecycleState.ACTIVE,
+                null,
+                null,
+                Temporality.PERSISTENT,
+                null,
+                true,
+                List.of("src-1")
+        );
+        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.unknown(null));
+        jdbcTemplate.update("UPDATE memory_entities SET derivation_sources = ? WHERE id = ?",
+                "{不是合法JSON", derived.id());
+
+        assertThatThrownBy(() -> queryApi.findAllVersions(derived.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MemoryQueryApi")
+                .hasMessageContaining("derivation_sources")
+                .hasMessageContaining(derived.id());
+    }
+
+    @Test
+    void MemoryQueryApi的propertiesJson被污染时读取版本应失败() {
+        var entity = new TemporalEntity(
+                "test-query-api-非法属性",
+                EntityType.CUSTOM,
+                "查询门面非法属性实体",
+                "用于验证查询门面属性读取严格性",
+                Map.of("key", "value"),
+                1,
+                true,
+                Instant.now(),
+                null,
+                null,
+                1.0f,
+                0.5f,
+                0,
+                null,
+                Instant.now(),
+                Instant.now()
+        );
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        jdbcTemplate.update("""
+                UPDATE memory_entity_versions
+                SET properties_json = ?
+                WHERE entity_id = ? AND is_current = 1
+                """, "{不是合法JSON", persisted.id());
+
+        assertThatThrownBy(() -> queryApi.findAllVersions(persisted.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MemoryQueryApi")
+                .hasMessageContaining("properties_json")
+                .hasMessageContaining(persisted.id());
+    }
+
+    @Test
+    void 冲突检测候选propertiesJson被污染时写入应失败() {
+        var existing = new TemporalEntity(
+                "test-conflict-非法属性",
+                EntityType.PERSON,
+                "冲突检测候选",
+                "已有实体",
+                Map.of("key", "value"),
+                1,
+                true,
+                Instant.now(),
+                null,
+                null,
+                1.0f,
+                0.5f,
+                0,
+                null,
+                Instant.now(),
+                Instant.now()
+        );
+        var persisted = semanticMemory.upsertWithConflictDetection(existing, null, MemoryWriteContext.unknown(null));
+        jdbcTemplate.update("""
+                UPDATE memory_entity_versions
+                SET properties_json = ?
+                WHERE entity_id = ? AND is_current = 1
+                """, "{不是合法JSON", persisted.id());
+        var incoming = new TemporalEntity(
+                null,
+                EntityType.PERSON,
+                "冲突检测候选",
+                "新实体",
+                Map.of(),
+                1,
+                true,
+                Instant.now(),
+                null,
+                null,
+                1.0f,
+                0.6f,
+                0,
+                null,
+                Instant.now(),
+                Instant.now()
+        );
+
+        assertThatThrownBy(() -> semanticMemory.upsertWithConflictDetection(
+                incoming, null, MemoryWriteContext.unknown(null)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("冲突检测")
+                .hasMessageContaining("properties_json")
+                .hasMessageContaining(persisted.id());
     }
 
     @Test

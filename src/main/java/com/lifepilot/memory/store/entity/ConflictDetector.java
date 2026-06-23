@@ -169,7 +169,8 @@ public class ConflictDetector {
                 properties = new com.fasterxml.jackson.databind.ObjectMapper()
                         .readValue(propsJson, Map.class);
             } catch (Exception e) {
-                log.warn("冲突检测: properties_json 解析失败, id={}", rs.getString("id"));
+                throw new IllegalStateException(
+                        "冲突检测: properties_json 解析失败, id=" + rs.getString("id"), e);
             }
         }
 

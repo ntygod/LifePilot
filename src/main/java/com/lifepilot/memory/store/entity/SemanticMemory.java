@@ -1407,7 +1407,8 @@ public class SemanticMemory {
             try {
                 propsJson = MAPPER.writeValueAsString(entity.properties());
             } catch (Exception e) {
-                log.warn("语义记忆: properties 序列化失败, id={}", entity.id());
+                throw new IllegalStateException(
+                        "语义记忆: properties 序列化失败, id=" + entity.id(), e);
             }
         }
         String versionId = UUID.randomUUID().toString();
@@ -1773,7 +1774,8 @@ public class SemanticMemory {
             try {
                 properties = MAPPER.readValue(propsJson, Map.class);
             } catch (Exception e) {
-                log.warn("语义记忆: properties_json 解析失败, id={}", rs.getString("id"));
+                throw new IllegalStateException(
+                        "语义记忆: properties_json 解析失败, id=" + rs.getString("id"), e);
             }
         }
 
@@ -1819,55 +1821,38 @@ public class SemanticMemory {
         );
     }
 
-    /** 将 lifecycle_state 字符串解析为枚举，异常或空值回退 ACTIVE。 */
+    /** 将 lifecycle_state 字符串严格解析为枚举。 */
     private static LifecycleState parseLifecycleState(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return LifecycleState.ACTIVE;
-        }
-        try {
-            return LifecycleState.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 lifecycle_state={}，回退 ACTIVE", raw);
-            return LifecycleState.ACTIVE;
-        }
+        return parseRequiredEnum("lifecycle_state", raw, LifecycleState.class);
     }
 
-    /** 将 temporality 字符串解析为枚举，异常或空值回退 PERSISTENT。 */
+    /** 将 temporality 字符串严格解析为枚举。 */
     private static Temporality parseTemporality(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return Temporality.PERSISTENT;
-        }
-        try {
-            return Temporality.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 temporality={}，回退 PERSISTENT", raw);
-            return Temporality.PERSISTENT;
-        }
+        return parseRequiredEnum("temporality", raw, Temporality.class);
     }
 
-    /** 将 evidence_kind 字符串解析为枚举，异常或空值回退 UNKNOWN。 */
+    /** 将 evidence_kind 字符串严格解析为枚举。 */
     private static MemoryEvidenceKind parseEvidenceKind(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return MemoryEvidenceKind.UNKNOWN;
-        }
-        try {
-            return MemoryEvidenceKind.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 evidence_kind={}，回退 UNKNOWN", raw);
-            return MemoryEvidenceKind.UNKNOWN;
-        }
+        return parseRequiredEnum("evidence_kind", raw, MemoryEvidenceKind.class);
     }
 
-    /** 将 trust_level 字符串解析为枚举，异常或空值回退 UNVERIFIED。 */
+    /** 将 trust_level 字符串严格解析为枚举。 */
     private static MemoryTrustLevel parseTrustLevel(@Nullable String raw) {
+        return parseRequiredEnum("trust_level", raw, MemoryTrustLevel.class);
+    }
+
+    private static <E extends Enum<E>> E parseRequiredEnum(
+            String columnName,
+            @Nullable String raw,
+            Class<E> enumType) {
         if (raw == null || raw.isBlank()) {
-            return MemoryTrustLevel.UNVERIFIED;
+            throw new IllegalStateException("语义记忆: " + columnName + " 不能为空");
         }
         try {
-            return MemoryTrustLevel.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 trust_level={}，回退 UNVERIFIED", raw);
-            return MemoryTrustLevel.UNVERIFIED;
+            return Enum.valueOf(enumType, raw);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException(
+                    "语义记忆: " + columnName + " 包含未知值: " + raw, ex);
         }
     }
 
@@ -1880,12 +1865,12 @@ public class SemanticMemory {
         try {
             return MAPPER.writeValueAsString(sources);
         } catch (Exception e) {
-            log.warn("语义记忆: derivation_sources 序列化失败, count={}", sources.size());
-            return null;
+            throw new IllegalStateException(
+                    "语义记忆: derivation_sources 序列化失败, count=" + sources.size(), e);
         }
     }
 
-    /** 反序列化 derivation_sources JSON 数组；解析失败回退空列表。 */
+    /** 反序列化 derivation_sources JSON 数组；空列代表无派生来源。 */
     private static List<String> deserializeDerivationSources(@Nullable String json) {
         if (json == null || json.isBlank()) {
             return List.of();
@@ -1893,8 +1878,7 @@ public class SemanticMemory {
         try {
             return MAPPER.readValue(json, STRING_LIST_TYPE);
         } catch (Exception e) {
-            log.warn("语义记忆: derivation_sources 反序列化失败, error={}", e.getMessage());
-            return List.of();
+            throw new IllegalStateException("语义记忆: derivation_sources 反序列化失败", e);
         }
     }
 

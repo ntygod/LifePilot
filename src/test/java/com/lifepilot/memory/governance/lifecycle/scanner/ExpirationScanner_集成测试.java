@@ -2,6 +2,7 @@ package com.lifepilot.memory.governance.lifecycle.scanner;
 
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
@@ -212,13 +213,14 @@ class ExpirationScanner_集成测试 {
                     first_seen_at, last_seen_at, created_at, updated_at,
                     lifecycle_state, expires_at, temporality, is_derived)
                 VALUES (?, ?, 'PRIVATE', 'GOAL', ?, ?, 'UNKNOWN', 'ACTIVE', 0,
-                        ?, ?, ?, ?, ?, ?, 'TEMPORARY', 0)
+                        ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 entityId, SPACE_ID, entityId, entityId,
                 FIXED_NOW.toString(), FIXED_NOW.toString(),
                 FIXED_NOW.toString(), FIXED_NOW.toString(),
                 state.name(),
-                expiresAt == null ? null : expiresAt.toString());
+                expiresAt == null ? null : expiresAt.toString(),
+                expiresAt == null ? Temporality.PERSISTENT.name() : Temporality.EPHEMERAL.name());
         jdbcTemplate.update(
                 """
                 INSERT INTO memory_entity_versions(
