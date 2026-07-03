@@ -501,9 +501,11 @@ public class ToolExecutionCoordinator {
             success = inferToolExecutionSuccess(rawOutput);
         } catch (Throwable e) {
             // 捕获 Throwable — 防止 Error 级别异常导致 ReAct 循环静默终止
+            String errorMessage = messageOf(e);
             log.error("工具执行失败: toolId={}, errorType={}, error={}",
-                    planned.toolId(), e.getClass().getSimpleName(), e.getMessage(), e);
-            rawOutput = "工具执行异常: " + e.getMessage();
+                    planned.toolId(), e.getClass().getSimpleName(), errorMessage);
+            log.debug("工具执行失败堆栈: toolId={}", planned.toolId(), e);
+            rawOutput = "工具执行异常: " + errorMessage;
             success = false;
         }
 
@@ -1216,6 +1218,11 @@ public class ToolExecutionCoordinator {
                 .count();
         long otherChars = text.length() - cjkChars;
         return Math.max(1, (int) (cjkChars + otherChars / 4));
+    }
+
+    private static String messageOf(Throwable e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
     }
 
     /** 允许主循环决定“追加步骤后是否同步推送 SSE”。 */

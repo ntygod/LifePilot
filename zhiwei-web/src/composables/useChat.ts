@@ -358,9 +358,7 @@ export function useChat() {
           finalizeInterruptedTurn({
             id: buildTerminalAssistantId(currentTurnId ?? undefined, undefined, 'aborted'),
             turnId: currentTurnId ?? undefined,
-            // 用 SUCCESS 而非 FAILED — 用户主动停止不应显示错误 UI。
-            // ChatTurnStatus 无 ABORTED 值，SUCCESS 是语义最接近的选择。
-            turnStatus: 'SUCCESS',
+            turnStatus: 'CANCELLED',
             content: partialContent,
           })
         } else {
@@ -501,6 +499,20 @@ export function useChat() {
           const attachments = buildStreamingAttachments(event.contents, event.attachments)
           const finalReasoningContent = reasoningBuffer.value
           const finalReasoningDurationMs = reasoningDurationMs.value
+          if (event.turnStatus === 'CANCELLED' && !finalContent && attachments.length === 0) {
+            if (currentUserMessageId) {
+              chatStore.updateMessage(currentUserMessageId, {
+                status: 'success',
+                traceId: event.traceId,
+                turnId,
+                turnStatus: 'CANCELLED',
+                errorMessage: undefined,
+              })
+            }
+            chatStore.resetStreaming()
+            a2uiStore.clearComponents()
+            break
+          }
           const assistantMessage = {
             id: event.entryId,
             turnId,
@@ -819,7 +831,7 @@ export function useChat() {
   }
 
   function buildInterruptedNotice(
-    status: ChatTurnStatus | 'DEGRADED' | 'SUSPENDED' | 'FAILED',
+    status: ChatTurnStatus | 'DEGRADED' | 'SUSPENDED' | 'FAILED' | 'CANCELLED',
     reason?: string,
   ) {
     const detail = humanizeTerminationReason(reason)
@@ -837,6 +849,14 @@ export function useChat() {
         '这轮处理被打断了。',
         `原因：${detail}`,
         '前面已经生成的内容我会保留着。你可以换个说法继续补充，或者让我重试这一轮。',
+      ].join('\n')
+    }
+
+    if (status === 'CANCELLED') {
+      return [
+        '这轮已停止。',
+        `原因：${detail}`,
+        '前面已经生成的内容我会保留着。你可以直接继续补充。',
       ].join('\n')
     }
 
@@ -914,6 +934,7 @@ export function useChat() {
   ) {
     return turnStatus === 'DEGRADED'
       || turnStatus === 'SUSPENDED'
+      || turnStatus === 'CANCELLED'
       || completionMode === 'DEGRADED'
       || completionMode === 'SUSPENDED'
   }
@@ -921,8 +942,9 @@ export function useChat() {
   function resolveInterruptedStatus(
     turnStatus?: ChatTurnStatus,
     completionMode?: SseDoneEvent['completionMode'],
-  ): ChatTurnStatus | 'DEGRADED' | 'SUSPENDED' | 'FAILED' {
-    if (turnStatus === 'DEGRADED' || turnStatus === 'SUSPENDED' || turnStatus === 'FAILED') {
+  ): ChatTurnStatus | 'DEGRADED' | 'SUSPENDED' | 'FAILED' | 'CANCELLED' {
+    if (turnStatus === 'DEGRADED' || turnStatus === 'SUSPENDED'
+      || turnStatus === 'FAILED' || turnStatus === 'CANCELLED') {
       return turnStatus
     }
     if (completionMode === 'SUSPENDED') {

@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -91,6 +92,21 @@ class BrowserSessionManagerTest {
         properties.getInfra().getBrowser().setEnabled(false);
         var manager = new BrowserSessionManager(properties, zhiweiPaths);
         assertThat(manager.isAvailable()).isFalse();
+    }
+
+    @Test
+    void 首次启动发现浏览器二进制缺失后应标记不可用() {
+        var runtime = mock(BrowserSessionManager.BrowserRuntime.class);
+        when(runtime.createPlaywright()).thenReturn(new Object());
+        when(runtime.launchBrowser(any(), anyBoolean(), anyList()))
+                .thenThrow(new RuntimeException("executable doesn't exist"));
+        var manager = new BrowserSessionManager(properties, zhiweiPaths, null, runtime);
+
+        assertThatThrownBy(() -> manager.getOrCreatePage("session-missing-browser"))
+                .isInstanceOf(BrowserNotInstalledException.class);
+
+        assertThat(manager.isAvailable()).isFalse();
+        assertThat(manager.getUnavailableMessage()).contains("浏览器二进制未安装");
     }
 
     @Test

@@ -301,6 +301,7 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean(DynamicToolRegistry.class)
     public ConversationCapabilityPlanner conversationCapabilityPlanner(
             DynamicToolRegistry toolRegistry,
             @Autowired(required = false) SkillRegistry skillRegistry,

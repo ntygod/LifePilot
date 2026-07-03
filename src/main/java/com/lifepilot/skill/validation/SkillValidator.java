@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
  * <p>两条路径（见 docs/skill-spec.md §5）：
  * <ul>
  *   <li>{@link #validate(ParsedSkill)}：预置 / 导入 / 市场 路径，宽松 ——
- *       description + body 硬约束校验 + secret 模式扫描 + 未知工具仅 WARN 不阻断</li>
+ *       description + body 硬约束校验 + secret 模式扫描 + 未知工具仅 DEBUG 不阻断</li>
  *   <li>{@link #validateGenerated(ParsedSkill)}：自生成路径，严格 ——
  *       额外强校验工具存在性 + 拒绝 HIGH / CRITICAL 风险工具</li>
  * </ul>
@@ -61,7 +61,7 @@ public class SkillValidator {
     /**
      * 预置 / 导入 / 市场 路径校验。
      *
-     * <p>{@code suggestedTools} 引用的工具不存在时只记 WARN，不抛异常 ——
+     * <p>{@code suggestedTools} 引用的工具不存在时只记 DEBUG，不抛异常 ——
      * 真正的工具可用性在加载期由 {@link SkillRequirementGate} 基于
      * {@code requires.tools} 做硬过滤。</p>
      *
@@ -72,7 +72,7 @@ public class SkillValidator {
         validateCommon(parsed);
         for (String toolId : parsed.frontmatter().zhiweiMeta().suggestedTools()) {
             if (toolRegistry.resolve(toolId).isEmpty()) {
-                log.warn("skill '{}' 引用了未知工具 '{}'（仅 WARN，不阻断）",
+                log.debug("skill '{}' 引用了未知工具 '{}'（仅 DEBUG，不阻断）",
                         parsed.frontmatter().name(), toolId);
             }
         }

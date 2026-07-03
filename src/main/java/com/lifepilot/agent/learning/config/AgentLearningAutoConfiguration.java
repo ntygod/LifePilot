@@ -91,6 +91,7 @@ public class AgentLearningAutoConfiguration {
     private final ObjectProvider<ConsolidationScheduler> consolidationSchedulerProvider;
 
     private volatile Instant lastIdleConsolidationTime;
+    private volatile String lastIdleConsolidationFailureSignature;
 
     public AgentLearningAutoConfiguration(AgentLearningProperties properties,
                                           @Lazy JdbcTemplate jdbcTemplate,
@@ -98,6 +99,7 @@ public class AgentLearningAutoConfiguration {
         this.properties = properties;
         this.jdbcTemplate = jdbcTemplate;
         this.consolidationSchedulerProvider = consolidationSchedulerProvider;
+        this.lastIdleConsolidationTime = Instant.now();
     }
 
     // ── 提取 ──
@@ -542,7 +544,11 @@ public class AgentLearningAutoConfiguration {
         ConsolidationScheduler scheduler = consolidationSchedulerProvider.getObject();
 
         // 1. 用户画像防抖
-        scheduler.checkProfileDebounce();
+        try {
+            scheduler.checkProfileDebounce();
+        } catch (Exception e) {
+            log.warn("记忆模块: 用户画像防抖检查失败，跳过本轮: error={}", messageOf(e));
+        }
 
         // 2. 空闲 REM 联想
         Instant lastInteraction = getLastInteractionTime();
@@ -558,8 +564,22 @@ public class AgentLearningAutoConfiguration {
         }
 
         log.info("记忆模块: 空闲触发 REM 联想, idleThresholdMinutes={}", idleThreshold);
-        scheduler.runIdleStages();
-        lastIdleConsolidationTime = Instant.now();
+        try {
+            scheduler.runIdleStages();
+            lastIdleConsolidationFailureSignature = null;
+        } catch (Exception e) {
+            String signature = e.getClass().getName() + ":" + messageOf(e);
+            if (!signature.equals(lastIdleConsolidationFailureSignature)) {
+                log.warn("记忆模块: 空闲 REM 联想失败，进入冷却: cooldownMinutes={}, error={}",
+                        cooldown, messageOf(e));
+                log.debug("记忆模块: 空闲 REM 联想失败堆栈", e);
+                lastIdleConsolidationFailureSignature = signature;
+            } else {
+                log.debug("记忆模块: 空闲 REM 联想仍失败，已在冷却内抑制重复堆栈: error={}", messageOf(e));
+            }
+        } finally {
+            lastIdleConsolidationTime = Instant.now();
+        }
     }
 
     private Instant getLastInteractionTime() {
@@ -577,5 +597,11 @@ public class AgentLearningAutoConfiguration {
             throw new IllegalArgumentException(name + "必须大于 0: " + value);
         }
         return value;
+    }
+
+    private static String messageOf(Exception e) {
+        return e.getMessage() != null && !e.getMessage().isBlank()
+                ? e.getMessage()
+                : e.getClass().getSimpleName();
     }
 }

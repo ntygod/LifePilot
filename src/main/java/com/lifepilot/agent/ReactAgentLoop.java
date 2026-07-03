@@ -405,6 +405,11 @@ public class ReactAgentLoop implements CallbackHelper {
                     loopContext.addInjectedEntityIds(cachedContext.injectedEntityIds());
                 }
             }
+            if (cancellationToken.isCancelled() || Thread.currentThread().isInterrupted()) {
+                log.info("ReAct 循环在上下文组装后被取消: traceId={}, iteration={}",
+                        state.traceId(), iteration);
+                break;
+            }
             var assembledContext = cachedContext;
             boolean firstIteration = iteration == 0;
             // 首轮迭代注入用户上传的媒体内容到上下文
@@ -445,6 +450,12 @@ public class ReactAgentLoop implements CallbackHelper {
             var llmToolCallbacks = state.taskMode() == AgentTaskMode.ANSWER
                     ? List.<ToolCallback>of()
                     : toolCallbacks;
+
+            if (cancellationToken.isCancelled() || Thread.currentThread().isInterrupted()) {
+                log.info("ReAct 循环在 LLM 调用前被取消: traceId={}, iteration={}",
+                        state.traceId(), iteration);
+                break;
+            }
 
             log.debug("ReAct 迭代开始: traceId={}, iteration={}, stepCount={}, toolCount={}, purpose={}",
                     state.traceId(), iteration, state.stepCount(), toolCallbacks.size(), callPurpose);
@@ -1733,7 +1744,7 @@ public class ReactAgentLoop implements CallbackHelper {
         }
         var sb = new StringBuilder();
         sb.append(ContextMessageFormatter.serializeForDebug(messages));
-        log.info("""
+        log.debug("""
                 ========== LLM PROMPT ==========
                 scene={} traceId=react
                 tools={}

@@ -219,7 +219,7 @@ public class ToolExecutionPipeline implements Closeable {
         }
 
         // 6. 执行（含超时 + 重试）
-        int maxRetries = tool.budget().maxRetries();
+        int maxRetries = effectiveMaxRetries(tool, tool.budget().maxRetries());
         ToolResult result = executeWithRetry(tool, input, maxRetries);
 
         // 7. 记录幂等缓存
@@ -321,16 +321,37 @@ public class ToolExecutionPipeline implements Closeable {
     }
 
     private Map<String, Object> prepareParameters(String toolId, Map<String, Object> parameters) {
-        if (!"cron".equals(toolId) || parameters.containsKey("taskId")) {
-            return parameters;
+        Map<String, Object> effective = parameters;
+        if ("code".equals(toolId)
+                && parameters.containsKey("code")
+                && !parameters.containsKey("action")) {
+            Map<String, Object> enriched = new LinkedHashMap<>(parameters);
+            enriched.put("action", "exec");
+            effective = Map.copyOf(enriched);
         }
-        Object action = parameters.get("action");
+        if (!"cron".equals(toolId) || effective.containsKey("taskId")) {
+            return effective;
+        }
+        Object action = effective.get("action");
         if (!(action instanceof String actionName) || !"create".equals(actionName)) {
-            return parameters;
+            return effective;
         }
-        Map<String, Object> enriched = new LinkedHashMap<>(parameters);
+        Map<String, Object> enriched = new LinkedHashMap<>(effective);
         enriched.put("taskId", UUID.randomUUID().toString());
         return Map.copyOf(enriched);
+    }
+
+    /** 对长耗时交互工具收紧自动重试，避免一次失败拖慢整轮对话。 */
+    private int effectiveMaxRetries(ToolContract tool, int configuredMaxRetries) {
+        String toolId = tool.id();
+        if ("browser".equals(toolId) || "web.fetch".equals(toolId)) {
+            if (configuredMaxRetries > 0) {
+                log.debug("工具重试已按交互体验收紧: toolId={}, configuredRetries={}, effectiveRetries=0",
+                        toolId, configuredMaxRetries);
+            }
+            return 0;
+        }
+        return configuredMaxRetries;
     }
 
     /**
@@ -342,24 +363,35 @@ public class ToolExecutionPipeline implements Closeable {
      * @return 执行结果
      */
     private ToolResult executeWithTimeout(ToolContract tool, ToolInput input, Duration timeout) {
+        Future<ToolResult> future = virtualThreadExecutor.submit(() -> tool.execute(input));
         try {
-            CompletableFuture<ToolResult> future = CompletableFuture.supplyAsync(
-                    () -> tool.execute(input),
-                    virtualThreadExecutor
-            );
-            return future.orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS).join();
-        } catch (CompletionException e) {
+            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            String timeoutText = formatTimeout(timeout);
+            log.warn("工具执行超时: toolId={}, timeout={}", tool.id(), timeoutText);
+            return ToolResult.error("执行超时: " + timeoutText);
+        } catch (ExecutionException e) {
             Throwable cause = e.getCause();
-            if (cause instanceof TimeoutException) {
-                log.warn("工具执行超时: toolId={}, timeout={}s", tool.id(), timeout.getSeconds());
-                return ToolResult.error("执行超时: " + timeout.getSeconds() + "秒");
-            }
             log.error("工具执行异常: toolId={}", tool.id(), cause);
             return ToolResult.error("执行异常: " + (cause != null ? cause.getMessage() : "未知错误"));
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            return ToolResult.error("执行被中断");
         } catch (Exception e) {
+            future.cancel(true);
             log.error("工具执行异常: toolId={}", tool.id(), e);
             return ToolResult.error("执行异常: " + e.getMessage());
         }
+    }
+
+    private static String formatTimeout(Duration timeout) {
+        long millis = timeout.toMillis();
+        if (millis < 1000 || millis % 1000 != 0) {
+            return millis + "毫秒";
+        }
+        return (millis / 1000) + "秒";
     }
 
     /**

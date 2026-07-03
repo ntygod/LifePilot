@@ -53,6 +53,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import java.util.Map;
 import com.lifepilot.llm.LlmResponse;
@@ -295,6 +297,28 @@ class ReactAgentLoop_单元测试 {
 
             // 取消后循环直接 break，不设置 done=true（由上层处理）
             assertThat(result.finalOutput()).isNull();
+        }
+
+        @Test
+        void 上下文组装后取消不应继续调用LLM() {
+            var budget = 基础预算();
+            var request = 简单请求("测试取消", "session-cancel-after-context", budget);
+            var initialState = ReactAgentState.init(request, budget);
+            var token = new CancellationToken();
+            when(contextAssembler.assemble(any())).thenAnswer(invocation -> {
+                token.cancel();
+                return 基础上下文("测试取消");
+            });
+            IterationCallback callback = mock(IterationCallback.class);
+
+            var result = reactAgentLoop.coreLoop(
+                    initialState, request, null, Instant.now(),
+                    callback, token, new AgentLoopContext()
+            );
+
+            assertThat(result.finalOutput()).isNull();
+            verify(callback, never()).callLlm(any(), any(), any(), any());
+            verify(agentToolProvider, never()).getToolCallbacks(any(), nullable(String.class), any());
         }
 
         @Test

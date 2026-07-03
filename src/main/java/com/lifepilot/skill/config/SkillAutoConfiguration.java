@@ -256,7 +256,7 @@ public class SkillAutoConfiguration {
                     definitionErrors++;
                 }
             }
-            log.info("ApplicationReady: Skill 终态校验完成（definition 错误 skill={}；未注册工具见上方 WARN）",
+            log.info("ApplicationReady: Skill 终态校验完成（definition 错误 skill={}；未注册工具已降为 DEBUG）",
                     definitionErrors);
         } catch (Exception e) {
             log.warn("ApplicationReady: Skill 终态校验跳过: {}", e.getMessage());

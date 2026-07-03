@@ -221,6 +221,9 @@ public class StreamingEventHandler {
     }
 
     private ChatTurnStatus resolveTurnStatus(ReactAgentState state) {
+        if (state.completionReason() == CompletionReason.CANCELLED) {
+            return ChatTurnStatus.CANCELLED;
+        }
         if (state.suspended()) {
             return ChatTurnStatus.SUSPENDED;
         }

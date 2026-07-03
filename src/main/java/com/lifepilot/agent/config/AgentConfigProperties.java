@@ -25,7 +25,7 @@ public class AgentConfigProperties {
     /** 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测。 */
     private String location = "";
     /** IP 地理定位 API 地址，为空时禁用自动检测。 */
-    private String ipApiUrl = "http://ip-api.com/json/?fields=city,regionName,country&lang=zh-CN";
+    private String ipApiUrl = "";
     private LoopConfig loop = new LoopConfig();
     private BudgetConfig budget = new BudgetConfig();
     private ContextConfig context = new ContextConfig();

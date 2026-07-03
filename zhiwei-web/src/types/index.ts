@@ -70,7 +70,7 @@ export type OutputContentRole = 'FINAL' | 'PROGRESS' | 'SUSPEND_PROMPT' | 'BLOCK
 
 export type ChatTurnAction = 'SEND' | 'RETRY' | 'RESUME' | 'RESTART'
 
-export type ChatTurnStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'DEGRADED' | 'SUSPENDED'
+export type ChatTurnStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'DEGRADED' | 'SUSPENDED' | 'CANCELLED'
 
 /** 消息 */
 export interface Message {
