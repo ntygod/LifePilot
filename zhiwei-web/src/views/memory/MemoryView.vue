@@ -82,8 +82,13 @@ async function handleSearch() {
   searching.value = true
   try {
     const response = await store.search(q)
-    searchResults.value = response.results
-    searchMeta.value = response
+    if (Array.isArray(response)) {
+      searchResults.value = response
+      searchMeta.value = null
+    } else {
+      searchResults.value = response.results ?? []
+      searchMeta.value = response
+    }
   } finally {
     searching.value = false
   }

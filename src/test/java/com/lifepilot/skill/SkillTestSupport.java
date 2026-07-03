@@ -113,6 +113,13 @@ public class SkillTestSupport {
     }
 
     @Bean
+    SkillValidator skillValidator(SkillDescriptionValidator descriptionValidator,
+                                  SkillBodyValidator bodyValidator,
+                                  DynamicToolRegistry toolRegistry) {
+        return new SkillValidator(descriptionValidator, bodyValidator, toolRegistry);
+    }
+
+    @Bean
     MarkdownSkillParser markdownSkillParser() {
         return new MarkdownSkillParser();
     }
