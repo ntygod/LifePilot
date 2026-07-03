@@ -12,7 +12,7 @@ import java.util.Objects;
  * @param entityType  实体类型（LLM 可读字符串）
  * @param name        名称
  * @param description 描述
- * @param score       分数 [0, 1]（各源自行归一化）
+ * @param score       非负排序分（由各源定义，可不是概率）
  * @param sourcePath  来源路径（如 "vector" / "fts" / "experience" / "knowledge-base"）
  * @param confidence  置信度 [0, 1]
  * @param metadata    自由元数据
@@ -32,15 +32,19 @@ public record EvidenceItem(
 
     public EvidenceItem {
         entityId = Objects.requireNonNull(entityId, "entityId 不能为空");
-        entityType = Objects.requireNonNullElse(entityType, "");
-        name = Objects.requireNonNullElse(name, "");
+        entityType = Objects.requireNonNull(entityType, "entityType 不能为空");
+        name = Objects.requireNonNull(name, "name 不能为空");
         sourcePath = Objects.requireNonNull(sourcePath, "sourcePath 不能为空");
-        score = clamp(score);
-        confidence = clamp(confidence);
-        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+        if (!(score >= 0.0f) || Float.isInfinite(score)) {
+            throw new IllegalArgumentException("score 必须是非负有限数: " + score);
+        }
+        requireConfidence(confidence);
+        metadata = Map.copyOf(Objects.requireNonNull(metadata, "metadata 不能为空"));
     }
 
-    private static float clamp(float v) {
-        return Math.max(0f, Math.min(1f, v));
+    private static void requireConfidence(float value) {
+        if (!(value >= 0.0f && value <= 1.0f)) {
+            throw new IllegalArgumentException("confidence 必须在 [0,1] 范围内: " + value);
+        }
     }
 }

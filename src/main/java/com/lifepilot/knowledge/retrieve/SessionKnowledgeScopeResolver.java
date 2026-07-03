@@ -2,11 +2,11 @@ package com.lifepilot.knowledge.retrieve;
 
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.model.KnowledgeSearchScope;
-import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -17,12 +17,12 @@ import java.util.Set;
  */
 public class SessionKnowledgeScopeResolver {
 
-    @Nullable
     private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
 
     public SessionKnowledgeScopeResolver(
-            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository) {
-        this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
+            SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository) {
+        this.sessionKnowledgeBaseRepository = Objects.requireNonNull(sessionKnowledgeBaseRepository,
+                "sessionKnowledgeBaseRepository");
     }
 
     public List<KnowledgeSearchScope> resolveScopes(String sessionId) {
@@ -33,9 +33,7 @@ public class SessionKnowledgeScopeResolver {
         var scopes = new ArrayList<KnowledgeSearchScope>();
         Set<String> explicitKbIds = new LinkedHashSet<>();
 
-        if (sessionKnowledgeBaseRepository != null) {
-            explicitKbIds.addAll(sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId));
-        }
+        explicitKbIds.addAll(sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId));
         explicitKbIds.forEach(kbId -> scopes.add(new KnowledgeSearchScope(kbId)));
 
         return scopes.stream().distinct().toList();

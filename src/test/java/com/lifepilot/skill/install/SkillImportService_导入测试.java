@@ -4,6 +4,8 @@ import com.lifepilot.config.path.ZhiweiPaths;
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -44,8 +46,8 @@ class SkillImportService_导入测试 {
         repository = mock(SkillInstallationRepository.class);
         var parser = new MarkdownSkillParser();
         installer = new SkillInstaller(parser,
-                new SkillDescriptionValidator(),
-                new SkillBodyValidator(),
+                new SkillValidator(new SkillDescriptionValidator(), new SkillBodyValidator(),
+                        new DynamicToolRegistry(event -> {})),
                 repository);
         zhiweiPaths = mock(ZhiweiPaths.class);
         when(zhiweiPaths.home("skills")).thenReturn(skillsRoot);
@@ -60,12 +62,15 @@ class SkillImportService_导入测试 {
                 description: 当需要测试导入时使用。关键词 import
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - demo
-                ## 不适用场景
-                - not demo
-                ## 工作流
+                - 不要触发：not demo
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - text
+                ## 失败策略
+                - fail
                 """;
 
         var pkg = zipBuilder().addFile("SKILL.md", validMd).build();
@@ -111,12 +116,15 @@ class SkillImportService_导入测试 {
                 description: 当有 references 时使用。关键词 refs
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - 测试
-                ## 不适用场景
-                - 无
-                ## 工作流
+                - 不要触发：无
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - text
+                ## 失败策略
+                - fail
                 """;
         var pkg = zipBuilder()
                 .addFile("SKILL.md", validMd)

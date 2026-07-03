@@ -1,6 +1,7 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,7 +45,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *       并写入 {@code derivation_regeneration_queue} 的 PENDING 行；</li>
  *   <li>{@link DerivationRegenerator#processQueueNow()} 处理队列：因
  *       {@link com.lifepilot.memory.consolidation.ContrastiveLearner} 没有双源重算 API
- *       （Phase 0 Task 14 文档化漂移 #3），也不走画像分支，降级为直接把派生实体转
+ *       （Phase 0 Task 14 文档化漂移 #3），也不走画像分支，因此直接把派生实体转
  *       {@link LifecycleState#SUPERSEDED}，{@code lifecycleReason="no-regenerate-api"}；</li>
  *   <li>队列行状态由 {@code PENDING} → {@code DONE}。</li>
  * </ol>
@@ -53,11 +54,11 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  * 不存在 {@code CONTRASTIVE_INSIGHT} 项（Phase 0 Task 14 记录），本场景用
  * {@code CUSTOM + name="contrastive-insight-*"} 近似，与 {@link DerivationRegenerator} 的
  * 真实分派路径（{@code PROFILE_ENTITY_NAME.equals(name)} 不命中 → {@code isDerived} 命中
- * 非画像派生分支 → 降级 SUPERSEDED）一致。</p>
+ * 非画像派生分支 → SUPERSEDED 收尾）一致。</p>
  *
- * <p><b>降级说明</b>：
+ * <p><b>测试装配说明</b>：
  * <ol>
- *   <li>不走 @SpringBootTest（同 B16/B17 降级原因）；</li>
+ *   <li>不走 @SpringBootTest，测试只装配生命周期监听与队列处理所需依赖；</li>
  *   <li>{@link DerivedEntityListener} 是 {@code @TransactionalEventListener(AFTER_COMMIT)}，
  *       单测无事务管理器，改由 lambda publisher 同步转发
  *       {@link EntityLifecycleChanged} → {@code onLifecycleChanged}；</li>
@@ -111,8 +112,8 @@ class 对比洞察源失效触发重算_场景测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         queueRepo = new RegenerationQueueRepository(jdbcTemplate);
         Clock clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
@@ -146,8 +147,8 @@ class 对比洞察源失效触发重算_场景测试 {
     }
 
     @Test
-    @DisplayName("源 SUPERSEDED → 派生实体入 REGENERATION_NEEDED 队列；regenerator 降级为 SUPERSEDED")
-    void 源失效应级联派生实体走_降级SUPERSEDED收尾() {
+    @DisplayName("源 SUPERSEDED → 派生实体入 REGENERATION_NEEDED 队列；regenerator 收尾为 SUPERSEDED")
+    void 源失效应级联派生实体走SUPERSEDED收尾() {
         // 1. 前置：两条 EXPERIENCE 源 + 一条依赖它们的派生实体（非画像、is_derived=1）
         插入EXPERIENCE(SOURCE_A);
         插入EXPERIENCE(SOURCE_B);
@@ -177,16 +178,16 @@ class 对比洞察源失效触发重算_场景测试 {
                 .as("队列应写入一条 PENDING")
                 .isEqualTo(1);
 
-        // 4. 动作 2：regenerator 处理队列 —— 非画像派生降级为直接 SUPERSEDED
+        // 4. 动作 2：regenerator 处理队列 —— 非画像派生直接 SUPERSEDED
         regenerator.processQueueNow();
 
         // 5. 断言：派生实体最终 SUPERSEDED + reason=no-regenerate-api
         var after = semanticMemory.findById(INSIGHT_ID).orElseThrow();
         assertThat(after.lifecycleState())
-                .as("regenerator 降级应将非画像派生实体转 SUPERSEDED")
+                .as("regenerator 应将非画像派生实体转 SUPERSEDED")
                 .isEqualTo(LifecycleState.SUPERSEDED);
         assertThat(after.lifecycleReason())
-                .as("lifecycleReason 标记无重算 API 的降级路径")
+                .as("lifecycleReason 标记无精准重算入口")
                 .isEqualTo("no-regenerate-api");
 
         // 6. 队列行 PENDING → DONE

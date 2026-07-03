@@ -1,6 +1,7 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.Mockito.mock;
 
 import com.lifepilot.agent.task.proactive.GoalTrackingRepository;
@@ -111,8 +112,8 @@ class 主动任务取消级联清理insight_场景测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         listener = new ProactiveTaskCancelListener(semanticMemory);
 
         publishedEvents = new ArrayList<>();

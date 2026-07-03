@@ -28,42 +28,65 @@ class AssociationCandidate_单元测试 {
     }
 
     @Test
-    void confidence_超出范围被clamp() {
-        var c1 = new AssociationCandidate(
-                "e1", "e2", AssociationType.RELATED_TO, 1.5f, null, "s", null);
-        var c2 = new AssociationCandidate(
-                "e1", "e2", AssociationType.RELATED_TO, -0.3f, null, "s", null);
-        assertThat(c1.confidence()).isEqualTo(1.0f);
-        assertThat(c2.confidence()).isEqualTo(0.0f);
+    void confidence_超出范围直接抛异常() {
+        assertThatThrownBy(() ->
+                new AssociationCandidate("e1", "e2", AssociationType.RELATED_TO, 1.5f, null, "s", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("confidence 必须在 [0,1] 范围内");
+        assertThatThrownBy(() ->
+                new AssociationCandidate("e1", "e2", AssociationType.RELATED_TO, -0.3f, null, "s", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("confidence 必须在 [0,1] 范围内");
+        assertThatThrownBy(() ->
+                new AssociationCandidate("e1", "e2", AssociationType.RELATED_TO, Float.NaN, null, "s", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("confidence 必须在 [0,1] 范围内");
     }
 
     @Test
-    void generatedAt为null时用Instant_now填充() {
-        var c = new AssociationCandidate(
-                "e1", "e2", AssociationType.RELATED_TO, 0.5f, null, "s", null);
-        assertThat(c.generatedAt()).isNotNull();
+    void generatedAt为null时直接抛异常() {
+        assertThatThrownBy(() ->
+                new AssociationCandidate("e1", "e2", AssociationType.RELATED_TO, 0.5f, null, "s", null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("generatedAt 不能为空");
     }
 
     @Test
     void source_target_seed_为空抛异常() {
         assertThatThrownBy(() ->
-                new AssociationCandidate(null, "e2", AssociationType.RELATED_TO, 0.5f, null, "s", null))
+                new AssociationCandidate(null, "e2", AssociationType.RELATED_TO, 0.5f, null, "s", Instant.EPOCH))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() ->
-                new AssociationCandidate("e1", null, AssociationType.RELATED_TO, 0.5f, null, "s", null))
+                new AssociationCandidate("e1", null, AssociationType.RELATED_TO, 0.5f, null, "s", Instant.EPOCH))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() ->
-                new AssociationCandidate("e1", "e2", null, 0.5f, null, "s", null))
+                new AssociationCandidate("e1", "e2", null, 0.5f, null, "s", Instant.EPOCH))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() ->
-                new AssociationCandidate("e1", "e2", AssociationType.RELATED_TO, 0.5f, null, null, null))
+                new AssociationCandidate("e1", "e2", AssociationType.RELATED_TO, 0.5f, null, null, Instant.EPOCH))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void source_target_seed_含首尾空白抛异常() {
+        assertThatThrownBy(() ->
+                new AssociationCandidate(" e1", "e2", AssociationType.RELATED_TO, 0.5f, null, "s", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sourceEntityId 不能包含首尾空白");
+        assertThatThrownBy(() ->
+                new AssociationCandidate("e1", "e2 ", AssociationType.RELATED_TO, 0.5f, null, "s", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("targetEntityId 不能包含首尾空白");
+        assertThatThrownBy(() ->
+                new AssociationCandidate("e1", "e2", AssociationType.RELATED_TO, 0.5f, null, " s", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("seedEntityId 不能包含首尾空白");
     }
 
     @Test
     void dedupKey格式() {
         var c = new AssociationCandidate(
-                "a", "b", AssociationType.CAUSES, 0.5f, null, "s", null);
+                "a", "b", AssociationType.CAUSES, 0.5f, null, "s", Instant.EPOCH);
         assertThat(c.dedupKey()).isEqualTo("a:b:CAUSES");
     }
 }

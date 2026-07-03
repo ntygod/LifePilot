@@ -1,6 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.agent.task.reminder.ReminderFeedbackRepository;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
@@ -89,8 +90,8 @@ class TrustUpgradeService_溯源_集成测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         // 捕获事件并转发给 listener —— 还原"AFTER_COMMIT 代发 → NegativeFeedbackListener 消费"
         publishedEvents = new ArrayList<>();

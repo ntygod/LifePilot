@@ -85,8 +85,11 @@ public class ToolExecutionCoordinator {
 
     /** 值得持久化到工作区的工具 ID 集合（写操作或产生结构化结果的工具）。 */
     private static final Set<String> WORKSPACE_WORTHY_TOOLS = Set.of(
-            "memory.create", "memory.update", "memory.tag",
-            "code");
+            "code", "file.attach", "git.mutate");
+
+    /** {@code memory} 单工具内值得持久化的写入动作。 */
+    private static final Set<String> WORKSPACE_WORTHY_MEMORY_ACTIONS = Set.of(
+            "create", "update", "tag", "complete", "supersede", "cancel");
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
                                     ObjectMapper objectMapper,
@@ -663,7 +666,9 @@ public class ToolExecutionCoordinator {
     private void persistToolResultToWorkspace(ReactAgentState state,
                                                PlannedToolCall planned,
                                                ToolExecutionOutcome outcome) {
-        if (!WORKSPACE_WORTHY_TOOLS.contains(planned.toolId())) {
+        String memoryAction = resolveMemoryAction(planned);
+        if (!WORKSPACE_WORTHY_TOOLS.contains(planned.toolId())
+                && (memoryAction == null || !WORKSPACE_WORTHY_MEMORY_ACTIONS.contains(memoryAction))) {
             return;
         }
         try {
@@ -671,10 +676,15 @@ public class ToolExecutionCoordinator {
             if (summary.length() > 300) {
                 summary = summary.substring(0, 300) + "…";
             }
+            var metadata = new LinkedHashMap<String, Object>();
+            metadata.put("toolId", planned.toolId());
+            if (memoryAction != null) {
+                metadata.put("action", memoryAction);
+            }
             workspaceService.saveWorkingSet(state.sessionId(), new WorkingSetItem(
                     planned.toolDisplayName() + " 执行结果",
                     summary,
-                    Map.of("toolId", planned.toolId()),
+                    Map.copyOf(metadata),
                     40,
                     state.traceId(),
                     state.traceId(),
@@ -682,6 +692,23 @@ public class ToolExecutionCoordinator {
         } catch (Exception e) {
             log.debug("工具结果工作区持久化失败: toolId={}, error={}", planned.toolId(), e.getMessage());
         }
+    }
+
+    @Nullable
+    private String resolveMemoryAction(PlannedToolCall planned) {
+        if (!"memory".equals(planned.toolId()) || planned.inputJson() == null || planned.inputJson().isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(planned.inputJson());
+            JsonNode action = root.get("action");
+            if (action != null && action.isTextual()) {
+                return action.asText();
+            }
+        } catch (Exception e) {
+            log.debug("解析 memory action 失败: error={}", e.getMessage());
+        }
+        return null;
     }
 
     private ReactAgentState replayExtractedMedia(ReactAgentState state,

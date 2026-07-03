@@ -1,6 +1,7 @@
 package com.lifepilot.memory.governance.lifecycle.scanner;
 
 import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -41,7 +43,7 @@ import static org.mockito.Mockito.verify;
  * <ul>
  *   <li>画像队列项应调 UserProfileConsolidator 并收尾 SUPERSEDED（若 consolidator
  *       未真正转状态）</li>
- *   <li>非画像派生实体无重算 API 应降级为直接 SUPERSEDED</li>
+ *   <li>非画像派生实体无精准重算入口时直接收尾为 SUPERSEDED</li>
  *   <li>派生实体已非 REGENERATION_NEEDED 应跳过并 markDone</li>
  *   <li>派生实体已被硬删除应 markDone 不抛异常</li>
  *   <li>单条失败不中断整批</li>
@@ -87,8 +89,8 @@ class DerivationRegenerator_集成测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         publishedEvents = new ArrayList<>();
         ApplicationEventPublisher publisher = publishedEvents::add;
@@ -140,7 +142,7 @@ class DerivationRegenerator_集成测试 {
     }
 
     @Test
-    void 非画像派生实体无重算API应降级为直接SUPERSEDED() {
+    void 非画像派生实体无重算API应直接收尾SUPERSEDED() {
         插入实体("exp-A", "EXPERIENCE", "经验A", false, false, List.of(), LifecycleState.SUPERSEDED);
         插入实体("insight-q2", "CUSTOM", "contrastive-insight-ab", true, true,
                 List.of("exp-A"), LifecycleState.REGENERATION_NEEDED);
@@ -150,7 +152,7 @@ class DerivationRegenerator_集成测试 {
 
         verify(profileConsolidator, never()).consolidate();
         assertThat(读取LifecycleState("insight-q2"))
-                .as("非画像派生实体直接 SUPERSEDED（降级）")
+                .as("非画像派生实体无精准重算入口时直接 SUPERSEDED")
                 .isEqualTo(LifecycleState.SUPERSEDED);
         assertThat(读取QueueStatus(qId)).isEqualTo("DONE");
 
@@ -200,34 +202,31 @@ class DerivationRegenerator_集成测试 {
     }
 
     @Test
-    void 单条失败不中断整批_后续项仍处理() {
+    void 单条失败应标记FAILED并直接抛出_不继续后续项() {
         // bad：画像类型 —— 让 consolidator 抛异常 → markFailed
         插入实体("src-bad", "PREFERENCE", "偏好失败源", false, false, List.of(), LifecycleState.SUPERSEDED);
         插入实体("profile-bad", "CUSTOM", PROFILE_NAME, true, true,
                 List.of("src-bad"), LifecycleState.REGENERATION_NEEDED);
-        String qIdBad = 入队("profile-bad", "src-bad");
+        String qIdBad = 入队("profile-bad", "src-bad", FIXED_NOW);
 
-        // good：非画像派生 —— 走降级 SUPERSEDED 路径，不调 consolidator，应 markDone
+        // good：排在 bad 后面，用来验证失败后不继续污染后续队列项
         插入实体("src-good", "EXPERIENCE", "经验良好", false, false, List.of(), LifecycleState.SUPERSEDED);
         插入实体("insight-good", "CUSTOM", "insight-good", true, true,
                 List.of("src-good"), LifecycleState.REGENERATION_NEEDED);
-        String qIdGood = 入队("insight-good", "src-good");
+        String qIdGood = 入队("insight-good", "src-good", FIXED_NOW.plusSeconds(1));
 
         // 让 consolidator 抛异常
         org.mockito.Mockito.doThrow(new RuntimeException("模拟 consolidator 故障"))
                 .when(profileConsolidator).consolidate();
 
-        // 不抛异常即代表整批未中断
-        regenerator.processQueueNow();
+        assertThatThrownBy(() -> regenerator.processQueueNow())
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("模拟 consolidator 故障");
 
-        // bad 项（画像）触发 consolidator 异常 → markFailed
         assertThat(读取QueueStatus(qIdBad)).isEqualTo("FAILED");
-        // good 项（非画像）走降级路径 → markDone
-        assertThat(读取QueueStatus(qIdGood)).isEqualTo("DONE");
-        // good 项经过收尾应 SUPERSEDED；bad 项因异常未收尾，仍 REGENERATION_NEEDED
-        assertThat(读取LifecycleState("insight-good")).isEqualTo(LifecycleState.SUPERSEDED);
+        assertThat(读取QueueStatus(qIdGood)).isEqualTo("PENDING");
+        assertThat(读取LifecycleState("insight-good")).isEqualTo(LifecycleState.REGENERATION_NEEDED);
         assertThat(读取LifecycleState("profile-bad")).isEqualTo(LifecycleState.REGENERATION_NEEDED);
-        // consolidator 只应被 bad（画像）调一次
         verify(profileConsolidator, times(1)).consolidate();
     }
 
@@ -284,7 +283,11 @@ class DerivationRegenerator_集成测试 {
 
     /** 通过 Repository 正常入队 —— 需要派生实体与触发源都已存在（FK 约束）。 */
     private String 入队(String derivedId, String triggerId) {
-        queueRepo.enqueue(derivedId, triggerId, FIXED_NOW);
+        return 入队(derivedId, triggerId, FIXED_NOW);
+    }
+
+    private String 入队(String derivedId, String triggerId, Instant createdAt) {
+        queueRepo.enqueue(derivedId, triggerId, createdAt);
         // enqueue 未返回 id，这里按唯一 (derived_entity_id, status=PENDING) 取回
         return jdbcTemplate.queryForObject(
                 """

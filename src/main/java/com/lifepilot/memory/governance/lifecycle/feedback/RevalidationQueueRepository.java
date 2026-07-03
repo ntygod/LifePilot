@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -28,7 +29,7 @@ public class RevalidationQueueRepository {
     private final JdbcTemplate jdbc;
 
     public RevalidationQueueRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc 不能为空");
     }
 
     /**
@@ -43,19 +44,26 @@ public class RevalidationQueueRepository {
      * @param when     入队时间
      */
     public void enqueue(String entityId, SourceType type, String sourceId, Instant when) {
-        jdbc.update(
+        String cleanEntityId = requireCleanText(entityId, "entityId");
+        Objects.requireNonNull(type, "type 不能为空");
+        String cleanSourceId = requireCleanText(sourceId, "sourceId");
+        Objects.requireNonNull(when, "when 不能为空");
+        int affected = jdbc.update(
                 """
                 INSERT INTO memory_revalidation_queue
                     (id, entity_id, source_type, source_id, created_at, status)
                 VALUES (?, ?, ?, ?, ?, 'PENDING')
                 """,
                 UUID.randomUUID().toString(),
-                entityId,
+                cleanEntityId,
                 type.name(),
-                sourceId,
+                cleanSourceId,
                 when.toString());
+        if (affected != 1) {
+            throw new IllegalStateException("再验证队列入队影响行数异常: affected=" + affected);
+        }
         log.debug("再验证队列入队: entity={}, source={}:{}, when={}",
-                entityId, type, sourceId, when);
+                cleanEntityId, type, cleanSourceId, when);
     }
 
     /**
@@ -66,12 +74,27 @@ public class RevalidationQueueRepository {
      * @return PENDING 行数
      */
     public int countPendingBySource(SourceType type, String sourceId) {
+        Objects.requireNonNull(type, "type 不能为空");
+        String cleanSourceId = requireCleanText(sourceId, "sourceId");
         Integer n = jdbc.queryForObject(
                 """
                 SELECT COUNT(*) FROM memory_revalidation_queue
                  WHERE source_type = ? AND source_id = ? AND status = 'PENDING'
                 """,
-                Integer.class, type.name(), sourceId);
-        return n == null ? 0 : n;
+                Integer.class, type.name(), cleanSourceId);
+        if (n == null) {
+            throw new IllegalStateException("再验证队列计数结果不能为空");
+        }
+        return n;
+    }
+
+    private static String requireCleanText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " 不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(field + " 不能包含首尾空白: " + value);
+        }
+        return value;
     }
 }

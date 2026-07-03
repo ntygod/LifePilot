@@ -2,6 +2,8 @@ package com.lifepilot.memory.store.scope;
 
 import org.springframework.lang.Nullable;
 
+import java.util.Objects;
+
 /**
  * 记忆写入上下文。
  *
@@ -24,8 +26,8 @@ public record MemoryWriteContext(
 ) {
 
     public MemoryWriteContext {
-        originType = originType != null ? originType : MemoryOriginType.UNKNOWN;
-        realityType = realityType != null ? realityType : MemoryRealityType.UNKNOWN;
+        Objects.requireNonNull(originType, "记忆来源类型不能为空");
+        Objects.requireNonNull(realityType, "记忆现实类型不能为空");
     }
 
     public MemoryWriteContext(
@@ -91,10 +93,6 @@ public record MemoryWriteContext(
         return fromSource(MemoryOriginType.TOOL, sourceReference);
     }
 
-    public static MemoryWriteContext unknown(@Nullable String sourceReference) {
-        return fromSource(MemoryOriginType.UNKNOWN, sourceReference);
-    }
-
     public static MemoryWriteContext fromSource(MemoryOriginType originType,
                                                 @Nullable String sourceReference) {
         return new MemoryWriteContext(
@@ -111,9 +109,5 @@ public record MemoryWriteContext(
                 null,
                 null
         );
-    }
-
-    public static MemoryWriteContext empty() {
-        return unknown(null);
     }
 }

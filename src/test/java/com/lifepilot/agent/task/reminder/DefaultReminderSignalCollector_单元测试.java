@@ -97,7 +97,19 @@ class DefaultReminderSignalCollector_单元测试 {
                 now.minusSeconds(600),
                 now.minusSeconds(7200),
                 now.minusSeconds(600)
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now.minusSeconds(600));
         PreferenceRule preferenceRule = new PreferenceRule(
                 "pref-1",
                 "user-preference",
@@ -231,7 +243,19 @@ class DefaultReminderSignalCollector_单元测试 {
                 now.minusSeconds(1200),
                 now.minusSeconds(7200),
                 now.minusSeconds(1200)
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now.minusSeconds(1200));
 
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
         when(notificationRepository.findByUserIdAndTypeSince(eq("default"), eq("proactive_reminder"), any(), eq(200)))
@@ -284,7 +308,19 @@ class DefaultReminderSignalCollector_单元测试 {
                 now.minusSeconds(900),
                 now.minusSeconds(7200),
                 now.minusSeconds(900)
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now.minusSeconds(900));
 
         when(episodicMemory.getRecent(any())).thenReturn(List.of(conversation));
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));

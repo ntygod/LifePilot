@@ -7,12 +7,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 源对象失效时，为所有引用该 source 的实体入再验证队列（{@code PENDING}）。
@@ -47,9 +50,9 @@ public class ReValidationListener {
     public ReValidationListener(MemoryProvenanceRepository provenanceRepo,
                                 RevalidationQueueRepository queueRepo,
                                 Clock clock) {
-        this.provenanceRepo = provenanceRepo;
-        this.queueRepo = queueRepo;
-        this.clock = clock;
+        this.provenanceRepo = Objects.requireNonNull(provenanceRepo, "provenanceRepo 不能为空");
+        this.queueRepo = Objects.requireNonNull(queueRepo, "queueRepo 不能为空");
+        this.clock = Objects.requireNonNull(clock, "clock 不能为空");
     }
 
     /**
@@ -58,15 +61,13 @@ public class ReValidationListener {
      * @param event 源失效事件
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onSourceInvalidated(SourceInvalidated event) {
-        List<String> entityIds;
-        try {
-            entityIds = provenanceRepo.findEntityIdsBySource(event.sourceType(), event.sourceId());
-        } catch (Exception ex) {
-            log.warn("查询受影响实体失败 sourceType={} sourceId={}",
-                    event.sourceType(), event.sourceId(), ex);
-            return;
-        }
+        Objects.requireNonNull(event, "源失效事件不能为空");
+        List<String> entityIds = Objects.requireNonNull(
+                provenanceRepo.findEntityIdsBySource(event.sourceType(), event.sourceId()),
+                "受影响实体查询结果不能为空");
+        validateEntityIds(entityIds);
         if (entityIds.isEmpty()) {
             log.debug("再验证: 无引用实体, sourceType={} sourceId={}",
                     event.sourceType(), event.sourceId());
@@ -74,14 +75,17 @@ public class ReValidationListener {
         }
         Instant when = clock.instant();
         for (String id : entityIds) {
-            try {
-                queueRepo.enqueue(id, event.sourceType(), event.sourceId(), when);
-            } catch (Exception ex) {
-                log.warn("再验证入队失败 entity={} sourceType={} sourceId={}",
-                        id, event.sourceType(), event.sourceId(), ex);
-            }
+            queueRepo.enqueue(id, event.sourceType(), event.sourceId(), when);
         }
         log.info("再验证: 入队 {} 个实体, source={}:{}",
                 entityIds.size(), event.sourceType(), event.sourceId());
+    }
+
+    private void validateEntityIds(List<String> entityIds) {
+        for (String entityId : entityIds) {
+            if (entityId == null || entityId.isBlank()) {
+                throw new IllegalArgumentException("受影响实体 ID 不能为空");
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 记忆派生投影服务。
@@ -21,8 +22,8 @@ public class MemoryProjectionService {
 
     public MemoryProjectionService(MemoryProjectionOutboxRepository repository,
                                    MemoryProjectionOutboxProcessor processor) {
-        this.repository = repository;
-        this.processor = processor;
+        this.repository = Objects.requireNonNull(repository, "MemoryProjectionOutboxRepository 不能为空");
+        this.processor = Objects.requireNonNull(processor, "MemoryProjectionOutboxProcessor 不能为空");
     }
 
     public void enqueueVectorUpsertAfterCommit(TemporalEntity entity) {

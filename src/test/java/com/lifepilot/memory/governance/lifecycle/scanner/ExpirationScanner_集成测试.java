@@ -1,6 +1,7 @@
 package com.lifepilot.memory.governance.lifecycle.scanner;
 
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
@@ -28,16 +29,16 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 /**
  * {@link ExpirationScanner} 集成测试 —— Flyway 真跑迁移 + 真 SemanticMemory，
- * 验证过期实体转 EXPIRED + 未过期 / 无 expires_at 不受影响 + 单条失败不中断整批。
+ * 验证过期实体转 EXPIRED + 未过期 / 无 expires_at 不受影响 + 单条失败直接暴露。
  *
  * @author zsg
  * @since 2026-04-23
@@ -76,8 +77,8 @@ class ExpirationScanner_集成测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         publishedEvents = new ArrayList<>();
         ApplicationEventPublisher publisher = publishedEvents::add;
@@ -153,40 +154,23 @@ class ExpirationScanner_集成测试 {
     }
 
     @Test
-    void 单条失败不中断整批() {
+    void 单条失败应直接暴露() {
         Instant past = FIXED_NOW.minusSeconds(3600);
         插入实体("e-bad", LifecycleState.ACTIVE, past);
-        插入实体("e-good", LifecycleState.ACTIVE, past);
 
-        // 用 spy + stub：e-bad 抛异常，e-good 正常
         SemanticMemory spyMemory = spy(semanticMemory);
         doThrow(new RuntimeException("模拟 DB 异常"))
                 .when(spyMemory).updateLifecycleState(
                         org.mockito.ArgumentMatchers.eq("e-bad"),
                         any(LifecycleState.class), anyString(), any(ChangeSource.class));
-        // e-good 走真实路径
-        doAnswer(invocation -> {
-            semanticMemory.updateLifecycleState(
-                    invocation.getArgument(0),
-                    invocation.getArgument(1),
-                    invocation.getArgument(2),
-                    invocation.getArgument(3));
-            return null;
-        }).when(spyMemory).updateLifecycleState(
-                org.mockito.ArgumentMatchers.eq("e-good"),
-                any(LifecycleState.class), anyString(), any(ChangeSource.class));
 
         Clock clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
         var spyScanner = new ExpirationScanner(spyMemory, clock);
 
-        // 期望：不抛异常
-        spyScanner.scanNow();
+        assertThatThrownBy(spyScanner::scanNow)
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("模拟 DB 异常");
 
-        // e-good 应该成功转 EXPIRED
-        assertThat(读取LifecycleState("e-good"))
-                .as("失败的 e-bad 不阻塞 e-good")
-                .isEqualTo(LifecycleState.EXPIRED);
-        // e-bad 保持 ACTIVE（updateLifecycleState 抛异常未落库）
         assertThat(读取LifecycleState("e-bad"))
                 .as("失败的 e-bad 仍保持 ACTIVE")
                 .isEqualTo(LifecycleState.ACTIVE);

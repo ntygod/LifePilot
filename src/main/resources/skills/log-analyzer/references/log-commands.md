@@ -1,6 +1,6 @@
 # 日志分析参考
 
-> 日志检索/过滤用 shell_exec + grep/awk。本文档仅含日志特有领域知识。
+> 日志检索/过滤用 shell.exec + grep/awk。本文档仅含日志特有领域知识。
 
 ## 常用日志路径
 
@@ -14,9 +14,9 @@
 
 1. 大文件（>1GB）先 tail -10000 取尾部，再按时间窗口缩小
 2. 时间格式不规范时先 head -20 采样确认前缀
-3. 跨多文件（rotation）先 file_read(list) 列文件，按修改时间倒序选
-4. 编码错误（GBK）时 file_read(encoding="GBK") 或 iconv
-5. 实时滚动需求走 cron + shell_exec 定时任务
+3. 跨多文件（rotation）先 file.read(list) 列文件，按修改时间倒序选
+4. 编码错误（GBK）时 file.read(encoding="GBK") 或 iconv
+5. 实时滚动需求走 cron + shell.exec 定时任务
 
 ## 脱敏正则（输出前必须处理）
 
@@ -49,4 +49,4 @@
 
 ## 可用脚本
 
-- `{skill_scripts_dir}/log-redact.py` — 从 stdin 读日志，正则脱敏后输出。用法：`shell_exec(command="cat app.log | python {skill_scripts_dir}/log-redact.py")`
+- `{skill_scripts_dir}/log-redact.py` — 从 stdin 读日志，正则脱敏后输出。用法：`shell.exec(command="cat app.log | python {skill_scripts_dir}/log-redact.py")`

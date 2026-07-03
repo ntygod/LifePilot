@@ -6,7 +6,6 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.rerank.router.RerankRouter;
-import jakarta.annotation.Nullable;
 import net.jqwik.api.Arbitraries;
 import net.jqwik.api.Arbitrary;
 import net.jqwik.api.Combinators;
@@ -20,6 +19,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -46,7 +47,6 @@ class HybridRetriever属性测试 {
                 input.ftsResults,
                 input.graphResults,
                 input.entities,
-                null,
                 input.properties
         );
 
@@ -63,7 +63,6 @@ class HybridRetriever属性测试 {
                 input.ftsResults,
                 input.graphResults,
                 input.entities,
-                null,
                 input.properties
         );
 
@@ -180,7 +179,19 @@ class HybridRetriever属性测试 {
                     Map.of(), 1, true, Instant.now(), null,
                     null, 0.9f, 0.5f, 0, Instant.now(),
                     Instant.now(), Instant.now()
-            ));
+            ,
+                    com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                    null,
+                    null,
+                    com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                    null,
+                    false,
+                    java.util.List.of(),
+                    com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                    com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                    1.0f,
+                    1,
+                    Instant.now()));
         }
         return map;
     }
@@ -189,24 +200,25 @@ class HybridRetriever属性测试 {
                                            List<RankedItem> ftsResults,
                                            List<RankedItem> graphResults,
                                            Map<String, TemporalEntity> entities,
-                                           @Nullable RerankRouter rerankRouter,
                                            MemoryRetrievalProperties properties) {
         var vectorSearcher = mock(VectorSearcher.class);
         var ftsSearcher = mock(FtsSearcher.class);
         var graphTraverser = mock(GraphTraverser.class);
         var semanticMemory = mock(SemanticMemory.class);
         var jdbcTemplate = mock(JdbcTemplate.class);
+        var provenanceRepository = mock(MemoryProvenanceRepository.class);
 
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat())).thenReturn(vectorResults);
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any())).thenReturn(vectorResults);
         when(ftsSearcher.search(anyString(), anyInt())).thenReturn(ftsResults);
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(graphResults);
+        when(graphTraverser.traverse(anyString(), anyInt(), isNull())).thenReturn(graphResults);
         when(semanticMemory.findByIds(anyCollection())).thenReturn(entities);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
+        when(provenanceRepository.findStaleEntityIds(anyCollection())).thenReturn(Set.of());
 
         return new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                rerankRouter, mock(MemoryProvenanceRepository.class));
+                mock(RerankRouter.class), provenanceRepository);
     }
 
     record QueryWithMockResults(

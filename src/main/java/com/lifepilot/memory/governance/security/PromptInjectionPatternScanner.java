@@ -70,18 +70,14 @@ public class PromptInjectionPatternScanner {
     /** 扫描文本；命中返回首个匹配的 {@link MatchInfo}。 */
     public Optional<MatchInfo> scan(String text) {
         if (text == null || text.isBlank()) return Optional.empty();
-        try {
-            for (Pattern p : PATTERNS) {
-                Matcher m = p.matcher(text);
-                if (m.find()) {
-                    int pos = m.start();
-                    String excerpt = extractExcerpt(text, pos, m.end());
-                    log.debug("注入扫描命中: pattern={}, position={}", p.pattern(), pos);
-                    return Optional.of(new MatchInfo(p.pattern(), pos, excerpt));
-                }
+        for (Pattern p : PATTERNS) {
+            Matcher m = p.matcher(text);
+            if (m.find()) {
+                int pos = m.start();
+                String excerpt = extractExcerpt(text, pos, m.end());
+                log.debug("注入扫描命中: pattern={}, position={}", p.pattern(), pos);
+                return Optional.of(new MatchInfo(p.pattern(), pos, excerpt));
             }
-        } catch (Exception e) {
-            log.debug("注入扫描异常: {}", e.getMessage());
         }
         return Optional.empty();
     }

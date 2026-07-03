@@ -18,11 +18,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class EvidenceBundle_单元测试 {
 
     @Test
-    void EvidenceItem_clamp_score_和_confidence() {
-        var item = new EvidenceItem("e1", "GOAL", "n", "d",
-                1.5f, "hybrid", -0.3f, Map.of());
-        assertThat(item.score()).isEqualTo(1.0f);
-        assertThat(item.confidence()).isEqualTo(0.0f);
+    void EvidenceItem_score为负数或NaN时抛异常() {
+        assertThatThrownBy(() -> new EvidenceItem("e1", "GOAL", "n", "d",
+                -0.1f, "hybrid", 0.5f, Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("score 必须是非负有限数");
+        assertThatThrownBy(() -> new EvidenceItem("e1", "GOAL", "n", "d",
+                Float.NaN, "hybrid", 0.5f, Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("score 必须是非负有限数");
+    }
+
+    @Test
+    void EvidenceItem_confidence越界时抛异常() {
+        assertThatThrownBy(() -> new EvidenceItem("e1", "GOAL", "n", "d",
+                1.5f, "hybrid", -0.3f, Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("confidence 必须在 [0,1] 范围内");
     }
 
     @Test
@@ -40,6 +52,22 @@ class EvidenceBundle_单元测试 {
     }
 
     @Test
+    void EvidenceItem_null_entityType抛异常() {
+        assertThatThrownBy(() -> new EvidenceItem("e1", null, "n", "d",
+                0.5f, "hybrid", 0.5f, Map.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("entityType 不能为空");
+    }
+
+    @Test
+    void EvidenceItem_null_name抛异常() {
+        assertThatThrownBy(() -> new EvidenceItem("e1", "GOAL", null, "d",
+                0.5f, "hybrid", 0.5f, Map.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("name 不能为空");
+    }
+
+    @Test
     void EvidenceBundle_empty_便捷构造() {
         var b = EvidenceBundle.empty("test");
         assertThat(b.query()).isEqualTo("test");
@@ -49,14 +77,23 @@ class EvidenceBundle_单元测试 {
     }
 
     @Test
-    void EvidenceBundle_null参数安全默认() {
-        var b = new EvidenceBundle(null, null, null, -5L, null, null);
-        assertThat(b.query()).isEqualTo("");
-        assertThat(b.strategy()).isEqualTo("GENERAL");
-        assertThat(b.items()).isEmpty();
-        assertThat(b.sources()).isEmpty();
-        assertThat(b.metadata()).isEmpty();
-        assertThat(b.latencyMs()).isEqualTo(0L);
+    void EvidenceBundle_null字段抛异常() {
+        assertThatThrownBy(() -> new EvidenceBundle(null, "GENERAL", List.of(), 0L, Set.of(), Map.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("query 不能为空");
+        assertThatThrownBy(() -> new EvidenceBundle("q", null, List.of(), 0L, Set.of(), Map.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("strategy 不能为空");
+        assertThatThrownBy(() -> new EvidenceBundle("q", "GENERAL", null, 0L, Set.of(), Map.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("items 不能为空");
+    }
+
+    @Test
+    void EvidenceBundle_latency为负数时抛异常() {
+        assertThatThrownBy(() -> new EvidenceBundle("q", "GENERAL", List.of(), -5L, Set.of(), Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("检索耗时不能为负数");
     }
 
     @Test

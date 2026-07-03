@@ -127,6 +127,11 @@ const router = createRouter({
      * Agent、工作流与扩展
      */
     {
+      path: '/capabilities',
+      name: 'capabilities',
+      component: () => import('@/views/CapabilityCenterView.vue')
+    },
+    {
       path: '/agents',
       name: 'agents',
       component: () => import('@/views/AgentsView.vue')

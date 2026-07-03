@@ -1,11 +1,11 @@
 # Windows 桌面自动化参考
 
-> pyautogui/pywinauto 命令直接用 code/shell_exec。本文档仅含平台特有约束。
+> pyautogui/pywinauto 命令直接用 code/shell.exec。本文档仅含平台特有约束。
 
 **关键约束**：
 - 仅 Windows，必须本机进程（沙箱无图形会话）
-- 用 `shell_exec(command="python <脚本>")` 走宿主 Python，不用 `code`（在沙箱里）
-- 脚本写到 `<workspace>/desktop-<task>.py`，再 shell_exec 执行
+- 用 `shell.exec(command="python <脚本>")` 走宿主 Python，不用 `code`（在沙箱里）
+- 脚本写到 `<workspace>/desktop-<task>.py`，再 shell.exec 执行
 - 依赖检查：`python -c "import pyautogui, pywinauto, PIL"`，缺则 `pip install`
 
 ## 定位策略（按优先级）

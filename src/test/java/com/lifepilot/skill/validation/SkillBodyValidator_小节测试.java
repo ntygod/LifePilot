@@ -16,29 +16,31 @@ class SkillBodyValidator_小节测试 {
     private final SkillBodyValidator v = new SkillBodyValidator();
 
     @Test
-    void 齐三必需小节应通过() {
+    void 齐四个v3必需小节应通过() {
         var body = """
                 # X 指南
-                ## 适用场景
+                ## 触发判断
                 - a
-                ## 不适用场景
+                ## 决策路径
                 - b
-                ## 工作流
+                ## 输出标准
                 - c
+                ## 失败策略
+                - d
                 """;
         assertThatCode(() -> v.validate(body)).doesNotThrowAnyException();
     }
 
     @Test
     void 缺少小节应拒绝() {
-        var body = "# X\n## 适用场景\n- a\n## 工作流\n- b";
+        var body = "# X\n## 触发判断\n- a\n## 输出标准\n- b\n## 失败策略\n- c";
         assertThatThrownBy(() -> v.validate(body))
-                .hasMessageContaining("不适用场景");
+                .hasMessageContaining("决策路径");
     }
 
     @Test
     void 超5000字符应拒绝() {
-        var body = "# X\n## 适用场景\n" + "a".repeat(5001);
+        var body = "# X\n## 触发判断\n" + "a".repeat(5001);
         assertThatThrownBy(() -> v.validate(body))
                 .hasMessageContaining("≤5000");
     }

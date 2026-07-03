@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -94,8 +95,8 @@ class MemoryGovernanceContract_集成测试 {
                 conflictDetector,
                 new VersionMerger(),
                 vectorSearcher,
-                memorySpaceRepository);
-        semanticMemory.setProjectionService(projectionService);
+                memorySpaceRepository,
+                projectionService);
         candidateRepository = new MemoryExtractionCandidateRepository(jdbcTemplate, objectMapper);
     }
 
@@ -170,7 +171,10 @@ class MemoryGovernanceContract_集成测试 {
                 "UPSERT",
                 Map.of("entityId", "entity-bad-vector"));
 
-        outboxProcessor.processOne(outboxId);
+        assertThatThrownBy(() -> outboxProcessor.processOne(outboxId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("记忆投影任务执行失败")
+                .hasRootCauseMessage("投影 payload 缺少 text");
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 """
@@ -216,7 +220,7 @@ class MemoryGovernanceContract_集成测试 {
                 "用户倾向早起处理重要任务",
                 Map.of("time", "morning"),
                 0.9f,
-                0.7f, null, null, null, null);
+                0.7f, null, null, "USER_EXPLICIT", "用户倾向早起处理重要任务");
         var ctx = writeContext(memorySpaceRepository.ensureDefaultPersonalSpace().id(), MemoryScope.USER_PROFILE);
 
         String candidateId = candidateRepository.recordValidated("session-candidate", ctx, decision);
@@ -240,19 +244,19 @@ class MemoryGovernanceContract_集成测试 {
     void 提取候选_质量门控拒绝时保留审计记录() {
         var decision = new AudnDecision(
                 AudnOperation.ADD,
-                "",
+                "低置信偏好",
                 EntityType.PERSON,
-                null,
+                "低置信度的候选偏好",
                 Map.of(),
                 0.1f,
-                0.3f, null, null, null, null);
+                0.3f, null, null, "USER_EXPLICIT", "低置信度的候选偏好");
         var ctx = writeContext(memorySpaceRepository.ensureDefaultPersonalSpace().id(), MemoryScope.USER_PROFILE);
 
         String candidateId = candidateRepository.recordRejected(
                 "session-rejected",
                 ctx,
                 decision,
-                "INVALID_ENTITY_NAME");
+                "LOW_CONFIDENCE");
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 """
@@ -263,7 +267,7 @@ class MemoryGovernanceContract_集成测试 {
                 candidateId);
         assertThat(row.get("candidate_status")).isEqualTo("REJECTED");
         assertThat(row.get("validation_status")).isEqualTo("REJECTED");
-        assertThat(row.get("rejection_reason")).isEqualTo("INVALID_ENTITY_NAME");
+        assertThat(row.get("rejection_reason")).isEqualTo("LOW_CONFIDENCE");
     }
 
     private TemporalEntity entity(String id, EntityType type, String name, String description) {
@@ -284,7 +288,19 @@ class MemoryGovernanceContract_集成测试 {
                 0,
                 null,
                 now,
-                now);
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 
     private MemoryWriteContext writeContext(String spaceId, MemoryScope scope) {

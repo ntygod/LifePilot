@@ -4,6 +4,8 @@ import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.governance.security.InjectionDetectionResult;
+import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
@@ -20,8 +22,11 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyFloat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,9 +49,11 @@ class RealtimeExtractor_关系抽取测试 {
 
     private static final String AUDN_JSON = """
             [{"operation":"ADD","entityName":"张三","entityType":"PERSON","description":"用户同事",
-              "extractionConfidence":0.8,"importanceScore":0.6,"evidenceKind":"USER_EXPLICIT","evidenceExcerpt":"张三是用户同事"},
+              "extractionConfidence":0.8,"importanceScore":0.6,"evidenceKind":"USER_EXPLICIT",
+              "evidenceExcerpt":"张三是用户同事","temporality":"PERSISTENT"},
              {"operation":"ADD","entityName":"阿里","entityType":"ORGANIZATION","description":"公司",
-              "extractionConfidence":0.8,"importanceScore":0.6,"evidenceKind":"USER_EXPLICIT","evidenceExcerpt":"阿里是公司"}]
+              "extractionConfidence":0.8,"importanceScore":0.6,"evidenceKind":"USER_EXPLICIT",
+              "evidenceExcerpt":"阿里是公司","temporality":"PERSISTENT"}]
             """;
 
     @BeforeEach
@@ -74,17 +81,20 @@ class RealtimeExtractor_关系抽取测试 {
     private void rebuildExtractor() {
         var promptRegistry = mock(com.lifepilot.prompt.PromptRegistry.class);
         when(promptRegistry.render(any(), any())).thenReturn("prompt-ignored");
-        var validator = mock(ExtractionValidator.class);
-        when(validator.validate(any())).thenAnswer(inv -> inv.getArgument(0));
+        var validator = new ExtractionValidator(props);
+        var candidateRepository = mock(MemoryExtractionCandidateRepository.class);
+        when(candidateRepository.recordValidated(any(), any(), any())).thenReturn("candidate-id");
+        var injectionDetector = mock(MemoryInjectionDetector.class);
+        when(injectionDetector.detect(any(), any(), anyFloat())).thenReturn(InjectionDetectionResult.pass());
         extractor = new RealtimeExtractor(
                 generationRouter, semanticMemory, props, validator,
                 mock(JdbcTemplate.class), promptRegistry, snapshotRepository,
-                Clock.systemUTC(), new MemoryAccessPolicy(), null, null, relationExtractionStep);
+                Clock.systemUTC(), new MemoryAccessPolicy(), candidateRepository, injectionDetector, relationExtractionStep);
     }
 
     private ChatTurnMemorySnapshot snapshot(String turnId) {
         return new ChatTurnMemorySnapshot(
-                turnId, "session-x", "personal-1", "experience-1", null, null,
+                turnId, "session-rel", "personal-1", "experience-1", null, null,
                 List.of("personal-1", "experience-1"), List.of(),
                 true, false, true, Map.of(),
                 Instant.parse("2026-06-06T00:00:00Z"));
@@ -135,14 +145,32 @@ class RealtimeExtractor_关系抽取测试 {
     }
 
     @Test
-    void 端点无法解析时跳过关系() {
+    void 端点无法解析时应失败() {
         String turnId = "turn-rel-4";
         when(snapshotRepository.findByTurnId(turnId)).thenReturn(Optional.of(snapshot(turnId)));
         when(relationExtractionStep.extract(any(), any())).thenReturn(List.of(
                 new RelationExtractionStep.ExtractedRelation("未知实体", "另一个未知", "相关", 0.7f, "x")));
 
-        extractor.extract("session-rel", turnId, "张三在阿里工作", "好的");
+        assertThatThrownBy(() -> extractor.extract("session-rel", turnId, "张三在阿里工作", "好的"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("关系抽取端点无法解析")
+                .hasMessageContaining("未知实体")
+                .hasMessageContaining("另一个未知");
 
         verify(semanticMemory, never()).addRelation(any(), any());
+    }
+
+    @Test
+    void 关系主库写入失败应直接暴露() {
+        String turnId = "turn-rel-fail";
+        when(snapshotRepository.findByTurnId(turnId)).thenReturn(Optional.of(snapshot(turnId)));
+        when(relationExtractionStep.extract(any(), any())).thenReturn(List.of(
+                new RelationExtractionStep.ExtractedRelation("张三", "阿里", "就职于", 0.9f, "证据")));
+        doThrow(new IllegalStateException("主库写入失败"))
+                .when(semanticMemory).addRelation(any(), any());
+
+        assertThatThrownBy(() -> extractor.extract("session-rel", turnId, "张三在阿里工作", "好的"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("主库写入失败");
     }
 }

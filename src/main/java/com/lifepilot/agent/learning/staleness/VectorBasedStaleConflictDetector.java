@@ -5,14 +5,13 @@ import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
+import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -26,7 +25,6 @@ import java.util.Optional;
  */
 public final class VectorBasedStaleConflictDetector implements StaleConflictDetector {
 
-    private static final Logger log = LoggerFactory.getLogger(VectorBasedStaleConflictDetector.class);
     private static final int MIN_DESCRIPTION_LENGTH = 4;
 
     private final VectorSearcher vectorSearcher;
@@ -36,18 +34,22 @@ public final class VectorBasedStaleConflictDetector implements StaleConflictDete
     public VectorBasedStaleConflictDetector(VectorSearcher vectorSearcher,
                                             SemanticMemory semanticMemory,
                                             AgentLearningProperties.Staleness config) {
-        this.vectorSearcher = vectorSearcher;
-        this.semanticMemory = semanticMemory;
-        this.config = config;
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "VectorSearcher 不能为空");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "SemanticMemory 不能为空");
+        this.config = Objects.requireNonNull(config, "Staleness 配置不能为空");
     }
 
     @Override
     public List<TemporalEntity> findStaleNeighbors(TemporalEntity newEntity) {
-        if (newEntity == null) return List.of();
+        Objects.requireNonNull(newEntity, "新实体不能为空");
+        String newEntityId = requireCleanText(newEntity.id(), "staleness 新实体 id 不能为空");
+        requireCleanText(newEntity.name(), "staleness 新实体 name 不能为空");
+        EntityType newEntityType = Objects.requireNonNull(newEntity.type(), "staleness 新实体 type 不能为空");
 
         // 1. 类型白名单
-        String entityType = newEntity.type() == null ? "" : newEntity.type().name();
-        if (!config.getDetectableTypes().contains(entityType)) {
+        String entityType = newEntityType.name();
+        var detectableTypes = requireDetectableTypes(config.getDetectableTypes());
+        if (!detectableTypes.contains(entityType)) {
             return List.of();
         }
 
@@ -58,15 +60,12 @@ public final class VectorBasedStaleConflictDetector implements StaleConflictDete
         }
 
         // 3. VectorSearcher top-K（多取几个用于过滤后仍够数）
-        int topK = Math.max(config.getMaxNeighborsPerDetection() * 3, 5);
-        float threshold = config.getDetectionSimilarityThreshold();
-        List<VectorSearchResult> candidates;
-        try {
-            candidates = vectorSearcher.searchEntities(query, topK, threshold);
-        } catch (RuntimeException e) {
-            log.warn("Staleness detect 向量检索失败: entity={}, err={}",
-                    newEntity.id(), e.getMessage());
-            return List.of();
+        int maxNeighbors = positive(config.getMaxNeighborsPerDetection(), "staleness 单次邻居上限");
+        int topK = maxNeighbors * 3;
+        float threshold = probability(config.getDetectionSimilarityThreshold(), "staleness 相似度阈值");
+        List<VectorSearchResult> candidates = vectorSearcher.searchEntities(query, topK, threshold);
+        if (candidates == null) {
+            throw new IllegalStateException("staleness 向量检索结果不能为空");
         }
 
         if (candidates.isEmpty()) return List.of();
@@ -74,31 +73,60 @@ public final class VectorBasedStaleConflictDetector implements StaleConflictDete
         // 4. 排除自身 + 过滤 lifecycle/trust
         List<ScoredNeighbor> filtered = new ArrayList<>();
         for (VectorSearchResult vr : candidates) {
-            if (vr.entityId() == null || vr.entityId().equals(newEntity.id())) continue;
-            Optional<TemporalEntity> maybe;
-            try {
-                maybe = semanticMemory.findById(vr.entityId());
-            } catch (RuntimeException e) {
-                log.debug("findById 失败: id={}, err={}", vr.entityId(), e.getMessage());
-                continue;
+            if (vr == null) {
+                throw new IllegalStateException("staleness 向量候选不能为空");
             }
-            if (maybe.isEmpty()) continue;
+            String entityId = requireCleanText(vr.entityId(), "staleness 向量候选 entityId 不能为空");
+            float similarity = probability(vr.similarity(), "staleness 向量候选 similarity");
+            if (entityId.equals(newEntityId)) continue;
+            Optional<TemporalEntity> maybe = semanticMemory.findById(entityId);
+            if (maybe == null) {
+                throw new IllegalStateException("SemanticMemory.findById 返回值不能为空");
+            }
+            if (maybe.isEmpty()) {
+                throw new IllegalStateException("staleness 向量候选实体不存在: " + entityId);
+            }
             TemporalEntity neighbor = maybe.get();
+            String neighborId = requireCleanText(neighbor.id(), "staleness 邻居实体 id 不能为空");
+            if (!entityId.equals(neighborId)) {
+                throw new IllegalStateException(
+                        "staleness 向量候选实体不匹配: candidateId=%s, entityId=%s"
+                                .formatted(entityId, neighborId));
+            }
+            if (neighbor.lifecycleState() == null) {
+                throw new IllegalStateException("staleness 邻居生命周期不能为空: " + neighborId);
+            }
             if (neighbor.lifecycleState() != LifecycleState.ACTIVE) continue;
             if (isBelowInferred(neighbor.trustLevel())) continue;
-            filtered.add(new ScoredNeighbor(neighbor, vr.similarity()));
+            filtered.add(new ScoredNeighbor(neighbor, similarity));
         }
 
         filtered.sort(Comparator.comparingDouble(n -> -n.similarity));
-        int limit = Math.min(config.getMaxNeighborsPerDetection(), filtered.size());
+        int limit = Math.min(maxNeighbors, filtered.size());
         List<TemporalEntity> result = new ArrayList<>(limit);
         for (int i = 0; i < limit; i++) result.add(filtered.get(i).entity);
         return result;
     }
 
     private static boolean isBelowInferred(MemoryTrustLevel level) {
-        if (level == null) return true;
+        Objects.requireNonNull(level, "邻居可信等级不能为空");
         return level == MemoryTrustLevel.UNVERIFIED;
+    }
+
+    private static java.util.Set<String> requireDetectableTypes(java.util.Set<String> types) {
+        Objects.requireNonNull(types, "staleness detectableTypes 不能为空");
+        if (types.isEmpty()) {
+            throw new IllegalArgumentException("staleness detectableTypes 不能为空集合");
+        }
+        for (String type : types) {
+            String value = requireCleanText(type, "staleness detectableTypes 元素不能为空");
+            try {
+                EntityType.valueOf(value);
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("staleness detectableTypes 包含未知实体类型: " + value, ex);
+            }
+        }
+        return types;
     }
 
     private static String buildQueryText(TemporalEntity entity) {
@@ -109,6 +137,30 @@ public final class VectorBasedStaleConflictDetector implements StaleConflictDete
             sb.append(entity.description());
         }
         return sb.toString().trim();
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
+    }
+
+    private static float probability(float value, String name) {
+        if (!(value >= 0.0f && value <= 1.0f)) {
+            throw new IllegalArgumentException(name + "必须在 [0,1] 范围内: " + value);
+        }
+        return value;
+    }
+
+    private static String requireCleanText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(message + "，且不能包含首尾空白: " + value);
+        }
+        return value;
     }
 
     private record ScoredNeighbor(TemporalEntity entity, float similarity) {}

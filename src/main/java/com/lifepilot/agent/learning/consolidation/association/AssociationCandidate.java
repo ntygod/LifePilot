@@ -43,19 +43,29 @@ public record AssociationCandidate(
             @JsonProperty("generatedAt") Instant generatedAt) {
         if (sourceEntityId == null || sourceEntityId.isBlank())
             throw new IllegalArgumentException("sourceEntityId 不能为空");
+        if (!sourceEntityId.equals(sourceEntityId.trim()))
+            throw new IllegalArgumentException("sourceEntityId 不能包含首尾空白: " + sourceEntityId);
         if (targetEntityId == null || targetEntityId.isBlank())
             throw new IllegalArgumentException("targetEntityId 不能为空");
+        if (!targetEntityId.equals(targetEntityId.trim()))
+            throw new IllegalArgumentException("targetEntityId 不能包含首尾空白: " + targetEntityId);
         if (relationType == null)
             throw new IllegalArgumentException("relationType 不能为空");
         if (seedEntityId == null || seedEntityId.isBlank())
             throw new IllegalArgumentException("seedEntityId 不能为空");
+        if (!seedEntityId.equals(seedEntityId.trim()))
+            throw new IllegalArgumentException("seedEntityId 不能包含首尾空白: " + seedEntityId);
+        if (!(confidence >= 0f && confidence <= 1f))
+            throw new IllegalArgumentException("confidence 必须在 [0,1] 范围内");
+        if (generatedAt == null)
+            throw new IllegalArgumentException("generatedAt 不能为空");
         this.sourceEntityId = sourceEntityId;
         this.targetEntityId = targetEntityId;
         this.relationType = relationType;
-        this.confidence = Math.max(0f, Math.min(1f, confidence));
+        this.confidence = confidence;
         this.evidence = evidence;
         this.seedEntityId = seedEntityId;
-        this.generatedAt = generatedAt != null ? generatedAt : Instant.now();
+        this.generatedAt = generatedAt;
     }
 
     /** 去重 key：source + target + type。 */

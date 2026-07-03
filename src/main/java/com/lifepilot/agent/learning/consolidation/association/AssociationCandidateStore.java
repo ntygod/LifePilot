@@ -46,7 +46,13 @@ public class AssociationCandidateStore {
      * 追加保存指定日期的候选列表。若文件已存在则合并。
      */
     public void save(LocalDate date, List<AssociationCandidate> candidates) {
-        if (date == null || candidates == null || candidates.isEmpty()) return;
+        if (date == null) {
+            throw new IllegalArgumentException("date 不能为空");
+        }
+        if (candidates == null) {
+            throw new IllegalArgumentException("candidates 不能为空");
+        }
+        if (candidates.isEmpty()) return;
         try {
             Files.createDirectories(cacheDir);
             Path file = fileFor(date);
@@ -61,7 +67,9 @@ public class AssociationCandidateStore {
 
     /** 读取指定日期的候选；文件不存在代表当天无候选。 */
     public List<AssociationCandidate> load(LocalDate date) {
-        if (date == null) return List.of();
+        if (date == null) {
+            throw new IllegalArgumentException("date 不能为空");
+        }
         Path file = fileFor(date);
         if (!Files.exists(file)) return List.of();
         try {

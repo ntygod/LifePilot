@@ -28,6 +28,11 @@ JSON 格式，字段：
 - applicableConditions: 泛化适用条件（数组，最多 3 条）
 - toolsUsed: 工具 ID 并集（数组）
 - success: 布尔值（两条都成功则 true，否则 false）
+- failureAttribution: 成功时必须为 null；失败时必须为 "strategy" 或 "system"
+- effectivenessScore: 数字，初始固定为 0.0
+- injectionCount: 整数，初始固定为 0
+- positiveOutcomes: 整数，初始固定为 0
+- negativeOutcomes: 整数，初始固定为 0
 
 ## 质量标准
 - 合并后的 scenario 不是"A 和 B 的合并"，而是一个新的、更通用的场景标签

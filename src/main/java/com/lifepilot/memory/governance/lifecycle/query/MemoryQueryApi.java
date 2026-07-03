@@ -7,6 +7,8 @@ import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.SourceType;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -47,9 +50,9 @@ public class MemoryQueryApi {
     public MemoryQueryApi(SemanticMemory semanticMemory,
                           MemoryProvenanceRepository provenanceRepository,
                           JdbcTemplate jdbcTemplate) {
-        this.semanticMemory = semanticMemory;
-        this.provenanceRepository = provenanceRepository;
-        this.jdbcTemplate = jdbcTemplate;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.provenanceRepository = Objects.requireNonNull(provenanceRepository, "provenanceRepository 不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
     }
 
     // ========== 实体查询 ==========
@@ -66,9 +69,6 @@ public class MemoryQueryApi {
      */
     public Optional<TemporalEntity> findLatestByType(String typeName) {
         EntityType type = parseEntityType(typeName);
-        if (type == null) {
-            return Optional.empty();
-        }
         return semanticMemory.findCurrentByType(type).stream()
                 .max((a, b) -> a.updatedAt().compareTo(b.updatedAt()));
     }
@@ -83,9 +83,6 @@ public class MemoryQueryApi {
     /** 按类型找所有生命周期处于 {@code ACTIVE} 的当前实体（按重要度降序）。 */
     public List<TemporalEntity> findActiveByType(String typeName) {
         EntityType type = parseEntityType(typeName);
-        if (type == null) {
-            return List.of();
-        }
         return semanticMemory.findCurrentByType(type).stream()
                 .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
                 .toList();
@@ -108,7 +105,8 @@ public class MemoryQueryApi {
                        extraction_confidence, importance_score, access_count, last_accessed_at,
                        created_at, updated_at,
                        lifecycle_state, lifecycle_reason, expires_at, temporality,
-                       succeeded_by, is_derived, derivation_sources
+                       succeeded_by, is_derived, derivation_sources,
+                       evidence_kind, trust_level, trust_score, evidence_count, last_verified_at
                 FROM temporal_entities
                 WHERE id = ?
                 ORDER BY version ASC
@@ -133,6 +131,7 @@ public class MemoryQueryApi {
         String validToStr = rs.getString("valid_to");
         String lastAccessedStr = rs.getString("last_accessed_at");
         String expiresStr = rs.getString("expires_at");
+        String lastVerifiedStr = rs.getString("last_verified_at");
         String derivationSourcesJson = rs.getString("derivation_sources");
         List<String> derivationSources = List.of();
         if (derivationSourcesJson != null && !derivationSourcesJson.isBlank()) {
@@ -169,7 +168,12 @@ public class MemoryQueryApi {
                 temporality,
                 rs.getString("succeeded_by"),
                 rs.getInt("is_derived") == 1,
-                derivationSources
+                derivationSources,
+                parseEvidenceKind(rs.getString("evidence_kind")),
+                parseTrustLevel(rs.getString("trust_level")),
+                rs.getFloat("trust_score"),
+                rs.getInt("evidence_count"),
+                lastVerifiedStr != null ? Instant.parse(lastVerifiedStr) : null
         );
     }
 
@@ -181,12 +185,24 @@ public class MemoryQueryApi {
         return parseRequiredEnum("temporality", raw, Temporality.class);
     }
 
+    private static MemoryEvidenceKind parseEvidenceKind(String raw) {
+        return parseRequiredEnum("evidence_kind", raw, MemoryEvidenceKind.class);
+    }
+
+    private static MemoryTrustLevel parseTrustLevel(String raw) {
+        return parseRequiredEnum("trust_level", raw, MemoryTrustLevel.class);
+    }
+
     private static <E extends Enum<E>> E parseRequiredEnum(
             String columnName,
             String raw,
             Class<E> enumType) {
         if (raw == null || raw.isBlank()) {
             throw new IllegalStateException("MemoryQueryApi: " + columnName + " 不能为空");
+        }
+        if (!raw.equals(raw.trim())) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 不能包含首尾空白: " + raw);
         }
         try {
             return Enum.valueOf(enumType, raw);
@@ -219,28 +235,30 @@ public class MemoryQueryApi {
      * 按来源实体 ID 查找 L4 偏好规则。
      *
      * @param sourceEntityId L3 源实体 ID
-     * @return 匹配的偏好规则，未找到时返回 null
+     * @return 匹配的偏好规则
      */
-    public PreferenceRule findRuleBySourceEntity(String sourceEntityId) {
+    public Optional<PreferenceRule> findRuleBySourceEntity(String sourceEntityId) {
+        requireText(sourceEntityId, "L4 偏好源实体 ID 不能为空");
         var results = jdbcTemplate.query(
                 "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE source_entity_id = ?",
                 (rs, rowNum) -> mapPreferenceRow(rs),
                 sourceEntityId);
-        return results.isEmpty() ? null : results.getFirst();
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     /**
      * 按来源实体 ID 查找 L4 程序模板。
      *
      * @param sourceEntityId L3 源实体 ID
-     * @return 匹配的程序模板，未找到时返回 null
+     * @return 匹配的程序模板
      */
-    public ProcedureTemplate findProcedureBySourceEntity(String sourceEntityId) {
+    public Optional<ProcedureTemplate> findProcedureBySourceEntity(String sourceEntityId) {
+        requireText(sourceEntityId, "L4 程序源实体 ID 不能为空");
         var results = jdbcTemplate.query(
                 "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE source_entity_id = ?",
                 (rs, rowNum) -> mapTemplateRow(rs),
                 sourceEntityId);
-        return results.isEmpty() ? null : results.getFirst();
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     @SuppressWarnings("unchecked")
@@ -301,15 +319,22 @@ public class MemoryQueryApi {
 
     // ========== 内部辅助 ==========
 
-    /** 尝试解析实体类型字符串为枚举；非法值返回 null（调用方视作空结果）。 */
+    /** 解析实体类型字符串为枚举；非法值直接失败。 */
     private static EntityType parseEntityType(String typeName) {
-        if (typeName == null || typeName.isBlank()) {
-            return null;
-        }
+        requireText(typeName, "实体类型不能为空");
         try {
             return EntityType.valueOf(typeName);
-        } catch (IllegalArgumentException ignored) {
-            return null;
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("未知实体类型: " + typeName, ex);
+        }
+    }
+
+    private static void requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(message + "，不能包含首尾空白");
         }
     }
 }

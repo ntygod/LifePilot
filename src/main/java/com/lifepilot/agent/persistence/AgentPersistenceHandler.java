@@ -31,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -424,11 +425,14 @@ public class AgentPersistenceHandler {
                                 finalState.sessionId(),
                                 finalState.turnId(),
                                 userMessageForExtraction,
-                                finalState.finalOutput());
+                                finalState.finalOutput()).join();
                     }
                 } catch (Exception e) {
+                    Throwable cause = e instanceof CompletionException && e.getCause() != null
+                            ? e.getCause()
+                            : e;
                     log.warn("实时记忆抽取失败：sessionId={}, error={}",
-                            finalState.sessionId(), e.getMessage());
+                            finalState.sessionId(), cause.getMessage());
                 }
             }, VIRTUAL_EXECUTOR);
 

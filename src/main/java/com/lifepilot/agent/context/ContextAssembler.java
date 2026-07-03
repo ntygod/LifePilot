@@ -293,7 +293,7 @@ public class ContextAssembler {
                 hotDigestFuture = mediaPlaceholder
                         ? CompletableFuture.completedFuture(null)
                         : CompletableFuture.supplyAsync(
-                                () -> safeBuildHotMemoryDigest(projectContext, memoryFilter), VIRTUAL_EXECUTOR);
+                                () -> buildHotMemoryDigest(projectContext, memoryFilter), VIRTUAL_EXECUTOR);
             }
             // 默认自动记忆注入只消费 HotMemoryDigest；冷召回由 memory.search / memory.recall 显式触发。
             var contextFuture = CompletableFuture.supplyAsync(
@@ -376,9 +376,7 @@ public class ContextAssembler {
             logAssemblyMetrics(state, context, startTime);
             return context;
         } catch (Exception e) {
-            log.warn("上下文组装失败，回退到最小提示词: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
-            return buildFallbackContext(state);
+            throw new IllegalStateException("上下文组装失败: sessionId=" + state.sessionId(), e);
         }
     }
 
@@ -441,17 +439,12 @@ public class ContextAssembler {
     }
 
     @Nullable
-    private HotMemoryDigest safeBuildHotMemoryDigest(ProjectContext projectContext,
-                                                     MemoryReadFilter filter) {
+    private HotMemoryDigest buildHotMemoryDigest(ProjectContext projectContext,
+                                                 MemoryReadFilter filter) {
         if (hotMemoryDigestService == null) {
             return null;
         }
-        try {
-            return hotMemoryDigestService.build(filter, hotDigestViewKey(projectContext));
-        } catch (Exception e) {
-            log.warn("热记忆摘要构建失败，本轮跳过默认记忆注入: error={}", e.getMessage());
-            return null;
-        }
+        return hotMemoryDigestService.build(filter, hotDigestViewKey(projectContext));
     }
 
     private String hotDigestViewKey(ProjectContext projectContext) {
@@ -479,31 +472,6 @@ public class ContextAssembler {
         return parts.isEmpty()
                 ? InjectedMemorySection.empty()
                 : new InjectedMemorySection(String.join("\n\n", parts), sourceIds);
-    }
-
-    private AssembledContext buildFallbackContext(ReactAgentState state) {
-        String systemPrompt = buildAugmentedSystemPrompt(state);
-        String userPrompt = buildUserPrompt(state);
-        TokenBudget budget = buildTokenBudget(
-                resolveContextBudgetTokens(state),
-                systemPrompt,
-                0,
-                0,
-                0);
-        return new AssembledContext(
-                systemPrompt,
-                List.of(),
-                List.of(),
-                userPrompt,
-                List.of(),
-                budget,
-                0,
-                0.0f,
-                0,
-                true,
-                List.of(),
-                null
-        );
     }
 
     boolean isMediaPlaceholderQuery(@Nullable String goal) {
@@ -1025,8 +993,8 @@ public class ContextAssembler {
      * 构建 Skill Catalog 段 —— 全量列出所有已启用 skill。
      *
      * <p>过滤链：skills 表（enabled=true） → SkillRegistry 内存定义 →
-     * {@link SkillRequirementGate} requires 满足 → 按 query 关键词打分 + priority
-     * 排序（命中关键词的排在前面，便于 LLM 优先注意），不做截断。</p>
+     * {@link SkillRequirementGate} requires 满足 → 按 query 关键词打分排序
+     * （命中关键词的排在前面，便于 LLM 优先注意），不做截断。</p>
      *
      * <p>输出渲染进 {@code agent/skill-catalog.st} 模板，
      * XML 标签格式（{@code <skill name="..."><description>...</description></skill>}）；
@@ -1076,14 +1044,19 @@ public class ContextAssembler {
         }
     }
 
-    /** Skill catalog 一行映射：name + description + tags。 */
-    record SkillCatalogEntry(String name, String description, List<String> tags) {}
+    /** Skill catalog 一行映射：name + description + tags + outputs。 */
+    record SkillCatalogEntry(String name, String description, List<String> tags, List<String> outputs) {
+        SkillCatalogEntry {
+            tags = tags == null ? List.of() : List.copyOf(tags);
+            outputs = outputs == null ? List.of() : List.copyOf(outputs);
+        }
+    }
 
     /** 把 {@link SkillDefinition} 投影到 {@link SkillCatalogEntry}；优先 frontmatter name，缺则回退 id。 */
     private static SkillCatalogEntry toCatalogEntry(SkillDefinition def) {
         SkillZhiweiMeta meta = def.zhiweiMeta();
         String displayName = (def.name() != null && !def.name().isBlank()) ? def.name() : def.id();
-        return new SkillCatalogEntry(displayName, def.description(), meta.tags());
+        return new SkillCatalogEntry(displayName, def.description(), meta.tags(), meta.outputs());
     }
 
     /**
@@ -1134,7 +1107,7 @@ public class ContextAssembler {
     }
 
     /**
-     * 按 (score 降, priority 升, name 升) 排序，全量返回（不截断）。
+     * 按 (score 降, name 升) 排序，全量返回（不截断）。
      * 命中 query 关键词的排在前面，让 LLM 优先注意。
      */
     private static List<SkillCatalogEntry> sortAllEntries(List<SkillCatalogEntry> all,
@@ -1162,8 +1135,11 @@ public class ContextAssembler {
             sb.append("<skill name=\"").append(e.name()).append("\">")
                     .append("<description>")
                     .append(escapeXml(stripKeywordList(e.description())))
-                    .append("</description>")
-                    .append("</skill>\n");
+                    .append("</description>");
+            if (!e.outputs().isEmpty()) {
+                sb.append("<outputs>").append(escapeXml(String.join(",", e.outputs()))).append("</outputs>");
+            }
+            sb.append("</skill>\n");
         }
         return sb.toString().stripTrailing();
     }

@@ -17,9 +17,11 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link ReValidationListener} 集成测试 —— 用 Flyway 真跑当前迁移，插入 provenance
@@ -150,6 +152,75 @@ class ReValidationListener_集成测试 {
 
         assertThat(queueRepo.countPendingBySource(SourceType.KNOWLEDGE_BASE, "kb-42"))
                 .isEqualTo(2);
+    }
+
+    @Test
+    void 空事件应直接失败() {
+        assertThatThrownBy(() -> listener.onSourceInvalidated(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("源失效事件不能为空");
+    }
+
+    @Test
+    void 受影响实体查询返回null应直接失败() {
+        var badRepo = new MemoryProvenanceRepository(jdbcTemplate) {
+            @Override
+            public List<String> findEntityIdsBySource(SourceType type, String sourceId) {
+                return null;
+            }
+        };
+        var badListener = new ReValidationListener(
+                badRepo,
+                queueRepo,
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> badListener.onSourceInvalidated(new SourceInvalidated(
+                SourceType.DOCUMENT, "doc-null", InvalidationKind.DELETED)))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("受影响实体查询结果不能为空");
+    }
+
+    @Test
+    void 受影响实体ID非法应先失败且不入队() {
+        var badRepo = new MemoryProvenanceRepository(jdbcTemplate) {
+            @Override
+            public List<String> findEntityIdsBySource(SourceType type, String sourceId) {
+                return List.of("entity-ok", " ");
+            }
+        };
+        var badListener = new ReValidationListener(
+                badRepo,
+                queueRepo,
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> badListener.onSourceInvalidated(new SourceInvalidated(
+                SourceType.DOCUMENT, "doc-bad-id", InvalidationKind.DELETED)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("受影响实体 ID 不能为空");
+        assertThat(queueRepo.countPendingBySource(SourceType.DOCUMENT, "doc-bad-id"))
+                .as("整批实体 ID 先校验，不能写入部分队列")
+                .isZero();
+    }
+
+    @Test
+    void 入队失败应直接抛出() {
+        插入实体("entity-fail");
+        插入Provenance("entity-fail", "doc-fail");
+        var failingQueue = new RevalidationQueueRepository(jdbcTemplate) {
+            @Override
+            public void enqueue(String entityId, SourceType type, String sourceId, Instant when) {
+                throw new IllegalStateException("再验证队列写入失败");
+            }
+        };
+        var failingListener = new ReValidationListener(
+                provenanceRepo,
+                failingQueue,
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> failingListener.onSourceInvalidated(new SourceInvalidated(
+                SourceType.DOCUMENT, "doc-fail", InvalidationKind.DELETED)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("再验证队列写入失败");
     }
 
     // ---------- 测试夹具 ----------

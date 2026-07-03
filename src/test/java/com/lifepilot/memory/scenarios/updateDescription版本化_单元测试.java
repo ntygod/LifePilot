@@ -1,6 +1,7 @@
 package com.lifepilot.memory.scenarios;
 
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
@@ -86,8 +87,8 @@ class updateDescription版本化_单元测试 {
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
     }
 
@@ -105,7 +106,7 @@ class updateDescription版本化_单元测试 {
     void 两次修改描述应产生两条新版本记录() {
         // given：写入一条 GOAL 实体，初始 v1
         var initial = 构造ACTIVE实体("goal-版本化", EntityType.GOAL, "初始描述");
-        var persisted = semanticMemory.upsertWithConflictDetection(initial, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(initial, null, MemoryWriteContext.manual("test"));
 
         // when：连续两次修改描述
         semanticMemory.updateDescription(persisted.id(), "v2 描述");
@@ -138,7 +139,7 @@ class updateDescription版本化_单元测试 {
     @Test
     void 描述未变化时应短路不产生新版本() {
         var initial = 构造ACTIVE实体("goal-短路", EntityType.GOAL, "相同描述");
-        var persisted = semanticMemory.upsertWithConflictDetection(initial, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(initial, null, MemoryWriteContext.manual("test"));
 
         semanticMemory.updateDescription(persisted.id(), "相同描述");
 
@@ -151,7 +152,7 @@ class updateDescription版本化_单元测试 {
     void 描述变短时仍应产生新版本() {
         // 覆盖 VersionMerger 取更长者启发式的反例
         var initial = 构造ACTIVE实体("goal-变短", EntityType.PREFERENCE, "这是一段很长的初始描述，用于验证缩短场景");
-        var persisted = semanticMemory.upsertWithConflictDetection(initial, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(initial, null, MemoryWriteContext.manual("test"));
 
         semanticMemory.updateDescription(persisted.id(), "短");
 
@@ -162,7 +163,7 @@ class updateDescription版本化_单元测试 {
         assertThat(versions.getLast().isCurrent()).isTrue();
     }
 
-    /** 构造默认 ACTIVE + PERSISTENT 的基础实体，承载指定描述。 */
+    /** 构造显式 ACTIVE + PERSISTENT 的测试实体，承载指定描述。 */
     private TemporalEntity 构造ACTIVE实体(String id, EntityType type, String description) {
         var now = Instant.now();
         return new TemporalEntity(
@@ -189,6 +190,11 @@ class updateDescription版本化_单元测试 {
                 null,
                 false,
                 List.of()
-        );
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
     }
 }

@@ -17,12 +17,13 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * ExtractionValidator 提取质量门控单元测试。
  *
- * <p>覆盖 AUDN 决策验证的全部规则：名称校验、描述校验、置信度阈值、
- * 数量限制、分数修正、NOOP/DELETE 特殊处理，以及各类边界条件。</p>
+ * <p>覆盖 AUDN 决策验证的全部规则：名称校验、描述校验、评分契约、
+ * 置信度阈值、数量限制、NOOP/DELETE 特殊处理，以及各类边界条件。</p>
  *
  * @author zsg
  * @since 2026-04-03
@@ -53,7 +54,7 @@ class ExtractionValidator_单元测试 {
     /** 构建一条 ADD 决策（带默认合法值） */
     private static AudnDecision addDecision(String name, String description, Float confidence) {
         return new AudnDecision(AudnOperation.ADD, name, EntityType.PERSON,
-                description, Map.of(), confidence, 0.8f, null, null, "USER_EXPLICIT", evidence(name));
+                description, Map.of(), confidence, 0.8f, "PERSISTENT", null, "USER_EXPLICIT", evidence(name));
     }
 
     private static String evidence(String name) {
@@ -63,13 +64,13 @@ class ExtractionValidator_单元测试 {
     /** 构建一条 UPDATE 决策 */
     private static AudnDecision updateDecision(String name, String description, Float confidence) {
         return new AudnDecision(AudnOperation.UPDATE, name, EntityType.PERSON,
-                description, Map.of(), confidence, 0.8f, null, null, "USER_EXPLICIT", evidence(name));
+                description, Map.of(), confidence, 0.8f, "PERSISTENT", null, "USER_EXPLICIT", evidence(name));
     }
 
     /** 构建一条 DELETE 决策 */
     private static AudnDecision deleteDecision(String name) {
         return new AudnDecision(AudnOperation.DELETE, name, EntityType.PERSON,
-                null, null, 0.9f, 0.5f, null, null, null, null);
+                null, null, 0.9f, 0.5f, "PERSISTENT", null, "USER_EXPLICIT", evidence(name));
     }
 
     /** 构建一条 NOOP 决策 */
@@ -92,12 +93,10 @@ class ExtractionValidator_单元测试 {
     class 空输入与基本通过 {
 
         @Test
-        void null输入返回空列表() {
-            // when
-            var result = validator.validate(null);
-
-            // then
-            assertThat(result).isEmpty();
+        void null输入应直接失败() {
+            assertThatThrownBy(() -> validator.validate(null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("AUDN 决策列表不能为空");
         }
 
         @Test
@@ -160,39 +159,33 @@ class ExtractionValidator_单元测试 {
     class 实体名称校验 {
 
         @Test
-        void 名称为null时被过滤() {
+        void 名称为null时应直接失败() {
             // given
             var decisions = List.of(addDecision(null, "有效描述", 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称不能为空");
         }
 
         @Test
-        void 名称为空字符串时被过滤() {
+        void 名称为空字符串时应直接失败() {
             // given
             var decisions = List.of(addDecision("", "有效描述", 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称不能为空");
         }
 
         @Test
-        void 名称为纯空白字符时被过滤() {
+        void 名称为纯空白字符时应直接失败() {
             // given
             var decisions = List.of(addDecision("   \t\n", "有效描述", 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称不能为空");
         }
 
         @Test
@@ -210,16 +203,15 @@ class ExtractionValidator_单元测试 {
         }
 
         @Test
-        void 名称长度超过最大长度时被过滤() {
+        void 名称长度超过最大长度时应直接失败() {
             // given — 默认 maxEntityNameLength = 100
             String name = "张".repeat(101);
             var decisions = List.of(addDecision(name, "有效描述", 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称超长")
+                    .hasMessageContaining("max=100");
         }
 
         @Test
@@ -244,51 +236,43 @@ class ExtractionValidator_单元测试 {
     class 描述校验 {
 
         @Test
-        void ADD操作_描述为null时被过滤() {
+        void ADD操作_描述为null时应直接失败() {
             // given
             var decisions = List.of(addDecision("张三", null, 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN ADD 决策描述不能为空");
         }
 
         @Test
-        void ADD操作_描述为空字符串时被过滤() {
+        void ADD操作_描述为空字符串时应直接失败() {
             // given
             var decisions = List.of(addDecision("张三", "", 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN ADD 决策描述不能为空");
         }
 
         @Test
-        void ADD操作_描述为纯空白时被过滤() {
+        void ADD操作_描述为纯空白时应直接失败() {
             // given
             var decisions = List.of(addDecision("张三", "  \t", 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN ADD 决策描述不能为空");
         }
 
         @Test
-        void ADD操作_描述长度低于最小值时被过滤() {
+        void ADD操作_描述长度低于最小值时应直接失败() {
             // given — 默认 minDescriptionLength = 2，长度 1 不满足
             var decisions = List.of(addDecision("张三", "X", 0.8f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN ADD 决策描述不能为空且长度不能低于 2");
         }
 
         @Test
@@ -337,21 +321,19 @@ class ExtractionValidator_单元测试 {
     class 证据门槛 {
 
         @Test
-        void ADD缺少evidenceKind时进入拒绝候选() {
+        void ADD缺少evidenceKind时应直接失败() {
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "有效描述", Map.of(), 0.8f, 0.8f, null, null, null, "张三");
+                    "有效描述", Map.of(), 0.8f, 0.8f, "PERSISTENT", null, null, "张三");
 
-            var result = validator.validateWithResult(List.of(decision));
-
-            assertThat(result.validDecisions()).isEmpty();
-            assertThat(result.rejectedDecisions()).hasSize(1);
-            assertThat(result.rejectedDecisions().getFirst().reason()).isEqualTo("EVIDENCE_KIND_MISSING");
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 evidenceKind 不能为空");
         }
 
         @Test
         void UNKNOWN证据不写主库() {
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "有效描述", Map.of(), 0.8f, 0.8f, null, null, "UNKNOWN", "张三");
+                    "有效描述", Map.of(), 0.8f, 0.8f, "PERSISTENT", null, "UNKNOWN", "张三");
 
             var result = validator.validateWithResult(List.of(decision));
 
@@ -360,20 +342,19 @@ class ExtractionValidator_单元测试 {
         }
 
         @Test
-        void USER_EXPLICIT缺少证据片段时拒绝() {
+        void USER_EXPLICIT缺少证据片段时应直接失败() {
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "有效描述", Map.of(), 0.8f, 0.8f, null, null, "USER_EXPLICIT", null);
+                    "有效描述", Map.of(), 0.8f, 0.8f, "PERSISTENT", null, "USER_EXPLICIT", null);
 
-            var result = validator.validateWithResult(List.of(decision));
-
-            assertThat(result.validDecisions()).isEmpty();
-            assertThat(result.rejectedDecisions().getFirst().reason()).isEqualTo("EVIDENCE_EXCERPT_MISSING");
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 evidenceExcerpt 不能为空");
         }
 
         @Test
         void CHAT_INFERRED低于可信阈值时拒绝() {
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "有效描述", Map.of(), 0.59f, 0.8f, null, null, "CHAT_INFERRED", "张三");
+                    "有效描述", Map.of(), 0.59f, 0.8f, "PERSISTENT", null, "CHAT_INFERRED", "张三");
 
             var result = validator.validateWithResult(List.of(decision));
 
@@ -411,42 +392,33 @@ class ExtractionValidator_单元测试 {
         }
 
         @Test
-        void 置信度为null时被修正为0_5后通过() {
-            // given — null confidence → normalizeScores 修正为 0.5f，高于默认阈值 0.3
-            var decisions = List.of(addDecision("张三", "有效描述", null));
+        void 置信度为null时应直接失败() {
+            // given
+            var decision = addDecision("张三", "有效描述", null);
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then — 0.5 >= 0.3，通过
-            assertThat(result).hasSize(1);
-            assertThat(result.getFirst().extractionConfidence()).isEqualTo(0.5f);
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 extractionConfidence 不能为空");
         }
 
         @Test
-        void 置信度为负数时被修正为0_5后通过() {
+        void 置信度为负数时应直接失败() {
             // given
-            var decisions = List.of(addDecision("张三", "有效描述", -0.1f));
+            var decision = addDecision("张三", "有效描述", -0.1f);
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).hasSize(1);
-            assertThat(result.getFirst().extractionConfidence()).isEqualTo(0.5f);
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 extractionConfidence 越界");
         }
 
         @Test
-        void 置信度大于1时被修正为0_5后通过() {
+        void 置信度大于1时应直接失败() {
             // given
-            var decisions = List.of(addDecision("张三", "有效描述", 1.5f));
+            var decision = addDecision("张三", "有效描述", 1.5f);
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).hasSize(1);
-            assertThat(result.getFirst().extractionConfidence()).isEqualTo(0.5f);
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 extractionConfidence 越界");
         }
 
         @Test
@@ -463,7 +435,7 @@ class ExtractionValidator_单元测试 {
 
         @Test
         void 置信度恰好为1时通过() {
-            // given — 1.0 >= 0.3，且在 [0,1] 范围内不被修正
+            // given — 1.0 >= 0.3，且在 [0,1] 范围内
             var decisions = List.of(addDecision("张三", "有效描述", 1.0f));
 
             // when
@@ -489,17 +461,15 @@ class ExtractionValidator_单元测试 {
         }
 
         @Test
-        void 置信度null修正为0_5后低于高阈值被过滤() {
-            // given — 阈值 0.6，null → 0.5 < 0.6
+        void 置信度null时优先按契约缺失失败() {
+            // given — null 不参与阈值比较，直接按契约缺失拒绝
             var customValidator = new ExtractionValidator(
                     customProperties(10, 0.6f, 100, 2));
-            var decisions = List.of(addDecision("张三", "有效描述", null));
+            var decision = addDecision("张三", "有效描述", null);
 
-            // when
-            var result = customValidator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> customValidator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 extractionConfidence 不能为空");
         }
     }
 
@@ -568,32 +538,55 @@ class ExtractionValidator_单元测试 {
     class DELETE操作处理 {
 
         @Test
-        void DELETE操作跳过名称和描述校验() {
-            // given — DELETE 的 entityName 为 null，description 也为 null
+        void DELETE操作缺少名称时应直接失败() {
+            // given — DELETE 必须有明确删除目标
             var decision = new AudnDecision(AudnOperation.DELETE, null, EntityType.PERSON,
-                    null, null, 0.9f, 0.5f, null, null, null, null);
-            var decisions = List.of(decision);
+                    null, null, 0.9f, 0.5f, "PERSISTENT", null, "USER_EXPLICIT", "用户明确陈述");
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称不能为空");
+        }
+
+        @Test
+        void DELETE操作不要求描述() {
+            // given
+            var decision = new AudnDecision(AudnOperation.DELETE, "待删除实体", EntityType.PERSON,
+                    null, null, 0.9f, 0.5f, "PERSISTENT", null, "USER_EXPLICIT", "我不再学 Rust 了");
 
             // when
-            var result = validator.validate(decisions);
+            var result = validator.validate(List.of(decision));
 
-            // then — DELETE 直接放行
+            // then
             assertThat(result).hasSize(1);
             assertThat(result.getFirst().operation()).isEqualTo(AudnOperation.DELETE);
         }
 
         @Test
-        void DELETE操作跳过置信度校验() {
+        void DELETE操作遵守置信度阈值() {
             // given — DELETE 的置信度为 0，低于阈值
             var decision = new AudnDecision(AudnOperation.DELETE, "待删除实体", EntityType.PERSON,
-                    null, null, 0.0f, 0.0f, null, null, null, null);
-            var decisions = List.of(decision);
+                    null, null, 0.0f, 0.5f, "PERSISTENT", null, "USER_EXPLICIT", "我不再学 Rust 了");
 
             // when
-            var result = validator.validate(decisions);
+            var result = validator.validateWithResult(List.of(decision));
 
             // then
-            assertThat(result).hasSize(1);
+            assertThat(result.validDecisions()).isEmpty();
+            assertThat(result.rejectedDecisions())
+                    .singleElement()
+                    .satisfies(rejected -> assertThat(rejected.reason()).isEqualTo("LOW_CONFIDENCE"));
+        }
+
+        @Test
+        void DELETE操作缺少证据片段时应直接失败() {
+            // given
+            var decision = new AudnDecision(AudnOperation.DELETE, "待删除实体", EntityType.PERSON,
+                    null, null, 0.9f, 0.5f, "PERSISTENT", null, "USER_EXPLICIT", null);
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 evidenceExcerpt 不能为空");
         }
     }
 
@@ -663,189 +656,133 @@ class ExtractionValidator_单元测试 {
         }
 
         @Test
-        void 截断时置信度为null的条目排在末尾被丢弃() {
-            // given — null confidence → 修正为 0.5f
-            // 上限为 2，5 条中只保留最高 2 条
+        void 截断前遇到缺失置信度应直接失败() {
+            // given — 上限为 2，结构坏输出不参与质量门控截断
             var customValidator = new ExtractionValidator(
                     customProperties(2, 0.1f, 100, 2));
             var decisions = List.of(
                     addDecision("高置信", "描述A", 0.9f),
-                    addDecision("空置信", "描述B", null),    // → 0.5f
+                    addDecision("空置信", "描述B", null),
                     addDecision("最高置信", "描述C", 0.95f)
             );
 
-            // when
-            var result = customValidator.validate(decisions);
-
-            // then — 保留 0.95 和 0.9，0.5（修正后）被截断
-            assertThat(result).hasSize(2);
-            assertThat(result).extracting(AudnDecision::entityName)
-                    .containsExactlyInAnyOrder("最高置信", "高置信");
+            assertThatThrownBy(() -> customValidator.validateWithResult(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 extractionConfidence 不能为空");
         }
     }
 
     // ------------------------------------------------------------------
-    // normalizeScores 分数修正
+    // 评分契约
     // ------------------------------------------------------------------
 
     @Nested
-    @DisplayName("normalizeScores 分数修正")
-    class 分数修正 {
+    @DisplayName("评分契约")
+    class 评分契约 {
 
         @Test
-        void 合法分数不被修正() {
+        void 合法评分通过验证且保留原始对象() {
             // given
             var decision = addDecision("张三", "有效描述", 0.8f);
 
             // when
-            var result = validator.normalizeScores(decision);
-
-            // then — 原始值保持不变
-            assertThat(result.extractionConfidence()).isEqualTo(0.8f);
-            assertThat(result.importanceScore()).isEqualTo(0.8f);
-            // 应返回原对象（needsFix = false）
-            assertThat(result).isSameAs(decision);
-        }
-
-        @Test
-        void confidence为null修正为0_5() {
-            // given
-            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), null, 0.8f, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
+            var result = validator.validateWithResult(List.of(decision));
 
             // then
-            assertThat(result.extractionConfidence()).isEqualTo(0.5f);
-            assertThat(result.importanceScore()).isEqualTo(0.8f);
+            assertThat(result.rejectedDecisions()).isEmpty();
+            assertThat(result.validDecisions()).containsExactly(decision);
         }
 
         @Test
-        void importance为null修正为0_5() {
+        void importance为null时应直接失败() {
             // given
             var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.8f, null, null, null, null, null);
+                    "描述", Map.of(), 0.8f, null, "PERSISTENT", null, "USER_EXPLICIT", "张三");
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 importanceScore 不能为空");
+        }
+
+        @Test
+        void 两个分数同时为null时优先报告置信度缺失并失败() {
+            // given
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "描述", Map.of(), null, null, "PERSISTENT", null, "USER_EXPLICIT", "张三");
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 extractionConfidence 不能为空");
+        }
+
+        @Test
+        void importance负数时应直接失败() {
+            // given
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "描述", Map.of(), 0.8f, -1.0f, "PERSISTENT", null, "USER_EXPLICIT", "张三");
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 importanceScore 越界");
+        }
+
+        @Test
+        void importance超过1时应直接失败() {
+            // given
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "描述", Map.of(), 0.8f, 2.0f, "PERSISTENT", null, "USER_EXPLICIT", "张三");
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 importanceScore 越界");
+        }
+
+        @Test
+        void 评分边界值0和1按范围契约通过() {
+            // given
+            var rangeValidator = new ExtractionValidator(customProperties(10, 0.0f, 100, 2));
+            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
+                    "描述", Map.of(), 0.0f, 1.0f, "PERSISTENT", null, "USER_EXPLICIT", "张三");
 
             // when
-            var result = validator.normalizeScores(decision);
+            var result = rangeValidator.validateWithResult(List.of(decision));
 
             // then
-            assertThat(result.extractionConfidence()).isEqualTo(0.8f);
-            assertThat(result.importanceScore()).isEqualTo(0.5f);
+            assertThat(result.rejectedDecisions()).isEmpty();
+            assertThat(result.validDecisions()).containsExactly(decision);
         }
 
         @Test
-        void 两个分数同时为null时均修正为0_5() {
-            // given
-            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), null, null, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
-
-            // then
-            assertThat(result.extractionConfidence()).isEqualTo(0.5f);
-            assertThat(result.importanceScore()).isEqualTo(0.5f);
-        }
-
-        @Test
-        void confidence负数修正为0_5() {
-            // given
-            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), -0.5f, 0.8f, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
-
-            // then
-            assertThat(result.extractionConfidence()).isEqualTo(0.5f);
-        }
-
-        @Test
-        void confidence超过1修正为0_5() {
-            // given
-            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 1.1f, 0.8f, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
-
-            // then
-            assertThat(result.extractionConfidence()).isEqualTo(0.5f);
-        }
-
-        @Test
-        void importance负数修正为0_5() {
-            // given
-            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.8f, -1.0f, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
-
-            // then
-            assertThat(result.importanceScore()).isEqualTo(0.5f);
-        }
-
-        @Test
-        void importance超过1修正为0_5() {
-            // given
-            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.8f, 2.0f, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
-
-            // then
-            assertThat(result.importanceScore()).isEqualTo(0.5f);
-        }
-
-        @Test
-        void 边界值0和1不被修正() {
-            // given
-            var decision = new AudnDecision(AudnOperation.ADD, "张三", EntityType.PERSON,
-                    "描述", Map.of(), 0.0f, 1.0f, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
-
-            // then — 0.0 和 1.0 在 [0,1] 范围内，不修正
-            assertThat(result.extractionConfidence()).isEqualTo(0.0f);
-            assertThat(result.importanceScore()).isEqualTo(1.0f);
-            assertThat(result).isSameAs(decision);
-        }
-
-        @Test
-        void 修正后保留其他字段不变() {
-            // given
-            var properties = Map.<String, Object>of("key", "value");
-            var decision = new AudnDecision(AudnOperation.UPDATE, "实体名", EntityType.PROJECT,
-                    "项目描述", properties, null, null, null, null, null, null);
-
-            // when
-            var result = validator.normalizeScores(decision);
-
-            // then — 非分数字段保持原值
-            assertThat(result.operation()).isEqualTo(AudnOperation.UPDATE);
-            assertThat(result.entityName()).isEqualTo("实体名");
-            assertThat(result.entityType()).isEqualTo(EntityType.PROJECT);
-            assertThat(result.description()).isEqualTo("项目描述");
-            assertThat(result.properties()).isEqualTo(properties);
-        }
-
-        @Test
-        void 非法temporality应进入拒绝候选() {
+        void 非法temporality应直接失败() {
             var decision = new AudnDecision(AudnOperation.ADD, "临时状态", EntityType.GOAL,
                     "描述足够长以通过基础校验", Map.of(), 0.9f, 0.5f,
                     "TEMP", null, "USER_EXPLICIT", "用户明确陈述");
 
-            var result = validator.validateWithResult(List.of(decision));
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 temporality 非法");
+        }
 
-            assertThat(result.validDecisions()).isEmpty();
-            assertThat(result.rejectedDecisions())
-                    .singleElement()
-                    .satisfies(rejected -> assertThat(rejected.reason()).isEqualTo("INVALID_TEMPORALITY"));
+        @Test
+        void 缺少temporality应直接失败() {
+            var decision = new AudnDecision(AudnOperation.ADD, "临时状态", EntityType.GOAL,
+                    "描述足够长以通过基础校验", Map.of(), 0.9f, 0.5f,
+                    null, null, "USER_EXPLICIT", "用户明确陈述");
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 temporality 不能为空");
+        }
+
+        @Test
+        void temporality包含首尾空白应直接失败() {
+            var decision = new AudnDecision(AudnOperation.ADD, "临时状态", EntityType.GOAL,
+                    "描述足够长以通过基础校验", Map.of(), 0.9f, 0.5f,
+                    " PERSISTENT ", null, "USER_EXPLICIT", "用户明确陈述");
+
+            assertThatThrownBy(() -> validator.validateWithResult(List.of(decision)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策 temporality 不能包含首尾空白");
         }
     }
 
@@ -858,59 +795,54 @@ class ExtractionValidator_单元测试 {
     class 综合场景 {
 
         @Test
-        void 混合多种操作类型_仅无效的被过滤() {
+        void 混合多种操作类型_包含结构坏输出时直接失败() {
             // given
             var decisions = List.of(
                     addDecision("有效ADD", "足够长的描述", 0.8f),     // 通过
                     addDecision("", "有效描述", 0.8f),                // 名称空 → 过滤
                     updateDecision("有效UPDATE", null, 0.5f),         // UPDATE 不检查描述 → 通过
-                    deleteDecision("有效DELETE"),                      // DELETE 直接通过
+                    deleteDecision("有效DELETE"),                      // DELETE 目标、评分和证据完整
                     noopDecision("跳过的NOOP"),                       // NOOP → 跳过
                     addDecision("低置信度ADD", "有效描述", 0.1f)      // 置信度 < 0.3 → 过滤
             );
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).hasSize(3);
-            assertThat(result).extracting(AudnDecision::entityName)
-                    .containsExactlyInAnyOrder("有效ADD", "有效UPDATE", "有效DELETE");
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称不能为空");
         }
 
         @Test
-        void 全部无效决策返回空列表() {
+        void 全部为质量拒绝或NOOP时返回空列表并记录拒绝() {
             // given
             var decisions = List.of(
-                    addDecision(null, "描述", 0.8f),           // 名称 null
-                    addDecision("名称", "", 0.8f),             // ADD 描述空
                     addDecision("名称2", "有效描述", 0.1f),    // 置信度太低
                     noopDecision("跳过")                        // NOOP
             );
 
             // when
-            var result = validator.validate(decisions);
+            var result = validator.validateWithResult(decisions);
 
             // then
-            assertThat(result).isEmpty();
+            assertThat(result.validDecisions()).isEmpty();
+            assertThat(result.rejectedDecisions())
+                    .singleElement()
+                    .satisfies(rejected -> assertThat(rejected.reason()).isEqualTo("LOW_CONFIDENCE"));
         }
 
         @Test
-        void 验证顺序_名称校验先于描述校验先于置信度校验() {
+        void 验证顺序_名称校验先于描述校验先于置信度校验并失败() {
             // given — 名称为空的 ADD 决策，描述也无效，置信度也低
-            // 应在名称校验阶段就被过滤
+            // 应在名称校验阶段就失败
             var decisions = List.of(addDecision("", "", 0.1f));
 
-            // when
-            var result = validator.validate(decisions);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> validator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称不能为空");
         }
 
         @Test
-        void 过滤后再截断_先过滤无效再按上限截断() {
-            // given — 上限 2，5 条中 2 条无效，剩 3 条有效，截断为 2
+        void 截断前包含结构坏输出时直接失败() {
+            // given — 上限 2，结构坏输出不再被过滤后继续截断
             var customValidator = new ExtractionValidator(
                     customProperties(2, 0.1f, 100, 2));
             var decisions = List.of(
@@ -921,17 +853,13 @@ class ExtractionValidator_单元测试 {
                     addDecision("低", "描述", 0.3f)            // 有效
             );
 
-            // when
-            var result = customValidator.validate(decisions);
-
-            // then — 3 条有效，截断为 2，保留置信度最高的
-            assertThat(result).hasSize(2);
-            assertThat(result).extracting(AudnDecision::entityName)
-                    .containsExactlyInAnyOrder("高", "中");
+            assertThatThrownBy(() -> customValidator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称不能为空");
         }
 
         @Test
-        void 自定义短名称限制_超过限制长度的名称被过滤() {
+        void 自定义短名称限制_超过限制长度的名称直接失败() {
             // given — maxEntityNameLength = 20，名称超过 20 时源码用 substring(0,20) 记日志
             var customValidator = new ExtractionValidator(
                     customProperties(10, 0.1f, 20, 2));
@@ -942,16 +870,14 @@ class ExtractionValidator_单元测试 {
                     addDecision(longName, "有效描述", 0.8f)
             );
 
-            // when
-            var result = customValidator.validate(decisions);
-
-            // then
-            assertThat(result).hasSize(1);
-            assertThat(result.getFirst().entityName()).isEqualTo(shortName);
+            assertThatThrownBy(() -> customValidator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN 决策实体名称超长")
+                    .hasMessageContaining("max=20");
         }
 
         @Test
-        void 自定义高描述最小长度_短描述的ADD被过滤() {
+        void 自定义高描述最小长度_短描述的ADD直接失败() {
             // given
             var customValidator = new ExtractionValidator(
                     customProperties(10, 0.1f, 100, 10));
@@ -960,16 +886,13 @@ class ExtractionValidator_单元测试 {
                     addDecision("李四", "短描述", 0.8f)                     // 长度 3 < 10 → 过滤
             );
 
-            // when
-            var result = customValidator.validate(decisions);
-
-            // then
-            assertThat(result).hasSize(1);
-            assertThat(result.getFirst().entityName()).isEqualTo("张三");
+            assertThatThrownBy(() -> customValidator.validate(decisions))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AUDN ADD 决策描述不能为空且长度不能低于 10");
         }
 
         @Test
-        void DELETE不计入数量限制的验证规则_但计入截断总数() {
+        void DELETE按完整契约验证后计入截断总数() {
             // given — 上限 2
             var customValidator = new ExtractionValidator(
                     customProperties(2, 0.1f, 100, 2));
@@ -994,19 +917,20 @@ class ExtractionValidator_单元测试 {
     // ------------------------------------------------------------------
 
     @Property(tries = 100)
-    void 合法范围内的置信度不被修正(
+    void 合法范围内的评分不触发契约拒绝(
             @ForAll @FloatRange(min = 0.0f, max = 1.0f) float confidence,
             @ForAll @FloatRange(min = 0.0f, max = 1.0f) float importance) {
         // given — jqwik 不执行 @BeforeEach，手动构造 validator
-        var propValidator = new ExtractionValidator(defaultProperties());
+        var propValidator = new ExtractionValidator(customProperties(10, 0.0f, 100, 2));
         var decision = new AudnDecision(AudnOperation.ADD, "测试实体", EntityType.PERSON,
-                "有效描述", Map.of(), confidence, importance, null, null, "USER_EXPLICIT", "测试实体");
+                "有效描述", Map.of(), confidence, importance, "PERSISTENT", null, "USER_EXPLICIT", "测试实体");
 
         // when
-        var result = propValidator.normalizeScores(decision);
+        var result = propValidator.validateWithResult(List.of(decision));
 
-        // then — 合法范围内应返回原对象
-        assertThat(result).isSameAs(decision);
+        // then
+        assertThat(result.rejectedDecisions()).isEmpty();
+        assertThat(result.validDecisions()).containsExactly(decision);
     }
 
     @Property(tries = 50)

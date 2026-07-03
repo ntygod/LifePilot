@@ -1,5 +1,7 @@
 package com.lifepilot.memory.retrieval.orchestrator;
 
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
@@ -9,10 +11,12 @@ import com.lifepilot.memory.store.entity.TemporalEntity;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -30,7 +34,7 @@ class RetrievalOrchestrator_单元测试 {
     @Test
     void 空查询返回空bundle() {
         var props = new MemoryRetrievalProperties();
-        var planner = new QueryPlanner(null, null, new KnowledgeBaseSource(null, null));
+        var planner = planner(mock(HybridRetriever.class), mock(SemanticMemory.class));
         var orchestrator = new RetrievalOrchestrator(planner, props);
 
         assertThat(orchestrator.retrieve("").items()).isEmpty();
@@ -47,7 +51,10 @@ class RetrievalOrchestrator_单元测试 {
                         retrievalResult("e3", "C", 0.7f)
                 ));
         var hybridSource = new HybridRetrievalSource(hybridRetriever);
-        var planner = new QueryPlanner(hybridSource, null, new KnowledgeBaseSource(null, null));
+        var planner = new QueryPlanner(
+                hybridSource,
+                new ExperienceRetrievalSource(mock(SemanticMemory.class)),
+                emptyKnowledgeSource());
         var props = new MemoryRetrievalProperties();
         var orchestrator = new RetrievalOrchestrator(planner, props);
 
@@ -68,8 +75,13 @@ class RetrievalOrchestrator_单元测试 {
                         experienceEntity("exp-1", "Rust 学习经验", "在学习 Rust 的过程中..."),
                         experienceEntity("exp-2", "Java 经验", "Java 相关")
                 ));
+        var hybrid = mock(HybridRetriever.class);
+        when(hybrid.retrieve(anyString(), anyInt(), any())).thenReturn(List.of());
         var expSource = new ExperienceRetrievalSource(semanticMemory);
-        var planner = new QueryPlanner(null, expSource, new KnowledgeBaseSource(null, null));
+        var planner = new QueryPlanner(
+                new HybridRetrievalSource(hybrid),
+                expSource,
+                emptyKnowledgeSource());
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("Rust", RetrievalIntent.EXPERIENCE, 10);
@@ -80,14 +92,68 @@ class RetrievalOrchestrator_单元测试 {
     }
 
     @Test
-    void 不可用的source被跳过() {
-        var planner = new QueryPlanner(null, null, new KnowledgeBaseSource(null, null));  // 全不可用
+    void Experience源返回null实体应直接失败() {
+        var semanticMemory = mock(SemanticMemory.class);
+        var entities = new ArrayList<TemporalEntity>();
+        entities.add(null);
+        when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE))
+                .thenReturn(entities);
+        var expSource = new ExperienceRetrievalSource(semanticMemory);
+
+        assertThatThrownBy(() -> expSource.retrieve("Rust", 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("经验检索源返回 null 实体");
+    }
+
+    @Test
+    void Experience源实体缺描述应直接失败() {
+        var semanticMemory = mock(SemanticMemory.class);
+        when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE))
+                .thenReturn(List.of(experienceEntity("exp-bad", "Rust 学习经验", null)));
+        var expSource = new ExperienceRetrievalSource(semanticMemory);
+
+        assertThatThrownBy(() -> expSource.retrieve("Rust", 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("经验检索实体描述不能为空");
+    }
+
+    @Test
+    void 无匹配结果时返回空bundle() {
+        var hybrid = mock(HybridRetriever.class);
+        when(hybrid.retrieve(anyString(), anyInt(), any())).thenReturn(List.of());
+        var sem = mock(SemanticMemory.class);
+        when(sem.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of());
+        var planner = planner(hybrid, sem);
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("test", RetrievalIntent.GENERAL, 10);
 
         assertThat(bundle.items()).isEmpty();
         assertThat(bundle.sources()).isEmpty();
+    }
+
+    @Test
+    void 单源topK配置非法时抛异常() {
+        var props = new MemoryRetrievalProperties();
+        props.getOrchestrator().setPerSourceTopK(0);
+        var planner = planner(mock(HybridRetriever.class), mock(SemanticMemory.class));
+        var orchestrator = new RetrievalOrchestrator(planner, props);
+
+        assertThatThrownBy(() -> orchestrator.retrieve("test", RetrievalIntent.GENERAL, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("检索编排单源 topK必须大于 0");
+    }
+
+    @Test
+    void 默认topK配置非法时抛异常() {
+        var props = new MemoryRetrievalProperties();
+        props.getOrchestrator().setDefaultTopK(0);
+        var planner = planner(mock(HybridRetriever.class), mock(SemanticMemory.class));
+        var orchestrator = new RetrievalOrchestrator(planner, props);
+
+        assertThatThrownBy(() -> orchestrator.retrieve("test"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("检索编排默认 topK必须大于 0");
     }
 
     @Test
@@ -107,7 +173,7 @@ class RetrievalOrchestrator_单元测试 {
         var planner = new QueryPlanner(
                 new HybridRetrievalSource(hybrid),
                 new ExperienceRetrievalSource(sem),
-                new KnowledgeBaseSource(null, null));
+                emptyKnowledgeSource());
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
         var bundle = orchestrator.retrieve("test", RetrievalIntent.GENERAL, 2);
@@ -117,7 +183,7 @@ class RetrievalOrchestrator_单元测试 {
     }
 
     @Test
-    void adapter抛异常时不影响其他source() {
+    void adapter抛异常时直接暴露() {
         var hybrid = mock(HybridRetriever.class);
         when(hybrid.retrieve(anyString(), anyInt(), any()))
                 .thenThrow(new RuntimeException("hybrid 挂了"));
@@ -128,12 +194,25 @@ class RetrievalOrchestrator_单元测试 {
         var planner = new QueryPlanner(
                 new HybridRetrievalSource(hybrid),
                 new ExperienceRetrievalSource(sem),
-                new KnowledgeBaseSource(null, null));
+                emptyKnowledgeSource());
         var orchestrator = new RetrievalOrchestrator(planner, new MemoryRetrievalProperties());
 
-        var bundle = orchestrator.retrieve("Rust", RetrievalIntent.GENERAL, 10);
-        assertThat(bundle.items()).hasSize(1);
-        assertThat(bundle.sources()).containsExactly("experience");
+        assertThatThrownBy(() -> orchestrator.retrieve("Rust", RetrievalIntent.GENERAL, 10))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("hybrid 挂了");
+    }
+
+    private QueryPlanner planner(HybridRetriever hybrid, SemanticMemory semanticMemory) {
+        return new QueryPlanner(
+                new HybridRetrievalSource(hybrid),
+                new ExperienceRetrievalSource(semanticMemory),
+                emptyKnowledgeSource());
+    }
+
+    private KnowledgeBaseSource emptyKnowledgeSource() {
+        var kbRepository = mock(KnowledgeBaseRepository.class);
+        when(kbRepository.findAll()).thenReturn(List.of());
+        return new KnowledgeBaseSource(mock(DocumentRetriever.class), kbRepository);
     }
 
     private RetrievalResult retrievalResult(String id, String name, float score) {
@@ -147,6 +226,18 @@ class RetrievalOrchestrator_单元测试 {
         return new TemporalEntity(
                 id, EntityType.EXPERIENCE, name, desc,
                 Map.of(), 1, true, now, null, null,
-                0.8f, 0.6f, 0, null, now, now);
+                0.8f, 0.6f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

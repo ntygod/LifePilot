@@ -41,7 +41,9 @@ public class RetrievalOrchestrator {
     }
 
     public EvidenceBundle retrieve(String query) {
-        return retrieve(query, null, properties.getOrchestrator().getDefaultTopK());
+        return retrieve(query, null, positive(
+                properties.getOrchestrator().getDefaultTopK(),
+                "检索编排默认 topK"));
     }
 
     public EvidenceBundle retrieve(String query, @Nullable RetrievalIntent intent, int topK) {
@@ -51,19 +53,19 @@ public class RetrievalOrchestrator {
         long startNanos = System.nanoTime();
         RetrievalIntent effective = intent != null ? intent : RetrievalIntent.GENERAL;
         List<SourceAdapter> adapters = planner.plan(query, effective);
-        int perSourceTopK = Math.max(1, properties.getOrchestrator().getPerSourceTopK());
+        int perSourceTopK = positive(
+                properties.getOrchestrator().getPerSourceTopK(),
+                "检索编排单源 topK");
 
         List<EvidenceItem> all = new ArrayList<>();
         Set<String> sources = new LinkedHashSet<>();
         for (SourceAdapter adapter : adapters) {
-            try {
-                List<EvidenceItem> items = adapter.retrieve(query, perSourceTopK);
-                if (items == null || items.isEmpty()) continue;
-                all.addAll(items);
-                sources.add(adapter.name());
-            } catch (Exception e) {
-                log.debug("RetrievalOrchestrator: adapter={} 失败: {}", adapter.name(), e.getMessage());
-            }
+            List<EvidenceItem> items = Objects.requireNonNull(
+                    adapter.retrieve(query, perSourceTopK),
+                    adapter.name() + " source 返回结果不能为空");
+            if (items.isEmpty()) continue;
+            all.addAll(items);
+            sources.add(adapter.name());
         }
 
         // 按 score 降序，相同分按 confidence 降序
@@ -77,5 +79,12 @@ public class RetrievalOrchestrator {
                 query, effective, sources, top.size(), latency);
         return new EvidenceBundle(query, effective.name(), top, latency, sources,
                 Map.of("totalCollected", all.size()));
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
     }
 }

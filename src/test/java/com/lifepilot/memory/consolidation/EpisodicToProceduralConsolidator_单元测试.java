@@ -29,13 +29,14 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
  * EpisodicToProceduralConsolidator 单元测试 — 情景→程序巩固器。
  *
- * <p>覆盖正常巩固流程、空轨迹跳过、聚类为空、LLM 不可用降级、
+ * <p>覆盖正常巩固流程、空轨迹跳过、聚类为空、LLM/向量异常暴露、
  * 模板去重逻辑和统计结果返回等关键路径。</p>
  *
  * @author zsg
@@ -71,6 +72,8 @@ class EpisodicToProceduralConsolidator_单元测试 {
         consolidator = new EpisodicToProceduralConsolidator(
                 jdbcTemplate, proceduralMemory, generationRouter,
                 embeddingRouter, properties, promptRegistry);
+        lenient().when(jdbcTemplate.update(contains("memory_consolidation_log"),
+                any(Object[].class))).thenReturn(1);
     }
 
     // ========== 辅助方法 ==========
@@ -166,6 +169,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
     private String 构造模板提炼JSON(String name, String description, String triggerIntent) {
         return """
                 {
+                  "createTemplate": true,
                   "name": "%s",
                   "description": "%s",
                   "triggerIntent": "%s",
@@ -375,11 +379,11 @@ class EpisodicToProceduralConsolidator_单元测试 {
     }
 
     @Nested
-    @DisplayName("LLM 不可用时的降级行为")
+    @DisplayName("LLM 或向量服务不可用时直接暴露")
     class LLM不可用场景 {
 
         @Test
-        void 向量化阶段LLM不可用应返回零模板() {
+        void 向量化阶段LLM不可用应直接暴露() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(2);
@@ -389,18 +393,15 @@ class EpisodicToProceduralConsolidator_单元测试 {
             when(embeddingRouter.embed(anyString(), eq(EmbeddingUseCase.MEMORY), isNull(), isNull()))
                     .thenThrow(new LlmUnavailableException("无可用向量服务", "embedding", List.of()));
 
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then
-            assertThat(stats.templatesCreated()).isZero();
-            assertThat(stats.templatesUpdated()).isZero();
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(LlmUnavailableException.class)
+                    .hasMessageContaining("无可用向量服务");
             verifyNoInteractions(generationRouter);
             verifyNoInteractions(proceduralMemory);
         }
 
         @Test
-        void 模板提炼阶段LLM不可用应中止剩余提炼并返回已完成数() {
+        void 模板提炼阶段LLM不可用应直接暴露() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(2);
@@ -422,16 +423,14 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(GenerationCapability.CHAT), isNull()))
                     .thenThrow(new LlmUnavailableException("无可用生成服务", LlmScene.KNOWLEDGE_EXTRACTION, List.of()));
 
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then
-            assertThat(stats.templatesCreated()).isZero();
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(LlmUnavailableException.class)
+                    .hasMessageContaining("无可用生成服务");
             verifyNoInteractions(proceduralMemory);
         }
 
         @Test
-        void 单个聚类提炼失败不应阻塞后续聚类() {
+        void 单个聚类提炼失败应直接暴露() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(4);
@@ -451,25 +450,17 @@ class EpisodicToProceduralConsolidator_单元测试 {
             when(promptRegistry.render(eq("memory/procedural-extraction"), any()))
                     .thenReturn("测试提示词");
 
-            // 第一个聚类的 LLM 调用抛出普通异常（非 LlmUnavailableException），第二个成功
-            String jsonB = 构造模板提炼JSON("流程B", "描述B", "意图B");
+            // 第一个聚类的 LLM 调用抛出普通异常，后续聚类不再继续
             when(generationRouter.call(
                     eq(LlmScene.KNOWLEDGE_EXTRACTION),
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
-                    .thenThrow(new RuntimeException("JSON 解析失败"))
-                    .thenReturn(new LlmResponse(jsonB, null, null, List.of(), Map.of(), 100, 200, null, 0, "p", "m", 500, false));
+                    .thenThrow(new RuntimeException("JSON 解析失败"));
 
-            // 去重 — 无已有模板
-            when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
-                    .thenReturn(Collections.emptyList());
-
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then — 第一个失败，第二个成功
-            assertThat(stats.templatesCreated()).isEqualTo(1);
-            verify(proceduralMemory, times(1)).save(any(ProcedureTemplate.class));
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("JSON 解析失败");
+            verifyNoInteractions(proceduralMemory);
         }
     }
 
@@ -573,7 +564,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
         }
 
         @Test
-        void 去重时LLM不可用应保守地允许创建新模板() {
+        void 去重时LLM不可用应直接暴露() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(2);
@@ -597,12 +588,10 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(GenerationCapability.CHAT), isNull()))
                     .thenReturn(new LlmResponse(json, null, null, List.of(), Map.of(), 100, 200, null, 0, "p", "m", 500, false));
 
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then — 去重失败时保守跳过去重，允许创建
-            assertThat(stats.templatesCreated()).isEqualTo(1);
-            verify(proceduralMemory).save(any(ProcedureTemplate.class));
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(LlmUnavailableException.class)
+                    .hasMessageContaining("无可用向量服务");
+            verifyNoInteractions(proceduralMemory);
         }
     }
 
@@ -661,7 +650,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
     class LLM返回异常场景 {
 
         @Test
-        void LLM返回空名称的模板应被跳过() {
+        void LLM明确拒绝模板时应跳过保存() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(2);
@@ -675,12 +664,12 @@ class EpisodicToProceduralConsolidator_单元测试 {
             when(promptRegistry.render(eq("memory/procedural-extraction"), any()))
                     .thenReturn("测试提示词");
 
-            // LLM 返回空名称
             String json = """
                     {
-                      "name": "",
-                      "description": "描述",
-                      "triggerIntent": "意图",
+                      "createTemplate": false,
+                      "name": null,
+                      "description": null,
+                      "triggerIntent": null,
                       "steps": []
                     }
                     """;
@@ -697,10 +686,55 @@ class EpisodicToProceduralConsolidator_单元测试 {
             assertThat(stats.templatesCreated()).isZero();
             assertThat(stats.templatesUpdated()).isZero();
             verify(proceduralMemory, never()).save(any(ProcedureTemplate.class));
+            verify(jdbcTemplate, never()).query(contains("procedure_templates"), any(RowMapper.class));
         }
 
         @Test
-        void LLM返回null名称的模板应被跳过() {
+        void LLM返回空名称的模板应按契约失败() {
+            // given
+            模拟无巩固历史();
+            模拟符合条件的轨迹(2);
+            模拟工具调用序列("tool-a");
+
+            float[] baseVector = 生成向量(8, 1.0f);
+            when(embeddingRouter.embed(anyString(), eq(EmbeddingUseCase.MEMORY), isNull(), isNull()))
+                    .thenReturn(baseVector)
+                    .thenReturn(生成相似向量(baseVector));
+
+            when(promptRegistry.render(eq("memory/procedural-extraction"), any()))
+                    .thenReturn("测试提示词");
+
+            // LLM 返回空名称
+            String json = """
+                    {
+                      "createTemplate": true,
+                      "name": "",
+                      "description": "描述",
+                      "triggerIntent": "意图",
+                      "steps": [
+                        {
+                          "toolId": "tool-a",
+                          "action": "执行",
+                          "parameterTemplate": {},
+                          "description": "执行工具"
+                        }
+                      ]
+                    }
+                    """;
+            when(generationRouter.call(
+                    eq(LlmScene.KNOWLEDGE_EXTRACTION),
+                    anyString(), isNull(), isNull(), isNull(),
+                    eq(GenerationCapability.CHAT), isNull()))
+                    .thenReturn(new LlmResponse(json, null, null, List.of(), Map.of(), 100, 200, null, 0, "p", "m", 500, false));
+
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("程序巩固 LLM 响应缺少 name 字段");
+            verify(proceduralMemory, never()).save(any(ProcedureTemplate.class));
+        }
+
+        @Test
+        void LLM返回null名称的模板应按契约失败() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(2);
@@ -717,9 +751,17 @@ class EpisodicToProceduralConsolidator_单元测试 {
             // LLM 返回无 name 字段
             String json = """
                     {
+                      "createTemplate": true,
                       "description": "描述",
                       "triggerIntent": "意图",
-                      "steps": []
+                      "steps": [
+                        {
+                          "toolId": "tool-a",
+                          "action": "执行",
+                          "parameterTemplate": {},
+                          "description": "执行工具"
+                        }
+                      ]
                     }
                     """;
             when(generationRouter.call(
@@ -728,22 +770,20 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(GenerationCapability.CHAT), isNull()))
                     .thenReturn(new LlmResponse(json, null, null, List.of(), Map.of(), 100, 200, null, 0, "p", "m", 500, false));
 
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then
-            assertThat(stats.templatesCreated()).isZero();
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("程序巩固 LLM 响应缺少 name 字段");
             verify(proceduralMemory, never()).save(any(ProcedureTemplate.class));
         }
     }
 
     @Nested
-    @DisplayName("模板字段缺省值处理")
-    class 字段缺省值场景 {
+    @DisplayName("模板字段契约校验")
+    class 字段契约场景 {
 
         @SuppressWarnings("unchecked")
         @Test
-        void 模板步骤字段为null时应使用缺省值() {
+        void 模板字段为null时应按契约失败() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(2);
@@ -761,6 +801,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
             // 步骤中大部分字段为 null
             String json = """
                     {
+                      "createTemplate": true,
                       "name": "测试流程",
                       "description": null,
                       "triggerIntent": null,
@@ -779,34 +820,16 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     anyString(), isNull(), isNull(), isNull(),
                     eq(GenerationCapability.CHAT), isNull()))
                     .thenReturn(new LlmResponse(json, null, null, List.of(), Map.of(), 100, 200, null, 0, "p", "m", 500, false));
-            // triggerIntent 为 null → isDuplicateTemplate 直接返回 false，不查询 procedure_templates
 
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then
-            assertThat(stats.templatesCreated()).isEqualTo(1);
-
-            ArgumentCaptor<ProcedureTemplate> captor = ArgumentCaptor.forClass(ProcedureTemplate.class);
-            verify(proceduralMemory).save(captor.capture());
-            ProcedureTemplate saved = captor.getValue();
-
-            // description 为 null 时应为空字符串
-            assertThat(saved.description()).isEmpty();
-            // triggerIntent 为 null 时应回退为 name
-            assertThat(saved.triggerIntent()).isEqualTo("测试流程");
-            // 步骤字段 null 应使用空字符串/空 Map
-            assertThat(saved.steps()).hasSize(1);
-            var step = saved.steps().getFirst();
-            assertThat(step.toolId()).isEmpty();
-            assertThat(step.action()).isEmpty();
-            assertThat(step.parameterTemplate()).isEmpty();
-            assertThat(step.description()).isEmpty();
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("description 字段");
+            verify(proceduralMemory, never()).save(any(ProcedureTemplate.class));
         }
 
         @SuppressWarnings("unchecked")
         @Test
-        void 模板steps为null时应使用空列表() {
+        void 模板steps缺失时应按契约失败() {
             // given
             模拟无巩固历史();
             模拟符合条件的轨迹(2);
@@ -823,6 +846,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
 
             String json = """
                     {
+                      "createTemplate": true,
                       "name": "无步骤流程",
                       "description": "描述",
                       "triggerIntent": "意图"
@@ -834,17 +858,10 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq(GenerationCapability.CHAT), isNull()))
                     .thenReturn(new LlmResponse(json, null, null, List.of(), Map.of(), 100, 200, null, 0, "p", "m", 500, false));
 
-            when(jdbcTemplate.query(contains("procedure_templates"), any(RowMapper.class)))
-                    .thenReturn(Collections.emptyList());
-
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then
-            assertThat(stats.templatesCreated()).isEqualTo(1);
-            ArgumentCaptor<ProcedureTemplate> captor = ArgumentCaptor.forClass(ProcedureTemplate.class);
-            verify(proceduralMemory).save(captor.capture());
-            assertThat(captor.getValue().steps()).isEmpty();
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("steps 字段");
+            verify(proceduralMemory, never()).save(any(ProcedureTemplate.class));
         }
     }
 
@@ -894,7 +911,7 @@ class EpisodicToProceduralConsolidator_单元测试 {
         }
 
         @Test
-        void 巩固历史时间解析失败时应使用默认回溯窗口() {
+        void 巩固历史时间解析失败时应直接暴露() {
             // given — 返回无法解析的时间
             when(jdbcTemplate.queryForList(
                     contains("memory_consolidation_log"),
@@ -902,21 +919,14 @@ class EpisodicToProceduralConsolidator_单元测试 {
                     eq("EPISODIC_TO_PROCEDURAL")
             )).thenReturn(List.of("invalid-time-format"));
 
-            // 查询轨迹返回空
-            when(jdbcTemplate.query(contains("agent_traces"), any(RowMapper.class), any(), anyInt()))
-                    .thenReturn(Collections.emptyList());
-
-            // when
-            ConsolidationStats stats = consolidator.consolidate();
-
-            // then
-            assertThat(stats.conversationsAnalyzed()).isZero();
-            // 使用默认回溯窗口（任意 Instant 字符串，非 "invalid-time-format"）
-            verify(jdbcTemplate).query(
+            assertThatThrownBy(consolidator::consolidate)
+                    .isInstanceOf(java.time.format.DateTimeParseException.class)
+                    .hasMessageContaining("invalid-time-format");
+            verify(jdbcTemplate, never()).query(
                     contains("agent_traces"),
                     any(RowMapper.class),
-                    argThat(arg -> arg instanceof String s && !s.equals("invalid-time-format")),
-                    eq(2));
+                    any(),
+                    anyInt());
         }
     }
 

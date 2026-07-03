@@ -1,6 +1,7 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -52,9 +53,9 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *       收尾逻辑把画像转 SUPERSEDED，{@code lifecycleReason="regenerated"}。</li>
  * </ol>
  *
- * <p><b>降级说明</b>：
+ * <p><b>测试装配说明</b>：
  * <ol>
- *   <li>不走 @SpringBootTest（同 B16/B17 降级原因）；</li>
+ *   <li>不走 @SpringBootTest，测试只装配生命周期监听与队列处理所需依赖；</li>
  *   <li>{@link DerivedEntityListener} 是 {@code @TransactionalEventListener(AFTER_COMMIT)}，
  *       单测无事务管理器，改由 lambda publisher 同步转发
  *       {@link EntityLifecycleChanged} → {@code onLifecycleChanged}；</li>
@@ -107,8 +108,8 @@ class 派生画像源失效后重算_场景测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         queueRepo = new RegenerationQueueRepository(jdbcTemplate);
         Clock clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
@@ -150,7 +151,7 @@ class 派生画像源失效后重算_场景测试 {
 
     @Test
     @DisplayName("10% 源失效不触发；20% 达阈值触发 REGENERATION_NEEDED + regenerator 收尾 SUPERSEDED")
-    void 达到20阈值才触发画像重算_regenerator收尾降级() {
+    void 达到20阈值才触发画像重算_regenerator收尾SUPERSEDED() {
         // 1. 初始：画像 ACTIVE，队列空
         assertThat(读取LifecycleState(PROFILE_ID)).isEqualTo(LifecycleState.ACTIVE);
         assertThat(queueRepo.countPendingByDerived(PROFILE_ID)).isZero();
@@ -189,7 +190,7 @@ class 派生画像源失效后重算_场景测试 {
         // 5. 断言：consolidator.consolidate() 被调至少一次
         verify(profileConsolidator, atLeastOnce()).consolidate();
 
-        // 6. 断言：画像 SUPERSEDED（收尾降级，mock 没真正重写实体）+ reason=regenerated
+        // 6. 断言：画像 SUPERSEDED（mock 没真正重写实体时由 regenerator 收尾）+ reason=regenerated
         var after = semanticMemory.findById(PROFILE_ID).orElseThrow();
         assertThat(after.lifecycleState())
                 .as("mock consolidator 不重写实体，regenerator 收尾转 SUPERSEDED")

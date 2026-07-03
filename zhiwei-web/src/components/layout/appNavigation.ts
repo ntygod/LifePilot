@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bot,
   Brain,
+  Compass,
   Cpu,
   GitBranch,
   Key,
@@ -41,6 +42,7 @@ export const sidebarNavGroups: NavGroup[] = [
     label: '工作台',
     iconColor: 'text-violet-500/70',
     items: [
+      { label: '能力中心', path: '/capabilities', icon: Compass, matchPrefixes: ['/capabilities'] },
       { label: '智能体', path: '/agents', icon: Bot, matchPrefixes: ['/agents'] },
       { label: '技能', path: '/skills', icon: Puzzle, matchPrefixes: ['/skills'] },
       { label: '扩展市场', path: '/marketplace', icon: ShoppingBag, matchPrefixes: ['/marketplace'] },

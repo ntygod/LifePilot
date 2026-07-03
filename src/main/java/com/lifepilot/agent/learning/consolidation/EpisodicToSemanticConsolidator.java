@@ -52,10 +52,10 @@ public class EpisodicToSemanticConsolidator {
                                           SemanticMemory semanticMemory,
                                           JdbcTemplate jdbcTemplate,
                                           AgentLearningProperties properties) {
-        this.episodicMemory = episodicMemory;
-        this.semanticMemory = semanticMemory;
-        this.jdbcTemplate = jdbcTemplate;
-        this.properties = properties;
+        this.episodicMemory = Objects.requireNonNull(episodicMemory, "episodicMemory 不能为空");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
+        this.properties = Objects.requireNonNull(properties, "properties 不能为空");
         log.info("EpisodicToSemanticConsolidator 初始化完成（知识提取管线按需获取）");
     }
 
@@ -158,15 +158,9 @@ public class EpisodicToSemanticConsolidator {
 
             // 纯英文名称或短名称强制词边界匹配
             if (latin || forceWordBoundary) {
-                var pattern = patternCache.computeIfAbsent(name, n -> {
-                    try {
-                        return java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(n) + "\\b");
-                    } catch (Exception e) {
-                        log.warn("词边界正则编译失败，降级为子串匹配: name={}, error={}", n, e.getMessage());
-                        return null;
-                    }
-                });
-                int count = (pattern != null) ? countWithPattern(lowerText, pattern) : countSubstring(lowerText, name);
+                var pattern = patternCache.computeIfAbsent(name, n ->
+                        java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(n) + "\\b"));
+                int count = countWithPattern(lowerText, pattern);
                 if (count > 0) mentionCounts.put(entity.id(), count);
             } else {
                 int count = countSubstring(lowerText, name);
@@ -197,10 +191,16 @@ public class EpisodicToSemanticConsolidator {
                     // 仅更新分数，不创建新版本 — 两个原因：
                     // 1. 避免与 RealtimeExtractor 并发写入时的 UNIQUE(entity_id) WHERE is_current=1 约束冲突
                     // 2. importance boost 是统计调整，不涉及实体内容变更，不需要版本化
-                    // 代价：绕过了 SemanticMemory 的 writeCallback 和审计事件，importance 变化历史不可追溯
-                    SqliteBusyRetry.run(() -> jdbcTemplate.update(
-                            "UPDATE memory_entity_versions SET importance_score = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
-                            newImportance, Instant.now().toString(), entity.id()));
+                    // 代价：绕过了 SemanticMemory 的版本事件，importance 变化历史不可追溯
+                    SqliteBusyRetry.run(() -> {
+                        int updated = jdbcTemplate.update(
+                                "UPDATE memory_entity_versions SET importance_score = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
+                                newImportance, Instant.now().toString(), entity.id());
+                        if (updated != 1) {
+                            throw new IllegalStateException("语义巩固: 实体重要度更新失败, entityId="
+                                    + entity.id() + ", updated=" + updated);
+                        }
+                    });
                     boosted++;
                     log.debug("语义巩固: 实体重要度提升, name={}, oldScore={}, newScore={}, mentions={}",
                             entity.name(), entity.importanceScore(), newImportance, mentions);
@@ -225,8 +225,7 @@ public class EpisodicToSemanticConsolidator {
         try {
             return Optional.of(Instant.parse(results.getFirst()));
         } catch (Exception e) {
-            log.warn("语义巩固: 解析上次巩固时间失败, raw={}", results.getFirst());
-            return Optional.empty();
+            throw new IllegalStateException("语义巩固上次巩固时间解析失败: " + results.getFirst(), e);
         }
     }
 
@@ -234,7 +233,7 @@ public class EpisodicToSemanticConsolidator {
      * 记录巩固日志到 memory_consolidation_log 表。
      */
     private void logConsolidation(ConsolidationStats stats) {
-        jdbcTemplate.update(
+        int inserted = jdbcTemplate.update(
                 "INSERT INTO memory_consolidation_log (id, consolidation_type, conversations_analyzed, entities_found, entities_boosted, extractions_triggered, templates_created, templates_updated, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID().toString(),
                 stats.consolidationType(),
@@ -246,32 +245,17 @@ public class EpisodicToSemanticConsolidator {
                 stats.templatesUpdated(),
                 stats.elapsedMs(),
                 Instant.now().toString());
+        if (inserted != 1) {
+            throw new IllegalStateException("语义巩固日志写入失败, inserted=" + inserted);
+        }
     }
 
-    /**
-     * 统计 name 在 text 中出现的次数。
-     * 纯英文名称使用词边界正则匹配，中文/混合名称使用子串匹配。
-     * 正则编译失败时降级为子串匹配。
-     */
     /**
      * 判断名称是否为纯英文（仅含 ASCII 字母、数字、空格、连字符）。
      */
     private boolean isLatinName(String name) {
         return name.chars().allMatch(c -> (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
                 || (c >= '0' && c <= '9') || c == ' ' || c == '-');
-    }
-
-    /**
-     * 使用词边界正则匹配统计出现次数，编译失败时降级为子串匹配。
-     */
-    private int countWithWordBoundary(String text, String name) {
-        try {
-            var pattern = java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(name) + "\\b");
-            return countWithPattern(text, pattern);
-        } catch (Exception e) {
-            log.warn("词边界正则编译失败，降级为子串匹配: name={}, error={}", name, e.getMessage());
-            return countSubstring(text, name);
-        }
     }
 
     /**

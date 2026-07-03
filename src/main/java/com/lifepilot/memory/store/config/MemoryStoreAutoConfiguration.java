@@ -23,7 +23,6 @@ import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.store.workspace.WorkspaceCleanupJob;
 import com.lifepilot.memory.store.workspace.WorkspaceProperties;
 import com.lifepilot.prompt.PromptRegistry;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -96,7 +95,7 @@ public class MemoryStoreAutoConfiguration {
                     Files.createDirectories(parentDir);
                 }
             } catch (Exception e) {
-                log.warn("记忆模块: 创建向量数据库目录失败, url={}", url, e);
+                throw new IllegalStateException("记忆模块: 创建向量数据库目录失败, url=" + url, e);
             }
         }
         var config = new SQLiteConfig();
@@ -120,11 +119,11 @@ public class MemoryStoreAutoConfiguration {
     @ConditionalOnMissingBean
     public VectorSearcher vectorSearcher(
             @Qualifier("vectorJdbcTemplate") JdbcTemplate vectorJdbcTemplate,
-            @Nullable EmbeddingRouter embeddingRouter,
+            EmbeddingRouter embeddingRouter,
             MemoryStoreProperties properties) {
         boolean vecLoaded = isVecExtensionLoaded(vectorJdbcTemplate);
-        log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, embeddingRouterAvailable={}, dimensions={}",
-                vecLoaded, embeddingRouter != null ? "yes" : "no", properties.getEmbeddingDimensions());
+        log.info("记忆模块: 注册 VectorSearcher, vecExtensionLoaded={}, dimensions={}",
+                vecLoaded, properties.getEmbeddingDimensions());
         return new VectorSearcher(vectorJdbcTemplate, embeddingRouter,
                 vecLoaded, properties.getEmbeddingDimensions());
     }
@@ -138,7 +137,6 @@ public class MemoryStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(VectorSearcher.class)
     public ConflictDetector conflictDetector(
             JdbcTemplate jdbcTemplate,
             VectorSearcher vectorSearcher,
@@ -206,7 +204,6 @@ public class MemoryStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ConflictDetector.class, VectorSearcher.class})
     public SemanticMemory semanticMemory(
             JdbcTemplate jdbcTemplate,
             ConflictDetector conflictDetector,
@@ -214,12 +211,11 @@ public class MemoryStoreAutoConfiguration {
             VectorSearcher vectorSearcher,
             MemorySpaceRepository memorySpaceRepository,
             ApplicationEventPublisher eventPublisher,
-            @Nullable MemoryProjectionService projectionService) {
+            MemoryProjectionService projectionService) {
         log.info("记忆模块: 注册 SemanticMemory");
         var semanticMemory = new SemanticMemory(
-                jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository);
+                jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, memorySpaceRepository, projectionService);
         semanticMemory.setEventPublisher(eventPublisher);
-        semanticMemory.setProjectionService(projectionService);
         return semanticMemory;
     }
 
@@ -232,7 +228,6 @@ public class MemoryStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(MemoryProjectionService.class)
     public ProceduralMemory proceduralMemory(
             JdbcTemplate jdbcTemplate,
             MemoryProjectionService projectionService,
@@ -265,8 +260,7 @@ public class MemoryStoreAutoConfiguration {
             vectorJdbcTemplate.queryForObject("SELECT vec_version()", String.class);
             return true;
         } catch (Exception e) {
-            log.info("记忆模块: 未加载 sqlite-vec 扩展，回退到 JVM 向量检索");
-            return false;
+            throw new IllegalStateException("记忆模块: sqlite-vec 扩展未加载，无法启用向量检索", e);
         }
     }
 }

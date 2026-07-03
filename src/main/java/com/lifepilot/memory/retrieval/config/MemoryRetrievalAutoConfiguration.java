@@ -3,6 +3,8 @@ package com.lifepilot.memory.retrieval.config;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.retrieval.FtsSearcher;
@@ -24,7 +26,6 @@ import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -54,14 +55,11 @@ public class MemoryRetrievalAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public QueryRewriter queryRewriter(@Nullable GenerationRouter generationRouter,
-                                       @Nullable EmbeddingRouter embeddingRouter,
+    public QueryRewriter queryRewriter(GenerationRouter generationRouter,
+                                       EmbeddingRouter embeddingRouter,
                                        MemoryRetrievalProperties properties,
                                        PromptRegistry promptRegistry) {
-        log.info("记忆模块: 注册 QueryRewriter, mode={}, generationRouterAvailable={}, embeddingRouterAvailable={}",
-                properties.getQueryRewriteMode(),
-                generationRouter != null ? "yes" : "no",
-                embeddingRouter != null ? "yes" : "no");
+        log.info("记忆模块: 注册 QueryRewriter, mode={}", properties.getQueryRewriteMode());
         return new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
     }
 
@@ -88,14 +86,14 @@ public class MemoryRetrievalAutoConfiguration {
             SemanticMemory semanticMemory,
             EpisodicMemory episodicMemory,
             @Nullable IntentMatcher intentMatcher,
-            @Nullable RerankRouter rerankRouter,
+            RerankRouter rerankRouter,
             JdbcTemplate jdbcTemplate,
             MemoryRetrievalProperties properties,
             MemoryProvenanceRepository provenanceRepository) {
         log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}, provenance={}",
                 intentMatcher != null ? "enabled" : "disabled",
-                rerankRouter != null ? "enabled" : "disabled",
-                provenanceRepository != null ? "enabled" : "disabled");
+                "enabled",
+                "enabled");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter,
                 provenanceRepository);
@@ -105,7 +103,9 @@ public class MemoryRetrievalAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+            prefix = "lifepilot.memory.retrieval.orchestrator",
+            name = "enabled",
+            havingValue = "true")
     public RetrievalOrchestrator retrievalOrchestrator(
             QueryPlanner planner,
             MemoryRetrievalProperties properties) {
@@ -115,39 +115,47 @@ public class MemoryRetrievalAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+            prefix = "lifepilot.memory.retrieval.orchestrator",
+            name = "enabled",
+            havingValue = "true")
     public QueryPlanner retrievalQueryPlanner(
-            @Nullable HybridRetrievalSource hybridSource,
-            @Nullable ExperienceRetrievalSource experienceSource,
-            @Nullable KnowledgeBaseSource knowledgeBaseSource) {
+            HybridRetrievalSource hybridSource,
+            ExperienceRetrievalSource experienceSource,
+            KnowledgeBaseSource knowledgeBaseSource) {
         return new QueryPlanner(hybridSource, experienceSource, knowledgeBaseSource);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+            prefix = "lifepilot.memory.retrieval.orchestrator",
+            name = "enabled",
+            havingValue = "true")
     public HybridRetrievalSource hybridRetrievalSource(
-            @Nullable HybridRetriever hybridRetriever) {
+            HybridRetriever hybridRetriever) {
         return new HybridRetrievalSource(hybridRetriever);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+            prefix = "lifepilot.memory.retrieval.orchestrator",
+            name = "enabled",
+            havingValue = "true")
     public ExperienceRetrievalSource experienceRetrievalSource(
-            @Nullable SemanticMemory semanticMemory) {
+            SemanticMemory semanticMemory) {
         return new ExperienceRetrievalSource(semanticMemory);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            name = "lifepilot.memory.retrieval-orchestrator.enabled", havingValue = "true")
+            prefix = "lifepilot.memory.retrieval.orchestrator",
+            name = "enabled",
+            havingValue = "true")
     public KnowledgeBaseSource knowledgeBaseSource(
-            @Nullable com.lifepilot.knowledge.retrieve.DocumentRetriever documentRetriever,
-            @Nullable com.lifepilot.knowledge.repository.KnowledgeBaseRepository kbRepository) {
+            DocumentRetriever documentRetriever,
+            KnowledgeBaseRepository kbRepository) {
         return new KnowledgeBaseSource(documentRetriever, kbRepository);
     }
 }

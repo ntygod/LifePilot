@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consolidation;
 
 import ch.qos.logback.classic.Level;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
@@ -147,9 +148,9 @@ class ExperienceMerge_集成测试 {
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, generationRouter, 0.92f, promptRegistry);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionService projectionService =
-                MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+                MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         experienceMerger = new ExperienceMerger(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, new AgentLearningProperties());
@@ -230,7 +231,7 @@ class ExperienceMerge_集成测试 {
                 "SELECT status FROM memory_entities WHERE id = ?", String.class, entityId);
     }
 
-    /** 构造一条 EXPERIENCE 实体（基础构造器，properties 含 success 标志）。 */
+    /** 构造一条 EXPERIENCE 实体，properties 含 success 标志。 */
     private TemporalEntity 构造经验实体(String id, String name, String description,
                                    float importance, boolean success) {
         var now = Instant.now();
@@ -239,7 +240,10 @@ class ExperienceMerge_集成测试 {
                 EntityType.EXPERIENCE,
                 name,
                 description,
-                Map.of("success", success),
+                Map.of(
+                        "lessons", List.of("先确认目标城市"),
+                        "toolsUsed", List.of("weather"),
+                        "success", success),
                 1,
                 true,
                 now,
@@ -250,6 +254,18 @@ class ExperienceMerge_集成测试 {
                 0,
                 null,
                 now,
-                now);
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

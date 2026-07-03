@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consolidation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.ExperiencePromoter;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -113,9 +114,9 @@ class ExperiencePromotion_集成测试 {
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
         MemoryProjectionService projectionService =
-                MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+                MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService, new ObjectMapper());
         experiencePromoter = new ExperiencePromoter(semanticMemory, proceduralMemory, new AgentLearningProperties());
         intentMatcher = new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, new MemoryStoreProperties());
@@ -211,7 +212,7 @@ class ExperiencePromotion_集成测试 {
 
     // ========== helpers ==========
 
-    /** 构造一条 EXPERIENCE 实体（基础构造器，accessCount 由 upsert 重置为 0 后另行递增）。 */
+    /** 构造一条 EXPERIENCE 实体，accessCount 由 upsert 重置为 0 后另行递增。 */
     private TemporalEntity 构造经验实体(String id, String name, String description, float importance) {
         var now = Instant.now();
         return new TemporalEntity(
@@ -230,6 +231,18 @@ class ExperiencePromotion_集成测试 {
                 0,
                 null,
                 now,
-                now);
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

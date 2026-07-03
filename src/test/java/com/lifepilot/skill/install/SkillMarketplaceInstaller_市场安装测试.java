@@ -10,6 +10,8 @@ import com.lifepilot.marketplace.model.ExtensionType;
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -57,12 +59,15 @@ class SkillMarketplaceInstaller_市场安装测试 {
             description: 当需要测试市场安装时使用。关键词 market
             version: 1.0.0
             ---
-            ## 适用场景
+            ## 触发判断
             - market test
-            ## 不适用场景
-            - not-market
-            ## 工作流
+            - 不要触发：not-market
+            ## 决策路径
             1. do
+            ## 输出标准
+            - text
+            ## 失败策略
+            - fail
             """;
 
     @TempDir
@@ -78,8 +83,8 @@ class SkillMarketplaceInstaller_市场安装测试 {
         repository = mock(SkillInstallationRepository.class);
         installer = new SkillInstaller(
                 new MarkdownSkillParser(),
-                new SkillDescriptionValidator(),
-                new SkillBodyValidator(),
+                new SkillValidator(new SkillDescriptionValidator(), new SkillBodyValidator(),
+                        new DynamicToolRegistry(event -> {})),
                 repository);
         indexManager = mock(IndexManager.class);
         zhiweiPaths = mock(ZhiweiPaths.class);

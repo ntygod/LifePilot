@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
@@ -49,8 +50,9 @@ class SemanticMemory_归档级联清向量测试 {
                 jdbcTemplate,
                 conflictDetector,
                 new VersionMerger(),
-                vectorSearcher);
-        semanticMemory.setProjectionService(projectionService);
+                vectorSearcher,
+                SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate),
+                projectionService);
     }
 
     @Test
@@ -63,17 +65,16 @@ class SemanticMemory_归档级联清向量测试 {
     }
 
     @Test
-    void 未装配投影服务时应拒绝归档以避免绕过outbox() {
-        var memoryWithoutProjection = new SemanticMemory(
+    void 未装配投影服务时应拒绝构造以避免绕过outbox() {
+        assertThatThrownBy(() -> new SemanticMemory(
                 jdbcTemplate,
                 conflictDetector,
                 new VersionMerger(),
-                vectorSearcher);
-        var entity = 构造实体("entity-x", EntityType.GOAL, "X");
-
-        assertThatThrownBy(() -> memoryWithoutProjection.archive(entity, ChangeSource.UI_EDIT))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("MemoryProjectionService 未装配");
+                vectorSearcher,
+                SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate),
+                null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("MemoryProjectionService 不能为空");
     }
 
     private TemporalEntity 构造实体(String id, EntityType type, String name) {
@@ -81,6 +82,18 @@ class SemanticMemory_归档级联清向量测试 {
         return new TemporalEntity(
                 id, type, name, "测试描述", Map.of(),
                 1, true, now, null, "session-1",
-                0.8f, 0.5f, 0, null, now, now);
+                0.8f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consumption.attention;
 
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
@@ -56,7 +57,7 @@ class GraphReasoner_关系质量门_集成测试 {
         jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("PRAGMA foreign_keys = ON");
         semanticMemory = new SemanticMemory(jdbcTemplate, mock(ConflictDetector.class),
-                new VersionMerger(), mock(VectorSearcher.class));
+                new VersionMerger(), mock(VectorSearcher.class), SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), SemanticMemoryTestSupport.projectionService());
     }
 
     @AfterEach
@@ -108,32 +109,31 @@ class GraphReasoner_关系质量门_集成测试 {
     }
 
     @Test
-    void 历史NULL可信关系恒放行() {
+    void 缺失可信分关系不会通过质量门() {
         插入实体("张三", EntityType.PERSON);
         插入实体("阿里", EntityType.ORGANIZATION);
         插入实体("杭州", EntityType.PLACE);
-        // 阿里->杭州 用便捷构造器（trust_score 默认写 0），手动改为 NULL 模拟历史数据
         semanticMemory.addRelation(
-                关系("张三", "阿里", "就职于")
-                        .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f),
+                关系("张三", "阿里", "就职于"),
                 relationContext());
         var historical = 关系("阿里", "杭州", "位于");
         semanticMemory.addRelation(historical, relationContext());
         jdbcTemplate.update("UPDATE memory_relations SET trust_score = NULL WHERE id = ?", historical.id());
 
-        // 阈值 0.5：历史 NULL 边仍放行 → 可达杭州
         var gated = new GraphReasoner(jdbcTemplate, 25, 0.5f);
         assertThat(gated.connectionOpportunities("张三", null))
-                .anyMatch(o -> o.toId().equals("杭州"));
+                .noneMatch(o -> o.toId().equals("杭州"));
     }
 
     private TemporalRelation 关系(String src, String tgt, String type) {
         var now = Instant.parse(NOW);
-        return new TemporalRelation(UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, now, null, "test", now);
+        return new TemporalRelation(
+                UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, now, null, "test", now,
+                MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f);
     }
 
     private MemoryWriteContext relationContext() {
-        return MemoryWriteContext.unknown("test-relation");
+        return MemoryWriteContext.consolidation("test-relation");
     }
 
     private void 插入实体(String id, EntityType type) {

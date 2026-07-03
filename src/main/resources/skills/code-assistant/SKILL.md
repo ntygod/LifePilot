@@ -1,7 +1,7 @@
 ---
 name: code-assistant
 description: 当用户要通过外部编码 CLI（Claude Code / Codex / Gemini）完成多文件开发、修 bug、跨模块重构、PR 审查、并行任务分发等需要后台 Agent 执行的复杂编码任务时使用。
-version: 2.9.0
+version: 2.9.2
 metadata:
   zhiwei:
     tags:
@@ -13,20 +13,21 @@ metadata:
       - code-review
       - orchestration
     suggested_tools:
-      - shell_exec
-      - shell_process
+      - shell.exec
+      - shell.process
       - code
-      - file_read
-      - file_write
-      - file_manage
+      - file.read
+      - file.write
+      - file.manage
+    outputs:
+      - text
+      - file
 ---
-
 # 编码代理指南
 
-知微作为调度层启动外部编码 CLI（Claude Code / Codex / Gemini）作为子 Agent 后台执行,自己只负责编排、监控、汇总。
+把复杂编码任务分流给外部编码 CLI 时使用。知微负责判断是否需要子 Agent、隔离执行边界、监控过程、汇总结果；不要把普通读写代码任务也包装成后台编排。
 
-## 适用场景
-
+## 触发判断
 - 多文件开发、跨模块重构
 - PR 审查（实现与审查用不同 CLI 互相纠偏）
 - 并行任务分发（多 issue / 多模块 / 多方案探索）
@@ -34,32 +35,45 @@ metadata:
 - 反馈环迭代（审查→修→再审查）
 - 中断恢复（"上次跑到哪了"）
 
-## 不适用场景
+不要触发：
 
-- 单文件小改 → `file_write`
-- 仅读代码 → `file_read`
-- 跑脚本 → `shell_exec` / `code`
+- 单文件小改 → `file.write`
+- 仅读代码 → `file.read`
+- 跑脚本 → `shell.exec` / `code`
 
-## 工作流（按用户表达分流）
+## 决策路径
 
 | 用户表达 | 路径 |
 |---|---|
-| 单任务（一句话给一个目标） | 启动 → 监控 → 汇总 |
-| 实现 + 审查 / 设计 + 实现 | 串行编排,前序产物喂后序 |
-| 多 issue / 多方案对比 | 并行编排,各自独立 worktree |
-| 审查→修→再审查 | 反馈环,硬上限 ≤2 轮 |
-| "上次跑到哪了" / "还在跑吗" | `shell_process(action="list")` 列既有 sessionId,定位再决定看 / 杀 |
+| 单任务且跨多文件 | 启动一个子 Agent，监控到完成后汇总改动和验证 |
+| 实现 + 审查 / 设计 + 实现 | 串行编排，后序只继承必要结论和工作区 |
+| 多 issue / 多方案对比 | 并行编排，但每条分支必须独立 worktree |
+| 审查→修→再审查 | 反馈环最多 2 轮，超限停下说明卡点 |
+| "上次跑到哪了" / "还在跑吗" | 先查既有后台进程，再决定继续看输出或终止 |
 
-## 各路径决策点（本 Skill 独有）
+决策要点：
 
-- **CLI 选择**:用户没指定 → 优先和当前最熟悉的;审查阶段建议换不同 CLI 减少同模型盲区
-- **隔离边界**:破坏性任务必须 worktree 或临时目录,不要在用户主工作目录跑;并行任务改同一文件必然冲突,必须各自独立 worktree
-- **bypassPermissions / --full-auto**:仅在 worktree + 无未提交改动 + 用户明确授权 三条件齐全时才允许
-- **API key 注入**:只走 `env` 参数,绝不写文件;kill / output 响应不要回显 env 内容
-- **反馈环上限**:固定 ≤2 轮,超限停下问用户(模型在死循环里改 bug 越改越多见)
-- **上下文交接**:Agent 间共享 worktree 时让后序自己读文件,不要把上一个 Agent 的完整 stream-json 塞进下一个 prompt
+- **先判任务粒度**：单文件小改、仅读代码、跑一次脚本，不加载本 Skill，直接用对应工具。
+- **先判隔离边界**：会改多文件、可能破坏工作区、或并行探索时，必须 worktree 或临时目录。
+- **先判授权强度**：自动接受修改只在隔离目录、无未提交冲突、用户明确授权时使用。
+- **先判 CLI 角色**：实现和审查尽量用不同 CLI 或不同上下文，减少同一路径盲区。
+- **交接要短**：给后序 Agent 目标、约束、路径和关键结论，不塞完整日志。
+- **降级策略**：外部 CLI 不可用时，改为本 Agent 小步实现；后台进程卡住时先读输出，连续无进展再终止重启。
+
+
+## 输出标准
+
+- 输出任务拆分、外部 Agent 交接摘要、修改文件和验证结果。
+- 代码变更要给出关键文件路径、测试命令和失败/未跑原因。
+- 多 Agent 并行时汇总每个子任务的状态、冲突和需要人工决策的点。
+
+
+## 失败策略
+
+- 外部 CLI 不可用时降级为本地分析和明确的执行计划。
+- 需求过宽时先切分最小可交付范围。
+- 发现未提交用户改动或冲突时暂停相关文件操作并说明风险。
 
 ## 详细参考
-
 - 启动 / 监控 / 编排完整流程与命令模板:`{skill_dir}/references/agent-lifecycle.md`
 - CLI 速查、汇总模板、错误处理表:`{skill_dir}/references/orchestration.md`

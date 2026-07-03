@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -34,7 +35,7 @@ public class FeedbackLedgerRepository {
     private final JdbcTemplate jdbc;
 
     public FeedbackLedgerRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc 不能为空");
     }
 
     /**
@@ -51,20 +52,27 @@ public class FeedbackLedgerRepository {
                        double cumulativeScore,
                        WeightSource source,
                        Instant when) {
-        jdbc.update(
+        String cleanEntityId = requireCleanText(entityId, "entityId");
+        Objects.requireNonNull(source, "source 不能为空");
+        Objects.requireNonNull(when, "when 不能为空");
+        int rows = jdbc.update(
                 """
                 INSERT INTO memory_feedback_ledger
                     (id, entity_id, source, delta, cumulative_score, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 UUID.randomUUID().toString(),
-                entityId,
+                cleanEntityId,
                 source.name(),
                 delta,
                 cumulativeScore,
                 when.toString());
+        if (rows != 1) {
+            throw new IllegalStateException(
+                    "反馈账本入账影响行数必须为 1, entityId=" + cleanEntityId + ", rows=" + rows);
+        }
         log.debug("反馈账本: 入账 entity={}, delta={}, cumulative={}, source={}",
-                entityId, delta, cumulativeScore, source);
+                cleanEntityId, delta, cumulativeScore, source);
     }
 
     /**
@@ -74,12 +82,26 @@ public class FeedbackLedgerRepository {
      * @return 负向记录行数
      */
     public int countNegative(String entityId) {
+        String cleanEntityId = requireCleanText(entityId, "entityId");
         Integer n = jdbc.queryForObject(
                 """
                 SELECT COUNT(*) FROM memory_feedback_ledger
                  WHERE entity_id = ? AND delta < 0
                 """,
-                Integer.class, entityId);
-        return n == null ? 0 : n;
+                Integer.class, cleanEntityId);
+        if (n == null) {
+            throw new IllegalStateException("负反馈计数查询结果不能为空: entityId=" + cleanEntityId);
+        }
+        return n;
+    }
+
+    private static String requireCleanText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " 不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(field + " 不能包含首尾空白: " + value);
+        }
+        return value;
     }
 }

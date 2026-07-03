@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -60,7 +61,19 @@ class PreferenceConsolidator_单元测试 {
         return new TemporalEntity(
                 "entity-" + name, EntityType.PREFERENCE, name, description,
                 Map.of(), 1, true, now, null, null,
-                0.9f, 0.5f, 0, null, now, now)
+                0.9f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now)
                 .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT,
                         0.9f, 1, now);
     }
@@ -71,7 +84,19 @@ class PreferenceConsolidator_单元测试 {
         return new TemporalEntity(
                 "entity-" + name, EntityType.PREFERENCE, name, null,
                 Map.of(), 1, true, now, null, null,
-                0.9f, 0.5f, 0, null, now, now)
+                0.9f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now)
                 .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT,
                         0.9f, 1, now);
     }
@@ -332,13 +357,13 @@ class PreferenceConsolidator_单元测试 {
         }
     }
 
-    // ==================== 异常容错 ====================
+    // ==================== 失败暴露 ====================
 
     @Nested
-    class 异常容错 {
+    class 失败暴露 {
 
         @Test
-        void 单条新建失败不影响后续处理() {
+        void 新建失败时应直接暴露且不继续后续处理() {
             // given
             var entity1 = 偏好实体("失败偏好", "会抛异常");
             var entity2 = 偏好实体("成功偏好", "正常处理");
@@ -353,16 +378,14 @@ class PreferenceConsolidator_单元测试 {
                     .doNothing()
                     .when(proceduralMemory).savePreference(any());
 
-            // when
-            var stats = consolidator.consolidate();
-
-            // then — 第一条因异常未计入 created，第二条成功
-            assertThat(stats.created()).isEqualTo(1);
-            verify(proceduralMemory, times(2)).savePreference(any());
+            assertThatThrownBy(() -> consolidator.consolidate())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("数据库写入失败");
+            verify(proceduralMemory, times(1)).savePreference(any());
         }
 
         @Test
-        void 单条强化失败不影响后续处理() {
+        void 强化失败时应直接暴露且不继续后续处理() {
             // given
             var entity1 = 偏好实体("强化失败", "描述");
             var entity2 = 偏好实体("强化成功", "描述");
@@ -377,17 +400,15 @@ class PreferenceConsolidator_单元测试 {
             doThrow(new RuntimeException("强化操作失败"))
                     .when(proceduralMemory).reinforcePreference(eq(rule1.ruleId()));
 
-            // when
-            var stats = consolidator.consolidate();
-
-            // then — 第一条因异常未计入 reinforced
-            assertThat(stats.reinforced()).isEqualTo(1);
+            assertThatThrownBy(() -> consolidator.consolidate())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("强化操作失败");
             verify(proceduralMemory).reinforcePreference(rule1.ruleId());
-            verify(proceduralMemory).reinforcePreference(rule2.ruleId());
+            verify(proceduralMemory, never()).reinforcePreference(rule2.ruleId());
         }
 
         @Test
-        void 单条删除失败不影响后续删除() {
+        void 删除失败时应直接暴露且不继续后续处理() {
             // given
             var orphan1 = 已有规则("删除失败规则");
             var orphan2 = 已有规则("删除成功规则");
@@ -400,13 +421,11 @@ class PreferenceConsolidator_单元测试 {
             doThrow(new RuntimeException("删除失败"))
                     .when(proceduralMemory).deletePreference(eq(orphan1.ruleId()));
 
-            // when
-            var stats = consolidator.consolidate();
-
-            // then — 第一条因异常未计入 deleted
-            assertThat(stats.deleted()).isEqualTo(1);
+            assertThatThrownBy(() -> consolidator.consolidate())
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("删除失败");
             verify(proceduralMemory).deletePreference(orphan1.ruleId());
-            verify(proceduralMemory).deletePreference(orphan2.ruleId());
+            verify(proceduralMemory, never()).deletePreference(orphan2.ruleId());
         }
     }
 

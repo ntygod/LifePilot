@@ -44,9 +44,9 @@ class AssociationCandidateStore_单元测试 {
         var store = new AssociationCandidateStore(tempDir);
         var today = LocalDate.now();
         store.save(today, List.of(
-                new AssociationCandidate("a", "b", AssociationType.CAUSES, 0.9f, null, "seed", null)));
+                new AssociationCandidate("a", "b", AssociationType.CAUSES, 0.9f, null, "seed", Instant.EPOCH)));
         store.save(today, List.of(
-                new AssociationCandidate("c", "d", AssociationType.RELATED_TO, 0.7f, null, "seed", null)));
+                new AssociationCandidate("c", "d", AssociationType.RELATED_TO, 0.7f, null, "seed", Instant.EPOCH)));
 
         assertThat(store.load(today)).hasSize(2);
     }
@@ -83,17 +83,23 @@ class AssociationCandidateStore_单元测试 {
         Files.writeString(file, "{不是合法JSON");
 
         assertThatThrownBy(() -> store.save(date, List.of(
-                new AssociationCandidate("a", "b", AssociationType.CAUSES, 0.9f, null, "seed", null))))
+                new AssociationCandidate("a", "b", AssociationType.CAUSES, 0.9f, null, "seed", Instant.EPOCH))))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("REM 联想: 读取失败 date=2026-06-23");
         assertThat(Files.readString(file)).isEqualTo("{不是合法JSON");
     }
 
     @Test
-    void null参数返回空或静默(@TempDir Path tempDir) {
+    void null参数直接抛异常(@TempDir Path tempDir) {
         var store = new AssociationCandidateStore(tempDir);
-        assertThat(store.load(null)).isEmpty();
-        store.save(null, null);
-        store.save(LocalDate.now(), null);
+        assertThatThrownBy(() -> store.load(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("date 不能为空");
+        assertThatThrownBy(() -> store.save(null, List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("date 不能为空");
+        assertThatThrownBy(() -> store.save(LocalDate.now(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("candidates 不能为空");
     }
 }

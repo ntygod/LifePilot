@@ -9,6 +9,9 @@ import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
@@ -32,7 +35,7 @@ import java.util.*;
  * 知识提取管线 — 从文档分块中提取实体和关系写入 L3 语义记忆。
  *
  * <p>使用 LLM 结构化输出提取实体和关系，通过 {@link SemanticMemory} 写入知识图谱。
- * LLM 不可用时优雅降级，返回空结果。
+ * LLM 不可用时停止当前提取批次并返回警告。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -42,42 +45,40 @@ public class KnowledgeExtractionPipeline {
     private static final Logger log = LoggerFactory.getLogger(KnowledgeExtractionPipeline.class);
     private static final String SCENE = LlmScene.KNOWLEDGE_EXTRACTION;
 
-    private final @Nullable GenerationRouter generationRouter;
-    private final @Nullable SemanticMemory semanticMemory;
+    private final GenerationRouter generationRouter;
+    private final SemanticMemory semanticMemory;
     private final KnowledgeBaseProperties.Extraction config;
     private final PromptRegistry promptRegistry;
-    private final @Nullable MemorySpaceRepository memorySpaceRepository;
+    private final MemorySpaceRepository memorySpaceRepository;
 
     /**
      * 构造知识提取管线。
      *
-     * @param generationRouter      LLM 路由器（可为 null，运行时动态配置）
-     * @param semanticMemory        语义记忆（可为 null，依赖 EmbeddingRouter）
+     * @param generationRouter      LLM 路由器
+     * @param semanticMemory        语义记忆
      * @param config                提取配置
      * @param promptRegistry        提示词模板注册表
-     * @param memorySpaceRepository 记忆空间仓储（可为 null）
+     * @param memorySpaceRepository 记忆空间仓储
      */
-    public KnowledgeExtractionPipeline(@Nullable GenerationRouter generationRouter,
-                                        @Nullable SemanticMemory semanticMemory,
+    public KnowledgeExtractionPipeline(GenerationRouter generationRouter,
+                                        SemanticMemory semanticMemory,
                                         KnowledgeBaseProperties.Extraction config,
                                         PromptRegistry promptRegistry,
-                                        @Nullable MemorySpaceRepository memorySpaceRepository) {
-        this.generationRouter = generationRouter;
-        this.semanticMemory = semanticMemory;
-        this.config = config;
-        this.promptRegistry = promptRegistry;
-        this.memorySpaceRepository = memorySpaceRepository;
-        log.info("KnowledgeExtractionPipeline 初始化完成: enabled={}, batchSize={}, generationRouter={}, semanticMemory={}",
-                config.enabled(), config.batchSize(),
-                generationRouter != null ? "已配置" : "未配置",
-                semanticMemory != null ? "已配置" : "未配置");
+                                        MemorySpaceRepository memorySpaceRepository) {
+        this.generationRouter = Objects.requireNonNull(generationRouter, "GenerationRouter 不能为空");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "SemanticMemory 不能为空");
+        this.config = Objects.requireNonNull(config, "知识提取配置不能为空");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "PromptRegistry 不能为空");
+        this.memorySpaceRepository = Objects.requireNonNull(memorySpaceRepository, "MemorySpaceRepository 不能为空");
+        log.info("KnowledgeExtractionPipeline 初始化完成: enabled={}, batchSize={}",
+                config.enabled(), config.batchSize());
     }
 
     /**
      * 从分块中提取实体和关系。
      *
      * <p>按 batchSize 分批处理分块，每批调用 LLM 结构化输出提取实体和关系，
-     * 通过 SemanticMemory 写入知识图谱。LLM 不可用时返回空结果。
+     * 通过 SemanticMemory 写入知识图谱。LLM 不可用时返回警告。
      *
      * @param chunks     文档分块列表
      * @param doc 文档
@@ -86,10 +87,6 @@ public class KnowledgeExtractionPipeline {
     public ExtractionResult extract(Document doc, List<DocumentChunk> chunks) {
         if (!config.enabled() || chunks.isEmpty()) {
             return new ExtractionResult(0, 0, List.of());
-        }
-        if (generationRouter == null || semanticMemory == null || memorySpaceRepository == null) {
-            log.warn("GenerationRouter/SemanticMemory/MemorySpaceRepository 不可用，跳过知识提取: reason=依赖未配置");
-            return new ExtractionResult(0, 0, List.of("依赖组件未配置，跳过知识提取"));
         }
         MemoryWriteContext writeContext = resolveWriteContext(doc);
 
@@ -110,9 +107,6 @@ public class KnowledgeExtractionPipeline {
                 log.warn("LLM 不可用，跳过剩余知识提取: {}", e.getMessage());
                 warnings.add("LLM 不可用，跳过知识提取");
                 break;
-            } catch (Exception e) {
-                log.warn("知识提取批次失败，跳过: error={}", e.getMessage());
-                warnings.add("批次提取失败: " + e.getMessage());
             }
         }
 
@@ -146,43 +140,35 @@ public class KnowledgeExtractionPipeline {
         var entityNameToId = new HashMap<String, String>();
         if (response.entities() != null) {
             for (var entityInfo : response.entities()) {
-                try {
-                    var entity = toTemporalEntity(entityInfo);
-                    if (isUserAttributeType(entity.type())) {
-                        log.debug("知识提取: 跳过知识库文档中的用户属性实体, name={}, type={}", entity.name(), entity.type());
-                        continue;
-                    }
-                    var entityWriteContext = withChunkEvidence(doc, writeContext,
-                            resolveSourceChunkId(entityInfo.sourceChunkId(), batch));
-                    var persisted = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(
-                            entity, doc.id(), entityWriteContext));
-                    entityNameToId.put(entityInfo.name(), persisted.id());
-                    entityCount++;
-                } catch (Exception e) {
-                    log.warn("实体写入失败: name={}, error={}", entityInfo.name(), e.getMessage());
+                var entity = toTemporalEntity(entityInfo);
+                if (isUserAttributeType(entity.type())) {
+                    log.debug("知识提取: 跳过知识库文档中的用户属性实体, name={}, type={}", entity.name(), entity.type());
+                    continue;
                 }
+                var entityWriteContext = withChunkEvidence(doc, writeContext,
+                        resolveSourceChunkId(entityInfo.sourceChunkId(), batch));
+                var persisted = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(
+                        entity, doc.id(), entityWriteContext));
+                entityNameToId.put(entityInfo.name(), persisted.id());
+                entityCount++;
             }
         }
 
         // 写入关系，将实体名称解析为实际 ID
         if (response.relations() != null) {
             for (var relationInfo : response.relations()) {
-                try {
-                    var sourceId = resolveEntityId(relationInfo.sourceEntity(), entityNameToId, writeContext);
-                    var targetId = resolveEntityId(relationInfo.targetEntity(), entityNameToId, writeContext);
-                    if (sourceId == null || targetId == null) {
-                        log.debug("关系跳过: 无法解析实体ID, source={}, target={}",
-                                relationInfo.sourceEntity(), relationInfo.targetEntity());
-                        continue;
-                    }
-                    var relation = toTemporalRelation(relationInfo, sourceId, targetId, doc.id());
-                    var relationWriteContext = withChunkEvidence(doc, writeContext,
-                            resolveSourceChunkId(relationInfo.sourceChunkId(), batch));
-                    SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, relationWriteContext));
-                    relationCount++;
-                } catch (Exception e) {
-                    log.warn("关系写入失败: type={}, error={}", relationInfo.relationType(), e.getMessage());
+                var sourceId = resolveEntityId(relationInfo.sourceEntity(), entityNameToId, writeContext);
+                var targetId = resolveEntityId(relationInfo.targetEntity(), entityNameToId, writeContext);
+                if (sourceId == null || targetId == null) {
+                    log.debug("关系跳过: 无法解析实体ID, source={}, target={}",
+                            relationInfo.sourceEntity(), relationInfo.targetEntity());
+                    continue;
                 }
+                var relation = toTemporalRelation(relationInfo, sourceId, targetId, doc.id());
+                var relationWriteContext = withChunkEvidence(doc, writeContext,
+                        resolveSourceChunkId(relationInfo.sourceChunkId(), batch));
+                SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation, relationWriteContext));
+                relationCount++;
             }
         }
 
@@ -205,33 +191,42 @@ public class KnowledgeExtractionPipeline {
     private TemporalEntity toTemporalEntity(ExtractionResponse.EntityInfo info) {
         var now = Instant.now();
         var type = parseEntityType(info.type());
+        float extractionConfidence = 0.7f;
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.DOCUMENT_GROUNDED;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, extractionConfidence);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
         return new TemporalEntity(
                 UUID.randomUUID().toString(), type, info.name(), info.description(),
                 Map.of(), 1, true, now, null, null,
-                0.7f, 0.5f, 0, null, now, now);
+                extractionConfidence, 0.5f, 0, null, now, now,
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
+                null, false, List.of(),
+                evidenceKind, trustLevel, trustScore, 1, now);
     }
 
     private TemporalRelation toTemporalRelation(ExtractionResponse.RelationInfo info,
                                                 String sourceId, String targetId,
                                                 String documentId) {
         var now = Instant.now();
-        float strength = Math.max(0.0f, Math.min(1.0f, info.strength()));
+        float strength = info.strength();
+        if (!(strength >= 0.0f && strength <= 1.0f)) {
+            throw new IllegalArgumentException("知识关系强度必须在 [0,1] 范围内: " + strength);
+        }
         float relTrust = MemoryQualityPolicy.trustScoreFor(MemoryEvidenceKind.DOCUMENT_GROUNDED, strength);
         return new TemporalRelation(
                 UUID.randomUUID().toString(),
                 sourceId, targetId,
                 info.relationType(),
                 strength,
-                null, now, null, documentId, now)
-                .withQuality(MemoryEvidenceKind.DOCUMENT_GROUNDED,
-                        MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DOCUMENT_GROUNDED, relTrust),
-                        relTrust);
+                null, now, null, documentId, now,
+                MemoryEvidenceKind.DOCUMENT_GROUNDED,
+                MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DOCUMENT_GROUNDED, relTrust),
+                relTrust);
     }
 
-    @Nullable
     private String resolveSourceChunkId(@Nullable String rawChunkId, List<DocumentChunk> batch) {
         if (batch == null || batch.isEmpty()) {
-            return null;
+            throw new IllegalArgumentException("知识提取批次不能为空");
         }
         if (rawChunkId != null && !rawChunkId.isBlank()) {
             String normalized = rawChunkId.trim();
@@ -240,17 +235,17 @@ public class KnowledgeExtractionPipeline {
                     return normalized;
                 }
             }
-            log.debug("知识提取: LLM 返回未知 sourceChunkId={}, 批次大小={}", rawChunkId, batch.size());
+            throw new IllegalArgumentException("知识提取结果引用了不存在的 sourceChunkId: " + rawChunkId);
         }
-        return batch.size() == 1 ? batch.getFirst().id() : null;
+        if (batch.size() == 1) {
+            return batch.getFirst().id();
+        }
+        throw new IllegalArgumentException("知识提取结果缺少 sourceChunkId，无法在多分块批次中定位证据");
     }
 
     private MemoryWriteContext withChunkEvidence(Document doc,
                                                  MemoryWriteContext base,
-                                                 @Nullable String chunkId) {
-        if (chunkId == null || chunkId.isBlank()) {
-            return base;
-        }
+                                                 String chunkId) {
         return new MemoryWriteContext(
                 base.spaceId(),
                 base.memoryScope(),

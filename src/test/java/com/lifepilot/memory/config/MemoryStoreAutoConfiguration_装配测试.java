@@ -1,6 +1,7 @@
 package com.lifepilot.memory.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
@@ -28,6 +29,7 @@ class MemoryStoreAutoConfiguration_装配测试 {
             .withConfiguration(AutoConfigurations.of(MemoryStoreAutoConfiguration.class))
             .withBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class))
             .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(EmbeddingRouter.class, () -> mock(EmbeddingRouter.class))
             .withBean(GenerationRouter.class, () -> mock(GenerationRouter.class))
             .withBean(PromptRegistry.class, () -> mock(PromptRegistry.class))
             .withPropertyValues(

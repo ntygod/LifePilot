@@ -5,11 +5,11 @@
 ## 来源路径决策
 
 ### URL 网页
-web_fetch(url="...") → 一般文章；加 selector="article" 收窄；加 renderJs=true 应对 JS 动态站。
+web.fetch(url="...") → 一般文章；加 selector="article" 收窄；加 renderJs=true 应对 JS 动态站。
 抓不到正文（空/付费墙/JS 没渲染）→ 告知原因，不假装抓了全文。
 
 ### 本地文件
-file_read 已自动解析 docx/xlsx/pptx/pdf/md/csv。超长文档分段读（maxChars=...），再合并摘要。
+file.read 已自动解析 docx/xlsx/pptx/pdf/md/csv。超长文档分段读（maxChars=...），再合并摘要。
 
 ### 知识库
 memory(query="主题", top_k=10) 召回 chunk → 合并后摘要。注意 chunk ≠ 整篇文档，命中不全时声明"基于检索到的 N 段"。
@@ -44,8 +44,8 @@ memory(query="主题", top_k=10) 召回 chunk → 合并后摘要。注意 chunk
 
 ## 常见错误
 
-- web_fetch 正文空 → 换 selector，仍空加 renderJs=true
-- 内容超长截断 → file_read 分段读后合并
+- web.fetch 正文空 → 换 selector，仍空加 renderJs=true
+- 内容超长截断 → file.read 分段读后合并
 - PDF 空/乱码 → 可能是扫描件，告知用户提供文本版
 - 多文档冲突 → 标分歧不择一
 - 用户只给引用片段 → 标注"基于用户提供的片段（非完整原文）"

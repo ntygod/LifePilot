@@ -184,16 +184,17 @@ class SemanticMemory_实体版本集成测试 {
         var memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, objectMapper);
         conflictDetector = mock(ConflictDetector.class);
         vectorSearcher = mock(VectorSearcher.class);
+        var outboxRepository = new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
+        var outboxProcessor = new MemoryProjectionOutboxProcessor(outboxRepository, vectorSearcher, objectMapper);
+        var projectionService = new MemoryProjectionService(outboxRepository, outboxProcessor);
         semanticMemory = new SemanticMemory(
                 jdbcTemplate,
                 conflictDetector,
                 new VersionMerger(),
                 vectorSearcher,
-                memorySpaceRepository
+                memorySpaceRepository,
+                projectionService
         );
-        var outboxRepository = new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
-        var outboxProcessor = new MemoryProjectionOutboxProcessor(outboxRepository, vectorSearcher, objectMapper);
-        semanticMemory.setProjectionService(new MemoryProjectionService(outboxRepository, outboxProcessor));
     }
 
     @Test
@@ -216,7 +217,19 @@ class SemanticMemory_实体版本集成测试 {
                 null,
                 now,
                 now
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
         when(conflictDetector.detectConflict(any(), nullable(String.class)))
                 .thenReturn(Optional.empty(), Optional.of(created));
 
@@ -242,7 +255,19 @@ class SemanticMemory_实体版本集成测试 {
                         null,
                         now,
                         now
-                ),
+                ,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now),
                 "session-2",
                 MemoryWriteContext.conversation("session-2")
         );

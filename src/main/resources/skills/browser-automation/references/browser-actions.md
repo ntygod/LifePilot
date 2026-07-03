@@ -11,7 +11,7 @@
 3. `data-testid`：`[data-testid="<id>"]`
 4. 无障碍角色：accessibility 拿语义结构
 5. CSS 选择器
-6. 仍失败 → web_fetch → web_search → requestHumanTakeover
+6. 仍失败 → web.fetch → web.search → requestHumanTakeover
 
 ## 人机接管
 

@@ -19,6 +19,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
@@ -94,11 +95,11 @@ public class KnowledgeRuntimeAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public GraphKnowledgeSearcher graphKnowledgeSearcher(@Nullable SemanticMemory semanticMemory,
+    @ConditionalOnBean({SemanticMemory.class, MemorySpaceRepository.class})
+    public GraphKnowledgeSearcher graphKnowledgeSearcher(SemanticMemory semanticMemory,
                                                           DocumentChunkRepository chunkRepository,
-                                                          DocumentRepository docRepository,
-                                                          @Nullable MemorySpaceRepository memorySpaceRepository) {
-        return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, docRepository, memorySpaceRepository);
+                                                          MemorySpaceRepository memorySpaceRepository) {
+        return new GraphKnowledgeSearcher(semanticMemory, chunkRepository, memorySpaceRepository);
     }
 
     @Bean

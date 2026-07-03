@@ -77,7 +77,7 @@ public class MemoryRetrievalProperties {
      * 图遍历/联想的关系最低可信分门控 [0.0, 1.0]，默认 0.0（不过滤）。
      *
      * <p>大于 0 时，{@code GraphReasoner}/{@code GraphTraverser} 跳过 {@code trust_score} 低于此值的
-     * 关系边；{@code trust_score} 为 NULL 的历史未评分关系恒放行，避免存量关系召回骤降。</p>
+     * 关系边；关系缺少可信分时不会通过门控。</p>
      */
     private float minRelationTrust = 0.0f;
 
@@ -103,7 +103,7 @@ public class MemoryRetrievalProperties {
     @Getter
     public static class Reranker {
 
-        /** 记忆精排强制关闭开关，默认 true（Reranker 可用时自动启用；设为 false 强制禁用）。 */
+        /** 记忆精排强制关闭开关，默认 true；设为 false 时无论路由设置如何都不精排。 */
         private boolean enabled = true;
 
         /** 精排返回数量，默认 10。 */
@@ -117,8 +117,8 @@ public class MemoryRetrievalProperties {
     @Getter
     public static class Orchestrator {
 
-        /** 总开关，默认启用。 */
-        private boolean enabled = true;
+        /** 总开关，默认关闭；启用后 Hybrid / Experience / Knowledge 三路 source 均为必需依赖。 */
+        private boolean enabled = false;
 
         /** 默认单次检索返回的结果上限。 */
         private int defaultTopK = 10;

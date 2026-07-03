@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
@@ -62,7 +63,8 @@ class SemanticMemory_图遍历集成测试 {
                 jdbcTemplate,
                 mock(ConflictDetector.class),
                 new VersionMerger(),
-                mock(VectorSearcher.class));
+                mock(VectorSearcher.class),
+                SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), SemanticMemoryTestSupport.projectionService());
     }
 
     @AfterEach

@@ -13,14 +13,15 @@ import com.lifepilot.project.repository.ProjectRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +35,8 @@ import java.util.UUID;
  * @since 2026-04-23
  */
 @Service
+@ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
+        havingValue = "true", matchIfMissing = true)
 public class ProjectService {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
@@ -42,37 +45,22 @@ public class ProjectService {
     private final MemorySpaceRepository memorySpaceRepository;
     private final SessionStoreRepository sessionStoreRepository;
     private final JdbcTemplate jdbcTemplate;
-    /**
-     * KB 管理器 —— 可选依赖。知识库功能未启用时（例如极简部署或集成测试），
-     * {@link #createProject} 会跳过"建默认项目知识库"步骤，项目仍能正常创建。
-     */
-    @Nullable
     private final KnowledgeBaseManager knowledgeBaseManager;
-    @Nullable
     private final MemoryProjectionService projectionService;
-
-    public ProjectService(ProjectRepository projectRepository,
-                          MemorySpaceRepository memorySpaceRepository,
-                          SessionStoreRepository sessionStoreRepository,
-                          JdbcTemplate jdbcTemplate,
-                          @Nullable KnowledgeBaseManager knowledgeBaseManager) {
-        this(projectRepository, memorySpaceRepository, sessionStoreRepository,
-                jdbcTemplate, knowledgeBaseManager, null);
-    }
 
     @Autowired
     public ProjectService(ProjectRepository projectRepository,
                           MemorySpaceRepository memorySpaceRepository,
                           SessionStoreRepository sessionStoreRepository,
                           JdbcTemplate jdbcTemplate,
-                          @Nullable KnowledgeBaseManager knowledgeBaseManager,
-                          @Nullable MemoryProjectionService projectionService) {
+                          KnowledgeBaseManager knowledgeBaseManager,
+                          MemoryProjectionService projectionService) {
         this.projectRepository = projectRepository;
         this.memorySpaceRepository = memorySpaceRepository;
         this.sessionStoreRepository = sessionStoreRepository;
         this.jdbcTemplate = jdbcTemplate;
-        this.knowledgeBaseManager = knowledgeBaseManager;
-        this.projectionService = projectionService;
+        this.knowledgeBaseManager = Objects.requireNonNull(knowledgeBaseManager, "KnowledgeBaseManager 不能为空");
+        this.projectionService = Objects.requireNonNull(projectionService, "MemoryProjectionService 不能为空");
     }
 
     /**
@@ -82,8 +70,8 @@ public class ProjectService {
      * {@code isolation} 为 null 使用默认 {@link ProjectIsolation#defaultValue()}。
      * 重名校验在创建 MemorySpace 之前执行，避免重名时产生孤立的空间记录。</p>
      *
-     * <p>若 {@link KnowledgeBaseManager} 可用，会同步创建一个"项目默认知识库"
-     * 并绑定到项目的 MemorySpace（memory_space_knowledge_bases）。tags 固定为
+     * <p>同步创建一个"项目默认知识库"并绑定到项目的 MemorySpace
+     * （memory_space_knowledge_bases）。tags 固定为
      * {@code ["project"]}，{@link #deleteProject} 据此识别"项目默认 KB"并级联
      * 删除本体（用户手动挂到项目的非默认 KB 因 tags 不含 "project" 不会被误删）。</p>
      */
@@ -112,33 +100,20 @@ public class ProjectService {
 
     /**
      * 为新建项目创建默认知识库并绑定到项目 MemorySpace。
-     *
-     * <p>KB 功能未启用（{@link #knowledgeBaseManager} 为 null）时静默跳过；
-     * KB 创建失败不抛出，只记警告 —— 让项目创建在 KB 偶发故障时仍可成功，
-     * 后续可通过"项目设置"手动补建 KB。</p>
      */
     private void ensureDefaultKnowledgeBase(Project project, MemorySpace space) {
-        if (knowledgeBaseManager == null) {
-            log.debug("KnowledgeBaseManager 未注入，跳过项目默认知识库创建: projectId={}", project.id());
-            return;
-        }
-        try {
-            KnowledgeBase kb = knowledgeBaseManager.createKnowledgeBase(
-                    project.name() + " · 项目知识库",
-                    "项目「" + project.name() + "」自动创建的默认知识库",
-                    null,
-                    null,
-                    null,
-                    Map.of(),
-                    List.of("project")
-            );
-            memorySpaceRepository.attachKnowledgeBase(space.id(), kb.id());
-            log.info("项目默认知识库创建并绑定: projectId={}, kbId={}, spaceId={}",
-                    project.id(), kb.id(), space.id());
-        } catch (RuntimeException e) {
-            log.warn("项目默认知识库创建失败（项目已建成，可稍后手动补建）: projectId={}, error={}",
-                    project.id(), e.getMessage());
-        }
+        KnowledgeBase kb = knowledgeBaseManager.createKnowledgeBase(
+                project.name() + " · 项目知识库",
+                "项目「" + project.name() + "」自动创建的默认知识库",
+                null,
+                null,
+                null,
+                Map.of(),
+                List.of("project")
+        );
+        memorySpaceRepository.attachKnowledgeBase(space.id(), kb.id());
+        log.info("项目默认知识库创建并绑定: projectId={}, kbId={}, spaceId={}",
+                project.id(), kb.id(), space.id());
     }
 
     /**
@@ -232,24 +207,17 @@ public class ProjectService {
         String spaceId = existing.memorySpaceId();
 
         // 0) 级联删项目自动建的默认 KB 本体（只删 tag=["project"] 的，保留用户手动挂的其他 KB）
-        //   KnowledgeBaseManager 未启用时（极简部署/集成测试 null 注入）整个步骤跳过，
-        //   此时 memory_space_knowledge_bases 关联仍会在 Step 5 被 FK CASCADE 清空，
-        //   但孤儿 KB 本体只能通过 Admin 工具后期清理。
         int kbDeletedCount = 0;
-        if (knowledgeBaseManager != null) {
-            List<String> kbIds = memorySpaceRepository.findKnowledgeBaseIdsForSpace(spaceId);
-            for (String kbId : kbIds) {
-                Optional<KnowledgeBase> kbOpt = knowledgeBaseManager.getKnowledgeBase(kbId);
-                if (kbOpt.isEmpty()) {
-                    continue;
-                }
-                List<String> tags = kbOpt.get().tags();
-                // 只删"项目默认 KB"：createProject 建 KB 时 tags=["project"]（见 ensureDefaultKnowledgeBase）
-                if (tags != null && tags.contains("project")) {
-                    knowledgeBaseManager.deleteKnowledgeBase(kbId);
-                    kbDeletedCount++;
-                    log.info("级联删除项目默认 KB: projectId={}, kbId={}", id, kbId);
-                }
+        List<String> kbIds = memorySpaceRepository.findKnowledgeBaseIdsForSpace(spaceId);
+        for (String kbId : kbIds) {
+            KnowledgeBase kb = knowledgeBaseManager.getKnowledgeBase(kbId)
+                    .orElseThrow(() -> new IllegalStateException("项目绑定的知识库不存在: " + kbId));
+            List<String> tags = kb.tags();
+            // 只删"项目默认 KB"：createProject 建 KB 时 tags=["project"]（见 ensureDefaultKnowledgeBase）
+            if (tags != null && tags.contains("project")) {
+                knowledgeBaseManager.deleteKnowledgeBase(kbId);
+                kbDeletedCount++;
+                log.info("级联删除项目默认 KB: projectId={}, kbId={}", id, kbId);
             }
         }
         // 1) 清归属项目的会话（FK CASCADE 带走 session_* 所有子表）
@@ -276,12 +244,9 @@ public class ProjectService {
                 id, spaceId, sessionIds.size(), entitiesDeleted, relationsDeleted, kbDeletedCount);
     }
 
-    private void enqueueVectorDeleteTasks(@Nullable List<String> entityIds) {
-        if (entityIds == null || entityIds.isEmpty()) {
+    private void enqueueVectorDeleteTasks(List<String> entityIds) {
+        if (entityIds.isEmpty()) {
             return;
-        }
-        if (projectionService == null) {
-            throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 清理项目向量");
         }
         for (String entityId : entityIds) {
             projectionService.enqueueVectorDeleteAfterCommit(entityId);

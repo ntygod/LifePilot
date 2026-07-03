@@ -8,7 +8,7 @@
 | Codex | `codex exec "<task>"` | `--json` |
 | Gemini | `gemini -p "<task>"` | `--output-format json` |
 
-持久交互模式仅 Unix+tmux 可用（shell_process(session-*)），Windows 换 `-p` 多次调用。
+持久交互模式仅 Unix+tmux 可用（shell.process(session-*)），Windows 换 `-p` 多次调用。
 
 ## 模型档位
 
@@ -37,5 +37,5 @@ worktree: <路径>（保留，用户决定是否清理）
 | Codex quota 耗尽 | 停止编排，换 claude 或等配额重置 |
 | 长时间 RUNNING 无输出 | 连续 2-3 轮确认后 kill 重试 |
 | `[部分输出已被覆盖]` | 缩短轮询间隔 |
-| 后台进程达上限 | shell_process(list) 清空闲 |
+| 后台进程达上限 | shell.process(list) 清空闲 |
 | 反馈环超 2 轮 | 停下来问用户 |

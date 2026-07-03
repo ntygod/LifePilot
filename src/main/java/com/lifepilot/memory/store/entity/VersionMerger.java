@@ -107,7 +107,19 @@ public class VersionMerger {
                 existing.accessCount(),
                 existing.lastAccessedAt(),
                 existing.createdAt(),
-                now
+                now,
+                incoming.lifecycleState(),
+                incoming.lifecycleReason(),
+                incoming.expiresAt(),
+                incoming.temporality(),
+                incoming.succeededBy(),
+                incoming.isDerived(),
+                incoming.derivationSources(),
+                incoming.evidenceKind(),
+                incoming.trustLevel(),
+                incoming.trustScore(),
+                Math.max(existing.evidenceCount(), incoming.evidenceCount()),
+                incoming.lastVerifiedAt() != null ? incoming.lastVerifiedAt() : existing.lastVerifiedAt()
         );
 
         log.debug("版本合并: 创建新版本, name={}, version={}, userExplicit={}",

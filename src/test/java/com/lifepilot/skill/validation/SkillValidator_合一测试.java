@@ -66,15 +66,15 @@ class SkillValidator_合一测试 {
     void body违规应拒绝_缺少必需小节() {
         var parsed = new MarkdownSkillParser.ParsedSkill(
                 parser.parse(validMd("x", List.of())).frontmatter(),
-                "## 适用场景\n- only this\n");
+                "## 触发判断\n- only this\n");
         assertThatThrownBy(() -> validator.validate(parsed)).hasMessageContaining("小节");
     }
 
     @Test
     void 身体命中API_key模式应拒绝() {
         String md = validMd("secret", List.of())
-                .replace("## 工作流\n1. do",
-                        "## 工作流\n1. 使用 api_key=\"sk-abc12345678901234567890123456789012345678901234\"");
+                .replace("## 决策路径\n1. do",
+                        "## 决策路径\n1. 使用 api_key=\"sk-abc12345678901234567890123456789012345678901234\"");
         var parsed = parser.parse(md);
         assertThatThrownBy(() -> validator.validate(parsed)).hasMessageContaining("secret");
     }
@@ -82,8 +82,8 @@ class SkillValidator_合一测试 {
     @Test
     void 身体命中PRIVATE_KEY模式应拒绝() {
         String md = validMd("pk", List.of())
-                .replace("## 工作流\n1. do",
-                        "## 工作流\n1. 参考 -----BEGIN RSA PRIVATE KEY-----");
+                .replace("## 决策路径\n1. do",
+                        "## 决策路径\n1. 参考 -----BEGIN RSA PRIVATE KEY-----");
         var parsed = parser.parse(md);
         assertThatThrownBy(() -> validator.validate(parsed)).hasMessageContaining("secret");
     }
@@ -122,7 +122,7 @@ class SkillValidator_合一测试 {
 
     // ─────────────────────────────── helpers ───────────────────────────────
 
-    /** 生成一份最小合法 SKILL.md（frontmatter + 三必需小节 + 可选 suggested_tools）。 */
+    /** 生成一份最小合法 SKILL.md（frontmatter + v3 四必需小节 + 可选 suggested_tools）。 */
     private String validMd(String name, List<String> suggestedTools) {
         String tools = suggestedTools.isEmpty() ? "" :
                 "\n    suggested_tools: [" + String.join(", ", suggestedTools) + "]";
@@ -133,13 +133,17 @@ class SkillValidator_合一测试 {
                 version: 1.0.0
                 metadata:
                   zhiwei:%s
+                    outputs:
+                      - text
                 ---
-                ## 适用场景
+                ## 触发判断
                 - a
-                ## 不适用场景
-                - b
-                ## 工作流
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - b
+                ## 失败策略
+                - c
                 """.formatted(name, tools);
     }
 

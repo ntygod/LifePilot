@@ -3,6 +3,9 @@ package com.lifepilot.project;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.interaction.web.model.ChatSession;
+import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.memory.store.scope.MemorySpaceType;
 import com.lifepilot.project.model.Project;
@@ -16,10 +19,17 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Plan 1 Task 24 —— 项目生命周期端到端集成测试。
@@ -65,9 +75,12 @@ class ProjectLifecycle_集成测试 {
         memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, new ObjectMapper());
         projectRepository = new ProjectRepository(jdbcTemplate);
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, new ObjectMapper(), null);
-        // KnowledgeBaseManager = null：本测试聚焦项目生命周期，不覆盖 KB 自动创建路径
+        var projectionService = mock(MemoryProjectionService.class);
+        var knowledgeBaseManager = mock(KnowledgeBaseManager.class);
+        stubKnowledgeBaseManager(knowledgeBaseManager);
         projectService = new ProjectService(
-                projectRepository, memorySpaceRepository, sessionStoreRepository, jdbcTemplate, null);
+                projectRepository, memorySpaceRepository, sessionStoreRepository,
+                jdbcTemplate, knowledgeBaseManager, projectionService);
     }
 
     @AfterEach
@@ -182,6 +195,40 @@ class ProjectLifecycle_集成测试 {
                     UNIQUE(name),
                     FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE RESTRICT
                 )""");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_space_knowledge_bases (
+                    memory_space_id TEXT NOT NULL,
+                    knowledge_base_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (memory_space_id, knowledge_base_id),
+                    FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE CASCADE
+                )""");
+    }
+
+    private void stubKnowledgeBaseManager(KnowledgeBaseManager knowledgeBaseManager) {
+        when(knowledgeBaseManager.createKnowledgeBase(
+                anyString(), anyString(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> projectKnowledgeBase(UUID.randomUUID().toString(), invocation.getArgument(0)));
+        when(knowledgeBaseManager.getKnowledgeBase(anyString()))
+                .thenAnswer(invocation -> Optional.of(projectKnowledgeBase(invocation.getArgument(0), "项目知识库")));
+    }
+
+    private KnowledgeBase projectKnowledgeBase(String id, String name) {
+        Instant now = Instant.now();
+        return new KnowledgeBase(
+                id,
+                name,
+                "自动创建的默认项目知识库",
+                null,
+                null,
+                "smart",
+                Map.of(),
+                0,
+                0,
+                List.of("project"),
+                now,
+                now);
     }
 
     @Test

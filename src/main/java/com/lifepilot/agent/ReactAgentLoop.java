@@ -5,12 +5,12 @@ import com.lifepilot.agent.callback.CallbackHelper;
 import com.lifepilot.agent.callback.IterationCallback;
 import com.lifepilot.agent.callback.LlmCallPurpose;
 import com.lifepilot.agent.callback.NonStreamingCallback;
+import com.lifepilot.agent.capability.ConversationCapabilityPlanner;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.execution.ExecutionCompletionPolicy;
 import com.lifepilot.agent.execution.ReflectContentBuilder;
 import com.lifepilot.agent.execution.ToolExecutionCoordinator;
-import com.lifepilot.agent.learning.experience.ExperienceSummarizer;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.suspend.event.ScheduledWakeupEvent;
@@ -91,6 +91,7 @@ public class ReactAgentLoop implements CallbackHelper {
     private final ToolExecutionCoordinator toolExecutionCoordinator;
     @Nullable private final CompactionEngine compactionEngine;
     @Nullable private final TraceRecorder traceRecorder;
+    @Nullable private volatile ConversationCapabilityPlanner capabilityPlanner;
 
     // ===== 可选依赖（多模态） =====
     @Nullable private final MultimodalRouter multimodalRouter;
@@ -106,12 +107,8 @@ public class ReactAgentLoop implements CallbackHelper {
     @Nullable private final ProceduralMemory proceduralMemory;
     @Nullable private final IntentMatcher intentMatcher;
 
-    // ===== 可选依赖（即时经验补丁） =====
-    @Nullable private final ExperienceSummarizer experienceSummarizer;
-
     // ===== 可选依赖（run(Session, UserMessage) 便捷入口依赖） =====
-    // 通过 setter 注入，避免破坏既有 18 参构造器签名；生产环境由 AgentAutoConfiguration 注入，
-    // 测试环境若不调用 run() 则无需提供。
+    // 通过 setter 注入；生产环境由 AgentAutoConfiguration 注入，测试环境若不调用 run() 则无需提供。
     @Nullable private GenerationRouter generationRouter;
 
     public ReactAgentLoop(
@@ -129,8 +126,7 @@ public class ReactAgentLoop implements CallbackHelper {
             @Nullable IntentMatcher intentMatcher,
             @Nullable CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
-            @Nullable SessionWorkspaceService workspaceService,
-            @Nullable ExperienceSummarizer experienceSummarizer) {
+            @Nullable SessionWorkspaceService workspaceService) {
         this.contextAssembler = contextAssembler;
         this.providerMessageBuilder = providerMessageBuilder;
         this.agentToolProvider = agentToolProvider;
@@ -156,7 +152,6 @@ public class ReactAgentLoop implements CallbackHelper {
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
         this.workspaceService = workspaceService;
-        this.experienceSummarizer = experienceSummarizer;
         this.suspendScheduler = sharedScheduler.cleanup();
     }
 
@@ -176,6 +171,15 @@ public class ReactAgentLoop implements CallbackHelper {
      */
     public void setGenerationRouter(@Nullable GenerationRouter generationRouter) {
         this.generationRouter = generationRouter;
+    }
+
+    /**
+     * 注入对话能力预发现器。
+     *
+     * @param capabilityPlanner 能力预发现器
+     */
+    public void setCapabilityPlanner(@Nullable ConversationCapabilityPlanner capabilityPlanner) {
+        this.capabilityPlanner = capabilityPlanner;
     }
 
     /**
@@ -355,6 +359,8 @@ public class ReactAgentLoop implements CallbackHelper {
             IterationCallback callback,
             CancellationToken cancellationToken,
             AgentLoopContext loopContext) {
+
+        state = enrichCapabilities(state, loopContext);
 
         int maxIterations = config.getLoop().getMaxIterations();
         int maxConsecutiveFailures = config.getLoop().getMaxConsecutiveFailures();
@@ -565,12 +571,6 @@ public class ReactAgentLoop implements CallbackHelper {
                 if (maybeReflect != null) {
                     state = appendAndPublishStep(state, maybeReflect, loopContext);
                     persistReflectToWorkspace(state, iteration);
-                    if (experienceSummarizer != null) {
-                        final var snapshotState = state;
-                        final var reflectContent = maybeReflect.content();
-                        final var reflectTrigger = maybeReflect.trigger();
-                        Thread.startVirtualThread(() -> experienceSummarizer.quickLearn(snapshotState, reflectContent, reflectTrigger));
-                    }
                     if (workspaceService != null && state.sessionId() != null) {
                         try {
                             String reflectSummary = maybeReflect.content().length() > 300
@@ -635,6 +635,47 @@ public class ReactAgentLoop implements CallbackHelper {
         }
 
         return state;
+    }
+
+    private ReactAgentState enrichCapabilities(ReactAgentState state, AgentLoopContext loopContext) {
+        if (capabilityPlanner == null) {
+            return state;
+        }
+        try {
+            var suggestions = capabilityPlanner.suggest(state);
+            if (suggestions.isEmpty()) {
+                return state;
+            }
+            Set<String> toolIds = suggestions.stream()
+                    .filter(ConversationCapabilityPlanner.SuggestedCapability::isTool)
+                    .map(ConversationCapabilityPlanner.SuggestedCapability::id)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            ReactAgentState enriched = toolIds.isEmpty() ? state : state.withDiscoveredToolIds(toolIds);
+            pushCapabilitySuggestionEvent(enriched, suggestions, loopContext);
+            return enriched;
+        } catch (Exception e) {
+            log.debug("能力预发现失败，按原状态继续: traceId={}, error={}", state.traceId(), e.getMessage());
+            return state;
+        }
+    }
+
+    private void pushCapabilitySuggestionEvent(
+            ReactAgentState state,
+            List<ConversationCapabilityPlanner.SuggestedCapability> suggestions,
+            AgentLoopContext loopContext) {
+        if (capabilityPlanner == null
+                || loopContext.getSseManager() == null
+                || loopContext.getStreamId() == null
+                || suggestions.isEmpty()) {
+            return;
+        }
+        var payload = capabilityPlanner.toEvent(state, suggestions);
+        if (loopContext.getEventBuffer() != null) {
+            loopContext.getEventBuffer().offer(SseEventType.CAPABILITY_SUGGESTED, payload);
+        } else {
+            loopContext.getSseManager().sendEvent(
+                    loopContext.getStreamId(), SseEventType.CAPABILITY_SUGGESTED, payload);
+        }
     }
 
     /** 预算降级终止时，用已收集的信息做一次最终总结再返回。 */

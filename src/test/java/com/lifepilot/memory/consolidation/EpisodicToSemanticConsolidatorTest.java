@@ -19,8 +19,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -93,13 +95,120 @@ class EpisodicToSemanticConsolidatorTest {
                         null,
                         now,
                         now
-                )
+                ,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now)
         ));
+        when(jdbcTemplate.update(anyString(), any(), any(), any())).thenReturn(1);
+        when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
 
         var stats = consolidator.consolidate();
 
         assertThat(stats.extractionsTriggered()).isZero();
         verify(semanticMemory, never()).upsertWithConflictDetection(
                 any(TemporalEntity.class), anyString(), any(MemoryWriteContext.class));
+    }
+
+    @Test
+    void 上次巩固时间污染时应直接失败() {
+        var episodicMemory = mock(EpisodicMemory.class);
+        var semanticMemory = mock(SemanticMemory.class);
+        var jdbcTemplate = mock(JdbcTemplate.class);
+        var properties = new AgentLearningProperties();
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), anyString()))
+                .thenReturn(List.of("bad-timestamp"));
+
+        var consolidator = new EpisodicToSemanticConsolidator(
+                episodicMemory,
+                semanticMemory,
+                jdbcTemplate,
+                properties
+        );
+
+        assertThatThrownBy(consolidator::consolidate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("语义巩固上次巩固时间解析失败: bad-timestamp");
+    }
+
+    @Test
+    void 高频实体重要度更新命中零行时应直接失败() {
+        var episodicMemory = mock(EpisodicMemory.class);
+        var semanticMemory = mock(SemanticMemory.class);
+        var jdbcTemplate = mock(JdbcTemplate.class);
+        var properties = new AgentLearningProperties();
+        properties.getConsolidation().setHighFrequencyThreshold(1);
+
+        var consolidator = new EpisodicToSemanticConsolidator(
+                episodicMemory,
+                semanticMemory,
+                jdbcTemplate,
+                properties
+        );
+
+        var now = Instant.now();
+        when(episodicMemory.getRecent(1000)).thenReturn(List.of(new ConversationRecord(
+                "conv-1",
+                "session-1",
+                "测试",
+                null,
+                List.of(new MessageRecord(
+                        "msg-1",
+                        "conv-1",
+                        "user",
+                        "世界观",
+                        null,
+                        CompressionLevel.ORIGINAL,
+                        false,
+                        null,
+                        10,
+                        now)),
+                now,
+                now
+        )));
+        when(semanticMemory.findAllCurrent()).thenReturn(List.of(new TemporalEntity(
+                "entity-1",
+                EntityType.TOPIC,
+                "世界观",
+                "已有实体",
+                Map.of(),
+                1,
+                true,
+                now,
+                null,
+                null,
+                0.8f,
+                0.5f,
+                0,
+                null,
+                now,
+                now,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now)));
+        when(jdbcTemplate.update(anyString(), any(), any(), any())).thenReturn(0);
+
+        assertThatThrownBy(consolidator::consolidate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("语义巩固: 实体重要度更新失败");
     }
 }

@@ -511,6 +511,8 @@ defineExpose({
           <button
             type="button"
             class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-destructive"
+            :aria-label="`移除上下文：${context.name}`"
+            :title="`移除上下文：${context.name}`"
             @click="removeContext(context.kind, context.id)"
           >
             <X class="size-3" />
@@ -530,6 +532,8 @@ defineExpose({
           <button
             type="button"
             class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-destructive"
+            :aria-label="`移除附件：${file.name}`"
+            :title="`移除附件：${file.name}`"
             @click="removeAttachment(index)"
           >
             <X class="size-3" />
@@ -669,6 +673,7 @@ defineExpose({
                 ? 'text-primary hover:bg-primary/8'
                 : 'text-muted-foreground/70 hover:bg-accent/50 hover:text-foreground'"
               :disabled="disabled"
+              aria-label="选择上下文"
               title="上下文"
               @click="toggleManualContextPicker"
             >
@@ -686,6 +691,7 @@ defineExpose({
               type="button"
               class="relative flex size-8 items-center justify-center rounded-[10px] text-muted-foreground/70 transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-30"
               :disabled="disabled"
+              aria-label="添加附件"
               title="附件"
               @click="handleFileSelect"
             >
@@ -716,6 +722,8 @@ defineExpose({
               <button
                 type="button"
                 class="flex size-9 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm transition-all hover:-translate-y-0.5 active:scale-95"
+                aria-label="停止录音"
+                title="停止录音"
                 @click="stopRecording"
               >
                 <Square class="size-3.5" />
@@ -729,6 +737,8 @@ defineExpose({
                 type="button"
                 :disabled="disabled || isUploading || voiceSending"
                 class="flex size-8 items-center justify-center rounded-[10px] text-muted-foreground/60 transition-all duration-150 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label="语音输入"
+                title="语音输入"
                 @click="handleMicClick"
               >
                 <Mic class="size-[18px]" />
@@ -739,6 +749,7 @@ defineExpose({
                 <button
                   v-if="streaming"
                   type="button"
+                  aria-label="停止生成"
                   title="停止生成"
                   class="relative z-[1] flex size-8 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-all duration-150 hover:brightness-110 active:scale-95"
                   @click="emit('stop')"
@@ -749,6 +760,8 @@ defineExpose({
                   v-else
                   type="button"
                   :disabled="sendDisabled"
+                  aria-label="发送消息"
+                  title="发送消息"
                   class="relative z-[1] flex size-8 items-center justify-center rounded-full transition-all duration-150 disabled:cursor-not-allowed"
                   :class="sendDisabled
                     ? 'bg-muted/50 text-muted-foreground/30'

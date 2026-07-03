@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,9 +67,9 @@ class MemoryReadFilter_项目过滤器测试 {
     }
 
     @Test
-    void 五参重载_scopes传null等同不限定scope() {
+    void 五参重载_不限定scope时显式传空集合() {
         MemoryReadFilter f = MemoryReadFilter.buildForProject(
-                null, "ms-personal", "ms-experience", false, null);
+                null, "ms-personal", "ms-experience", false, Set.of());
         assertEquals(2, f.spaceIds().size());
         assertFalse(f.restrictsScopes());
     }
@@ -80,6 +81,31 @@ class MemoryReadFilter_项目过滤器测试 {
                 Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
         assertEquals(Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT), f.scopes());
         assertEquals(2, f.spaceIds().size());
+    }
+
+    @Test
+    void 读取过滤器不接受空白spaceId() {
+        assertThatThrownBy(() -> MemoryReadFilter.of(Set.of("ms-personal", " "), Set.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("spaceId 不能为空");
+    }
+
+    @Test
+    void 读取过滤器不接受null集合() {
+        assertThatThrownBy(() -> new MemoryReadFilter(null, Set.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("记忆读取空间集合不能为空");
+        assertThatThrownBy(() -> new MemoryReadFilter(Set.of(), null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("记忆读取 scope 集合不能为空");
+    }
+
+    @Test
+    void 项目过滤器不接受空白主账户空间() {
+        assertThatThrownBy(() -> MemoryReadFilter.buildForProject(
+                null, " ", "ms-experience", false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("personalSpaceId 不能为空");
     }
 
 }

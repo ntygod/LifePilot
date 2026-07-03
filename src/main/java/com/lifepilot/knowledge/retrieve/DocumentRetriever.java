@@ -197,7 +197,7 @@ public class DocumentRetriever {
             }, executor);
             var graphFuture = CompletableFuture.supplyAsync(() -> {
                 long t0 = System.currentTimeMillis();
-                var r = safeGraphSearch(primaryQuery, scopes, candidateK);
+                var r = graphSearch(primaryQuery, scopes, candidateK);
                 return new Timed<>(r, System.currentTimeMillis() - t0);
             }, executor);
 
@@ -641,19 +641,14 @@ public class DocumentRetriever {
     }
 
     /**
-     * 安全执行图谱搜索。
+     * 执行图谱搜索。
      */
-    private List<DocumentSearchResult> safeGraphSearch(QueryEnhancer.EnhancedQuery enhanced,
-                                                        List<KnowledgeSearchScope> scopes, int topK) {
+    private List<DocumentSearchResult> graphSearch(QueryEnhancer.EnhancedQuery enhanced,
+                                                   List<KnowledgeSearchScope> scopes, int topK) {
         if (graphSearcher == null || !config.graphEnabled()) {
             return List.of();
         }
-        try {
-            return graphSearcher.search(enhanced.primaryQuery(), scopes, topK);
-        } catch (Exception e) {
-            log.warn("图谱搜索失败，降级跳过: {}", e.getMessage());
-            return List.of();
-        }
+        return graphSearcher.search(enhanced.primaryQuery(), scopes, topK);
     }
 
     private List<String> extractKnowledgeBaseIds(List<KnowledgeSearchScope> scopes) {

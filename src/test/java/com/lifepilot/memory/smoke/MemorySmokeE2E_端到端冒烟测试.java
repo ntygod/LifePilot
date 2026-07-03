@@ -3,6 +3,7 @@ package com.lifepilot.memory.smoke;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
+import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -11,9 +12,14 @@ import com.lifepilot.interaction.web.controller.MemoryController;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
-import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
+import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
 import com.lifepilot.memory.store.scope.MemoryScope;
@@ -34,6 +40,7 @@ import com.lifepilot.multiagent.model.AgentSource;
 import com.lifepilot.multiagent.registry.AgentRegistry;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.project.repository.ProjectRepository;
+import com.lifepilot.rerank.router.RerankRouter;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
@@ -61,6 +68,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -74,7 +82,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import com.lifepilot.llm.LlmResponse;
 
 /**
  * 记忆模块端到端冒烟测试。
@@ -303,7 +310,10 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 now,
                 null,
                 "smoke",
-                now), MemoryWriteContext.tool("smoke"));
+                now,
+                MemoryEvidenceKind.USER_CONFIRMED,
+                MemoryTrustLevel.EXPLICIT,
+                0.9f), MemoryWriteContext.tool("smoke"));
 
         mockMvc.perform(get("/api/memories/relations")
                         .param("relationType", "RELATED_TO"))
@@ -373,6 +383,18 @@ class MemorySmokeE2E_端到端冒烟测试 {
                         0,
                         null,
                         now,
+                        now,
+                        LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        Temporality.PERSISTENT,
+                        null,
+                        false,
+                        List.of(),
+                        MemoryEvidenceKind.USER_CONFIRMED,
+                        MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
                         now),
                 "doc-smoke",
                 context);
@@ -433,8 +455,29 @@ class MemorySmokeE2E_端到端冒烟测试 {
             GenerationRouter router = mock(GenerationRouter.class);
             when(router.resolveMaxContextWindow(anyString(), any(), any())).thenReturn(16000);
             when(router.call(anyString(), anyString(), any(), any(), any(), any(GenerationCapability.class), any()))
-                    .thenReturn(new LlmResponse("{}", null, null, List.of(), Map.of(), 0, 0, null, 0, "smoke", "smoke-model", 0, false));
+                    .thenReturn(new LlmResponse(
+                            "{\"isSame\":false,\"confidence\":0.0,\"reason\":\"smoke\"}",
+                            null,
+                            null,
+                            List.of(),
+                            Map.of(),
+                            0,
+                            0,
+                            null,
+                            0,
+                            "smoke",
+                            "smoke-model",
+                            0,
+                            false));
             return router;
+        }
+
+        @Bean
+        @Primary
+        IntentMatcher smokeIntentMatcher() {
+            IntentMatcher matcher = mock(IntentMatcher.class);
+            when(matcher.match(anyString())).thenReturn(Optional.empty());
+            return matcher;
         }
 
         @Bean
@@ -527,8 +570,14 @@ class MemorySmokeE2E_端到端冒烟测试 {
         @Primary
         ChatSessionRepository smokeChatSessionRepository() {
             ChatSessionRepository repository = mock(ChatSessionRepository.class);
-            when(repository.findById(anyString())).thenReturn(java.util.Optional.empty());
+            when(repository.findById(anyString())).thenReturn(Optional.empty());
             return repository;
+        }
+
+        @Bean
+        @Primary
+        RerankRouter smokeRerankRouter() {
+            return mock(RerankRouter.class);
         }
     }
 }

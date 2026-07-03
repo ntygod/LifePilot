@@ -52,12 +52,10 @@ import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.memory.store.config.MemoryStoreProperties;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -122,7 +120,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(GenerationRouter.class)
     public RelationExtractionStep relationExtractionStep(GenerationRouter generationRouter,
                                                          PromptRegistry promptRegistry) {
         log.info("记忆模块: 注册 RelationExtractionStep");
@@ -131,7 +128,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(GenerationRouter.class)
     public RealtimeExtractor realtimeExtractor(GenerationRouter generationRouter,
                                                SemanticMemory semanticMemory,
                                                ExtractionValidator extractionValidator,
@@ -140,9 +136,9 @@ public class AgentLearningAutoConfiguration {
                                                ChatTurnMemorySnapshotRepository snapshotRepository,
                                                Clock clock,
                                                MemoryAccessPolicy memoryAccessPolicy,
-                                               @Nullable MemoryExtractionCandidateRepository candidateRepository,
-                                               @Nullable MemoryInjectionDetector injectionDetector,
-                                               @Nullable RelationExtractionStep relationExtractionStep) {
+                                               MemoryExtractionCandidateRepository candidateRepository,
+                                               MemoryInjectionDetector injectionDetector,
+                                               RelationExtractionStep relationExtractionStep) {
         log.info("记忆模块: 注册 RealtimeExtractor");
         return new RealtimeExtractor(generationRouter, semanticMemory, properties, extractionValidator,
                 jdbcTemplate, promptRegistry, snapshotRepository, clock, memoryAccessPolicy,
@@ -168,7 +164,6 @@ public class AgentLearningAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(GenerationRouter.class)
     public ConflictResolutionService conflictResolutionService(
             GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
@@ -249,15 +244,11 @@ public class AgentLearningAutoConfiguration {
     public EpisodicToProceduralConsolidator episodicToProceduralConsolidator(
             JdbcTemplate jdbcTemplate,
             ProceduralMemory proceduralMemory,
-            @Nullable GenerationRouter generationRouter,
-            @Nullable EmbeddingRouter embeddingRouter,
+            GenerationRouter generationRouter,
+            EmbeddingRouter embeddingRouter,
             AgentLearningProperties properties,
             PromptRegistry promptRegistry) {
-        if (generationRouter == null || embeddingRouter == null) {
-            log.warn("记忆模块: GenerationRouter 或 EmbeddingRouter 不可用，EpisodicToProceduralConsolidator 将无法执行巩固");
-        }
-        log.info("记忆模块: 注册 EpisodicToProceduralConsolidator, generationRouterAvailable={}, embeddingRouterAvailable={}",
-                generationRouter != null ? "yes" : "no", embeddingRouter != null ? "yes" : "no");
+        log.info("记忆模块: 注册 EpisodicToProceduralConsolidator");
         return new EpisodicToProceduralConsolidator(jdbcTemplate, proceduralMemory,
                 generationRouter, embeddingRouter, properties, promptRegistry);
     }
@@ -274,16 +265,15 @@ public class AgentLearningAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public UserProfileConsolidator userProfileConsolidator(
-            @Nullable SemanticMemory semanticMemory,
-            @Nullable EpisodicMemory episodicMemory,
-            @Nullable ProceduralMemory proceduralMemory,
-            @Nullable GenerationRouter generationRouter,
-            @Nullable PromptRegistry promptRegistry) {
-        log.info("记忆模块: 注册 UserProfileConsolidator, semanticMemory={}, generationRouter={}",
-                semanticMemory != null ? "available" : "missing",
-                generationRouter != null ? "available" : "missing");
-        Duration llmTimeout = Duration.ofSeconds(
-                Math.max(1, properties.getConsolidation().getUserProfileLlmTimeoutSeconds()));
+            SemanticMemory semanticMemory,
+            EpisodicMemory episodicMemory,
+            ProceduralMemory proceduralMemory,
+            GenerationRouter generationRouter,
+            PromptRegistry promptRegistry) {
+        log.info("记忆模块: 注册 UserProfileConsolidator");
+        Duration llmTimeout = Duration.ofSeconds(positive(
+                properties.getConsolidation().getUserProfileLlmTimeoutSeconds(),
+                "用户画像巩固 LLM 超时秒数"));
         return new UserProfileConsolidator(semanticMemory, episodicMemory,
                 proceduralMemory, generationRouter, promptRegistry, llmTimeout);
     }
@@ -302,21 +292,21 @@ public class AgentLearningAutoConfiguration {
     @ConditionalOnMissingBean
     public ConsolidationPipeline consolidationPipeline(
             EpisodicToSemanticConsolidator semanticConsolidator,
-            @Nullable EpisodicToProceduralConsolidator proceduralConsolidator,
+            EpisodicToProceduralConsolidator proceduralConsolidator,
             AgentLearningProperties properties,
-            @Nullable PreferenceConsolidator preferenceConsolidator,
-            @Nullable ExperienceMerger experienceMerger,
-            @Nullable UserProfileConsolidator userProfileConsolidator,
-            @Nullable ExperiencePromoter experiencePromoter,
-            @Nullable AssociationCandidateGenerator remGenerator,
-            @Nullable AssociationConsolidator remConsolidator,
-            @Nullable AssociationCandidateApplier remApplier) {
+            PreferenceConsolidator preferenceConsolidator,
+            ExperienceMerger experienceMerger,
+            UserProfileConsolidator userProfileConsolidator,
+            ExperiencePromoter experiencePromoter,
+            AssociationCandidateGenerator remGenerator,
+            AssociationConsolidator remConsolidator,
+            AssociationCandidateApplier remApplier) {
         log.info("记忆模块: 注册 ConsolidationPipeline, preferenceSync={}, experienceLift={}, experienceMerge={}, profileConsolidate={}, remAssociation={}",
-                preferenceConsolidator != null ? "enabled" : "disabled",
-                experiencePromoter != null ? "enabled" : "disabled",
-                experienceMerger != null ? "enabled" : "disabled",
-                userProfileConsolidator != null ? "enabled" : "disabled",
-                (remGenerator != null && remConsolidator != null) ? "enabled" : "disabled");
+                "enabled",
+                "enabled",
+                "enabled",
+                "enabled",
+                properties.getRem().isEnabled() ? "enabled" : "disabled");
         return new ConsolidationPipeline(semanticConsolidator, proceduralConsolidator,
                 properties, preferenceConsolidator, experienceMerger, userProfileConsolidator,
                 experiencePromoter, remGenerator, remConsolidator, remApplier);
@@ -328,8 +318,9 @@ public class AgentLearningAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ConsolidationScheduler consolidationScheduler(ConsolidationPipeline pipeline) {
-        Duration debounce = Duration.ofMinutes(
-                Math.max(1, properties.getConsolidation().getProfileDebounceMinutes()));
+        Duration debounce = Duration.ofMinutes(positive(
+                properties.getConsolidation().getProfileDebounceMinutes(),
+                "用户画像巩固防抖分钟数"));
         log.info("记忆模块: 注册 ConsolidationScheduler, profileDebounce={}min", debounce.toMinutes());
         return new ConsolidationScheduler(pipeline, debounce);
     }
@@ -344,13 +335,10 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(
-            prefix = "lifepilot.agent.learning.rem", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
     public AssociationCandidateGenerator associationCandidateGenerator(
             SemanticMemory semanticMemory,
-            @Nullable HybridRetriever hybridRetriever,
-            @Nullable GenerationRouter generationRouter,
+            HybridRetriever hybridRetriever,
+            GenerationRouter generationRouter,
             AgentLearningProperties properties) {
         return new AssociationCandidateGenerator(
                 semanticMemory, hybridRetriever, generationRouter, properties);
@@ -358,9 +346,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(
-            prefix = "lifepilot.agent.learning.rem", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
     public AssociationConsolidator associationConsolidator(
             AgentLearningProperties properties,
             AssociationCandidateStore store) {
@@ -369,9 +354,6 @@ public class AgentLearningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(
-            prefix = "lifepilot.agent.learning.rem", name = "enabled",
-            havingValue = "true", matchIfMissing = true)
     public AssociationCandidateApplier associationCandidateApplier(
             AgentLearningProperties properties,
             AssociationCandidateStore store,
@@ -388,11 +370,10 @@ public class AgentLearningAutoConfiguration {
     public ExperienceMerger experienceMerger(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            @Nullable GenerationRouter generationRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             AgentLearningProperties properties) {
-        log.info("记忆模块: 注册 ExperienceMerger, generationRouterAvailable={}",
-                generationRouter != null ? "yes" : "no");
+        log.info("记忆模块: 注册 ExperienceMerger");
         return new ExperienceMerger(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
     }
@@ -413,12 +394,11 @@ public class AgentLearningAutoConfiguration {
     @ConditionalOnMissingBean
     public ForgettingEngine forgettingEngine(
             SemanticMemory semanticMemory,
-            @Nullable GenerationRouter generationRouter,
+            GenerationRouter generationRouter,
             JdbcTemplate jdbcTemplate,
             AgentLearningProperties properties,
             PromptRegistry promptRegistry) {
-        log.info("记忆模块: 注册 ForgettingEngine, generationRouterAvailable={}",
-                generationRouter != null ? "yes" : "no");
+        log.info("记忆模块: 注册 ForgettingEngine");
         return new ForgettingEngine(semanticMemory, generationRouter, jdbcTemplate, properties, promptRegistry);
     }
 
@@ -454,15 +434,13 @@ public class AgentLearningAutoConfiguration {
     public ExperienceSummarizer experienceSummarizer(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            @Nullable GenerationRouter generationRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             AgentLearningProperties properties,
             TrajectoryQualityAssessor qualityAssessor,
-            @Nullable ChatSessionRepository chatSessionRepository,
-            @Nullable ProjectContextResolver projectContextResolver) {
-        log.info("记忆模块: 注册 ExperienceSummarizer, generationRouterAvailable={}, projectAware={}",
-                generationRouter != null ? "yes" : "no",
-                projectContextResolver != null && chatSessionRepository != null);
+            ChatSessionRepository chatSessionRepository,
+            ProjectContextResolver projectContextResolver) {
+        log.info("记忆模块: 注册 ExperienceSummarizer");
         return new ExperienceSummarizer(semanticMemory, vectorSearcher, generationRouter,
                 promptRegistry, properties, qualityAssessor,
                 chatSessionRepository, projectContextResolver);
@@ -484,11 +462,10 @@ public class AgentLearningAutoConfiguration {
     public ContrastiveLearner contrastiveLearner(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            @Nullable GenerationRouter generationRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             AgentLearningProperties properties) {
-        log.info("记忆模块: 注册 ContrastiveLearner, generationRouterAvailable={}",
-                generationRouter != null ? "yes" : "no");
+        log.info("记忆模块: 注册 ContrastiveLearner");
         return new ContrastiveLearner(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties);
     }
@@ -498,14 +475,12 @@ public class AgentLearningAutoConfiguration {
     public SubtaskReflector subtaskReflector(
             SemanticMemory semanticMemory,
             VectorSearcher vectorSearcher,
-            @Nullable GenerationRouter generationRouter,
+            GenerationRouter generationRouter,
             PromptRegistry promptRegistry,
             AgentLearningProperties properties,
-            @Nullable ChatSessionRepository chatSessionRepository,
-            @Nullable ProjectContextResolver projectContextResolver) {
-        log.info("记忆模块: 注册 SubtaskReflector, generationRouterAvailable={}, projectAware={}",
-                generationRouter != null ? "yes" : "no",
-                projectContextResolver != null && chatSessionRepository != null);
+            ChatSessionRepository chatSessionRepository,
+            ProjectContextResolver projectContextResolver) {
+        log.info("记忆模块: 注册 SubtaskReflector");
         return new SubtaskReflector(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, properties,
                 chatSessionRepository, projectContextResolver);
@@ -538,10 +513,9 @@ public class AgentLearningAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public com.lifepilot.agent.learning.trace.AgentTraceListenerRegistrar agentTraceListenerRegistrar(
-            @Nullable com.lifepilot.observability.trace.TraceRecorder traceRecorder,
+            com.lifepilot.observability.trace.TraceRecorder traceRecorder,
             com.lifepilot.agent.learning.trace.AgentTraceWriter agentTraceWriter) {
-        log.info("记忆模块: 注册 AgentTraceListenerRegistrar, traceRecorder={}",
-                traceRecorder != null ? "available" : "unavailable");
+        log.info("记忆模块: 注册 AgentTraceListenerRegistrar");
         return new com.lifepilot.agent.learning.trace.AgentTraceListenerRegistrar(traceRecorder, agentTraceWriter);
     }
 
@@ -551,28 +525,21 @@ public class AgentLearningAutoConfiguration {
     /** 对话结束事件 → 触发语义/程序巩固 + 登记画像防抖。 */
     @EventListener
     public void onConversationCompleted(ConversationCompletedEvent event) {
-        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getIfAvailable();
-        if (scheduler != null) {
-            scheduler.onConversationCompleted();
-        }
+        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getObject();
+        scheduler.onConversationCompleted();
     }
 
     /** 每日 cron → 偏好同步 + 经验合并 + 经验提升。 */
     @Scheduled(cron = "${lifepilot.agent.learning.consolidation.cron:0 0 3 * * *}")
     public void scheduledDailyConsolidation() {
-        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getIfAvailable();
-        if (scheduler != null) {
-            scheduler.runDailyStages();
-        }
+        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getObject();
+        scheduler.runDailyStages();
     }
 
     /** 每分钟轮询 → 用户画像防抖触发 + 系统空闲后触发 REM 联想。 */
     @Scheduled(fixedDelayString = "PT1M")
     public void pollConsolidationTriggers() {
-        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getIfAvailable();
-        if (scheduler == null) {
-            return;
-        }
+        ConsolidationScheduler scheduler = consolidationSchedulerProvider.getObject();
 
         // 1. 用户画像防抖
         scheduler.checkProfileDebounce();
@@ -596,17 +563,19 @@ public class AgentLearningAutoConfiguration {
     }
 
     private Instant getLastInteractionTime() {
-        try {
-            String lastInteraction = jdbcTemplate.queryForObject(
-                    "SELECT MAX(COALESCE(last_activity_at, last_message_at, updated_at, created_at)) FROM session_store",
-                    String.class);
-            if (lastInteraction == null || lastInteraction.isBlank()) {
-                return Instant.now();
-            }
-            return Instant.parse(lastInteraction);
-        } catch (Exception e) {
-            log.debug("记忆模块: 查询最近交互时间失败，回退到当前时间: {}", e.getMessage());
+        String lastInteraction = jdbcTemplate.queryForObject(
+                "SELECT MAX(COALESCE(last_activity_at, last_message_at, updated_at, created_at)) FROM session_store",
+                String.class);
+        if (lastInteraction == null || lastInteraction.isBlank()) {
             return Instant.now();
         }
+        return Instant.parse(lastInteraction);
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
     }
 }

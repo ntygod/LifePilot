@@ -1,6 +1,7 @@
 package com.lifepilot.memory.store.support;
 
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.knowledge.KnowledgeBaseManager;
 import java.time.Instant;
 import java.time.ZoneId;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -113,5 +114,13 @@ public class ScenarioTestConfiguration {
         org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(tmpDir.resolve("workspace"));
         return paths;
     }
-}
 
+    /**
+     * 知识库管理替身 — 场景测试禁用 knowledge 模块，但 ProjectService 构造仍需要依赖。
+     */
+    @Bean
+    @Primary
+    public KnowledgeBaseManager scenarioKnowledgeBaseManager() {
+        return org.mockito.Mockito.mock(KnowledgeBaseManager.class);
+    }
+}

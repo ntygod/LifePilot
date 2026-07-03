@@ -3,6 +3,7 @@ package com.lifepilot.memory.procedural;
 import com.lifepilot.memory.store.procedural.TemplateStep;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -91,8 +92,14 @@ class TemplateStepTest {
 
     @Test
     void compactConstructor_parameterTemplate不可变() {
-        var step = new TemplateStep(1, "tool-1", "execute", null, "描述", false);
-        assertNotNull(step.parameterTemplate());
-        assertTrue(step.parameterTemplate().isEmpty());
+        var parameterTemplate = new HashMap<String, String>();
+        parameterTemplate.put("title", "${name}");
+
+        var step = new TemplateStep(1, "tool-1", "execute", parameterTemplate, "描述", false);
+        parameterTemplate.clear();
+
+        assertEquals("${name}", step.parameterTemplate().get("title"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> step.parameterTemplate().put("new", "value"));
     }
 }

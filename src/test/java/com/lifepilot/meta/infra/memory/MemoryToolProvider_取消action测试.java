@@ -238,6 +238,126 @@ class MemoryToolProvider_取消action测试 {
     }
 
     @Test
+    void cancel传入未知entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of("TOPIC", "BROKEN")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes 包含未知实体类型: BROKEN");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+        verify(semanticMemory, never()).updateLifecycleState(anyString(), any(), any(), any());
+    }
+
+    @Test
+    void cancel传入小写entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of("topic")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes 包含未知实体类型: topic");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+        verify(semanticMemory, never()).updateLifecycleState(anyString(), any(), any(), any());
+    }
+
+    @Test
+    void cancel传入空entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of(" ")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes 不能包含空值");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
+    void cancel传入首尾空白entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of(" TOPIC")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes不能包含首尾空白");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
+    void cancel传入非法maxArchive或minScore时应返回错误() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var badMax = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "maxArchive", 0),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+        var badScore = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "minScore", -0.1),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(badMax.ok()).isFalse();
+        assertThat(badMax.error()).contains("cancel maxArchive 必须大于 0");
+        assertThat(badScore.ok()).isFalse();
+        assertThat(badScore.error()).contains("cancel minScore 必须是非负数");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
+    void cancel传入错误类型参数时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var badTypes = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "entityTypes", "GOAL"),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+        var badMax = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "maxArchive", "5"),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+        var badScore = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "minScore", "0.5"),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(badTypes.ok()).isFalse();
+        assertThat(badTypes.error()).contains("参数类型不匹配: entityTypes");
+        assertThat(badMax.ok()).isFalse();
+        assertThat(badMax.error()).contains("参数类型不匹配: maxArchive");
+        assertThat(badScore.ok()).isFalse();
+        assertThat(badScore.error()).contains("参数类型不匹配: minScore");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
     void cancel带编号精确命中时应绕过默认类型限制() {
         var preference = 构造实体("pref-cancel", EntityType.PREFERENCE,
                 "MT-CANCEL-0507 不提醒下午5点检查记忆抽取日志");
@@ -266,7 +386,19 @@ class MemoryToolProvider_取消action测试 {
         return new TemporalEntity(
                 id, type, name, "描述-" + name, Map.of(),
                 1, true, now, null, "session-1",
-                0.8f, 0.5f, 0, null, now, now);
+                0.8f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 
     private RetrievalResult 构造结果(TemporalEntity entity, float score) {

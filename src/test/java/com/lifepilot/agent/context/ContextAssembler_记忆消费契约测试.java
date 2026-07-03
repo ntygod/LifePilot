@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -88,7 +89,7 @@ class ContextAssembler_记忆消费契约测试 {
     }
 
     @Test
-    void 热摘要构建失败时不回退旧画像或冷检索路径() {
+    void 热摘要构建失败时应直接暴露且不回退旧画像或冷检索路径() {
         var semanticMemory = mock(SemanticMemory.class);
         when(semanticMemory.countByEntityType(any())).thenReturn(Map.of());
         var contextEngine = mock(ContextEngine.class);
@@ -97,16 +98,10 @@ class ContextAssembler_记忆消费契约测试 {
         when(hotDigestService.build(any(), anyString())).thenThrow(new IllegalStateException("构建失败"));
         var assembler = newAssembler(semanticMemory, contextEngine, hotDigestService);
 
-        var context = assembler.assemble(state("继续优化记忆"));
-
-        String contextText = context.contextMessages().stream()
-                .map(org.springframework.ai.chat.messages.Message::getText)
-                .reduce("", (left, right) -> left + "\n" + right);
-        assertThat(contextText)
-                .doesNotContain("用户画像")
-                .doesNotContain("相关经验")
-                .doesNotContain("与当前话题相关的记忆");
-        assertThat(context.injectedEntityIds()).isEmpty();
+        assertThatThrownBy(() -> assembler.assemble(state("继续优化记忆")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("上下文组装失败")
+                .hasRootCauseMessage("构建失败");
         verify(semanticMemory, never()).findCurrentByNameAndType(anyString(), any(), any());
         verify(semanticMemory, never()).findCurrentByType(any(), any());
         verify(semanticMemory, never()).findByIds(any(), any());

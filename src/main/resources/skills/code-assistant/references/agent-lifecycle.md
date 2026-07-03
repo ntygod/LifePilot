@@ -9,15 +9,15 @@
 ## 启动
 
 ```bash
-shell_exec(command="claude -p '<任务>' --output-format stream-json --permission-mode acceptEdits",
+shell.exec(command="claude -p '<任务>' --output-format stream-json --permission-mode acceptEdits",
            workingDirectory="<worktree>", background=true)
 ```
 
-启动后立即调 shell_process(output) 验启动：看到 init/init 即成功，FAILED 读 stderr，10 秒无输出是预热。
+启动后立即调 shell.process(output) 验启动：看到 init/init 即成功，FAILED 读 stderr，10 秒无输出是预热。
 
 ## 监控轮询（间隔 5-15 秒）
 
-每轮检查 shell_process(output)：lastResult 有值即结束，state=RUNNING 继续/COMPLETED/FAILED 终止。
+每轮检查 shell.process(output)：lastResult 有值即结束，state=RUNNING 继续/COMPLETED/FAILED 终止。
 汇报节奏：启动/里程碑/异常各报一次，不每轮汇报。
 
 ## 完成/中止
@@ -26,8 +26,8 @@ shell_exec(command="claude -p '<任务>' --output-format stream-json --permissio
 |------|------|
 | exitCode=0 | 读 lastResult + git diff --stat 汇报 |
 | exitCode≠0 | 读 output + stderr 排查 |
-| 连续 2-3 轮无输出 | shell_process(kill) 重启 |
-| 后台进程数达上限 | shell_process(list) 清空闲 |
+| 连续 2-3 轮无输出 | shell.process(kill) 重启 |
+| 后台进程数达上限 | shell.process(list) 清空闲 |
 
 ## 编排模式
 

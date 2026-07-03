@@ -33,7 +33,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link SkillActivator} v2 单元测试 —— 覆盖查表 + 三占位符替换 + 启用校验。
+ * {@link SkillActivator} v3 单元测试 —— 覆盖查表 + 三占位符替换 + 启用校验。
  *
  * <p>测试策略：mock {@link SkillInstallationRepository} 与 {@link SkillRegistry}，
  * 验证激活流程对不同输入（未知 name / disabled / 各占位符指令）的处理。</p>

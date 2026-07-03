@@ -15,8 +15,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -61,6 +62,8 @@ class ConflictResolutionRetry_单元测试 {
         when(semanticMemory.findById("new-1")).thenReturn(Optional.of(newEntity));
         when(semanticMemory.findById("cand-A")).thenReturn(Optional.of(candA));
         when(semanticMemory.findById("cand-B")).thenReturn(Optional.of(candB));
+        when(resolutionService.resolveAsync(eq(newEntity), anyList()))
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         retry.retryNow();
 
@@ -107,7 +110,7 @@ class ConflictResolutionRetry_单元测试 {
     }
 
     @Test
-    void 单条异常不中断整批_仍处理后续() {
+    void 单条异常应直接抛出且不继续后续() {
         var newGood = 构造实体("good-new");
         var candGood = 构造实体("good-cand");
         var newBad = 构造实体("bad-new");
@@ -122,16 +125,33 @@ class ConflictResolutionRetry_单元测试 {
         when(semanticMemory.findById("good-new")).thenReturn(Optional.of(newGood));
         when(semanticMemory.findById("good-cand")).thenReturn(Optional.of(candGood));
 
-        // bad 项调 resolveAsync 时抛异常
-        doThrow(new RuntimeException("模拟 LLM 提交失败"))
-                .when(resolutionService).resolveAsync(eq(newBad), anyList());
+        var failed = new CompletableFuture<Void>();
+        failed.completeExceptionally(new RuntimeException("模拟 LLM 裁决失败"));
+        when(resolutionService.resolveAsync(eq(newBad), anyList())).thenReturn(failed);
 
-        // 不抛异常即代表整批未中断
-        retry.retryNow();
+        assertThatThrownBy(() -> retry.retryNow())
+                .isInstanceOf(java.util.concurrent.CompletionException.class)
+                .hasCauseInstanceOf(RuntimeException.class)
+                .hasRootCauseMessage("模拟 LLM 裁决失败");
 
-        // good 项仍然被调用
         verify(resolutionService, times(1)).resolveAsync(eq(newBad), anyList());
-        verify(resolutionService, times(1)).resolveAsync(eq(newGood), anyList());
+        verify(resolutionService, never()).resolveAsync(eq(newGood), anyList());
+    }
+
+    @Test
+    void 提交返回null应直接失败() {
+        var newEntity = 构造实体("new-null");
+        var cand = 构造实体("cand-null");
+        var item = new QueueItem("q-null", "new-null", List.of("cand-null"));
+
+        when(queueRepository.findFailedRetriable(3)).thenReturn(List.of(item));
+        when(semanticMemory.findById("new-null")).thenReturn(Optional.of(newEntity));
+        when(semanticMemory.findById("cand-null")).thenReturn(Optional.of(cand));
+        when(resolutionService.resolveAsync(eq(newEntity), anyList())).thenReturn(null);
+
+        assertThatThrownBy(() -> retry.retryNow())
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("冲突裁决重试提交结果不能为空");
     }
 
     // ---------- 测试夹具 ----------
@@ -145,6 +165,11 @@ class ConflictResolutionRetry_单元测试 {
                 LifecycleState.ACTIVE, null, null,
                 com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
                 null, false, List.of()
-        );
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
     }
 }

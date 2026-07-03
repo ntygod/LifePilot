@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consumption.attention;
 
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
@@ -76,7 +77,7 @@ class 记忆注意力_集成测试 {
         jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("PRAGMA foreign_keys = ON");
         semanticMemory = new SemanticMemory(jdbcTemplate, mock(ConflictDetector.class),
-                new VersionMerger(), mock(VectorSearcher.class));
+                new VersionMerger(), mock(VectorSearcher.class), SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), SemanticMemoryTestSupport.projectionService());
         reasoner = new GraphReasoner(jdbcTemplate, 25);
         attentionService = new MemoryAttentionService(
                 semanticMemory, reasoner, new MemoryConsumptionProperties(), CLOCK);
@@ -182,11 +183,13 @@ class 记忆注意力_集成测试 {
     }
 
     private TemporalRelation 关系(String src, String tgt, String type) {
-        return new TemporalRelation(UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, NOW, null, "test", NOW);
+        return new TemporalRelation(
+                UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, NOW, null, "test", NOW,
+                MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f);
     }
 
     private MemoryWriteContext relationContext() {
-        return MemoryWriteContext.unknown("test-relation");
+        return MemoryWriteContext.consolidation("test-relation");
     }
 
     private void 插入实体(String id, String name, EntityType type, float importance,

@@ -1,6 +1,6 @@
 # 系统诊断参考
 
-> 系统命令（top/free/df/netstat/ps）直接用 shell_exec。本文档仅含诊断策略与平台差异。
+> 系统命令（top/free/df/netstat/ps）直接用 shell.exec。本文档仅含诊断策略与平台差异。
 
 ## 平台差异
 
@@ -21,7 +21,7 @@
 2. **警告**（CPU 持续 >80% / 异常端口监听）→ 定位进程，判断是否正常
 3. **正常** → 报告关键指标即可
 
-耗时 >30 秒的命令加 `background=true`，用 shell_process(action=output) 拿结果。
+耗时 >30 秒的命令加 `background=true`，用 shell.process(action=output) 拿结果。
 
 ## 诊断报告结构
 

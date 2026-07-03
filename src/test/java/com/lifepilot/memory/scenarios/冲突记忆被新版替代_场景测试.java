@@ -1,6 +1,7 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -118,8 +119,8 @@ class 冲突记忆被新版替代_场景测试 {
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, generationRouter, 0.92f, promptRegistry);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
 
         var queueRepo = new ConflictResolutionRepository(jdbcTemplate, new ObjectMapper());
@@ -179,17 +180,11 @@ class 冲突记忆被新版替代_场景测试 {
                         """.formatted(oldId), null, null, List.of(), Map.of(), 100, 50, null, 0, "test-provider", "test-model", 200L, false));
 
         // 5. 驱动 resolveAsync（生产路径通过 upsert afterCommit 触发，此处直接调以控制时序）
-        //    Awaitility 轮询 conflict_resolution_queue 直到出现 RESOLVED 状态，避免主测试线程竞态
-        conflictResolutionService.resolveAsync(rustEntity, List.of(pythonEntity));
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(5))
-                .pollInterval(Duration.ofMillis(50))
-                .untilAsserted(() -> {
-                    Integer resolved = jdbcTemplate.queryForObject(
-                            "SELECT COUNT(*) FROM conflict_resolution_queue WHERE status = 'RESOLVED'",
-                            Integer.class);
-                    assertThat(resolved).as("等待裁决完成").isEqualTo(1);
-                });
+        conflictResolutionService.resolveAsync(rustEntity, List.of(pythonEntity)).join();
+        Integer resolved = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM conflict_resolution_queue WHERE status = 'RESOLVED'",
+                Integer.class);
+        assertThat(resolved).as("裁决完成").isEqualTo(1);
 
         // 6. 老实体应沿 ACTIVE → SUPERSEDED；新实体保持 ACTIVE
         var afterOld = queryApi.findById(oldId).orElseThrow();
@@ -225,6 +220,18 @@ class 冲突记忆被新版替代_场景测试 {
                 /* accessCount */ 0,
                 /* lastAccessedAt */ null,
                 /* createdAt */ now,
-                /* updatedAt */ now);
+                /* updatedAt */ now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        /* updatedAt */ now);
     }
 }

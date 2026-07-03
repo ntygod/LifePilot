@@ -11,8 +11,12 @@ import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
@@ -39,6 +43,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -213,6 +219,7 @@ public class MemoryController {
         if (q == null || q.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "搜索关键词不能为空");
         }
+        requirePositive(topK, "topK");
         if (hybridRetriever == null) {
             return ApiResponse.ok(Map.of(
                     "results", List.of(),
@@ -224,8 +231,7 @@ public class MemoryController {
         }
         var projectContext = resolveProjectContextForRequest(projectId);
         var readFilter = toProjectReadFilter(projectContext, Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
-        int safeTopK = Math.max(1, topK);
-        var rawResults = hybridRetriever.retrieve(q, Math.max(safeTopK * 3, safeTopK), RetrievalWeights.DEFAULT, readFilter);
+        var rawResults = hybridRetriever.retrieve(q, topK * 3, RetrievalWeights.DEFAULT, readFilter);
         Map<String, TemporalEntity> entityById = rawResults.isEmpty()
                 ? Map.of()
                 : semanticMemory.findByIds(
@@ -235,7 +241,7 @@ public class MemoryController {
                 .filter(result -> MemoryQualityPolicy.isPromptConsumable(entityById.get(result.entityId())))
                 .toList();
         var results = consumableResults.stream()
-                .limit(safeTopK)
+                .limit(topK)
                 .toList();
         Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 results.stream().map(r -> r.entityId()).toList()
@@ -300,15 +306,16 @@ public class MemoryController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String order) {
         requireMemoryEnabled();
+        validatePageRequest(page, size);
 
         var projectContext = resolveProjectContextForRequest(projectId);
         var requestedScope = parseMemoryScopeFilter(memoryScope);
         var entities = semanticMemory.findAllCurrent(toEntityListReadFilter(projectContext, spaceId, requestedScope));
 
         // type 过滤
-        if (type != null && !type.isBlank()) {
+        if (type != null) {
             try {
-                var entityType = EntityType.valueOf(type);
+                var entityType = EntityType.valueOf(requireCleanText(type, "type"));
                 entities = entities.stream().filter(e -> e.type() == entityType).toList();
             } catch (IllegalArgumentException e) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的实体类型: " + type);
@@ -324,54 +331,58 @@ public class MemoryController {
                     .toList();
         }
 
-        // 时间范围过滤
-        if (timeFrom != null && !timeFrom.isBlank()) {
-            Instant from = Instant.parse(timeFrom);
+        String cleanTimeFrom = cleanOptionalText(timeFrom, "timeFrom");
+        String cleanTimeTo = cleanOptionalText(timeTo, "timeTo");
+        if (cleanTimeFrom != null) {
+            Instant from = parseInstantParam(cleanTimeFrom, "timeFrom");
             entities = entities.stream().filter(e -> !e.createdAt().isBefore(from)).toList();
         }
-        if (timeTo != null && !timeTo.isBlank()) {
-            Instant to = Instant.parse(timeTo);
+        if (cleanTimeTo != null) {
+            Instant to = parseInstantParam(cleanTimeTo, "timeTo");
             entities = entities.stream().filter(e -> !e.createdAt().isAfter(to)).toList();
         }
 
         boolean requiresMetadataFiltering =
-                (spaceId != null && !spaceId.isBlank())
-                        || (memoryScope != null && !memoryScope.isBlank())
-                        || (realityType != null && !realityType.isBlank());
+                spaceId != null
+                        || memoryScope != null
+                        || realityType != null;
         Map<String, EntityMetadata> filteredMetadataById = requiresMetadataFiltering
                 ? provenanceRepository.loadEntityMetadata(entities.stream().map(TemporalEntity::id).toList())
                 : Map.of();
-        if (spaceId != null && !spaceId.isBlank()) {
-            String normalizedSpaceId = spaceId.trim();
+        if (spaceId != null) {
+            String requestedSpaceId = requireCleanText(spaceId, "spaceId");
             entities = entities.stream()
                     .filter(entity -> {
                         var metadata = filteredMetadataById.get(entity.id());
-                        return metadata != null && normalizedSpaceId.equalsIgnoreCase(metadata.spaceId());
+                        return metadata != null && requestedSpaceId.equals(metadata.spaceId());
                     })
                     .toList();
         }
-        if (memoryScope != null && !memoryScope.isBlank()) {
-            String normalizedMemoryScope = memoryScope.trim();
+        if (memoryScope != null) {
+            String requestedMemoryScope = requestedScope.stream()
+                    .findFirst()
+                    .map(MemoryScope::name)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的记忆范围: " + memoryScope));
             entities = entities.stream()
                     .filter(entity -> {
                         var metadata = filteredMetadataById.get(entity.id());
-                        return metadata != null && normalizedMemoryScope.equalsIgnoreCase(metadata.memoryScope());
+                        return metadata != null && requestedMemoryScope.equals(metadata.memoryScope());
                     })
                     .toList();
         }
-        if (realityType != null && !realityType.isBlank()) {
-            String normalizedRealityType = realityType.trim();
+        if (realityType != null) {
+            String requestedRealityType = requireCleanText(realityType, "realityType");
             entities = entities.stream()
                     .filter(entity -> {
                         var metadata = filteredMetadataById.get(entity.id());
-                        return metadata != null && normalizedRealityType.equalsIgnoreCase(metadata.realityType());
+                        return metadata != null && requestedRealityType.equals(metadata.realityType());
                     })
                     .toList();
         }
         Set<String> filteredEntityIdsByProvenance = provenanceRepository.findEntityIdsByProvenanceFilters(
-                originType,
-                sourceKnowledgeBaseId,
-                sourceDocumentId
+                cleanOptionalText(originType, "originType"),
+                cleanOptionalText(sourceKnowledgeBaseId, "sourceKnowledgeBaseId"),
+                cleanOptionalText(sourceDocumentId, "sourceDocumentId")
         );
         if (filteredEntityIdsByProvenance != null) {
             entities = entities.stream()
@@ -380,13 +391,14 @@ public class MemoryController {
         }
 
         // 排序
-        Comparator<TemporalEntity> comparator = switch (sortBy) {
+        Comparator<TemporalEntity> comparator = switch (requireCleanText(sortBy, "sortBy")) {
             case "name" -> Comparator.comparing(TemporalEntity::name);
             case "importanceScore" -> Comparator.comparing(TemporalEntity::importanceScore);
             case "accessCount" -> Comparator.comparingInt(TemporalEntity::accessCount);
-            default -> Comparator.comparing(TemporalEntity::createdAt);
+            case "createdAt" -> Comparator.comparing(TemporalEntity::createdAt);
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的排序字段: " + sortBy);
         };
-        if ("desc".equalsIgnoreCase(order)) {
+        if (isDescendingOrder(order)) {
             comparator = comparator.reversed();
         }
         entities = entities.stream().sorted(comparator).toList();
@@ -413,10 +425,11 @@ public class MemoryController {
     public ApiResponse<EntityDetailDto> getEntity(@PathVariable String id,
                                                   @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
+        String entityId = requireCleanText(id, "id");
         var projectContext = resolveProjectContextForRequest(projectId);
-        var entity = findReadableEntity(id, projectContext)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        return ApiResponse.ok(toEntityDetail(entity, loadEntityMetadata(id)));
+        var entity = findReadableEntity(entityId, projectContext)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId));
+        return ApiResponse.ok(toEntityDetail(entity, loadEntityMetadata(entityId)));
     }
 
     /**
@@ -426,10 +439,11 @@ public class MemoryController {
     public ApiResponse<List<EntityDetailDto>> getEntityHistory(@PathVariable String id,
                                                                @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
+        String entityId = requireCleanText(id, "id");
         var projectContext = resolveProjectContextForRequest(projectId);
         var readFilter = toProjectReadFilter(projectContext, Set.of());
-        var entity = findReadableEntity(id, projectContext)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+        var entity = findReadableEntity(entityId, projectContext)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId));
         var history = semanticMemory.getChangeHistory(entity.name(), entity.type());
         Map<String, EntityMetadata> metadataById = provenanceRepository.loadEntityMetadata(
                 history.stream().map(TemporalEntity::id).toList());
@@ -448,11 +462,13 @@ public class MemoryController {
             @RequestParam(defaultValue = "2") int maxDepth,
             @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
+        String entityId = requireCleanText(id, "id");
+        requirePositive(maxDepth, "maxDepth");
         var projectContext = resolveProjectContextForRequest(projectId);
         var readFilter = toProjectReadFilter(projectContext, Set.of());
-        findReadableEntity(id, projectContext)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
-        var relatedEntities = semanticMemory.findRelated(id, maxDepth);
+        findReadableEntity(entityId, projectContext)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId));
+        var relatedEntities = semanticMemory.findRelated(entityId, maxDepth);
         if (!relatedEntities.isEmpty()) {
             var visibleById = semanticMemory.findByIds(
                     relatedEntities.stream().map(TemporalEntity::id).toList(),
@@ -480,11 +496,15 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String sourceKnowledgeBaseId,
             @RequestParam(required = false) @Nullable String sourceDocumentId) {
         requireMemoryEnabled();
+        String entityId = requireCleanText(id, "id");
         var projectContext = resolveProjectContextForRequest(projectId);
-        findReadableEntity(id, projectContext)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+        findReadableEntity(entityId, projectContext)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId));
         var rawItems = provenanceRepository.findEntityProvenances(
-                id, originType, sourceKnowledgeBaseId, sourceDocumentId);
+                entityId,
+                cleanOptionalText(originType, "originType"),
+                cleanOptionalText(sourceKnowledgeBaseId, "sourceKnowledgeBaseId"),
+                cleanOptionalText(sourceDocumentId, "sourceDocumentId"));
         return ApiResponse.ok(enrichProvenances(rawItems));
     }
 
@@ -498,11 +518,12 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String sourceDocumentId,
             @RequestParam(defaultValue = "10") int limit) {
         requireMemoryEnabled();
-        if (limit <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须大于 0");
-        }
+        requirePositive(limit, "limit");
         var rawItems = provenanceRepository.findRecentProvenanceSummaries(
-                originType, sourceKnowledgeBaseId, sourceDocumentId, limit);
+                cleanOptionalText(originType, "originType"),
+                cleanOptionalText(sourceKnowledgeBaseId, "sourceKnowledgeBaseId"),
+                cleanOptionalText(sourceDocumentId, "sourceDocumentId"),
+                limit);
         return ApiResponse.ok(enrichMemoryProvenanceSummaries(rawItems));
     }
 
@@ -513,16 +534,17 @@ public class MemoryController {
     public ApiResponse<Void> deleteEntity(@PathVariable String id,
                                           @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
+        String entityId = requireCleanText(id, "id");
         var projectContext = resolveProjectContextForRequest(projectId);
-        var entity = findWritableEntity(id, projectContext).orElse(null);
+        var entity = findWritableEntity(entityId, projectContext).orElse(null);
         if (entity == null) {
             if (projectContext.isolated()
-                    && findReadableEntity(id, projectContext).isPresent()) {
+                    && findReadableEntity(entityId, projectContext).isPresent()) {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
                         "隔离项目不能直接归档继承记忆，请先创建项目内覆盖版本");
             }
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId);
         }
         SqliteBusyRetry.run(() -> semanticMemory.archive(entity, ChangeSource.UI_EDIT));
         return ApiResponse.ok();
@@ -543,6 +565,7 @@ public class MemoryController {
         if (request.name() == null || request.name().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "实体名称不能为空");
         }
+        requireNoBoundaryWhitespace(request.name(), "实体名称");
 
         // 校验 type 为有效 EntityType
         EntityType entityType;
@@ -554,10 +577,13 @@ public class MemoryController {
 
         var now = Instant.now();
         float importance = request.importanceScore() != null ? request.importanceScore() : 0.5f;
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.USER_CONFIRMED;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, 1.0f);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
         var entity = new TemporalEntity(
                 UUID.randomUUID().toString(),
                 entityType,
-                request.name().trim(),
+                request.name(),
                 request.description(),
                 request.properties() != null ? request.properties() : Map.of(),
                 1,
@@ -570,6 +596,18 @@ public class MemoryController {
                 0,
                 null,
                 now,
+                now,
+                LifecycleState.ACTIVE,
+                null,
+                null,
+                Temporality.PERSISTENT,
+                null,
+                false,
+                List.of(),
+                evidenceKind,
+                trustLevel,
+                trustScore,
+                1,
                 now
         );
 
@@ -593,31 +631,35 @@ public class MemoryController {
                                                      @RequestParam(required = false) @Nullable String projectId,
                                                      @RequestBody EntityUpdateRequest request) {
         requireMemoryEnabled();
+        String entityId = requireCleanText(id, "id");
         var projectContext = resolveProjectContextForRequest(projectId);
 
-        var existing = findWritableEntity(id, projectContext).orElse(null);
+        var existing = findWritableEntity(entityId, projectContext).orElse(null);
         if (existing == null) {
             if (projectContext.isolated()) {
-                var inherited = findReadableEntity(id, projectContext)
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id));
+                var inherited = findReadableEntity(entityId, projectContext)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId));
                 var overlay = updateInheritedEntityAsOverlay(inherited, request, projectContext);
                 log.info("隔离项目更新继承实体为 overlay: baseId={}, overlayId={}, name={}",
                         inherited.id(), overlay.id(), overlay.name());
                 var metadata = provenanceRepository.loadEntityMetadata(List.of(overlay.id())).get(overlay.id());
                 return ApiResponse.ok(toEntityDetail(overlay, metadata));
             }
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + id);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId);
         }
 
         if (!existing.isCurrent()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体已归档: " + id);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "实体已归档: " + entityId);
         }
 
         // 合并更新字段
         String description = request.description() != null ? request.description() : existing.description();
         Map<String, Object> properties = request.properties() != null ? request.properties() : existing.properties();
         float importance = request.importanceScore() != null ? request.importanceScore() : existing.importanceScore();
-        EntityMetadata existingMetadata = loadEntityMetadata(id);
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.USER_CONFIRMED;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, 1.0f);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
+        var now = Instant.now();
 
         var updated = new TemporalEntity(
                 existing.id(),
@@ -635,7 +677,19 @@ public class MemoryController {
                 existing.accessCount(),
                 existing.lastAccessedAt(),
                 existing.createdAt(),
-                Instant.now()
+                now,
+                existing.lifecycleState(),
+                existing.lifecycleReason(),
+                existing.expiresAt(),
+                existing.temporality(),
+                existing.succeededBy(),
+                existing.isDerived(),
+                existing.derivationSources(),
+                evidenceKind,
+                trustLevel,
+                trustScore,
+                1,
+                now
         );
 
         var saved = SqliteBusyRetry.execute(() -> semanticMemory.upsertWithConflictDetection(
@@ -658,23 +712,26 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String relationType,
             @RequestParam(required = false) @Nullable String projectId) {
         requireMemoryEnabled();
+        validatePageRequest(page, size);
         var projectContext = resolveProjectContextForRequest(projectId);
         var readFilter = toProjectReadFilter(projectContext, Set.of());
 
         List<TemporalRelation> relations;
-        if (entityId != null && !entityId.isBlank()) {
-            if (findReadableEntity(entityId, projectContext).isEmpty()) {
+        if (entityId != null) {
+            String requestedEntityId = requireCleanText(entityId, "entityId");
+            if (findReadableEntity(requestedEntityId, projectContext).isEmpty()) {
                 return ApiResponse.ok(new PageResult<>(List.of(), page, size, 0L));
             }
-            relations = semanticMemory.findRelationsByEntityId(entityId);
+            relations = semanticMemory.findRelationsByEntityId(requestedEntityId);
         } else {
             relations = semanticMemory.findAllCurrentRelations();
         }
 
         // relationType 过滤
-        if (relationType != null && !relationType.isBlank()) {
+        if (relationType != null) {
+            String requestedRelationType = requireCleanText(relationType, "relationType");
             relations = relations.stream()
-                    .filter(r -> r.relationType().equalsIgnoreCase(relationType))
+                    .filter(r -> r.relationType().equals(requestedRelationType))
                     .toList();
         }
 
@@ -741,15 +798,18 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String timeFrom,
             @RequestParam(required = false) @Nullable String timeTo) {
         requireMemoryEnabled();
+        validatePageRequest(page, size);
         if (episodicMemory == null) {
             return ApiResponse.ok(new PageResult<>(List.of(), page, size, 0L));
         }
+        String cleanTimeFrom = cleanOptionalText(timeFrom, "timeFrom");
+        String cleanTimeTo = cleanOptionalText(timeTo, "timeTo");
 
         // 如果有搜索关键词，使用 FTS5 搜索
         if (q != null && !q.isBlank()) {
             var searchResults = episodicMemory.search(q);
             // 时间范围过滤
-            var filtered = filterByTime(searchResults, timeFrom, timeTo);
+            var filtered = filterByTime(searchResults, cleanTimeFrom, cleanTimeTo);
             long total = filtered.size();
             int fromIndex = Math.min(page * size, filtered.size());
             int toIndex = Math.min(fromIndex + size, filtered.size());
@@ -763,7 +823,7 @@ public class MemoryController {
         long total = episodicMemory.countConversations();
         var conversations = episodicMemory.listConversations(page, size);
         // 时间范围过滤（分页后过滤，简化实现）
-        var filtered = filterByTime(conversations, timeFrom, timeTo);
+        var filtered = filterByTime(conversations, cleanTimeFrom, cleanTimeTo);
         var items = filtered.stream().map(this::toConversationSummary).toList();
         return ApiResponse.ok(new PageResult<>(items, page, size, total));
     }
@@ -774,11 +834,12 @@ public class MemoryController {
     @GetMapping("/conversations/{id}")
     public ApiResponse<ConversationRecord> getConversation(@PathVariable String id) {
         requireMemoryEnabled();
+        String conversationId = requireCleanText(id, "id");
         if (episodicMemory == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + id);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + conversationId);
         }
-        return ApiResponse.ok(episodicMemory.getById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + id)));
+        return ApiResponse.ok(episodicMemory.getById(conversationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + conversationId)));
     }
 
     /**
@@ -787,8 +848,9 @@ public class MemoryController {
     @DeleteMapping("/conversations/{id}")
     public ApiResponse<Void> deleteConversation(@PathVariable String id) {
         requireMemoryEnabled();
-        if (episodicMemory == null || !episodicMemory.delete(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + id);
+        String conversationId = requireCleanText(id, "id");
+        if (episodicMemory == null || !episodicMemory.delete(conversationId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "对话不存在: " + conversationId);
         }
         return ApiResponse.ok();
     }
@@ -806,6 +868,7 @@ public class MemoryController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String order) {
         requireMemoryEnabled();
+        validatePageRequest(page, size);
         if (proceduralMemory == null) {
             return ApiResponse.ok(new PageResult<>(List.of(), page, size, 0L));
         }
@@ -822,12 +885,13 @@ public class MemoryController {
         }
 
         // 排序
-        Comparator<ProcedureTemplate> comparator = switch (sortBy) {
+        Comparator<ProcedureTemplate> comparator = switch (requireCleanText(sortBy, "sortBy")) {
             case "successRate" -> Comparator.comparing(ProcedureTemplate::successRate);
             case "useCount" -> Comparator.comparingInt(ProcedureTemplate::useCount);
-            default -> Comparator.comparing(ProcedureTemplate::createdAt);
+            case "createdAt" -> Comparator.comparing(ProcedureTemplate::createdAt);
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的排序字段: " + sortBy);
         };
-        if ("desc".equalsIgnoreCase(order)) {
+        if (isDescendingOrder(order)) {
             comparator = comparator.reversed();
         }
         templates = templates.stream().sorted(comparator).toList();
@@ -846,11 +910,12 @@ public class MemoryController {
     @GetMapping("/templates/{id}")
     public ApiResponse<Object> getTemplate(@PathVariable String id) {
         requireMemoryEnabled();
+        String templateId = requireCleanText(id, "id");
         if (proceduralMemory == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + templateId);
         }
-        return ApiResponse.ok(proceduralMemory.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id)));
+        return ApiResponse.ok(proceduralMemory.findById(templateId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + templateId)));
     }
 
     /**
@@ -859,12 +924,13 @@ public class MemoryController {
     @DeleteMapping("/templates/{id}")
     public ApiResponse<Void> deleteTemplate(@PathVariable String id) {
         requireMemoryEnabled();
+        String templateId = requireCleanText(id, "id");
         if (proceduralMemory == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + templateId);
         }
-        proceduralMemory.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + id));
-        proceduralMemory.delete(id);
+        proceduralMemory.findById(templateId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模板不存在: " + templateId));
+        proceduralMemory.delete(templateId);
         return ApiResponse.ok();
     }
 
@@ -878,8 +944,9 @@ public class MemoryController {
         if (proceduralMemory == null) {
             return ApiResponse.ok(List.of());
         }
-        if (category != null && !category.isBlank()) {
-            return ApiResponse.ok(List.copyOf(proceduralMemory.getPreferences(category)));
+        String cleanCategory = cleanOptionalText(category, "category");
+        if (cleanCategory != null) {
+            return ApiResponse.ok(List.copyOf(proceduralMemory.getPreferences(cleanCategory)));
         }
         return ApiResponse.ok(List.copyOf(proceduralMemory.listAllPreferences()));
     }
@@ -890,8 +957,9 @@ public class MemoryController {
     @DeleteMapping("/preferences/{id}")
     public ApiResponse<Void> deletePreference(@PathVariable String id) {
         requireMemoryEnabled();
-        if (proceduralMemory == null || !proceduralMemory.deletePreference(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "偏好规则不存在: " + id);
+        String preferenceId = requireCleanText(id, "id");
+        if (proceduralMemory == null || !proceduralMemory.deletePreference(preferenceId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "偏好规则不存在: " + preferenceId);
         }
         return ApiResponse.ok();
     }
@@ -909,7 +977,21 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String timeTo,
             @RequestParam(required = false) @Nullable String strategy) {
         requireMemoryEnabled();
-        return ApiResponse.ok(forgettingLogRepository.findPaginated(timeFrom, timeTo, strategy, page, size));
+        validatePageRequest(page, size);
+        String cleanTimeFrom = cleanOptionalText(timeFrom, "timeFrom");
+        String cleanTimeTo = cleanOptionalText(timeTo, "timeTo");
+        if (cleanTimeFrom != null) {
+            parseInstantParam(cleanTimeFrom, "timeFrom");
+        }
+        if (cleanTimeTo != null) {
+            parseInstantParam(cleanTimeTo, "timeTo");
+        }
+        return ApiResponse.ok(forgettingLogRepository.findPaginated(
+                cleanTimeFrom,
+                cleanTimeTo,
+                cleanOptionalText(strategy, "strategy"),
+                page,
+                size));
     }
 
     // ========== Req 8: 手动触发巩固 ==========
@@ -946,9 +1028,9 @@ public class MemoryController {
         if (remApplier == null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "REM 落库应用器未启用");
         }
-        java.time.LocalDate target = (date != null && !date.isBlank())
-                ? java.time.LocalDate.parse(date.trim())
-                : java.time.LocalDate.now();
+        LocalDate target = date != null
+                ? parseDateParam(date, "date")
+                : LocalDate.now();
         var result = remApplier.apply(target);
         return ApiResponse.ok(Map.of(
                 "date", target.toString(),
@@ -969,9 +1051,7 @@ public class MemoryController {
             @RequestParam(required = false) @Nullable String projectId,
             @RequestParam(defaultValue = "10") int limit) {
         requireMemoryEnabled();
-        if (limit <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须大于 0");
-        }
+        requirePositive(limit, "limit");
         if (memoryAttentionService == null) {
             return ApiResponse.ok(List.of());
         }
@@ -1085,10 +1165,17 @@ public class MemoryController {
                     e.updatedAt().toString(),
                     e.version()));
         } else {
+            var now = Instant.now();
+            MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.USER_CONFIRMED;
+            float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, 1.0f);
+            MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
             var entity = new TemporalEntity(
                     null, EntityType.CUSTOM, "__consolidated_profile", request.description(),
-                    Map.of(), 1, true, Instant.now(), null, null,
-                    1.0f, 1.0f, 0, null, Instant.now(), Instant.now());
+                    Map.of(), 1, true, now, null, null,
+                    1.0f, 1.0f, 0, null, now, now,
+                    LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
+                    null, false, List.of(),
+                    evidenceKind, trustLevel, trustScore, 1, now);
             var created = semanticMemory.upsertWithConflictDetection(
                     entity,
                     MANUAL_SOURCE,
@@ -1106,10 +1193,10 @@ public class MemoryController {
     // ========== 内部辅助方法 ==========
 
     private ProjectContext resolveProjectContextForRequest(@Nullable String projectId) {
-        if (projectId == null || projectId.isBlank()) {
+        if (projectId == null) {
             return projectContextResolver.resolve(null);
         }
-        return projectContextResolver.resolve(projectId.trim());
+        return projectContextResolver.resolve(requireCleanText(projectId, "projectId"));
     }
 
     private MemoryReadFilter toProjectReadFilter(ProjectContext ctx, Set<MemoryScope> scopes) {
@@ -1119,18 +1206,18 @@ public class MemoryController {
     private MemoryReadFilter toEntityListReadFilter(ProjectContext ctx,
                                                     @Nullable String spaceId,
                                                     Set<MemoryScope> scopes) {
-        if (spaceId != null && !spaceId.isBlank()) {
-            return MemoryReadFilter.of(List.of(spaceId.trim()), scopes);
+        if (spaceId != null) {
+            return MemoryReadFilter.of(List.of(requireCleanText(spaceId, "spaceId")), scopes);
         }
         return toProjectReadFilter(ctx, scopes);
     }
 
     private Set<MemoryScope> parseMemoryScopeFilter(@Nullable String memoryScope) {
-        if (memoryScope == null || memoryScope.isBlank()) {
+        if (memoryScope == null) {
             return Set.of();
         }
         try {
-            return Set.of(MemoryScope.valueOf(memoryScope.trim()));
+            return Set.of(MemoryScope.valueOf(requireCleanText(memoryScope, "memoryScope")));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的记忆范围: " + memoryScope);
         }
@@ -1182,6 +1269,9 @@ public class MemoryController {
         String description = request.description() != null ? request.description() : baseEntity.description();
         Map<String, Object> properties = request.properties() != null ? request.properties() : baseEntity.properties();
         float importance = request.importanceScore() != null ? request.importanceScore() : baseEntity.importanceScore();
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.USER_CONFIRMED;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, 1.0f);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
         var overlay = new TemporalEntity(
                 null,
                 baseEntity.type(),
@@ -1205,7 +1295,12 @@ public class MemoryController {
                 baseEntity.temporality(),
                 baseEntity.succeededBy(),
                 baseEntity.isDerived(),
-                baseEntity.derivationSources());
+                baseEntity.derivationSources(),
+                evidenceKind,
+                trustLevel,
+                trustScore,
+                1,
+                now);
         return SqliteBusyRetry.execute(() -> semanticMemory.upsertProjectOverlay(
                 overlay,
                 baseEntity,
@@ -1355,32 +1450,64 @@ public class MemoryController {
         return provenanceRepository.loadEntityMetadata(List.of(entityId)).get(entityId);
     }
 
-    private MemoryWriteContext writeContextFromMetadata(@Nullable EntityMetadata metadata) {
-        return new MemoryWriteContext(
-                metadata != null ? metadata.spaceId() : null,
-                parseMemoryScope(metadata != null ? metadata.memoryScope() : null),
-                MemoryOriginType.MANUAL,
-                MemoryRealityType.UNKNOWN,
-                MANUAL_SOURCE,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-        );
+    private String requireCleanText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + "不能为空");
+        }
+        requireNoBoundaryWhitespace(value, field);
+        return value;
     }
 
     @Nullable
-    private MemoryScope parseMemoryScope(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
+    private String cleanOptionalText(@Nullable String value, String field) {
+        if (value == null) {
             return null;
         }
+        return requireCleanText(value, field);
+    }
+
+    private void validatePageRequest(int page, int size) {
+        if (page < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "page 不能小于 0");
+        }
+        requirePositive(size, "size");
+    }
+
+    private void requirePositive(int value, String field) {
+        if (value <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + "必须大于 0");
+        }
+    }
+
+    private boolean isDescendingOrder(String order) {
+        return switch (requireCleanText(order, "order")) {
+            case "asc" -> false;
+            case "desc" -> true;
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的排序方向: " + order);
+        };
+    }
+
+    private Instant parseInstantParam(String value, String field) {
+        String cleanValue = requireCleanText(value, field);
         try {
-            return MemoryScope.valueOf(raw.trim());
-        } catch (IllegalArgumentException e) {
-            log.warn("实体记忆范围元数据非法，按默认范围写入: memoryScope={}", raw);
-            return null;
+            return Instant.parse(cleanValue);
+        } catch (DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的时间参数: " + field, e);
+        }
+    }
+
+    private LocalDate parseDateParam(String value, String field) {
+        String cleanValue = requireCleanText(value, field);
+        try {
+            return LocalDate.parse(cleanValue);
+        } catch (DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "无效的日期参数: " + field, e);
+        }
+    }
+
+    private void requireNoBoundaryWhitespace(String value, String field) {
+        if (!value.equals(value.trim())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + "不能包含首尾空白: " + value);
         }
     }
 
@@ -1394,12 +1521,12 @@ public class MemoryController {
                                                    @Nullable String timeFrom,
                                                    @Nullable String timeTo) {
         var result = records;
-        if (timeFrom != null && !timeFrom.isBlank()) {
-            Instant from = Instant.parse(timeFrom);
+        if (timeFrom != null) {
+            Instant from = parseInstantParam(timeFrom, "timeFrom");
             result = result.stream().filter(c -> !c.createdAt().isBefore(from)).toList();
         }
-        if (timeTo != null && !timeTo.isBlank()) {
-            Instant to = Instant.parse(timeTo);
+        if (timeTo != null) {
+            Instant to = parseInstantParam(timeTo, "timeTo");
             result = result.stream().filter(c -> !c.createdAt().isAfter(to)).toList();
         }
         return result;

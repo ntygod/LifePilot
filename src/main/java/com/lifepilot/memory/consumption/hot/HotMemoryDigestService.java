@@ -13,8 +13,6 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.observability.redactor.DataRedactor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
 import java.nio.charset.StandardCharsets;
@@ -29,6 +27,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -43,7 +42,6 @@ import java.util.Set;
  */
 public class HotMemoryDigestService {
 
-    private static final Logger log = LoggerFactory.getLogger(HotMemoryDigestService.class);
     private static final String CONSOLIDATED_PROFILE_NAME = "__consolidated_profile";
     private static final String USER_PREFERENCE_CATEGORY = "user-preference";
 
@@ -55,14 +53,14 @@ public class HotMemoryDigestService {
 
     public HotMemoryDigestService(SemanticMemory semanticMemory,
                                   MemoryConsumptionProperties properties,
-                                  @Nullable ProceduralMemory proceduralMemory,
-                                  @Nullable DataRedactor dataRedactor,
+                                  ProceduralMemory proceduralMemory,
+                                  DataRedactor dataRedactor,
                                   Clock clock) {
-        this.semanticMemory = semanticMemory;
-        this.properties = properties;
-        this.proceduralMemory = proceduralMemory;
-        this.dataRedactor = dataRedactor != null ? dataRedactor : new DataRedactor();
-        this.clock = clock != null ? clock : Clock.systemUTC();
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "SemanticMemory 不能为空");
+        this.properties = Objects.requireNonNull(properties, "MemoryConsumptionProperties 不能为空");
+        this.proceduralMemory = Objects.requireNonNull(proceduralMemory, "ProceduralMemory 不能为空");
+        this.dataRedactor = Objects.requireNonNull(dataRedactor, "DataRedactor 不能为空");
+        this.clock = Objects.requireNonNull(clock, "Clock 不能为空");
     }
 
     /**
@@ -73,11 +71,12 @@ public class HotMemoryDigestService {
      * @return 热摘要快照
      */
     public HotMemoryDigest build(MemoryReadFilter filter, String viewKey) {
+        Objects.requireNonNull(filter, "热摘要读取过滤器不能为空");
+        requireText(viewKey, "热摘要读取视图 key 不能为空");
         var config = properties.getHotDigest();
         Instant now = Instant.now(clock);
-        String resolvedViewKey = viewKey == null || viewKey.isBlank() ? "default" : viewKey;
         if (!config.isEnabled()) {
-            return empty(resolvedViewKey, now, "disabled");
+            return empty(viewKey, now, "disabled");
         }
 
         List<TemporalEntity> consumable = semanticMemory.findAllCurrent(filter).stream()
@@ -85,7 +84,7 @@ public class HotMemoryDigestService {
                 .filter(this::isHotDigestEligible)
                 .toList();
         if (consumable.isEmpty()) {
-            return empty(resolvedViewKey, now, "empty");
+            return empty(viewKey, now, "empty");
         }
 
         List<HotPreferenceRule> hotPreferences = selectHotPreferenceRules(consumable);
@@ -113,7 +112,7 @@ public class HotMemoryDigestService {
 
         return new HotMemoryDigest(
                 "hot-" + sourceRevision.substring(0, Math.min(12, sourceRevision.length())),
-                resolvedViewKey,
+                viewKey,
                 now,
                 sourceRevision,
                 sections);
@@ -159,7 +158,7 @@ public class HotMemoryDigestService {
                 .collect(java.util.stream.Collectors.toSet());
         Set<String> l4SourceIds = hotPreferences.stream()
                 .map(rule -> rule.source().id())
-                .filter(id -> id != null && !id.isBlank())
+                .map(id -> requireEntityId(id, "L4 偏好源实体 id 不能为空"))
                 .collect(java.util.stream.Collectors.toSet());
         List<TemporalEntity> fragments = new ArrayList<>(entities.stream()
                 .filter(entity -> entity.type() == EntityType.PREFERENCE
@@ -305,33 +304,25 @@ public class HotMemoryDigestService {
     }
 
     private List<HotPreferenceRule> selectHotPreferenceRules(List<TemporalEntity> consumableEntities) {
-        if (proceduralMemory == null) {
-            return List.of();
-        }
         Map<String, TemporalEntity> sourceById = new HashMap<>();
         for (TemporalEntity entity : consumableEntities) {
             if (entity.id() != null && !entity.id().isBlank()) {
                 sourceById.put(entity.id(), entity);
             }
         }
-        try {
-            return proceduralMemory.getPreferences(USER_PREFERENCE_CATEGORY).stream()
-                    .filter(PreferenceRule::isHighConfidence)
-                    .map(rule -> {
-                        String sourceId = rule.sourceEntityId();
-                        TemporalEntity source = sourceId == null ? null : sourceById.get(sourceId);
-                        return source == null ? null : new HotPreferenceRule(rule, source);
-                    })
-                    .filter(java.util.Objects::nonNull)
-                    .sorted(Comparator
-                            .comparingDouble((HotPreferenceRule preference) -> preference.rule().confidence())
-                            .reversed()
-                            .thenComparing(preference -> preference.rule().key()))
-                    .toList();
-        } catch (Exception e) {
-            log.warn("热记忆摘要加载 L4 偏好规则失败，跳过 L4 注入: error={}", e.getMessage());
-            return List.of();
-        }
+        return proceduralMemory.getPreferences(USER_PREFERENCE_CATEGORY).stream()
+                .filter(PreferenceRule::isHighConfidence)
+                .map(rule -> {
+                    String sourceId = rule.sourceEntityId();
+                    TemporalEntity source = sourceId == null ? null : sourceById.get(sourceId);
+                    return source == null ? null : new HotPreferenceRule(rule, source);
+                })
+                .filter(Objects::nonNull)
+                .sorted(Comparator
+                        .comparingDouble((HotPreferenceRule preference) -> preference.rule().confidence())
+                        .reversed()
+                        .thenComparing(preference -> preference.rule().key()))
+                .toList();
     }
 
     @Nullable
@@ -346,13 +337,13 @@ public class HotMemoryDigestService {
         }
         String raw = "- [" + entity.type().label() + "|" + entity.trustLevel().name()
                 + "/" + entity.evidenceKind().name() + "] " + label + "\n";
-        try {
-            String redacted = dataRedactor.redact(raw);
-            return redacted == null || redacted.isBlank() ? null : redacted;
-        } catch (Exception e) {
-            log.warn("热记忆摘要脱敏失败，跳过条目: entityId={}, error={}", entity.id(), e.getMessage());
-            return null;
+        String redacted = Objects.requireNonNull(
+                dataRedactor.redact(raw),
+                "热记忆摘要脱敏结果不能为空: entityId=" + entity.id());
+        if (redacted.isBlank()) {
+            throw new IllegalStateException("热记忆摘要脱敏结果不能为空: entityId=" + entity.id());
         }
+        return redacted;
     }
 
     @Nullable
@@ -366,14 +357,13 @@ public class HotMemoryDigestService {
         String raw = "- [L4偏好|" + source.trustLevel().name()
                 + "/" + source.evidenceKind().name()
                 + "|confidence=" + rule.confidence() + "] " + label + "\n";
-        try {
-            String redacted = dataRedactor.redact(raw);
-            return redacted == null || redacted.isBlank() ? null : redacted;
-        } catch (Exception e) {
-            log.warn("热记忆摘要 L4 偏好脱敏失败，跳过规则: ruleId={}, error={}",
-                    rule.ruleId(), e.getMessage());
-            return null;
+        String redacted = Objects.requireNonNull(
+                dataRedactor.redact(raw),
+                "热记忆摘要 L4 偏好脱敏结果不能为空: ruleId=" + rule.ruleId());
+        if (redacted.isBlank()) {
+            throw new IllegalStateException("热记忆摘要 L4 偏好脱敏结果不能为空: ruleId=" + rule.ruleId());
         }
+        return redacted;
     }
 
     private boolean isHotDigestEligible(TemporalEntity entity) {
@@ -390,15 +380,27 @@ public class HotMemoryDigestService {
 
     private List<String> sourceEntityIds(TemporalEntity entity) {
         LinkedHashSet<String> ids = new LinkedHashSet<>();
-        if (entity.id() != null && !entity.id().isBlank()) {
-            ids.add(entity.id());
-        }
-        if (entity.derivationSources() != null) {
-            entity.derivationSources().stream()
-                    .filter(id -> id != null && !id.isBlank())
-                    .forEach(ids::add);
+        ids.add(requireEntityId(entity.id(), "热摘要源实体 id 不能为空"));
+        for (String sourceId : entity.derivationSources()) {
+            ids.add(requireEntityId(sourceId, "热摘要派生来源实体 id 不能为空"));
         }
         return List.copyOf(ids);
+    }
+
+    private static String requireEntityId(@Nullable String entityId, String message) {
+        if (entityId == null || entityId.isBlank()) {
+            throw new IllegalStateException(message);
+        }
+        return entityId;
+    }
+
+    private static void requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(message + "，不能包含首尾空白");
+        }
     }
 
     private double rank(TemporalEntity entity) {
@@ -435,7 +437,7 @@ public class HotMemoryDigestService {
                     .digest(raw.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(bytes);
         } catch (Exception e) {
-            return Integer.toHexString(raw.hashCode());
+            throw new IllegalStateException("热记忆摘要 sourceRevision 计算失败", e);
         }
     }
 

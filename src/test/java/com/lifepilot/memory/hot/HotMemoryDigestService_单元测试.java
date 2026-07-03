@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -45,8 +47,8 @@ class HotMemoryDigestService_单元测试 {
         var service = new HotMemoryDigestService(
                 semanticMemory,
                 properties,
-                null,
-                null,
+                emptyProceduralMemory(),
+                new DataRedactor(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         var filter = MemoryReadFilter.userMemory();
 
@@ -91,8 +93,8 @@ class HotMemoryDigestService_单元测试 {
         var service = new HotMemoryDigestService(
                 semanticMemory,
                 properties,
-                null,
-                null,
+                emptyProceduralMemory(),
+                new DataRedactor(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         var filter = MemoryReadFilter.userProfile();
 
@@ -122,7 +124,7 @@ class HotMemoryDigestService_单元测试 {
         var service = new HotMemoryDigestService(
                 semanticMemory,
                 new MemoryConsumptionProperties(),
-                null,
+                emptyProceduralMemory(),
                 new DataRedactor(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         var filter = MemoryReadFilter.all();
@@ -150,7 +152,7 @@ class HotMemoryDigestService_单元测试 {
                 semanticMemory,
                 new MemoryConsumptionProperties(),
                 proceduralMemory,
-                null,
+                new DataRedactor(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         var filter = MemoryReadFilter.userMemory();
         var source = entity("pref-source", EntityType.PREFERENCE, "response_language", "用户偏好中文回答",
@@ -179,6 +181,98 @@ class HotMemoryDigestService_单元测试 {
                 .doesNotContain("tone = 随意")
                 .doesNotContain("format = markdown");
         assertThat(profileSection.sourceEntityIds()).containsExactly(source.id());
+    }
+
+    @Test
+    void L4偏好加载失败时应直接暴露错误() {
+        SemanticMemory semanticMemory = mock(SemanticMemory.class);
+        ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
+        var service = new HotMemoryDigestService(
+                semanticMemory,
+                new MemoryConsumptionProperties(),
+                proceduralMemory,
+                new DataRedactor(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        var filter = MemoryReadFilter.userMemory();
+        var source = entity("pref-source", EntityType.PREFERENCE, "response_language", "用户偏好中文回答",
+                Map.of(), MemoryTrustLevel.EXPLICIT, MemoryEvidenceKind.USER_CONFIRMED,
+                LifecycleState.ACTIVE, 0.9f, 0.8f);
+
+        when(semanticMemory.findAllCurrent(filter)).thenReturn(List.of(source));
+        when(proceduralMemory.getPreferences("user-preference"))
+                .thenThrow(new IllegalStateException("L4 读取失败"));
+
+        assertThatThrownBy(() -> service.build(filter, "personal"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("L4 读取失败");
+    }
+
+    @Test
+    void 热摘要遇到空白派生来源实体Id应直接失败() {
+        SemanticMemory semanticMemory = mock(SemanticMemory.class);
+        var service = new HotMemoryDigestService(
+                semanticMemory,
+                new MemoryConsumptionProperties(),
+                emptyProceduralMemory(),
+                new DataRedactor(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        var filter = MemoryReadFilter.userProfile();
+
+        when(semanticMemory.findAllCurrent(filter)).thenReturn(List.of(
+                entity("profile-1", EntityType.CUSTOM, "__consolidated_profile", "用户长期偏好安静务实的回答。",
+                        Map.of(), MemoryTrustLevel.DERIVED, MemoryEvidenceKind.DERIVED,
+                        LifecycleState.ACTIVE, 0.7f, 0.9f, List.of(" "))
+        ));
+
+        assertThatThrownBy(() -> service.build(filter, "personal"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("热摘要派生来源实体 id 不能为空");
+    }
+
+    @Test
+    void 脱敏失败时应直接暴露错误() {
+        SemanticMemory semanticMemory = mock(SemanticMemory.class);
+        ProceduralMemory proceduralMemory = emptyProceduralMemory();
+        DataRedactor dataRedactor = mock(DataRedactor.class);
+        var service = new HotMemoryDigestService(
+                semanticMemory,
+                new MemoryConsumptionProperties(),
+                proceduralMemory,
+                dataRedactor,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        var filter = MemoryReadFilter.all();
+
+        when(semanticMemory.findAllCurrent(filter)).thenReturn(List.of(
+                entity("fact-1", EntityType.PERSON, "联系人", "手机号 13812345678",
+                        Map.of(), MemoryTrustLevel.VERIFIED, MemoryEvidenceKind.TOOL_VERIFIED,
+                        LifecycleState.ACTIVE, 0.9f, 0.8f)
+        ));
+        when(dataRedactor.redact(anyString())).thenThrow(new IllegalStateException("脱敏失败"));
+
+        assertThatThrownBy(() -> service.build(filter, "personal"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("脱敏失败");
+    }
+
+    @Test
+    void 热摘要视图Key缺失时应直接失败() {
+        SemanticMemory semanticMemory = mock(SemanticMemory.class);
+        var service = new HotMemoryDigestService(
+                semanticMemory,
+                new MemoryConsumptionProperties(),
+                emptyProceduralMemory(),
+                new DataRedactor(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> service.build(MemoryReadFilter.userMemory(), " "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("热摘要读取视图 key 不能为空");
+    }
+
+    private ProceduralMemory emptyProceduralMemory() {
+        ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
+        when(proceduralMemory.getPreferences("user-preference")).thenReturn(List.of());
+        return proceduralMemory;
     }
 
     private TemporalEntity entity(String id,

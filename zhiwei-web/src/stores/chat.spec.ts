@@ -76,4 +76,27 @@ describe('useChatStore 项目上下文继承', () => {
     expect(store.activeSessionId).toBe('s-3')
     expect(store.sessions[0]?.id).toBe('s-3')
   })
+
+  it('loadSessions 默认不自动激活最近会话，避免新对话页被历史会话抢占', async () => {
+    chatApiMock.listSessions.mockResolvedValueOnce([
+      makeSession('s-latest'),
+    ])
+
+    const store = useChatStore()
+    await store.loadSessions()
+
+    expect(store.sessions[0]?.id).toBe('s-latest')
+    expect(store.activeSessionId).toBeNull()
+  })
+
+  it('loadSessions 显式 activateFirst 时才激活最近会话', async () => {
+    chatApiMock.listSessions.mockResolvedValueOnce([
+      makeSession('s-latest'),
+    ])
+
+    const store = useChatStore()
+    await store.loadSessions({ activateFirst: true })
+
+    expect(store.activeSessionId).toBe('s-latest')
+  })
 })

@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -54,7 +55,6 @@ public class HybridRetriever {
     private final MemoryRetrievalProperties memoryProperties;
     private final JdbcTemplate jdbcTemplate;
     private final ExecutorService virtualThreadExecutor;
-    @Nullable
     private final RerankRouter rerankRouter;
     private final MemoryProvenanceRepository provenanceRepository;
 
@@ -67,16 +67,16 @@ public class HybridRetriever {
                            @Nullable IntentMatcher intentMatcher,
                            MemoryRetrievalProperties memoryProperties,
                            JdbcTemplate jdbcTemplate,
-                           @Nullable RerankRouter rerankRouter,
+                           RerankRouter rerankRouter,
                            MemoryProvenanceRepository provenanceRepository) {
-        this.vectorSearcher = vectorSearcher;
-        this.ftsSearcher = ftsSearcher;
-        this.graphTraverser = graphTraverser;
-        this.semanticMemory = semanticMemory;
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "vectorSearcher");
+        this.ftsSearcher = Objects.requireNonNull(ftsSearcher, "ftsSearcher");
+        this.graphTraverser = Objects.requireNonNull(graphTraverser, "graphTraverser");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory");
         this.intentMatcher = intentMatcher;
-        this.memoryProperties = memoryProperties;
-        this.jdbcTemplate = jdbcTemplate;
-        this.rerankRouter = rerankRouter;
+        this.memoryProperties = Objects.requireNonNull(memoryProperties, "memoryProperties");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate");
+        this.rerankRouter = Objects.requireNonNull(rerankRouter, "rerankRouter");
         this.provenanceRepository = Objects.requireNonNull(provenanceRepository, "provenanceRepository");
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
@@ -115,6 +115,8 @@ public class HybridRetriever {
                                           int topK,
                                           RetrievalWeights weights,
                                           @Nullable MemoryReadFilter filter) {
+        validateRetrieveArguments(query, topK, weights);
+        String normalizedQuery = query.trim();
         long startTime = System.currentTimeMillis();
 
         // 1. 并行执行三路检索 + 可选 L4 意图匹配
@@ -122,48 +124,44 @@ public class HybridRetriever {
         // 向量路径 pre-filter：filter 生效时，预查合规实体 ID
         final Set<String> eligibleIds;
         if (filter != null && !filter.isUnrestricted()) {
-            eligibleIds = semanticMemory.findEligibleEntityIds(filter);
+            eligibleIds = requireEntityIds(
+                    semanticMemory.findEligibleEntityIds(filter), "读取过滤可用实体 ID");
         } else {
             eligibleIds = null;
         }
         var vectorFuture = CompletableFuture.supplyAsync(
-                () -> vectorSearcher.searchEntities(query, topK, minVecSim, eligibleIds), virtualThreadExecutor);
+                () -> vectorSearcher.searchEntities(normalizedQuery, topK, minVecSim, eligibleIds), virtualThreadExecutor);
         var ftsFuture = CompletableFuture.supplyAsync(
-                () -> ftsSearcher.search(query, topK), virtualThreadExecutor);
+                () -> ftsSearcher.search(normalizedQuery, topK), virtualThreadExecutor);
         var graphFuture = CompletableFuture.supplyAsync(
-                () -> graphTraverser.traverse(query, topK, filter), virtualThreadExecutor);
+                () -> graphTraverser.traverse(normalizedQuery, topK, filter), virtualThreadExecutor);
 
         // L4: 并行执行 IntentMatcher（不参与 RRF 融合，与三路检索一起等待）
         CompletableFuture<Void> intentFuture = null;
         if (intentMatcher != null) {
             intentFuture = CompletableFuture.runAsync(() -> {
-                try {
-                    var matchOpt = intentMatcher.match(query);
-                    matchOpt.ifPresent(match -> {
-                        var template = match.template();
-                        var context = "操作模板建议: %s (匹配度=%.2f, 成功率=%.2f, 步骤数=%d)"
-                                .formatted(template.name(), match.score(),
-                                        template.successRate(), template.steps().size());
-                        log.debug("混合检索: L4 意图匹配命中, template={}, score={}",
-                                template.name(), match.score());
-                    });
-                } catch (Exception e) {
-                    log.warn("混合检索: L4 意图匹配失败, error={}", e.getMessage());
-                }
+                var matchOpt = intentMatcher.match(normalizedQuery);
+                matchOpt.ifPresent(match -> {
+                    var template = match.template();
+                    log.debug("混合检索: L4 意图匹配命中, template={}, score={}",
+                            template.name(), match.score());
+                });
             }, virtualThreadExecutor);
         }
 
         // 等待所有并行任务完成（三路检索 + 可选 L4 意图匹配）
         if (intentFuture != null) {
-            CompletableFuture.allOf(vectorFuture, ftsFuture, graphFuture, intentFuture).join();
+            awaitAll(vectorFuture, ftsFuture, graphFuture, intentFuture);
         } else {
-            CompletableFuture.allOf(vectorFuture, ftsFuture, graphFuture).join();
+            awaitAll(vectorFuture, ftsFuture, graphFuture);
         }
 
-        // 收集结果，任一路失败时使用空列表
-        List<VectorSearchResult> vectorResults = safeGet(vectorFuture, "向量检索");
-        List<RankedItem> ftsResults = filterRankedItems(safeGet(ftsFuture, "全文搜索"), filter);
-        List<RankedItem> graphResults = filterRankedItems(safeGet(graphFuture, "图遍历"), filter);
+        List<VectorSearchResult> vectorResults = getRequired(vectorFuture, "向量检索");
+        List<RankedItem> ftsResults = filterRankedItems(getRequired(ftsFuture, "全文搜索"), filter);
+        List<RankedItem> graphResults = filterRankedItems(getRequired(graphFuture, "图遍历"), filter);
+        if (intentFuture != null) {
+            waitRequired(intentFuture, "L4 意图匹配");
+        }
 
         if (vectorResults.isEmpty() && ftsResults.isEmpty() && graphResults.isEmpty()) {
             return List.of();
@@ -212,7 +210,10 @@ public class HybridRetriever {
             float impBoost = adaptedWeights.importanceBoost() * acc.importanceScore;
 
             // 可信度加成：trustScoreBoostWeight × trust_score（质量门槛之外的排序维度）
-            float trustScore = trustScoreMap.getOrDefault(acc.entityId, 0.0f);
+            Float trustScore = trustScoreMap.get(acc.entityId);
+            if (trustScore == null) {
+                throw new IllegalStateException("混合检索: 候选实体缺少 trustScore: " + acc.entityId);
+            }
             float trustBoost = memoryProperties.getTrustScoreBoostWeight() * trustScore;
 
             float lexicalBoost = acc.ftsScore >= EXACT_LEXICAL_MATCH_THRESHOLD
@@ -264,15 +265,11 @@ public class HybridRetriever {
 
         // 6. 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
         // 5.5 可选精排（Reranker 可用且记忆精排已启用时）
-        // enabled 语义变更为"强制关闭开关"：enabled=false → 强制禁用；enabled=true 或未配置 → Reranker 可用时自动启用
+        // enabled=false 为强制关闭；enabled=true 时还需 RerankRouter 的记忆精排设置启用。
         var memRerankerDefaults = memoryProperties.getReranker();
         boolean memRerankEnabled = memRerankerDefaults.isEnabled()
-                && rerankRouter != null
                 && rerankRouter.isMemoryRerankEnabled();
-        int memRerankTopK = rerankRouter != null
-                ? rerankRouter.memoryTopK()
-                : memRerankerDefaults.getTopK();
-        if (rerankRouter != null && memRerankEnabled) {
+        if (memRerankEnabled) {
             try {
                 var candidates = results.stream()
                         .map(r -> new RerankCandidate(
@@ -280,13 +277,15 @@ public class HybridRetriever {
                                 r.name() + " " + (r.description() != null ? r.description() : ""),
                                 r.fusedScore()))
                         .toList();
-                var reranked = rerankRouter.rerankMemoryCandidates(query, candidates);
+                var reranked = rerankRouter.rerankMemoryCandidates(normalizedQuery, candidates);
                 var resultMap = new HashMap<String, RetrievalResult>();
                 for (var r : results) resultMap.put(r.entityId(), r);
                 results = reranked.stream()
                         .map(rc -> {
                             var original = resultMap.get(rc.id());
-                            if (original == null) return null;
+                            if (original == null) {
+                                throw new IllegalStateException("记忆精排返回未知候选 ID: " + rc.id());
+                            }
                             return new RetrievalResult(
                                     original.entityId(), original.entityType(),
                                     original.name(), original.description(),
@@ -296,14 +295,11 @@ public class HybridRetriever {
                                     original.isHistorical(), original.isStale(),
                                     original.needsRevalidation());
                         })
-                        .filter(Objects::nonNull)
                         .collect(Collectors.toCollection(ArrayList::new));
                 log.debug("记忆精排完成: input={}, output={}", candidates.size(), results.size());
             } catch (Exception e) {
-                log.warn("记忆精排失败，降级使用未精排结果: {}", e.getMessage());
+                throw new IllegalStateException("记忆精排失败", e);
             }
-        } else if (memRerankEnabled && rerankRouter == null) {
-            log.warn("记忆精排已启用但 Reranker Bean 不存在，跳过精排");
         }
 
         // 6.5 按 entity_id 去重（保留 fusedScore 最高），排序，截取 topK
@@ -350,12 +346,12 @@ public class HybridRetriever {
         // 记录检索事件日志
         long durationMs = System.currentTimeMillis() - startTime;
         float topFused = finalResults.isEmpty() ? 0.0f : finalResults.getFirst().fusedScore();
-        logRetrievalEvent(query, topK,
+        logRetrievalEvent(normalizedQuery, topK,
                 vectorItems.size(), ftsResults.size(), graphResults.size(),
                 deduped.size(), finalResults.size(), topFused, durationMs);
 
         log.debug("混合检索: query={}, 向量={}, FTS={}, 图={}, 融合结果={}, 耗时={}ms",
-                query, vectorItems.size(), ftsResults.size(), graphResults.size(),
+                normalizedQuery, vectorItems.size(), ftsResults.size(), graphResults.size(),
                 finalResults.size(), durationMs);
         return finalResults;
     }
@@ -370,13 +366,62 @@ public class HybridRetriever {
      */
     // --- 内部方法 ---
 
-    /** 安全获取 CompletableFuture 结果，失败时返回空列表。 */
-    private <T> List<T> safeGet(CompletableFuture<List<T>> future, String pathName) {
+    /** 获取 CompletableFuture 结果，核心检索路径失败时直接暴露。 */
+    private void awaitAll(CompletableFuture<?>... futures) {
         try {
-            return future.join();
+            CompletableFuture.allOf(futures).join();
+        } catch (CompletionException ignored) {
+            // 各 future 的异常由 getRequired/waitRequired 带路径名重新抛出。
+        }
+    }
+
+    private <T> List<T> getRequired(CompletableFuture<List<T>> future, String pathName) {
+        try {
+            List<T> result = future.join();
+            if (result == null) {
+                throw new IllegalStateException(pathName + " 返回 null");
+            }
+            if (result.stream().anyMatch(Objects::isNull)) {
+                throw new IllegalStateException(pathName + " 返回 null 元素");
+            }
+            return result;
         } catch (Exception e) {
-            log.warn("混合检索: {} 路径失败，使用空结果继续融合, error={}", pathName, e.getMessage());
-            return List.of();
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new IllegalStateException("混合检索: " + pathName + " 路径失败", cause);
+        }
+    }
+
+    private void validateRetrieveArguments(String query, int topK, RetrievalWeights weights) {
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("混合检索 query 不能为空");
+        }
+        if (topK <= 0) {
+            throw new IllegalArgumentException("混合检索 topK 必须大于 0: " + topK);
+        }
+        Objects.requireNonNull(weights, "检索权重不能为空");
+    }
+
+    private Set<String> requireEntityIds(Set<String> ids, String label) {
+        if (ids == null) {
+            throw new IllegalStateException("混合检索: " + label + "返回 null");
+        }
+        for (String id : ids) {
+            if (id == null || id.isBlank()) {
+                throw new IllegalStateException("混合检索: " + label + "包含空实体 ID");
+            }
+            if (!id.equals(id.trim())) {
+                throw new IllegalStateException("混合检索: " + label + "包含首尾空白实体 ID: " + id);
+            }
+        }
+        return ids;
+    }
+
+    private void waitRequired(CompletableFuture<Void> future, String pathName) {
+        try {
+            future.join();
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new IllegalStateException("混合检索: " + pathName + " 路径失败", cause);
         }
     }
 
@@ -396,44 +441,37 @@ public class HybridRetriever {
         }
 
         List<RankedItem> items = new ArrayList<>();
-        try {
-            Set<String> ids = new HashSet<>();
-            for (var vr : vectorResults) {
-                if (vr.entityId() != null && !vr.entityId().isBlank()) {
-                    ids.add(vr.entityId());
-                }
-            }
-            Map<String, TemporalEntity> entityMap = filter != null
-                    ? semanticMemory.findByIds(ids, filter)
-                    : semanticMemory.findByIds(ids);
+        Set<String> ids = new HashSet<>();
+        for (var vr : vectorResults) {
+            ids.add(vr.entityId());
+        }
+        Map<String, TemporalEntity> entityMap = requiredEntityMap(filter != null
+                ? semanticMemory.findByIds(ids, filter)
+                : semanticMemory.findByIds(ids), "向量实体批量查询");
 
-            for (var vr : vectorResults) {
-                TemporalEntity entity = entityMap.get(vr.entityId());
-                if (entity == null) {
-                    // 未命中 findByIds 的向量结果不再以 UNKNOWN 回退：
-                    // findByIds 已按 is_current=1 过滤，归档实体本就不应注入上下文。
-                    continue;
-                }
-                LifecycleState state = entity.lifecycleState();
-                if (!state.isRetrievable()) {
-                    // 默认过滤 EXPIRED/SUPERSEDED/ARCHIVED/CANCELLED — 防止向量层残留
-                    log.debug("混合检索: 向量路径过滤不可召回实体, id={}, state={}", entity.id(), state);
-                    continue;
-                }
-                lifecycleStateMap.put(entity.id(), state);
-                items.add(new RankedItem(
-                        entity.id(),
-                        entity.type().name(),
-                        entity.name(),
-                        entity.description(),
-                        vr.similarity(),
-                        entity.lastAccessedAt(),
-                        entity.importanceScore(),
-                        entity.validTo(),
-                        entity.updatedAt()));
+        for (var vr : vectorResults) {
+            TemporalEntity entity = entityMap.get(vr.entityId());
+            if (entity == null) {
+                // findByIds 已按 is_current=1 过滤，归档实体本就不应注入上下文。
+                continue;
             }
-        } catch (Exception e) {
-            log.warn("混合检索: 向量结果批量转换失败, error={}", e.getMessage());
+            LifecycleState state = entity.lifecycleState();
+            if (!state.isRetrievable()) {
+                // 默认过滤 EXPIRED/SUPERSEDED/ARCHIVED/CANCELLED — 防止向量层残留
+                log.debug("混合检索: 向量路径过滤不可召回实体, id={}, state={}", entity.id(), state);
+                continue;
+            }
+            lifecycleStateMap.put(entity.id(), state);
+            items.add(new RankedItem(
+                    entity.id(),
+                    entity.type().name(),
+                    entity.name(),
+                    entity.description(),
+                    vr.similarity(),
+                    entity.lastAccessedAt(),
+                    entity.importanceScore(),
+                    entity.validTo(),
+                    entity.updatedAt()));
         }
         return items;
     }
@@ -444,12 +482,9 @@ public class HybridRetriever {
         }
         Set<String> ids = items.stream()
                 .map(RankedItem::entityId)
-                .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        if (ids.isEmpty()) {
-            return List.of();
-        }
-        Set<String> readableIds = semanticMemory.findByIds(ids, filter).keySet();
+        Set<String> readableIds = requiredEntityMap(
+                semanticMemory.findByIds(ids, filter), "读取过滤实体批量查询").keySet();
         return items.stream()
                 .filter(item -> readableIds.contains(item.entityId()))
                 .toList();
@@ -470,19 +505,14 @@ public class HybridRetriever {
         // 收集尚未记入映射的 id — 避免重复查库
         Set<String> missingIds = items.stream()
                 .map(RankedItem::entityId)
-                .filter(Objects::nonNull)
                 .filter(id -> !lifecycleStateMap.containsKey(id))
                 .collect(Collectors.toSet());
         if (!missingIds.isEmpty()) {
-            try {
-                Map<String, TemporalEntity> entityMap = filter != null
-                        ? semanticMemory.findByIds(missingIds, filter)
-                        : semanticMemory.findByIds(missingIds);
-                for (var entry : entityMap.entrySet()) {
-                    lifecycleStateMap.put(entry.getKey(), entry.getValue().lifecycleState());
-                }
-            } catch (Exception e) {
-                log.warn("混合检索: 生命周期补齐查询失败, error={}", e.getMessage());
+            Map<String, TemporalEntity> entityMap = requiredEntityMap(filter != null
+                    ? semanticMemory.findByIds(missingIds, filter)
+                    : semanticMemory.findByIds(missingIds), "生命周期实体批量查询");
+            for (var entry : entityMap.entrySet()) {
+                lifecycleStateMap.put(entry.getKey(), entry.getValue().lifecycleState());
             }
         }
         // 按 isRetrievable 过滤：SQL 侧已拦截不可召回态，此处是防御性补位
@@ -500,25 +530,57 @@ public class HybridRetriever {
                                     List<RankedItem> graphItems,
                                     @Nullable MemoryReadFilter filter,
                                     Map<String, Float> trustScoreMap) {
-        try {
-            Set<String> ids = new HashSet<>();
-            for (var i : vectorItems) ids.add(i.entityId());
-            for (var i : ftsItems) ids.add(i.entityId());
-            for (var i : graphItems) ids.add(i.entityId());
-            if (ids.isEmpty()) {
-                return;
+        Set<String> ids = new HashSet<>();
+        for (var i : vectorItems) ids.add(i.entityId());
+        for (var i : ftsItems) ids.add(i.entityId());
+        for (var i : graphItems) ids.add(i.entityId());
+        if (ids.isEmpty()) {
+            return;
+        }
+        Map<String, TemporalEntity> entities = requiredEntityMap(filter != null
+                ? semanticMemory.findByIds(ids, filter)
+                : semanticMemory.findByIds(ids), "可信度实体批量查询");
+        requireAllRequestedPresent(ids, entities, "可信度实体批量查询");
+        for (var e : entities.values()) {
+            if (!MemoryQualityPolicy.isPromptConsumable(e)) {
+                throw new IllegalStateException("混合检索: 候选实体未通过消费质量门槛: " + e.id());
             }
-            Map<String, TemporalEntity> entities = filter != null
-                    ? semanticMemory.findByIds(ids, filter)
-                    : semanticMemory.findByIds(ids);
-            for (var e : entities.values()) {
-                if (e == null) continue;
-                // 防御：质量门槛在消费侧过滤，但排序阶段也避免被 UNVERIFIED 拖动
-                if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
-                trustScoreMap.put(e.id(), e.trustScore());
+            trustScoreMap.put(e.id(), e.trustScore());
+        }
+    }
+
+    /** 对单路排名列表应用加权 RRF，累加到 accumulators。 */
+    private Map<String, TemporalEntity> requiredEntityMap(Map<String, TemporalEntity> entityMap, String pathName) {
+        if (entityMap == null) {
+            throw new IllegalStateException("混合检索: " + pathName + " 返回 null");
+        }
+        for (var entry : entityMap.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank()) {
+                throw new IllegalStateException("混合检索: " + pathName + " 返回空实体 ID");
             }
-        } catch (Exception e) {
-            log.debug("混合检索: trustScore 收集失败，降级为无加成: {}", e.getMessage());
+            if (!entry.getKey().equals(entry.getKey().trim())) {
+                throw new IllegalStateException("混合检索: " + pathName + " 返回首尾空白实体 ID: "
+                        + entry.getKey());
+            }
+            if (entry.getValue() == null) {
+                throw new IllegalStateException("混合检索: " + pathName + " 返回 null 实体");
+            }
+            if (!entry.getKey().equals(entry.getValue().id())) {
+                throw new IllegalStateException("混合检索: " + pathName + " 返回实体 ID 与 key 不一致: key="
+                        + entry.getKey() + ", entityId=" + entry.getValue().id());
+            }
+        }
+        return entityMap;
+    }
+
+    private static void requireAllRequestedPresent(Set<String> ids,
+                                                   Map<String, TemporalEntity> entityMap,
+                                                   String pathName) {
+        var missingIds = ids.stream()
+                .filter(id -> !entityMap.containsKey(id))
+                .toList();
+        if (!missingIds.isEmpty()) {
+            throw new IllegalStateException("混合检索: " + pathName + " 缺少候选实体: " + missingIds);
         }
     }
 
@@ -562,14 +624,14 @@ public class HybridRetriever {
                 semanticMemory.incrementAccessCount(result.entityId());
             }
         } catch (Exception e) {
-            log.warn("混合检索: 批量更新 access_count 失败, error={}", e.getMessage());
+            throw new IllegalStateException("混合检索: 批量更新 access_count 失败", e);
         }
     }
 
     /**
      * 记录检索事件日志到 retrieval_event_log 表。
      *
-     * <p>写入失败时 WARN 日志降级，不影响检索结果返回。</p>
+     * <p>写入失败表示检索审计持久化契约异常，直接暴露。</p>
      */
     private void logRetrievalEvent(String query, int topK,
                                     int vectorCount, int ftsCount, int graphCount,
@@ -585,7 +647,7 @@ public class HybridRetriever {
                     topFusedScore, durationMs,
                     Instant.now().toString());
         } catch (Exception e) {
-            log.warn("检索事件日志写入失败: error={}", e.getMessage());
+            throw new IllegalStateException("检索事件日志写入失败", e);
         }
     }
 
@@ -594,11 +656,7 @@ public class HybridRetriever {
      * 并用 {@link RetrievalResult#withLifecycleAnnotations} 回写 isHistorical / isStale /
      * needsRevalidation 三个标注。
      *
-     * <p>行为：
-     * <ul>
-     *   <li>批量 IN 查询避免 N+1。</li>
-     *   <li>查询失败降级：打 WARN 日志 + needsRevalidation 置 false，不影响整体检索。</li>
-     * </ul>
+     * <p>批量 IN 查询避免 N+1；查询失败直接暴露，避免把待再验证记忆伪装成普通结果。</p>
      */
     private List<RetrievalResult> annotateLifecycle(List<RetrievalResult> results,
                                                     Map<String, LifecycleState> lifecycleStateMap) {
@@ -606,15 +664,12 @@ public class HybridRetriever {
             return results;
         }
         Set<String> staleIds = Set.of();
-        try {
-            Set<String> ids = results.stream()
-                    .map(RetrievalResult::entityId)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
-            staleIds = provenanceRepository.findStaleEntityIds(ids);
-        } catch (Exception e) {
-            log.warn("混合检索: 批量 STALE provenance 查询失败，降级为无标注, error={}", e.getMessage());
-            staleIds = Set.of();
+        Set<String> ids = results.stream()
+                .map(RetrievalResult::entityId)
+                .collect(Collectors.toSet());
+        staleIds = provenanceRepository.findStaleEntityIds(ids);
+        if (staleIds == null) {
+            throw new IllegalStateException("混合检索: provenance 待复核查询返回 null");
         }
         final Set<String> finalStaleIds = staleIds;
         return results.stream()

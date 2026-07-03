@@ -1,6 +1,7 @@
 package com.lifepilot.agent.learning.conflict;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.semantic.ConflictVerdict;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,14 +67,42 @@ class ConflictResolutionRepository_集成测试 {
     }
 
     @Test
-    void enqueue_会写入标准化候选Json() {
-        String id = repository.enqueue("new-1", List.of(" old-1 ", "old-2"));
+    void enqueue_候选列表包含首尾空白应拒绝写入() {
+        assertThatThrownBy(() -> repository.enqueue("new-1", List.of(" old-1 ", "old-2")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("candidateIds 不能包含首尾空白");
+    }
+
+    @Test
+    void enqueue_会按原始候选Id写入Json() {
+        String id = repository.enqueue("new-1", List.of("old-1", "old-2"));
 
         String json = jdbcTemplate.queryForObject(
                 "SELECT candidate_entity_ids FROM conflict_resolution_queue WHERE id = ?",
                 String.class,
                 id);
         assertThat(json).isEqualTo("[\"old-1\",\"old-2\"]");
+    }
+
+    @Test
+    void markResolved_队列项不存在应失败() {
+        var verdict = new ConflictVerdict(
+                ConflictVerdict.Kind.COEXIST, null, "并存");
+
+        assertThatThrownBy(() -> repository.markResolved("missing-queue", verdict))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("冲突裁决队列标记 RESOLVED影响行数必须为 1")
+                .hasMessageContaining("id=missing-queue")
+                .hasMessageContaining("rows=0");
+    }
+
+    @Test
+    void markFailed_队列项不存在应失败() {
+        assertThatThrownBy(() -> repository.markFailed("missing-queue", "失败原因"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("冲突裁决队列标记 FAILED影响行数必须为 1")
+                .hasMessageContaining("id=missing-queue")
+                .hasMessageContaining("rows=0");
     }
 
     @Test
@@ -101,6 +130,15 @@ class ConflictResolutionRepository_集成测试 {
         assertThatThrownBy(() -> repository.findFailedRetriable(3))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("候选列表反序列化失败, id=queue-3");
+    }
+
+    @Test
+    void findFailedRetriable_候选Json包含首尾空白应失败() {
+        插入失败队列项("queue-4", "[\" old-1 \"]");
+
+        assertThatThrownBy(() -> repository.findFailedRetriable(3))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("候选列表不能包含首尾空白, id=queue-4");
     }
 
     private void 插入失败队列项(String id, String candidateEntityIds) {

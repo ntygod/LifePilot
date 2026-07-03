@@ -49,9 +49,8 @@ public class ChatSessionService {
     @Nullable
     private final ChatTurnService chatTurnService;
     /**
-     * 项目服务 —— 可选依赖。创建项目会话时用于查询项目默认 KB 并自动关联到 session，
-     * 让项目内的对话自动带上项目知识库的 RAG 检索。KB 未启用或极简部署下可为 null，
-     * 此时退化为不做自动关联。
+     * 项目服务。创建项目会话时用于查询项目默认 KB 并自动关联到 session，
+     * 让项目内的对话自动带上项目知识库的 RAG 检索。
      */
     @Nullable
     private final ProjectService projectService;
@@ -97,8 +96,6 @@ public class ChatSessionService {
      * 自动关联到新会话的 session_knowledge_bases 表——让"在项目里开的对话"默认
      * 继承项目知识库的 RAG 检索，避免用户每次还要手动在 ChatInput 里选 KB。</p>
      *
-     * <p>KB 查询/写入失败不抛出，只记警告 —— 会话创建作为主路径不应被 KB 偶发故障阻断。</p>
-     *
      * @param title     会话标题（可选）
      * @param projectId 归属项目 ID（可选，NULL = 归属主账户）
      * @return 新创建的会话实例
@@ -113,26 +110,24 @@ public class ChatSessionService {
     }
 
     /**
-     * 把项目默认 KB 关联到会话。projectId 为空或 ProjectService 未注入时静默跳过。
+     * 把项目默认 KB 关联到会话。projectId 为空时跳过；projectId 非空但项目服务缺失时视为配置错误。
      */
     private void inheritProjectKnowledgeBases(String sessionId, @Nullable String projectId) {
-        if (projectId == null || projectId.isBlank() || projectService == null) {
+        if (projectId == null || projectId.isBlank()) {
             return;
         }
-        try {
-            List<String> kbIds = projectService.findKnowledgeBaseIds(projectId);
-            if (kbIds.isEmpty()) {
-                return;
-            }
-            for (String kbId : kbIds) {
-                sessionKnowledgeBaseRepository.addAssociation(sessionId, kbId);
-            }
-            log.info("项目会话自动关联项目默认 KB: sessionId={}, projectId={}, kbIds={}",
-                    sessionId, projectId, kbIds);
-        } catch (RuntimeException e) {
-            log.warn("项目会话关联项目默认 KB 失败（会话仍正常创建）: sessionId={}, projectId={}, error={}",
-                    sessionId, projectId, e.getMessage());
+        if (projectService == null) {
+            throw new IllegalStateException("创建项目会话需要 ProjectService");
         }
+        List<String> kbIds = projectService.findKnowledgeBaseIds(projectId);
+        if (kbIds.isEmpty()) {
+            throw new IllegalStateException("项目未绑定默认知识库: " + projectId);
+        }
+        for (String kbId : kbIds) {
+            sessionKnowledgeBaseRepository.addAssociation(sessionId, kbId);
+        }
+        log.info("项目会话自动关联项目默认 KB: sessionId={}, projectId={}, kbIds={}",
+                sessionId, projectId, kbIds);
     }
 
     public List<SessionInfo> listSessions() {

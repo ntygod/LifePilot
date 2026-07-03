@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.time.Clock;
+import java.util.Objects;
 
 /**
  * TTL 过期扫描器 —— 每小时把 {@code expires_at &lt; now} 的 {@code ACTIVE} 实体转入
@@ -19,7 +20,7 @@ import java.time.Clock;
  *
  * <p>设计要点：
  * <ul>
- *   <li>单条失败兜底 —— 不让一个实体的 SQL 异常中断整批扫描</li>
+ *   <li>单条失败直接暴露 —— 避免半成功批次被误判为扫描完成</li>
  *   <li>不自己 publish —— 严格遵循 "lifecycle 事件只有 SemanticMemory 一个源头" 的约定</li>
  *   <li>{@link #scanNow()} 暴露给测试，@Scheduled 包装的 {@link #scan()} 只做委托</li>
  *   <li>{@code @EnableScheduling} 已由 {@code MemoryAutoConfiguration} 开启 —— 无需额外配置</li>
@@ -41,8 +42,8 @@ public class ExpirationScanner {
     private final Clock clock;
 
     public ExpirationScanner(SemanticMemory semanticMemory, Clock clock) {
-        this.semanticMemory = semanticMemory;
-        this.clock = clock;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.clock = Objects.requireNonNull(clock, "clock 不能为空");
     }
 
     /**
@@ -69,20 +70,9 @@ public class ExpirationScanner {
             return;
         }
         log.info("ExpirationScanner 扫描到 {} 个过期实体 at={}", expired.size(), now);
-        int failed = 0;
         for (var entity : expired) {
-            try {
-                semanticMemory.updateLifecycleState(
-                        entity.id(), LifecycleState.EXPIRED, EXPIRED_REASON, ChangeSource.CRON_EXPIRE);
-            } catch (Exception ex) {
-                failed++;
-                log.warn("ExpirationScanner 转 EXPIRED 失败 entity={}, error={}",
-                        entity.id(), ex.getMessage(), ex);
-                // 单条失败不中断整批
-            }
-        }
-        if (failed > 0) {
-            log.warn("ExpirationScanner 本轮 {} 条实体转换失败 / 共 {} 条", failed, expired.size());
+            semanticMemory.updateLifecycleState(
+                    entity.id(), LifecycleState.EXPIRED, EXPIRED_REASON, ChangeSource.CRON_EXPIRE);
         }
     }
 }

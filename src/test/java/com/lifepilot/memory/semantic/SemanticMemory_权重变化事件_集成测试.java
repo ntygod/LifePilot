@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.WeightSource;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -83,8 +85,8 @@ class SemanticMemory_权重变化事件_集成测试 {
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         captured = new ArrayList<>();
         // 手动装配 ApplicationEventPublisher — 捕获所有事件用于断言
@@ -104,7 +106,7 @@ class SemanticMemory_权重变化事件_集成测试 {
     @Test
     void updateImportanceScore应发布EntityWeightChanged事件_承载source与delta() {
         var entity = 构造ACTIVE实体("entity-权重-1", EntityType.EXPERIENCE, 0.5f);
-        semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
         captured.clear();   // 忽略 upsert 本身可能产生的生命周期事件
 
         semanticMemory.updateImportanceScore(entity.id(), 0.2f, WeightSource.USER_FEEDBACK);
@@ -122,11 +124,14 @@ class SemanticMemory_权重变化事件_集成测试 {
     }
 
     @Test
-    void 未命中任何当前版本时不应发事件() {
+    void 未命中任何当前版本时应抛异常且不发事件() {
         // given — 不预先 upsert，直接对不存在的实体调用
         captured.clear();
 
-        semanticMemory.updateImportanceScore("不存在-123", 0.7f, WeightSource.EFFECTIVENESS);
+        assertThatThrownBy(() -> semanticMemory.updateImportanceScore(
+                "不存在-123", 0.7f, WeightSource.EFFECTIVENESS))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("updateImportanceScore 未命中当前版本");
 
         assertThat(captured).filteredOn(e -> e instanceof EntityWeightChanged).isEmpty();
     }
@@ -134,7 +139,7 @@ class SemanticMemory_权重变化事件_集成测试 {
     @Test
     void EFFECTIVENESS来源应原样透传() {
         var entity = 构造ACTIVE实体("entity-权重-3", EntityType.EXPERIENCE, 0.5f);
-        semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
         captured.clear();
 
         semanticMemory.updateImportanceScore(entity.id(), 0.75f, WeightSource.EFFECTIVENESS);
@@ -171,6 +176,11 @@ class SemanticMemory_权重变化事件_集成测试 {
                 null,
                 false,
                 List.of()
-        );
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
     }
 }

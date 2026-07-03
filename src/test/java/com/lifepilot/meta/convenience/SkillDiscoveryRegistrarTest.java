@@ -11,6 +11,8 @@ import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,7 +35,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>覆盖：
  * <ul>
- *   <li>启动扫描时成功安装至少一个 v2 格式 Skill（daily-manager）</li>
+ *   <li>启动扫描时成功安装至少一个 v3 格式 Skill（daily-manager）</li>
  *   <li>老 v1 格式 Skill 被 WARN 跳过不阻断</li>
  *   <li>禁用开关时不触发扫描</li>
  *   <li>SkillInstaller 被正确调用，SkillRegistry 接收 Definition</li>
@@ -49,6 +51,7 @@ class SkillDiscoveryRegistrarTest {
     private SkillInstallationRepository repository;
     private SkillInstaller installer;
     private MarkdownSkillParser parser;
+    private SkillValidator validator;
     private SkillRegistry registry;
 
     @TempDir
@@ -62,28 +65,28 @@ class SkillDiscoveryRegistrarTest {
 
         parser = new MarkdownSkillParser();
         repository = mock(SkillInstallationRepository.class);
-        installer = new SkillInstaller(parser,
-                new SkillDescriptionValidator(),
-                new SkillBodyValidator(),
-                repository);
+        validator = new SkillValidator(new SkillDescriptionValidator(), new SkillBodyValidator(),
+                new DynamicToolRegistry(event -> {}));
+        installer = new SkillInstaller(parser, validator, repository);
         registry = mock(SkillRegistry.class);
         when(registry.register(any())).thenReturn(true);
     }
 
     @Test
-    void afterPropertiesSet_应安装v2格式Skill成功落盘() {
-        var registrar = new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer, repository, parser, registry);
+    void afterPropertiesSet_应安装v3格式Skill成功落盘() {
+        var registrar = new SkillDiscoveryRegistrar(
+                properties, zhiweiPaths, installer, repository, parser, validator, registry);
 
         registrar.afterPropertiesSet();
 
-        // daily-manager 已迁移到 v2 格式，应成功落盘
+        // daily-manager 已迁移到 v3 格式，应成功落盘
         Path skillFile = tempDir.resolve("daily-manager/SKILL.md");
         assertThat(skillFile).exists();
 
         // SkillInstaller 至少被调用一次（BUILTIN 安装）
         verify(repository, org.mockito.Mockito.atLeastOnce()).upsert(any(SkillInstallation.class));
 
-        // SkillRegistry 接收到至少一个 v2 Definition 且 sourceType 信息正确
+        // SkillRegistry 接收到至少一个 v3 Definition 且 sourceType 信息正确
         ArgumentCaptor<SkillDefinition> captor = ArgumentCaptor.forClass(SkillDefinition.class);
         verify(registry, org.mockito.Mockito.atLeastOnce()).register(captor.capture());
         List<SkillDefinition> registered = captor.getAllValues();
@@ -93,11 +96,12 @@ class SkillDiscoveryRegistrarTest {
     @Test
     void afterPropertiesSet_老格式Skill应被WARN跳过但不阻断其他安装() {
         // 26 个老格式 Skill 会被 parser 拒绝（id 已废弃），但至少 daily-manager 成功
-        var registrar = new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer, repository, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(
+                properties, zhiweiPaths, installer, repository, parser, validator, registry);
 
         registrar.afterPropertiesSet();
 
-        // 捕获所有 upsert 的 SkillInstallation，只能是 v2 格式已迁移的
+        // 捕获所有 upsert 的 SkillInstallation，只能是 v3 格式已迁移的
         ArgumentCaptor<SkillInstallation> captor = ArgumentCaptor.forClass(SkillInstallation.class);
         verify(repository, org.mockito.Mockito.atLeastOnce()).upsert(captor.capture());
         List<String> installedNames = new ArrayList<>();
@@ -112,7 +116,8 @@ class SkillDiscoveryRegistrarTest {
     void afterPropertiesSet_功能禁用时应跳过整个扫描() {
         properties.getSkillDiscovery().setEnabled(false);
 
-        var registrar = new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer, repository, parser, registry);
+        var registrar = new SkillDiscoveryRegistrar(
+                properties, zhiweiPaths, installer, repository, parser, validator, registry);
         registrar.afterPropertiesSet();
 
         // 禁用后不应有任何 upsert 或 register 调用

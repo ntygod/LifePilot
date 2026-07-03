@@ -74,7 +74,19 @@ class FeedbackProcessor_单元测试 {
                 Map.of(), 1, true,
                 now, null, null,
                 0.9f, importanceScore,
-                0, null, now, now);
+                0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 
     /**
@@ -297,13 +309,13 @@ class FeedbackProcessor_单元测试 {
         }
     }
 
-    // ==================== 实体不存在时跳过 ====================
+    // ==================== 实体不存在时失败 ====================
 
     @Nested
-    class 实体不存在时跳过 {
+    class 实体不存在时失败 {
 
         @Test
-        void findByIds返回不包含某实体_该实体被跳过_其余正常处理() {
+        void findByIds返回不包含某实体_应失败且不做部分更新() {
             // given
             String entryId = "entry-partial";
             List<String> entityIds = List.of("exists", "missing");
@@ -314,16 +326,17 @@ class FeedbackProcessor_单元测试 {
             when(semanticMemory.findByIds(entityIds))
                     .thenReturn(Map.of("exists", exists));
 
-            // when
-            processor.processFeedbackForEntry(entryId, "like");
+            // when / then
+            var ex = assertThrows(IllegalStateException.class,
+                    () -> processor.processFeedbackForEntry(entryId, "like"));
+            assertTrue(ex.getMessage().contains("反馈关联实体不存在"));
+            assertTrue(ex.getMessage().contains("missing"));
 
-            // then — 仅更新存在的实体
-            verify(semanticMemory).updateImportanceScore("exists", 0.6f, WeightSource.USER_FEEDBACK);
-            verify(semanticMemory, never()).updateImportanceScore(eq("missing"), anyFloat(), any(WeightSource.class));
+            verify(semanticMemory, never()).updateImportanceScore(anyString(), anyFloat(), any(WeightSource.class));
         }
 
         @Test
-        void findByIds返回空map_所有实体都被跳过() {
+        void findByIds返回空map_应失败() {
             // given
             String entryId = "entry-all-missing";
             List<String> entityIds = List.of("ghost-1", "ghost-2");
@@ -332,12 +345,76 @@ class FeedbackProcessor_单元测试 {
             when(semanticMemory.findByIds(entityIds))
                     .thenReturn(Map.of());
 
-            // when
-            processor.processFeedbackForEntry(entryId, "like");
+            // when / then
+            var ex = assertThrows(IllegalStateException.class,
+                    () -> processor.processFeedbackForEntry(entryId, "like"));
+            assertTrue(ex.getMessage().contains("反馈关联实体不存在"));
+            assertTrue(ex.getMessage().contains("ghost-1"));
+            assertTrue(ex.getMessage().contains("ghost-2"));
 
-            // then
             verify(semanticMemory, never()).updateImportanceScore(anyString(), anyFloat(), any(WeightSource.class));
         }
+    }
+
+    @Test
+    void 非法反馈类型应直接失败且不查询注入记录() {
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> processor.processFeedbackForEntry("entry-invalid", "neutral"));
+
+        assertTrue(ex.getMessage().contains("非法反馈类型"));
+        verifyNoInteractions(injectionRecordRepository);
+        verifyNoInteractions(feedbackRepository);
+        verifyNoInteractions(semanticMemory);
+    }
+
+    @Test
+    void 注入记录实体ID包含首尾空白应直接失败() {
+        String entryId = "entry-bad-id";
+        when(injectionRecordRepository.findEntityIdsBySourceEntryId(entryId))
+                .thenReturn(List.of(" entity-1 "));
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> processor.processFeedbackForEntry(entryId, "like"));
+
+        assertTrue(ex.getMessage().contains("注入记录实体 ID 不能包含首尾空白"));
+        verifyNoInteractions(feedbackRepository);
+        verifyNoInteractions(semanticMemory);
+    }
+
+    @Test
+    void 历史反馈缺type应直接失败() {
+        String entryId = "entry-bad-history";
+        List<String> entityIds = List.of("entity-1");
+        when(injectionRecordRepository.findEntityIdsBySourceEntryId(entryId))
+                .thenReturn(entityIds);
+        when(feedbackRepository.findByEntryId(entryId))
+                .thenReturn(List.of(
+                        Map.of("created_at", "2026-04-01T00:00:00Z"),
+                        Map.of("type", "like", "created_at", "2026-04-02T00:00:00Z")
+                ));
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> processor.processFeedbackForEntry(entryId, "like"));
+
+        assertTrue(ex.getMessage().contains("反馈历史缺少 type"));
+        verifyNoInteractions(semanticMemory);
+    }
+
+    @Test
+    void 反馈配置越界应直接失败() {
+        feedbackConfig.setLikeBoost(1.5f);
+        String entryId = "entry-bad-config";
+        List<String> entityIds = List.of("entity-1");
+        when(injectionRecordRepository.findEntityIdsBySourceEntryId(entryId))
+                .thenReturn(entityIds);
+        when(feedbackRepository.findByEntryId(entryId))
+                .thenReturn(List.of());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> processor.processFeedbackForEntry(entryId, "like"));
+
+        assertTrue(ex.getMessage().contains("反馈配置 likeBoost 必须在 [0,1] 范围内"));
+        verify(semanticMemory, never()).findByIds(any());
     }
 
     // ==================== 重复反馈（同类型） ====================

@@ -3,6 +3,8 @@ package com.lifepilot.agent.learning.experience;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
@@ -17,11 +19,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -61,10 +65,19 @@ class ContrastiveLearner_派生洞察_单元测试 {
     }
 
     private TemporalEntity experience(String id, String name, boolean success) {
+        return experience(id, name, Map.of("success", success));
+    }
+
+    private TemporalEntity experience(String id, String name, Map<String, Object> properties) {
+        var props = new LinkedHashMap<String, Object>();
+        props.put("lessons", List.of("先校验输入"));
+        props.put("toolsUsed", List.of("tool.test"));
+        props.putAll(properties);
         return new TemporalEntity(
-                id, EntityType.EXPERIENCE, name, name + "描述", Map.of("success", success),
+                id, EntityType.EXPERIENCE, name, name + "描述", props,
                 1, true, NOW, null, "conv", 0.8f, 0.7f, 0, null, NOW, NOW,
-                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of());
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of(),
+                MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 1.0f, 1, NOW);
     }
 
     @Test
@@ -107,6 +120,82 @@ class ContrastiveLearner_派生洞察_单元测试 {
                 .thenReturn(Optional.of(experience("exp-other", "另一成功", true)));
 
         learner.learn(success);
+
+        verify(semanticMemory, org.mockito.Mockito.never())
+                .upsertWithConflictDetection(any(), any(String.class), any(MemoryWriteContext.class));
+    }
+
+    @Test
+    void 新经验缺success属性时直接暴露() {
+        var experience = experience("exp-new", "新经验", Map.of());
+
+        assertThatThrownBy(() -> learner.learn(experience))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("EXPERIENCE success 必须是 boolean");
+    }
+
+    @Test
+    void 向量搜索返回null时直接暴露() {
+        var success = experience("exp-success", "成功路径", true);
+        when(vectorSearcher.searchEntities(any(), anyInt(), anyFloat()))
+                .thenReturn(null);
+
+        assertThatThrownBy(() -> learner.learn(success))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("对比学习: 向量搜索结果不能为空");
+    }
+
+    @Test
+    void 向量候选实体不存在时直接暴露() {
+        var success = experience("exp-success", "成功路径", true);
+        when(vectorSearcher.searchEntities(any(), anyInt(), anyFloat()))
+                .thenReturn(List.of(new VectorSearchResult("exp-missing", 0.9f)));
+        when(semanticMemory.findById("exp-missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> learner.learn(success))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("对比学习: 向量候选实体不存在");
+    }
+
+    @Test
+    void 候选经验缺success属性时直接暴露() {
+        var success = experience("exp-success", "成功路径", true);
+        var badCandidate = experience("exp-bad", "坏候选", Map.of());
+        when(vectorSearcher.searchEntities(any(), anyInt(), anyFloat()))
+                .thenReturn(List.of(new VectorSearchResult("exp-bad", 0.9f)));
+        when(semanticMemory.findById("exp-bad")).thenReturn(Optional.of(badCandidate));
+
+        assertThatThrownBy(() -> learner.learn(success))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("EXPERIENCE success 必须是 boolean");
+    }
+
+    @Test
+    void GenerationRouter缺失时构造失败() {
+        var props = new AgentLearningProperties();
+
+        assertThatThrownBy(() -> new ContrastiveLearner(
+                semanticMemory, vectorSearcher, null, promptRegistry, props))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("generationRouter 不能为空");
+    }
+
+    @Test
+    void LLM响应缺少必要字段时暴露异常() {
+        var success = experience("exp-success", "成功路径", true);
+        var failure = experience("exp-failure", "失败路径", false);
+
+        when(vectorSearcher.searchEntities(any(), anyInt(), anyFloat()))
+                .thenReturn(List.of(new VectorSearchResult("exp-failure", 0.9f)));
+        when(semanticMemory.findById("exp-failure")).thenReturn(Optional.of(failure));
+        when(promptRegistry.render(any(), any())).thenReturn("prompt");
+        var resp = mock(LlmResponse.class);
+        when(resp.content()).thenReturn("{\"failureReason\":\"\",\"successFactor\":\"先校验再执行\"}");
+        when(generationRouter.call(any(), any(), any(), any(), any(), any(), any())).thenReturn(resp);
+
+        assertThatThrownBy(() -> learner.learn(success))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("failureReason 或 successFactor");
 
         verify(semanticMemory, org.mockito.Mockito.never())
                 .upsertWithConflictDetection(any(), any(String.class), any(MemoryWriteContext.class));

@@ -3,6 +3,7 @@ package com.lifepilot.memory.retrieval;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.rerank.router.RerankRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,12 +11,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +42,7 @@ class HybridRetriever_归档实体不应召回测试 {
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
     private MemoryRetrievalProperties properties;
+    private MemoryProvenanceRepository provenanceRepository;
 
     @BeforeEach
     void 初始化() {
@@ -46,20 +51,22 @@ class HybridRetriever_归档实体不应召回测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
+        provenanceRepository = mock(MemoryProvenanceRepository.class);
         properties = new MemoryRetrievalProperties();
         properties.setMinVectorSimilarity(0.0f);
         properties.setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
+        when(provenanceRepository.findStaleEntityIds(anyCollection())).thenReturn(Set.of());
     }
 
     @Test
     void 向量召回已归档实体_findByIds返回空_不应以UNKNOWN回退进结果() {
         // 模拟：向量命中一个 entityId，但 findByIds 查不到对应实体（已归档、is_current=0）
         String archivedId = "archived-entity-id";
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any()))
                 .thenReturn(List.of(new VectorSearchResult(archivedId, 0.95f)));
         when(ftsSearcher.search(anyString(), anyInt())).thenReturn(List.of());
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(List.of());
+        when(graphTraverser.traverse(anyString(), anyInt(), isNull())).thenReturn(List.of());
 
         // findByIds(无 filter) 返回空 map — 归档实体被 is_current=1 过滤掉
         when(semanticMemory.findByIds(anyCollection())).thenReturn(Map.of());
@@ -72,8 +79,8 @@ class HybridRetriever_归档实体不应召回测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null,
-                mock(MemoryProvenanceRepository.class));
+                mock(RerankRouter.class),
+                provenanceRepository);
 
         var results = retriever.retrieve("任意查询", 10, RetrievalWeights.DEFAULT);
 

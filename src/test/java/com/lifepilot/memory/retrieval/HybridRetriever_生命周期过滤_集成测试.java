@@ -1,12 +1,14 @@
 package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.VersionMerger;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
+import com.lifepilot.rerank.router.RerankRouter;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +25,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -88,8 +91,8 @@ class HybridRetriever_生命周期过滤_集成测试 {
 
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         ftsSearcher = new FtsSearcher(jdbcTemplate);
         graphTraverser = new GraphTraverser(jdbcTemplate);
@@ -101,7 +104,7 @@ class HybridRetriever_生命周期过滤_集成测试 {
 
         retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, null, properties, jdbcTemplate, null,
+                semanticMemory, null, properties, jdbcTemplate, mock(RerankRouter.class),
                 provenanceRepository);
 
         插入记忆空间(SPACE_ID);
@@ -238,13 +241,12 @@ class HybridRetriever_生命周期过滤_集成测试 {
     }
 
     @Test
-    void 空集合或null输入应返回空Set() {
+    void 空集合输入应返回空Set但null输入应失败() {
         assertThat(provenanceRepository.findStaleEntityIds(List.of()))
                 .as("空集合输入应返回空 Set")
                 .isEmpty();
-        assertThat(provenanceRepository.findStaleEntityIds(null))
-                .as("null 输入应返回空 Set")
-                .isEmpty();
+        assertThatThrownBy(() -> provenanceRepository.findStaleEntityIds(null))
+                .isInstanceOf(NullPointerException.class);
     }
 
     // ---------- 测试夹具 ----------
@@ -270,14 +272,16 @@ class HybridRetriever_生命周期过滤_集成测试 {
                     id, space_id, memory_scope, entity_type, canonical_name, normalized_name,
                     reality_type, status, access_count,
                     first_seen_at, last_seen_at, created_at, updated_at,
-                    lifecycle_state, temporality, is_derived)
+                    lifecycle_state, temporality, is_derived,
+                    evidence_kind, trust_level, trust_score, evidence_count, last_verified_at)
                 VALUES (?, ?, 'PRIVATE', 'GOAL', ?, ?, 'UNKNOWN', 'ACTIVE', 0,
-                        ?, ?, ?, ?, ?, 'PERSISTENT', 0)
+                        ?, ?, ?, ?, ?, 'PERSISTENT', 0,
+                        'USER_CONFIRMED', 'EXPLICIT', 0.9, 1, ?)
                 """,
                 entityId, SPACE_ID, entityId, entityId,
                 FIXED_NOW.toString(), FIXED_NOW.toString(),
                 FIXED_NOW.toString(), FIXED_NOW.toString(),
-                state.name());
+                state.name(), FIXED_NOW.toString());
         jdbcTemplate.update(
                 """
                 INSERT INTO memory_entity_versions(

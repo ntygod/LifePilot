@@ -3,12 +3,11 @@ package com.lifepilot.memory.store.projection;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 
 /**
  * 记忆投影 outbox 消费器。
@@ -20,7 +19,6 @@ import java.time.Instant;
  */
 public class MemoryProjectionOutboxProcessor {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryProjectionOutboxProcessor.class);
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final MemoryProjectionOutboxRepository repository;
@@ -30,9 +28,9 @@ public class MemoryProjectionOutboxProcessor {
     public MemoryProjectionOutboxProcessor(MemoryProjectionOutboxRepository repository,
                                            VectorSearcher vectorSearcher,
                                            ObjectMapper objectMapper) {
-        this.repository = repository;
-        this.vectorSearcher = vectorSearcher;
-        this.objectMapper = objectMapper;
+        this.repository = Objects.requireNonNull(repository, "MemoryProjectionOutboxRepository 不能为空");
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "VectorSearcher 不能为空");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "ObjectMapper 不能为空");
     }
 
     /**
@@ -42,13 +40,16 @@ public class MemoryProjectionOutboxProcessor {
      * 自身也按 entityId 幂等。</p>
      */
     public void processOne(String outboxId) {
+        if (outboxId == null || outboxId.isBlank()) {
+            throw new IllegalArgumentException("outboxId 不能为空");
+        }
         processOne(outboxId, false);
     }
 
     private boolean processOne(String outboxId, boolean reclaimProcessing) {
         var taskOpt = repository.findById(outboxId);
         if (taskOpt.isEmpty()) {
-            return false;
+            throw new IllegalStateException("记忆投影任务不存在: id=" + outboxId);
         }
         var task = taskOpt.get();
         if (!repository.markProcessing(outboxId, reclaimProcessing)) {
@@ -58,16 +59,24 @@ public class MemoryProjectionOutboxProcessor {
             processTask(task);
             repository.markProcessed(outboxId);
         } catch (Exception e) {
-            repository.markFailed(outboxId, task.attemptCount(), e.getMessage());
-            log.warn("记忆投影任务执行失败: id={}, projection={}, operation={}, error={}",
-                    outboxId, task.projectionType(), task.operation(), e.getMessage());
+            try {
+                repository.markFailed(outboxId, task.attemptCount(), e.getMessage());
+            } catch (Exception markFailure) {
+                e.addSuppressed(markFailure);
+            }
+            throw new IllegalStateException(
+                    "记忆投影任务执行失败: id=%s, projection=%s, operation=%s"
+                            .formatted(outboxId, task.projectionType(), task.operation()),
+                    e);
         }
         return true;
     }
 
     public int processDue(int limit, Duration processingTimeout) {
-        Duration timeout = processingTimeout != null ? processingTimeout : Duration.ofMinutes(5);
-        var ids = repository.findDueTaskIds(limit, Instant.now().minus(timeout));
+        Objects.requireNonNull(processingTimeout, "processingTimeout 不能为空");
+        var ids = Objects.requireNonNull(
+                repository.findDueTaskIds(limit, Instant.now().minus(processingTimeout)),
+                "待处理 outbox ID 查询结果不能为空");
         int processed = 0;
         for (String id : ids) {
             if (processOne(id, true)) {

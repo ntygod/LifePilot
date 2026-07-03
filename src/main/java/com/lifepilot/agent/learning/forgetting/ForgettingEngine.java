@@ -18,6 +18,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -36,7 +37,6 @@ public class ForgettingEngine {
     private static final Logger log = LoggerFactory.getLogger(ForgettingEngine.class);
 
     private final SemanticMemory semanticMemory;
-    @Nullable
     private final GenerationRouter generationRouter;
     private final JdbcTemplate jdbcTemplate;
     private final AgentLearningProperties properties;
@@ -45,22 +45,22 @@ public class ForgettingEngine {
     private final ForgettingPriority priorityCalculator;
 
     public ForgettingEngine(SemanticMemory semanticMemory,
-                            @Nullable GenerationRouter generationRouter,
+                            GenerationRouter generationRouter,
                             JdbcTemplate jdbcTemplate,
                             AgentLearningProperties properties,
                             PromptRegistry promptRegistry) {
-        this.semanticMemory = semanticMemory;
-        this.generationRouter = generationRouter;
-        this.jdbcTemplate = jdbcTemplate;
-        this.properties = properties;
-        this.promptRegistry = promptRegistry;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter 不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
+        this.properties = Objects.requireNonNull(properties, "properties 不能为空");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "promptRegistry 不能为空");
 
         // 预创建策略实例，forget() 中复用
         var forgettingConfig = properties.getForgetting();
         var fifo = new FifoPolicy(forgettingConfig);
         var lru = new LruPolicy(forgettingConfig);
         var decay = new PriorityDecayPolicy(forgettingConfig);
-        var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+        var reflection = new ReflectionSummaryPolicy(forgettingConfig);
         this.hybridPolicy = new HybridPolicy(fifo, lru, decay, reflection);
         this.priorityCalculator = new ForgettingPriority(forgettingConfig);
     }
@@ -71,12 +71,8 @@ public class ForgettingEngine {
     @Scheduled(cron = "${lifepilot.agent.learning.forgetting.cron:0 0 4 * * SUN}")
     public void scheduledForget() {
         log.info("遗忘引擎: 定时遗忘开始");
-        try {
-            int count = forget();
-            log.info("遗忘引擎: 定时遗忘完成, 遗忘实体数={}", count);
-        } catch (Exception e) {
-            log.error("遗忘引擎: 定时遗忘异常", e);
-        }
+        int count = forget();
+        log.info("遗忘引擎: 定时遗忘完成, 遗忘实体数={}", count);
     }
 
     /**
@@ -118,15 +114,10 @@ public class ForgettingEngine {
         int forgottenCount = 0;
 
         for (var entity : selected) {
-            try {
-                var result = executeForgetAction(entity, config);
-                var priority = priorityCalculator.calculate(entity);
-                logForgetting(entity, hybridPolicy.name(), result.action(), priority, result.compressionSummary());
-                forgottenCount++;
-            } catch (Exception e) {
-                log.warn("遗忘引擎: 实体遗忘失败, id={}, name={}, error={}",
-                        entity.id(), entity.name(), e.getMessage());
-            }
+            var result = executeForgetAction(entity, config);
+            var priority = priorityCalculator.calculate(entity);
+            logForgetting(entity, hybridPolicy.name(), result.action(), priority, result.compressionSummary());
+            forgottenCount++;
         }
 
         log.info("遗忘引擎: 本次遗忘完成, 候选={}, 选中={}, 成功={}",
@@ -178,10 +169,10 @@ public class ForgettingEngine {
      *
      * <p>决策逻辑：
      * <ul>
-     *   <li>importanceScore 在 [minImportance, maxImportance) 且 LLM 可用 → COMPRESSED（LLM 摘要压缩）</li>
+     *   <li>importanceScore 在 [minImportance, maxImportance) → COMPRESSED（LLM 摘要压缩）</li>
      *   <li>其他情况 → ARCHIVED（归档）</li>
-     *   <li>LLM 调用失败 → 降级为 ARCHIVED</li>
-     * </ul></p>
+     * </ul>
+     * LLM 压缩失败时直接抛出，避免摘要未生成却归档原实体。</p>
      *
      * @param entity 目标实体
      * @param config 遗忘配置
@@ -191,36 +182,30 @@ public class ForgettingEngine {
         var minImportance = config.getReflectionSummaryMinImportance();
         var maxImportance = config.getReflectionSummaryMaxImportance();
 
-        // 中等重要度实体 + LLM 可用 → 尝试压缩
+        // 中等重要度实体 → 尝试 LLM 摘要压缩
         if (entity.importanceScore() >= minImportance
-                && entity.importanceScore() < maxImportance
-                && generationRouter != null) {
-            try {
-                var prompt = buildCompressionPrompt(entity);
-                // skipCache=true：每个实体压缩 prompt 仅 name/description 差异，
-                // 语义缓存会按相似度张冠李戴，把首条摘要返回给后续所有实体。
-                var response = generationRouter.call(
-                        LlmScene.MEMORY_COMPRESSION,
-                        prompt,
-                        null,
-                        null,
-                        null,
-                        GenerationCapability.CHAT,
-                        null,
-                        true);
-                var summary = response.content();
-                log.debug("遗忘引擎: 实体压缩成功, id={}, name={}, 摘要长度={}",
-                        entity.id(), entity.name(), summary.length());
-                // 压缩后归档原实体 — 遗忘引擎定时触发，归档来源为 CRON_EXPIRE
-                SqliteBusyRetry.run(() -> semanticMemory.archive(entity, ChangeSource.CRON_EXPIRE));
-                return new ForgetActionResult("COMPRESSED", summary);
-            } catch (Exception e) {
-                log.warn("遗忘引擎: LLM 压缩失败, 降级为归档, id={}, error={}",
-                        entity.id(), e.getMessage());
-                // 降级为归档 — 同样归属定时遗忘
-                SqliteBusyRetry.run(() -> semanticMemory.archive(entity, ChangeSource.CRON_EXPIRE));
-                return new ForgetActionResult("ARCHIVED", null);
+                && entity.importanceScore() < maxImportance) {
+            var prompt = buildCompressionPrompt(entity);
+            // skipCache=true：每个实体压缩 prompt 仅 name/description 差异，
+            // 语义缓存会按相似度张冠李戴，把首条摘要返回给后续所有实体。
+            var response = generationRouter.call(
+                    LlmScene.MEMORY_COMPRESSION,
+                    prompt,
+                    null,
+                    null,
+                    null,
+                    GenerationCapability.CHAT,
+                    null,
+                    true);
+            var summary = Objects.requireNonNull(response, "遗忘压缩 LLM 响应不能为空").content();
+            if (summary == null || summary.isBlank()) {
+                throw new IllegalStateException("遗忘压缩 LLM 摘要不能为空: " + entity.id());
             }
+            log.debug("遗忘引擎: 实体压缩成功, id={}, name={}, 摘要长度={}",
+                    entity.id(), entity.name(), summary.length());
+            // 压缩后归档原实体 — 遗忘引擎定时触发，归档来源为 CRON_EXPIRE
+            SqliteBusyRetry.run(() -> semanticMemory.archive(entity, ChangeSource.CRON_EXPIRE));
+            return new ForgetActionResult("COMPRESSED", summary);
         }
 
         // 默认：归档 — 定时遗忘
@@ -254,7 +239,7 @@ public class ForgettingEngine {
     private void logForgetting(TemporalEntity entity, String strategy,
                                 String action, float priority,
                                 @Nullable String compressionSummary) {
-        jdbcTemplate.update(
+        int inserted = jdbcTemplate.update(
                 "INSERT INTO forgetting_log(id, entity_id, entity_name, strategy, action_taken, forgetting_priority, reason, compression_summary, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                 UUID.randomUUID().toString(),
                 entity.id(),
@@ -265,5 +250,8 @@ public class ForgettingEngine {
                 "MaRS 遗忘引擎自动执行",
                 compressionSummary,
                 Instant.now().toString());
+        if (inserted != 1) {
+            throw new IllegalStateException("遗忘日志写入失败, entityId=" + entity.id() + ", inserted=" + inserted);
+        }
     }
 }

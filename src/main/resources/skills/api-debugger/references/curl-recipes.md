@@ -1,6 +1,6 @@
 # API 调试参考
 
-> curl/httpie 命令直接用 shell_exec。本文档仅含 API 调试决策知识。
+> curl/httpie 命令直接用 shell.exec。本文档仅含 API 调试决策知识。
 
 ## 认证模式
 

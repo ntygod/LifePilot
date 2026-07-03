@@ -10,6 +10,7 @@ import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -28,8 +29,8 @@ public class MemoryExtractionCandidateRepository {
     private final ObjectMapper objectMapper;
 
     public MemoryExtractionCandidateRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "ObjectMapper 不能为空");
     }
 
     /**
@@ -40,7 +41,8 @@ public class MemoryExtractionCandidateRepository {
     public String recordValidated(String sessionId,
                                   MemoryWriteContext writeContext,
                                   AudnDecision decision) {
-        return recordCandidate(sessionId, writeContext, decision, "VALIDATED", "VALIDATED", null);
+        return recordCandidate(sessionId, writeContext, decision, "VALIDATED", "VALIDATED", null,
+                validatedQualityOf(decision));
     }
 
     /**
@@ -52,7 +54,9 @@ public class MemoryExtractionCandidateRepository {
                                  MemoryWriteContext writeContext,
                                  AudnDecision decision,
                                  String rejectionReason) {
-        return recordCandidate(sessionId, writeContext, decision, "REJECTED", "REJECTED", rejectionReason);
+        requireText(rejectionReason, "候选拒绝原因不能为空");
+        return recordCandidate(sessionId, writeContext, decision, "REJECTED", "REJECTED", rejectionReason,
+                Quality.rejected());
     }
 
     private String recordCandidate(String sessionId,
@@ -60,10 +64,20 @@ public class MemoryExtractionCandidateRepository {
                                    AudnDecision decision,
                                    String candidateStatus,
                                    String validationStatus,
-                                   String rejectionReason) {
+                                   String rejectionReason,
+                                   Quality quality) {
+        requireText(sessionId, "候选记录 sessionId 不能为空");
+        Objects.requireNonNull(writeContext, "候选记录写入上下文不能为空");
+        Objects.requireNonNull(decision, "AUDN 决策不能为空");
+        requireText(candidateStatus, "候选状态不能为空");
+        requireText(validationStatus, "候选校验状态不能为空");
+        Objects.requireNonNull(quality, "候选质量字段不能为空");
+        String operation = Objects.requireNonNull(decision.operation(), "AUDN 操作不能为空").name();
+        String entityName = requireText(decision.entityName(), "AUDN 实体名称不能为空");
+        String entityType = Objects.requireNonNull(decision.entityType(), "AUDN 实体类型不能为空").name();
+
         String id = UUID.randomUUID().toString();
         String now = Instant.now().toString();
-        Quality quality = qualityOf(decision);
         String decisionJson = serializeDecision(decision);
         try {
             jdbcTemplate.update(
@@ -81,9 +95,9 @@ public class MemoryExtractionCandidateRepository {
                     writeContext.sourceTurnId(),
                     writeContext.sourceEntryId(),
                     writeContext.spaceId(),
-                    decision.operation() != null ? decision.operation().name() : "UNKNOWN",
-                    decision.entityName() != null ? decision.entityName() : "",
-                    decision.entityType() != null ? decision.entityType().name() : "CUSTOM",
+                    operation,
+                    entityName,
+                    entityType,
                     decisionJson,
                     candidateStatus,
                     validationStatus,
@@ -101,10 +115,19 @@ public class MemoryExtractionCandidateRepository {
         }
     }
 
-    private Quality qualityOf(AudnDecision decision) {
+    private static String requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
+    }
+
+    private Quality validatedQualityOf(AudnDecision decision) {
         MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.evidenceKindFromDecision(decision);
-        float extractionConfidence = decision.extractionConfidence() != null
-                ? decision.extractionConfidence() : 0.0f;
+        if (decision.extractionConfidence() == null) {
+            throw new IllegalArgumentException("已验证候选缺少 extractionConfidence");
+        }
+        float extractionConfidence = decision.extractionConfidence();
         float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, extractionConfidence);
         MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
         return new Quality(evidenceKind, trustLevel, trustScore);
@@ -114,12 +137,25 @@ public class MemoryExtractionCandidateRepository {
             MemoryEvidenceKind evidenceKind,
             MemoryTrustLevel trustLevel,
             float trustScore
-    ) {}
+    ) {
+        private Quality {
+            Objects.requireNonNull(evidenceKind, "候选证据类型不能为空");
+            Objects.requireNonNull(trustLevel, "候选可信等级不能为空");
+            if (!(trustScore >= 0.0f && trustScore <= 1.0f)) {
+                throw new IllegalArgumentException("候选可信分必须在 [0,1] 范围内: " + trustScore);
+            }
+        }
+
+        static Quality rejected() {
+            return new Quality(MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED, 0.0f);
+        }
+    }
 
     public void markApplied(String candidateId,
                             String persistedEntityId,
                             String baseEntityId) {
-        jdbcTemplate.update(
+        requireText(candidateId, "候选记录 id 不能为空");
+        int updated = jdbcTemplate.update(
                 """
                 UPDATE memory_extraction_candidates
                 SET candidate_status = 'APPLIED',
@@ -133,10 +169,12 @@ public class MemoryExtractionCandidateRepository {
                 baseEntityId,
                 Instant.now().toString(),
                 candidateId);
+        requireUpdatedCandidate(updated, candidateId, "APPLIED");
     }
 
     public void markFailed(String candidateId, String errorMessage) {
-        jdbcTemplate.update(
+        requireText(candidateId, "候选记录 id 不能为空");
+        int updated = jdbcTemplate.update(
                 """
                 UPDATE memory_extraction_candidates
                 SET candidate_status = 'FAILED',
@@ -147,6 +185,14 @@ public class MemoryExtractionCandidateRepository {
                 errorMessage,
                 Instant.now().toString(),
                 candidateId);
+        requireUpdatedCandidate(updated, candidateId, "FAILED");
+    }
+
+    private static void requireUpdatedCandidate(int updated, String candidateId, String status) {
+        if (updated != 1) {
+            throw new IllegalStateException("记忆提取候选状态更新失败: candidateId=%s, status=%s, updated=%d"
+                    .formatted(candidateId, status, updated));
+        }
     }
 
     private String serializeDecision(AudnDecision decision) {

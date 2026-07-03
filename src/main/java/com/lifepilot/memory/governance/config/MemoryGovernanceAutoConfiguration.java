@@ -12,7 +12,6 @@ import com.lifepilot.memory.governance.security.SpaceTrustDistribution;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.memory.governance.audit.MemoryEventRecorder;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -87,9 +86,9 @@ public class MemoryGovernanceAutoConfiguration {
     public MemoryMcpHandler memoryMcpHandler(
             MemoryMcpToolRegistry toolRegistry,
             MemoryGovernanceProperties properties,
-            @Nullable HybridRetriever hybridRetriever,
-            @Nullable EpisodicMemory episodicMemory,
-            @Nullable SemanticMemory semanticMemory) {
+            HybridRetriever hybridRetriever,
+            EpisodicMemory episodicMemory,
+            SemanticMemory semanticMemory) {
         return new MemoryMcpHandler(
                 toolRegistry, properties, hybridRetriever, episodicMemory, semanticMemory);
     }

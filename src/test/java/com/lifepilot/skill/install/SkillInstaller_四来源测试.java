@@ -3,6 +3,8 @@ package com.lifepilot.skill.install;
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -45,7 +47,9 @@ class SkillInstaller_四来源测试 {
         descriptionValidator = new SkillDescriptionValidator();
         bodyValidator = new SkillBodyValidator();
         repository = mock(SkillInstallationRepository.class);
-        installer = new SkillInstaller(parser, descriptionValidator, bodyValidator, repository);
+        installer = new SkillInstaller(parser,
+                new SkillValidator(descriptionValidator, bodyValidator, new DynamicToolRegistry(event -> {})),
+                repository);
     }
 
     @Test
@@ -56,12 +60,15 @@ class SkillInstaller_四来源测试 {
                 description: 当需要演示时使用。关键词 demo
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - demo
-                ## 不适用场景
-                - not-demo
-                ## 工作流
+                - 不要触发：not-demo
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - text
+                ## 失败策略
+                - fail
                 """;
 
         var install = installer.install(new SkillInstaller.InstallRequest(
@@ -83,12 +90,15 @@ class SkillInstaller_四来源测试 {
                 description: 当需要 AI 自动生成技能时使用。关键词 ai
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - ai
-                ## 不适用场景
-                - 非 ai
-                ## 工作流
+                - 不要触发：非 ai
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - text
+                ## 失败策略
+                - fail
                 """;
 
         var install = installer.install(new SkillInstaller.InstallRequest(
@@ -106,12 +116,15 @@ class SkillInstaller_四来源测试 {
                 description: 这不是合法的开头
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - x
-                ## 不适用场景
-                - y
-                ## 工作流
+                - 不要触发：y
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - text
+                ## 失败策略
+                - fail
                 """;
 
         assertThatThrownBy(() -> installer.install(new SkillInstaller.InstallRequest(
@@ -131,7 +144,7 @@ class SkillInstaller_四来源测试 {
                 description: 当用于测试时使用。关键词 test
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - only this
                 """;
 
@@ -151,12 +164,15 @@ class SkillInstaller_四来源测试 {
                 description: 当需要重复测试时使用。关键词 repeat
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - a
-                ## 不适用场景
-                - b
-                ## 工作流
+                - 不要触发：b
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - text
+                ## 失败策略
+                - fail
                 """;
 
         installer.install(new SkillInstaller.InstallRequest(
@@ -175,12 +191,15 @@ class SkillInstaller_四来源测试 {
                 description: 当需要校验校验和时使用。关键词 checksum
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - a
-                ## 不适用场景
-                - b
-                ## 工作流
+                - 不要触发：b
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - text
+                ## 失败策略
+                - fail
                 """;
 
         var install = installer.install(new SkillInstaller.InstallRequest(

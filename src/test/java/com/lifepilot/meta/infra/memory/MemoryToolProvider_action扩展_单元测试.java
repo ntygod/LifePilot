@@ -98,6 +98,31 @@ class MemoryToolProvider_action扩展_单元测试 {
         provider.registerTools(registry);
     }
 
+    // ---------------- create ----------------
+
+    @Test
+    void create传入小写entityType应拒绝且不写入() {
+        var result = 执行工具("create", Map.of(
+                "name", "咖啡",
+                "entityType", "preference"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("无效的实体类型 'preference'");
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+    }
+
+    @Test
+    void create传入首尾空白description应拒绝且不写入() {
+        var result = 执行工具("create", Map.of(
+                "name", "咖啡",
+                "entityType", "PREFERENCE",
+                "description", " 偏好描述"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("description不能包含首尾空白");
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+    }
+
     // ---------------- complete ----------------
 
     @Test
@@ -328,6 +353,54 @@ class MemoryToolProvider_action扩展_单元测试 {
         verify(semanticMemory, never()).addRelation(any(), any());
     }
 
+    @Test
+    void tag传入错误类型strength时应返回错误且不写关系() {
+        var pref = 构造实体("pref-1", EntityType.PREFERENCE, "简洁回答",
+                LifecycleState.ACTIVE);
+        var habit = 构造实体("habit-1", EntityType.HABIT, "早睡",
+                LifecycleState.ACTIVE);
+        记忆(pref, habit);
+
+        var result = 执行工具("tag", Map.of(
+                "sourceEntityId", "pref-1",
+                "targetEntityId", "habit-1",
+                "relationType", "supports",
+                "strength", "0.8"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("参数类型不匹配: strength");
+        verify(semanticMemory, never()).addRelation(any(), any());
+    }
+
+    @Test
+    void tag传入首尾空白relationType应拒绝且不写关系() {
+        var pref = 构造实体("pref-1", EntityType.PREFERENCE, "简洁回答",
+                LifecycleState.ACTIVE);
+        var habit = 构造实体("habit-1", EntityType.HABIT, "早睡",
+                LifecycleState.ACTIVE);
+        记忆(pref, habit);
+
+        var result = 执行工具("tag", Map.of(
+                "sourceEntityId", "pref-1",
+                "targetEntityId", "habit-1",
+                "relationType", " supports"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("relationType不能包含首尾空白");
+        verify(semanticMemory, never()).addRelation(any(), any());
+    }
+
+    @Test
+    void searchExperience传入错误类型successOnly时应返回错误且不检索() {
+        var result = 执行工具("search-experience", Map.of(
+                "query", "任务",
+                "successOnly", "true"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("参数类型不匹配: successOnly");
+        verify(hybridRetriever, never()).retrieve(any(), any(Integer.class), any(), any(MemoryReadFilter.class));
+    }
+
     // ---------------- 共享辅助 ----------------
 
     private com.lifepilot.tool.model.ToolResult 执行工具(String action, Map<String, Object> extra) {
@@ -352,7 +425,12 @@ class MemoryToolProvider_action扩展_单元测试 {
                 0.8f, 0.5f, 0, null, now, now,
                 state, null, null,
                 com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
-                null, false, List.of());
+                null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 
     private void 记忆(TemporalEntity... items) {

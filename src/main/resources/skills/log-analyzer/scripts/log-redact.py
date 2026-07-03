@@ -3,7 +3,7 @@
 
 用法:
   cat app.log | python log-redact.py
-  shell_exec(command="cat app.log | python {skill_scripts_dir}/log-redact.py")
+  shell.exec(command="cat app.log | python {skill_scripts_dir}/log-redact.py")
 
 替换规则:
   IPv4 → xxx.xxx.xxx.***    邮箱 → ***@domain

@@ -204,7 +204,7 @@ public class DocumentIngester {
             updateStage(doc.id(), DocumentStatus.INDEXING);
             doIndex(chunks, doc.knowledgeBaseId());
 
-            // 6. EXTRACTING（异步，可降级）
+            // 6. EXTRACTING
             publishProgress(doc, DocumentStatus.EXTRACTING, 80, "知识提取中");
             updateStage(doc.id(), DocumentStatus.EXTRACTING);
             doExtract(doc, chunks);
@@ -450,15 +450,9 @@ public class DocumentIngester {
             return;
         }
         if (extractionPipeline == null) {
-            log.warn("知识提取已启用但 KnowledgeExtractionPipeline 不可用，已降级跳过: docId={}", doc.id());
-            return;
+            throw new IllegalStateException("知识提取已启用但 KnowledgeExtractionPipeline 未装配");
         }
-        try {
-            extractionPipeline.extract(doc, chunks);
-        } catch (Exception e) {
-            // 提取失败不影响文档状态，降级跳过
-            log.warn("知识提取失败，降级跳过: docId={}, error={}", doc.id(), e.getMessage());
-        }
+        extractionPipeline.extract(doc, chunks);
     }
 
     // ---- 辅助方法 ----

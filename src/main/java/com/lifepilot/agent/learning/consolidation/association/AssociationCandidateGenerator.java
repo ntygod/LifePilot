@@ -1,5 +1,6 @@
 package com.lifepilot.agent.learning.consolidation.association;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -14,15 +15,16 @@ import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * REM 式联想候选生成器。
@@ -36,7 +38,7 @@ import java.util.Objects;
  * </ol>
  * </p>
  *
- * <p>LLM 解析失败、无匹配邻居等异常场景统一返回空列表，不阻塞巩固管线。</p>
+ * <p>无匹配邻居返回空列表；检索、LLM 调用或响应契约失败直接抛出，由巩固管线做阶段隔离。</p>
  *
  * @author zsg
  * @since 2026-05-09
@@ -49,29 +51,24 @@ public class AssociationCandidateGenerator {
     private static final String SCENE = "memory_rem_association";
 
     private final SemanticMemory semanticMemory;
-    @Nullable private final HybridRetriever hybridRetriever;
-    @Nullable private final GenerationRouter generationRouter;
+    private final HybridRetriever hybridRetriever;
+    private final GenerationRouter generationRouter;
     private final AgentLearningProperties properties;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public AssociationCandidateGenerator(SemanticMemory semanticMemory,
-                                          @Nullable HybridRetriever hybridRetriever,
-                                          @Nullable GenerationRouter generationRouter,
+                                          HybridRetriever hybridRetriever,
+                                          GenerationRouter generationRouter,
                                           AgentLearningProperties properties) {
-        this.semanticMemory = Objects.requireNonNull(semanticMemory);
-        this.hybridRetriever = hybridRetriever;
-        this.generationRouter = generationRouter;
-        this.properties = Objects.requireNonNull(properties);
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.hybridRetriever = Objects.requireNonNull(hybridRetriever, "hybridRetriever 不能为空");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter 不能为空");
+        this.properties = Objects.requireNonNull(properties, "properties 不能为空");
     }
 
     /** 主入口：生成本轮所有候选。 */
     public List<AssociationCandidate> generate() {
         if (!properties.getRem().isEnabled()) {
-            return List.of();
-        }
-        if (hybridRetriever == null || generationRouter == null) {
-            log.debug("REM 联想: 缺少依赖 (retriever={}, router={})，跳过",
-                    hybridRetriever != null, generationRouter != null);
             return List.of();
         }
 
@@ -81,14 +78,10 @@ public class AssociationCandidateGenerator {
         Instant now = Instant.now();
         List<AssociationCandidate> result = new ArrayList<>();
         for (var seed : seeds) {
-            try {
-                List<RetrievalResult> neighbors = fetchNeighbors(seed);
-                if (neighbors.isEmpty()) continue;
-                List<AssociationCandidate> parsed = callLlmForAssociations(seed, neighbors, now);
-                result.addAll(parsed);
-            } catch (Exception e) {
-                log.debug("REM 联想: seed={} 生成失败: {}", seed.id(), e.getMessage());
-            }
+            List<RetrievalResult> neighbors = fetchNeighbors(seed);
+            if (neighbors.isEmpty()) continue;
+            List<AssociationCandidate> parsed = callLlmForAssociations(seed, neighbors, now);
+            result.addAll(parsed);
         }
         log.info("REM 联想: 生成 seeds={}, candidates={}", seeds.size(), result.size());
         return result;
@@ -96,12 +89,17 @@ public class AssociationCandidateGenerator {
 
     /** 选择 seed 实体：按类型白名单拉全量 → importance 降序 → 取 top-K。 */
     List<TemporalEntity> selectSeeds() {
-        int limit = Math.max(1, properties.getRem().getSeedLimit());
+        int limit = positive(properties.getRem().getSeedLimit(), "REM seed 数量上限");
         var types = properties.getRem().getSeedTypes();
+        if (types == null || types.isEmpty()) {
+            throw new IllegalArgumentException("REM seedTypes 不能为空");
+        }
         List<TemporalEntity> all = new ArrayList<>();
         for (String typeName : types) {
             EntityType type = parseSeedType(typeName);
-            all.addAll(semanticMemory.findCurrentByType(type));
+            all.addAll(requireEntities(
+                    semanticMemory.findCurrentByType(type),
+                    "REM seed 查询: " + type.name()));
         }
         return all.stream()
                 .filter(e -> e.description() != null && !e.description().isBlank())
@@ -112,9 +110,11 @@ public class AssociationCandidateGenerator {
 
     /** 用 HybridRetriever 取 seed 的相邻实体。 */
     List<RetrievalResult> fetchNeighbors(TemporalEntity seed) {
-        int neighborLimit = Math.max(1, properties.getRem().getNeighborLimit());
-        String query = seed.name() + (seed.description() != null ? " " + seed.description() : "");
-        List<RetrievalResult> raw = hybridRetriever.retrieve(query, neighborLimit + 1, RetrievalWeights.DEFAULT);
+        requireSeed(seed);
+        int neighborLimit = positive(properties.getRem().getNeighborLimit(), "REM 邻居数量上限");
+        String query = seed.name() + " " + seed.description();
+        List<RetrievalResult> raw = requireRetrievalResults(
+                hybridRetriever.retrieve(query, neighborLimit + 1, RetrievalWeights.DEFAULT));
         // 排除 seed 自己
         return raw.stream()
                 .filter(r -> !Objects.equals(r.entityId(), seed.id()))
@@ -126,52 +126,62 @@ public class AssociationCandidateGenerator {
     List<AssociationCandidate> callLlmForAssociations(TemporalEntity seed,
                                                        List<RetrievalResult> neighbors,
                                                        Instant now) {
-        if (generationRouter == null) return List.of();
+        requireSeed(seed);
+        Set<String> neighborIds = requireNeighborIds(neighbors);
         String prompt = buildPrompt(seed, neighbors);
-        Duration timeout = Duration.ofSeconds(Math.max(1, properties.getRem().getLlmTimeoutSeconds()));
-        LlmResponse response;
-        try {
-            response = generationRouter.call(SCENE, prompt, null, null, null,
-                    GenerationCapability.CHAT, timeout, true);
-        } catch (Exception e) {
-            log.debug("REM 联想: LLM 调用失败 seed={}, error={}", seed.id(), e.getMessage());
-            return List.of();
-        }
+        Duration timeout = Duration.ofSeconds(positive(properties.getRem().getLlmTimeoutSeconds(), "REM LLM 超时秒数"));
+        LlmResponse response = generationRouter.call(SCENE, prompt, null, null, null,
+                GenerationCapability.CHAT, timeout, true);
         if (response == null || response.content() == null || response.content().isBlank()) {
-            return List.of();
+            throw new AssociationResponseContractException("REM 联想响应不能为空");
         }
-        return parseResponse(response.content(), seed.id(), now);
+        List<AssociationCandidate> candidates = parseResponse(response.content(), seed.id(), now);
+        validateCandidateTopology(candidates, seed.id(), neighborIds);
+        return candidates;
     }
 
     /** 解析 LLM 输出为 AssociationCandidate 列表。 */
     List<AssociationCandidate> parseResponse(String content, String seedId, Instant now) {
-        if (content == null || content.isBlank()) return List.of();
+        if (content == null || content.isBlank()) {
+            throw new AssociationResponseContractException("REM 联想响应不能为空");
+        }
+        requireCanonicalText(seedId, "REM seedId");
+        Objects.requireNonNull(now, "REM generatedAt 不能为空");
         try {
             List<Map<String, Object>> raw = mapper.readValue(content, new TypeReference<>() {});
             List<AssociationCandidate> list = new ArrayList<>();
             for (var entry : raw) {
-                try {
-                    String sourceId = strVal(entry.get("sourceId"));
-                    String targetId = strVal(entry.get("targetId"));
-                    String typeStr = strVal(entry.get("relationType"));
-                    if (sourceId == null || targetId == null || typeStr == null) continue;
-                    AssociationType type = parseAssociationType(typeStr);
-                    float confidence = floatVal(entry.get("confidence"), 0.0f);
-                    String evidence = strVal(entry.get("evidence"));
-                    list.add(new AssociationCandidate(
-                            sourceId, targetId, type, confidence, evidence, seedId, now));
-                } catch (Exception ex) {
-                    log.debug("REM 联想: 条目解析失败: {}", ex.getMessage());
+                if (entry == null) {
+                    throw new AssociationResponseContractException("REM 联想候选不能为 null");
                 }
+                String sourceId = requiredText(entry, "sourceId");
+                String targetId = requiredText(entry, "targetId");
+                String typeStr = requiredText(entry, "relationType");
+                AssociationType type = parseAssociationType(typeStr);
+                float confidence = requiredConfidence(entry.get("confidence"));
+                String evidence = optionalText(entry, "evidence");
+                list.add(new AssociationCandidate(
+                        sourceId, targetId, type, confidence, evidence, seedId, now));
             }
             return list;
-        } catch (Exception e) {
-            log.debug("REM 联想: JSON 解析失败: {}", e.getMessage());
-            return List.of();
+        } catch (JsonProcessingException e) {
+            throw new AssociationResponseContractException("REM 联想数组解析失败: " + e.getOriginalMessage(), e);
+        }
+    }
+
+    private static final class AssociationResponseContractException extends IllegalStateException {
+        private AssociationResponseContractException(String message) {
+            super(message);
+        }
+
+        private AssociationResponseContractException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 
     private String buildPrompt(TemporalEntity seed, List<RetrievalResult> neighbors) {
+        requireSeed(seed);
+        requireRetrievalResults(neighbors);
         StringBuilder sb = new StringBuilder(2048);
         sb.append("你正在对用户的语义记忆做睡眠阶段联想整合（REM-style consolidation）。\n");
         sb.append("给定以下 seed 实体及其相邻实体，请识别它们之间未被显式记录但确实存在的语义关系。\n\n");
@@ -199,39 +209,140 @@ public class AssociationCandidateGenerator {
         return sb.toString();
     }
 
-    @Nullable
-    private static String strVal(Object o) {
-        if (o == null) return null;
-        String s = o.toString().trim();
-        return s.isEmpty() ? null : s;
+    private static List<TemporalEntity> requireEntities(List<TemporalEntity> entities, String label) {
+        if (entities == null) {
+            throw new IllegalStateException(label + "返回 null");
+        }
+        for (TemporalEntity entity : entities) {
+            Objects.requireNonNull(entity, label + "返回 null 实体");
+            requireCanonicalText(entity.id(), "REM seed id");
+            Objects.requireNonNull(entity.type(), "REM seed type 不能为空");
+            requireCanonicalText(entity.name(), "REM seed name");
+        }
+        return entities;
     }
 
-    private static float floatVal(Object o, float fallback) {
-        if (o == null) return fallback;
-        if (o instanceof Number n) return n.floatValue();
-        try {
-            return Float.parseFloat(o.toString());
-        } catch (NumberFormatException e) {
-            return fallback;
+    private static void requireSeed(TemporalEntity seed) {
+        Objects.requireNonNull(seed, "REM seed 不能为空");
+        requireCanonicalText(seed.id(), "REM seed id");
+        Objects.requireNonNull(seed.type(), "REM seed type 不能为空");
+        requireCanonicalText(seed.name(), "REM seed name");
+        requireCanonicalText(seed.description(), "REM seed description");
+    }
+
+    private static List<RetrievalResult> requireRetrievalResults(List<RetrievalResult> results) {
+        if (results == null) {
+            throw new IllegalStateException("REM 邻居检索结果不能为空");
+        }
+        for (RetrievalResult result : results) {
+            if (result == null) {
+                throw new IllegalStateException("REM 邻居检索结果不能包含 null 元素");
+            }
+            requireCanonicalText(result.entityId(), "REM 邻居 entityId");
+            requireCanonicalText(result.entityType(), "REM 邻居 entityType");
+            requireCanonicalText(result.name(), "REM 邻居 name");
+            if (!Float.isFinite(result.fusedScore())) {
+                throw new IllegalStateException("REM 邻居 fusedScore 必须是有限数值: " + result.fusedScore());
+            }
+            if (!Float.isFinite(result.importanceScore())) {
+                throw new IllegalStateException("REM 邻居 importanceScore 必须是有限数值: "
+                        + result.importanceScore());
+            }
+        }
+        return results;
+    }
+
+    private static Set<String> requireNeighborIds(List<RetrievalResult> neighbors) {
+        Set<String> ids = new HashSet<>();
+        for (RetrievalResult neighbor : requireRetrievalResults(neighbors)) {
+            ids.add(neighbor.entityId());
+        }
+        return Set.copyOf(ids);
+    }
+
+    private static void validateCandidateTopology(List<AssociationCandidate> candidates,
+                                                  String seedId,
+                                                  Set<String> neighborIds) {
+        for (AssociationCandidate candidate : candidates) {
+            if (!seedId.equals(candidate.targetEntityId())) {
+                throw new AssociationResponseContractException(
+                        "REM 联想候选 targetId 必须等于 seedId: " + candidate.targetEntityId());
+            }
+            if (!neighborIds.contains(candidate.sourceEntityId())) {
+                throw new AssociationResponseContractException(
+                        "REM 联想候选 sourceId 不在邻居集中: " + candidate.sourceEntityId());
+            }
         }
     }
 
+    private static String requiredText(Map<String, Object> entry, String key) {
+        Object value = entry.get(key);
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new AssociationResponseContractException("REM 联想候选缺少必填字段: " + key);
+        }
+        requireCanonicalText(text, "REM 联想候选 " + key);
+        return text;
+    }
+
+    private static String optionalText(Map<String, Object> entry, String key) {
+        Object value = entry.get(key);
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new AssociationResponseContractException("REM 联想候选字段必须是非空字符串: " + key);
+        }
+        requireCanonicalText(text, "REM 联想候选 " + key);
+        return text;
+    }
+
+    private static float requiredConfidence(Object value) {
+        if (value == null) {
+            throw new IllegalArgumentException("confidence 不能为空");
+        }
+        float confidence;
+        if (value instanceof Number n) {
+            confidence = n.floatValue();
+        } else {
+            throw new IllegalArgumentException("confidence 必须是数值: " + value);
+        }
+        if (!(confidence >= 0.0f && confidence <= 1.0f)) {
+            throw new IllegalArgumentException("confidence 必须在 [0,1] 范围内: " + value);
+        }
+        return confidence;
+    }
+
     private static AssociationType parseAssociationType(String raw) {
+        requireCanonicalText(raw, "REM relationType");
         try {
-            return AssociationType.valueOf(raw.trim().toUpperCase());
+            return AssociationType.valueOf(raw);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("未知关系类型: " + raw, e);
         }
     }
 
     private static EntityType parseSeedType(String raw) {
-        if (raw == null || raw.isBlank()) {
-            throw new IllegalArgumentException("REM seedTypes 不能包含空值");
-        }
+        requireCanonicalText(raw, "REM seedTypes");
         try {
-            return EntityType.valueOf(raw.trim().toUpperCase());
+            return EntityType.valueOf(raw);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("未知 REM seedTypes 实体类型: " + raw, e);
         }
+    }
+
+    private static void requireCanonicalText(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(label + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
     }
 }

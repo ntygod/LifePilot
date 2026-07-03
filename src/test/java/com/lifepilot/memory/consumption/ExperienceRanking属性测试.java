@@ -28,7 +28,19 @@ class ExperienceRanking属性测试 {
         TemporalEntity base = new TemporalEntity(
                 "e1", EntityType.EXPERIENCE, "exp", "desc", Map.of(), 1, true,
                 NOW.minus(Duration.ofDays(60)), null, "conv",
-                1.0f, importance, 0, null, NOW.minus(Duration.ofDays(60)), updatedAt);
+                1.0f, importance, 0, null, NOW.minus(Duration.ofDays(60)), updatedAt,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        updatedAt);
         return base.withQuality(
                 com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.UNKNOWN,
                 com.lifepilot.memory.consumption.quality.MemoryTrustLevel.VERIFIED,

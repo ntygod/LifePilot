@@ -1,13 +1,20 @@
 package com.lifepilot.memory.semantic;
 
+import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
+import com.lifepilot.agent.learning.staleness.StalenessCoordinator;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.query.MemoryQueryApi;
 import com.lifepilot.memory.governance.lifecycle.SourceType;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.*;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import com.lifepilot.prompt.PromptRegistry;
@@ -30,10 +37,19 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyFloat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link SemanticMemory} 生命周期字段集成测试（Task B3 重构版）。
@@ -83,8 +99,8 @@ class SemanticMemory_生命周期字段_集成测试 {
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         provenanceRepository = new MemoryProvenanceRepository(jdbcTemplate);
         queryApi = new MemoryQueryApi(semanticMemory, provenanceRepository, jdbcTemplate);
     }
@@ -103,7 +119,7 @@ class SemanticMemory_生命周期字段_集成测试 {
     void upsert写入带新字段的实体应能读回字段一致() {
         var entity = 构造活跃实体("test-新字段-1", EntityType.PREFERENCE);
 
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
 
         var loaded = semanticMemory.findById(persisted.id()).orElseThrow();
         assertThat(loaded.lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
@@ -114,12 +130,121 @@ class SemanticMemory_生命周期字段_集成测试 {
         assertThat(loaded.succeededBy()).isNull();
         assertThat(loaded.lifecycleReason()).isNull();
         assertThat(loaded.description()).isEqualTo("测试描述");
+
+        var versions = queryApi.findAllVersions(persisted.id());
+        assertThat(versions).hasSize(1);
+        assertThat(versions.getFirst().evidenceKind()).isEqualTo(MemoryEvidenceKind.USER_CONFIRMED);
+        assertThat(versions.getFirst().trustLevel()).isEqualTo(MemoryTrustLevel.EXPLICIT);
+        assertThat(versions.getFirst().trustScore()).isGreaterThan(0.0f);
+    }
+
+    @Test
+    void 注入冲突裁决服务后向量检索返回null应让upsert失败() {
+        semanticMemory.setConflictResolutionService(mock(ConflictResolutionService.class));
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+                .thenReturn(List.<VectorSearchResult>of())
+                .thenAnswer(invocation -> null);
+
+        assertThatThrownBy(() -> semanticMemory.upsertWithConflictDetection(
+                构造活跃实体("test-conflict-null-vector", EntityType.PREFERENCE),
+                null,
+                MemoryWriteContext.manual("test")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("冲突裁决向量检索结果不能为空");
+    }
+
+    @Test
+    void 注入冲突裁决服务后向量候选实体不存在应让upsert失败() {
+        semanticMemory.setConflictResolutionService(mock(ConflictResolutionService.class));
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+                .thenReturn(List.<VectorSearchResult>of())
+                .thenReturn(List.of(new VectorSearchResult("missing-conflict-candidate", 0.98f)));
+
+        assertThatThrownBy(() -> semanticMemory.upsertWithConflictDetection(
+                构造活跃实体("test-conflict-missing-candidate", EntityType.PREFERENCE),
+                null,
+                MemoryWriteContext.manual("test")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("冲突裁决向量候选实体不存在")
+                .hasMessageContaining("missing-conflict-candidate");
+    }
+
+    @Test
+    void 注入冲突裁决服务后提交裁决失败应让upsert失败() {
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+                .thenReturn(List.<VectorSearchResult>of());
+        var candidate = semanticMemory.upsertWithConflictDetection(
+                构造活跃实体("test-conflict-candidate", EntityType.PREFERENCE),
+                null,
+                MemoryWriteContext.manual("test"));
+        reset(vectorSearcher);
+
+        var resolutionService = mock(ConflictResolutionService.class);
+        semanticMemory.setConflictResolutionService(resolutionService);
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+                .thenReturn(List.<VectorSearchResult>of())
+                .thenReturn(List.of(new VectorSearchResult(candidate.id(), 0.98f)));
+        var failed = new CompletableFuture<Void>();
+        failed.completeExceptionally(new IllegalStateException("提交冲突裁决失败"));
+        when(resolutionService.resolveAsync(any(TemporalEntity.class), anyList()))
+                .thenReturn(failed);
+
+        assertThatThrownBy(() -> semanticMemory.upsertWithConflictDetection(
+                构造活跃实体("test-conflict-submit-failure", EntityType.PREFERENCE),
+                null,
+                MemoryWriteContext.manual("test")))
+                .isInstanceOf(java.util.concurrent.CompletionException.class)
+                .hasRootCauseMessage("提交冲突裁决失败");
+    }
+
+    @Test
+    void 注入冲突裁决服务后提交返回null应让upsert失败() {
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+                .thenReturn(List.<VectorSearchResult>of());
+        var candidate = semanticMemory.upsertWithConflictDetection(
+                构造活跃实体("test-conflict-null-future-candidate", EntityType.PREFERENCE),
+                null,
+                MemoryWriteContext.manual("test"));
+        reset(vectorSearcher);
+
+        var resolutionService = mock(ConflictResolutionService.class);
+        semanticMemory.setConflictResolutionService(resolutionService);
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+                .thenReturn(List.<VectorSearchResult>of())
+                .thenReturn(List.of(new VectorSearchResult(candidate.id(), 0.98f)));
+        when(resolutionService.resolveAsync(any(TemporalEntity.class), anyList()))
+                .thenReturn(null);
+
+        assertThatThrownBy(() -> semanticMemory.upsertWithConflictDetection(
+                构造活跃实体("test-conflict-submit-null-future", EntityType.PREFERENCE),
+                null,
+                MemoryWriteContext.manual("test")))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("冲突裁决提交结果不能为空");
+    }
+
+    @Test
+    void 注入staleness协调器后触发失败应让upsert失败() {
+        var coordinator = mock(StalenessCoordinator.class);
+        doThrow(new IllegalStateException("staleness 触发失败"))
+                .when(coordinator)
+                .process(any(TemporalEntity.class));
+        semanticMemory.setStalenessCoordinator(coordinator);
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat()))
+                .thenReturn(List.<VectorSearchResult>of());
+
+        assertThatThrownBy(() -> semanticMemory.upsertWithConflictDetection(
+                构造活跃实体("test-staleness-failure", EntityType.PREFERENCE),
+                null,
+                MemoryWriteContext.manual("test")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("staleness 触发失败");
     }
 
     @Test
     void updateLifecycleState应能改写生命周期并保留其他字段() {
         var entity = 构造活跃实体("test-新字段-2", EntityType.GOAL);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
 
         semanticMemory.updateLifecycleState(persisted.id(), LifecycleState.CANCELLED, "user-cancel");
 
@@ -130,6 +255,18 @@ class SemanticMemory_生命周期字段_集成测试 {
         assertThat(reloaded.description()).isEqualTo("测试描述");
         assertThat(reloaded.temporality()).isEqualTo(Temporality.PERSISTENT);
         assertThat(reloaded.name()).isEqualTo("测试实体-test-新字段-2");
+    }
+
+    @Test
+    void findEligibleEntityIds_大结果集也应返回真实集合而非null降级() {
+        for (int i = 0; i < 1001; i++) {
+            插入当前实体("eligible-" + i);
+        }
+
+        var ids = semanticMemory.findEligibleEntityIds(MemoryReadFilter.all());
+
+        assertThat(ids).hasSize(1001);
+        assertThat(ids).contains("eligible-0", "eligible-1000");
     }
 
     @Test
@@ -158,9 +295,14 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 true,
                 List.of("src-1", "src-2")
-        );
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
 
-        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.unknown(null));
+        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.manual("test"));
 
         var loaded = semanticMemory.findById("test-派生-1").orElseThrow();
         assertThat(loaded.isDerived()).isTrue();
@@ -176,7 +318,7 @@ class SemanticMemory_生命周期字段_集成测试 {
     })
     void 枚举字段被污染时读取应失败(String columnName, String invalidValue) {
         var entity = 构造活跃实体("test-非法枚举-" + columnName, EntityType.PREFERENCE);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
         jdbcTemplate.update("UPDATE memory_entities SET " + columnName + " = ? WHERE id = ?",
                 invalidValue, persisted.id());
 
@@ -212,8 +354,13 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 true,
                 List.of("src-1")
-        );
-        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.unknown(null));
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
+        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.manual("test"));
         jdbcTemplate.update("UPDATE memory_entities SET derivation_sources = ? WHERE id = ?",
                 "{不是合法JSON", derived.id());
 
@@ -241,8 +388,20 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 Instant.now(),
                 Instant.now()
-        );
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
         jdbcTemplate.update("""
                 UPDATE memory_entity_versions
                 SET properties_json = ?
@@ -262,7 +421,7 @@ class SemanticMemory_生命周期字段_集成测试 {
     })
     void MemoryQueryApi枚举字段被污染时读取版本应失败(String columnName, String invalidValue) {
         var entity = 构造活跃实体("test-query-api-非法枚举-" + columnName, EntityType.PREFERENCE);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
         jdbcTemplate.update("UPDATE memory_entities SET " + columnName + " = ? WHERE id = ?",
                 invalidValue, persisted.id());
 
@@ -299,8 +458,13 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 true,
                 List.of("src-1")
-        );
-        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.unknown(null));
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
+        semanticMemory.upsertWithConflictDetection(derived, null, MemoryWriteContext.manual("test"));
         jdbcTemplate.update("UPDATE memory_entities SET derivation_sources = ? WHERE id = ?",
                 "{不是合法JSON", derived.id());
 
@@ -330,8 +494,20 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 Instant.now(),
                 Instant.now()
-        );
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
         jdbcTemplate.update("""
                 UPDATE memory_entity_versions
                 SET properties_json = ?
@@ -364,8 +540,20 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 Instant.now(),
                 Instant.now()
-        );
-        var persisted = semanticMemory.upsertWithConflictDetection(existing, null, MemoryWriteContext.unknown(null));
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
+        var persisted = semanticMemory.upsertWithConflictDetection(existing, null, MemoryWriteContext.manual("test"));
         jdbcTemplate.update("""
                 UPDATE memory_entity_versions
                 SET properties_json = ?
@@ -388,10 +576,22 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 Instant.now(),
                 Instant.now()
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
 
         assertThatThrownBy(() -> semanticMemory.upsertWithConflictDetection(
-                incoming, null, MemoryWriteContext.unknown(null)))
+                incoming, null, MemoryWriteContext.manual("test")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("冲突检测")
                 .hasMessageContaining("properties_json")
@@ -419,9 +619,28 @@ class SemanticMemory_生命周期字段_集成测试 {
     }
 
     @Test
+    void MemoryQueryApi查不到L4结果时返回OptionalEmpty() {
+        assertThat(queryApi.findRuleBySourceEntity("missing-rule-source")).isEmpty();
+        assertThat(queryApi.findProcedureBySourceEntity("missing-template-source")).isEmpty();
+    }
+
+    @Test
+    void MemoryQueryApi空白参数应直接失败() {
+        assertThatThrownBy(() -> queryApi.findRuleBySourceEntity(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("L4 偏好源实体 ID 不能为空");
+        assertThatThrownBy(() -> queryApi.findProcedureBySourceEntity(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("L4 程序源实体 ID 不能为空");
+        assertThatThrownBy(() -> queryApi.findLatestByType("UNKNOWN_TYPE"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未知实体类型: UNKNOWN_TYPE");
+    }
+
+    @Test
     void markStale应标记provenance并能回查实体ID() {
         var entity = 构造活跃实体("test-溯源-1", EntityType.CUSTOM);
-        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.unknown(null));
+        var persisted = semanticMemory.upsertWithConflictDetection(entity, null, MemoryWriteContext.manual("test"));
         插入provenance("prov-1", persisted.id(), "doc-100");
         插入provenance("prov-2", persisted.id(), "doc-100");
 
@@ -439,9 +658,19 @@ class SemanticMemory_生命周期字段_集成测试 {
         assertThat(entityIds).containsExactly(persisted.id());
     }
 
+    @Test
+    void provenance批量来源查询遇到空白实体ID应直接失败() {
+        assertThatThrownBy(() -> semanticMemory.findSourceEntryIdsByEntityIds(List.of("entity-1", " ")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("provenance 查询实体 ID 不能为空");
+        assertThatThrownBy(() -> semanticMemory.findSourceDocumentIdsByEntityIds(null, true))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("provenance 查询实体 ID 集合不能为空");
+    }
+
     // ========== helpers ==========
 
-    /** 构造默认 ACTIVE + PERSISTENT 的基础实体。 */
+    /** 构造显式 ACTIVE + PERSISTENT 的测试实体。 */
     private TemporalEntity 构造活跃实体(String id, EntityType type) {
         var now = Instant.now();
         return new TemporalEntity(
@@ -460,8 +689,19 @@ class SemanticMemory_生命周期字段_集成测试 {
                 0,
                 null,
                 now,
+                now,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
                 now
-                // 基础构造器默认 ACTIVE / PERSISTENT / 非派生
         );
     }
 
@@ -506,5 +746,36 @@ class SemanticMemory_生命周期字段_集成测试 {
                 null,
                 now,
                 now);
+    }
+
+    private void 插入当前实体(String id) {
+        var now = Instant.now().toString();
+        jdbcTemplate.update("""
+                INSERT INTO memory_entities(
+                    id, space_id, memory_scope, entity_type, canonical_name, normalized_name,
+                    reality_type, status, access_count, first_seen_at, last_seen_at,
+                    created_at, updated_at, lifecycle_state, temporality,
+                    evidence_kind, trust_level, trust_score, evidence_count
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                id,
+                "memory-space-personal-default",
+                "USER_FACT",
+                EntityType.TOPIC.name(),
+                id,
+                id,
+                "UNKNOWN",
+                "ACTIVE",
+                0,
+                now,
+                now,
+                now,
+                now,
+                LifecycleState.ACTIVE.name(),
+                Temporality.PERSISTENT.name(),
+                MemoryEvidenceKind.USER_CONFIRMED.name(),
+                MemoryTrustLevel.EXPLICIT.name(),
+                0.9f,
+                1);
     }
 }

@@ -36,7 +36,11 @@ JSON 格式，字段：
 - applicableConditions: 适用条件列表（数组，最多 3 条，描述什么场景下可复用）
 - toolsUsed: 使用的工具 ID 列表（数组）
 - success: 布尔值
-- failureAttribution: 仅失败时填写，"strategy" 或 "system"
+- failureAttribution: 成功时必须为 null；失败时必须为 "strategy" 或 "system"
+- effectivenessScore: 数字，初始固定为 0.0
+- injectionCount: 整数，初始固定为 0
+- positiveOutcomes: 整数，初始固定为 0
+- negativeOutcomes: 整数，初始固定为 0
 
 ## 质量标准
 - scenario 不是对话摘要，是场景标签。错误示例："用户需要创建一个名为 testbooks 的书单集合，并指定 rating（数字）和 author（文本）两个结构化字段"。正确示例："创建带字段定义的数据集合"

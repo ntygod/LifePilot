@@ -1,6 +1,7 @@
 package com.lifepilot.memory.governance.lifecycle;
 
 import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.events.EntityWeightChanged;
 import com.lifepilot.memory.governance.lifecycle.feedback.FeedbackLedgerRepository;
 import com.lifepilot.memory.governance.lifecycle.feedback.FeedbackThresholdConfig;
@@ -29,7 +30,12 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 
 /**
  * {@link NegativeFeedbackListener} 集成测试 —— Flyway 真跑 + 真 SemanticMemory + 真
@@ -85,8 +91,8 @@ class NegativeFeedbackListener_集成测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         // 事件捕获器：断言只发一次 EntityLifecycleChanged（没有双发）
         publishedEvents = new ArrayList<>();
@@ -199,6 +205,34 @@ class NegativeFeedbackListener_集成测试 {
                 .as("count=2 <3 且 cumulativeScore=-0.6 >-1.0，两条件都不满足")
                 .isEqualTo(LifecycleState.ACTIVE);
         assertThat(读取账本行数("e-5")).isEqualTo(2);
+        assertThat(publishedEvents)
+                .filteredOn(e -> e instanceof EntityLifecycleChanged)
+                .isEmpty();
+    }
+
+    @Test
+    void SUPERSEDED状态更新失败应直接暴露() {
+        插入ACTIVE实体("e-fail");
+        SemanticMemory spyMemory = spy(semanticMemory);
+        doThrow(new RuntimeException("生命周期更新失败"))
+                .when(spyMemory).updateLifecycleState(
+                        org.mockito.ArgumentMatchers.eq("e-fail"),
+                        any(LifecycleState.class),
+                        anyString(),
+                        any(ChangeSource.class));
+        var failingListener = new NegativeFeedbackListener(
+                ledger,
+                spyMemory,
+                new FeedbackThresholdConfig(),
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> failingListener.onWeightChanged(
+                new EntityWeightChanged("e-fail", -1.5, -1.5, WeightSource.USER_FEEDBACK)))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("生命周期更新失败");
+
+        assertThat(读取LifecycleState("e-fail")).isEqualTo(LifecycleState.ACTIVE);
+        assertThat(读取账本行数("e-fail")).isEqualTo(1);
         assertThat(publishedEvents)
                 .filteredOn(e -> e instanceof EntityLifecycleChanged)
                 .isEmpty();

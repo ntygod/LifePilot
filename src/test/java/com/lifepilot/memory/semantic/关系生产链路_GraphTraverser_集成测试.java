@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
@@ -72,7 +73,8 @@ class 关系生产链路_GraphTraverser_集成测试 {
                 jdbcTemplate,
                 mock(ConflictDetector.class),
                 new VersionMerger(),
-                mock(VectorSearcher.class));
+                mock(VectorSearcher.class),
+                SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), SemanticMemoryTestSupport.projectionService());
         graphTraverser = new GraphTraverser(jdbcTemplate);
     }
 
@@ -134,11 +136,12 @@ class 关系生产链路_GraphTraverser_集成测试 {
     private TemporalRelation 关系(String src, String tgt, String type) {
         var now = Instant.parse(NOW);
         return new TemporalRelation(
-                UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, now, null, "test", now);
+                UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, now, null, "test", now,
+                MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f);
     }
 
     private MemoryWriteContext relationContext() {
-        return MemoryWriteContext.unknown("test-relation");
+        return MemoryWriteContext.consolidation("test-relation");
     }
 
     private void 插入实体(String id, EntityType type) {

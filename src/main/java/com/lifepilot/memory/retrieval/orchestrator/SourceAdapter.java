@@ -19,6 +19,4 @@ public sealed interface SourceAdapter
     /** 给定 query 返回最多 topK 个证据 item。 */
     List<EvidenceItem> retrieve(String query, int topK);
 
-    /** 适配器当前是否可用（底层依赖缺失时应返回 false，Orchestrator 会跳过）。 */
-    boolean isAvailable();
 }

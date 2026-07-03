@@ -1,10 +1,12 @@
 package com.lifepilot.sandbox.config;
 
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * 沙箱配置属性。
@@ -14,6 +16,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @author zsg
  * @since 2026-03-01
  */
+@Setter
+@Getter
 @ConfigurationProperties(prefix = "lifepilot.sandbox")
 public class SandboxConfigProperties {
 
@@ -51,42 +55,14 @@ public class SandboxConfigProperties {
     /** 运行时配置（捆绑 Python 运行时 + Shell 命令护栏）。 */
     private Runtime runtime = new Runtime();
 
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    public String getBooter() { return booter; }
-    public void setBooter(String booter) { this.booter = booter; }
-
-    public List<String> getSupportedLanguages() { return supportedLanguages; }
-    public void setSupportedLanguages(List<String> supportedLanguages) { this.supportedLanguages = supportedLanguages; }
-
-    public int getExecutionTimeoutSeconds() { return executionTimeoutSeconds; }
-    public void setExecutionTimeoutSeconds(int executionTimeoutSeconds) { this.executionTimeoutSeconds = executionTimeoutSeconds; }
-
-    public int getMaxOutputBytes() { return maxOutputBytes; }
-    public void setMaxOutputBytes(int maxOutputBytes) { this.maxOutputBytes = maxOutputBytes; }
-
-    public Map<String, String> getRuntimePaths() { return runtimePaths; }
-    public void setRuntimePaths(Map<String, String> runtimePaths) { this.runtimePaths = runtimePaths; }
-
-    public Session getSession() { return session; }
-    public void setSession(Session session) { this.session = session; }
-
-    public Validator getValidator() { return validator; }
-    public void setValidator(Validator validator) { this.validator = validator; }
-
-    public Docker getDocker() { return docker; }
-    public void setDocker(Docker docker) { this.docker = docker; }
-
-    public Runtime getRuntime() { return runtime; }
-    public void setRuntime(Runtime runtime) { this.runtime = runtime; }
-
     /**
      * 会话配置 — 控制沙箱会话的 TTL、最大数量和清理间隔。
      *
      * @author zsg
      * @since 2026-03-01
      */
+    @Setter
+    @Getter
     public static class Session {
 
         /** 会话 TTL（秒），默认 600。 */
@@ -101,17 +77,6 @@ public class SandboxConfigProperties {
         /** 会话工作目录物理保留天数，超期后由 SessionDirectoryCleanupJob 清理。默认 30 天。 */
         private int directoryRetentionDays = 30;
 
-        public int getTtlSeconds() { return ttlSeconds; }
-        public void setTtlSeconds(int ttlSeconds) { this.ttlSeconds = ttlSeconds; }
-
-        public int getMaxActiveSessions() { return maxActiveSessions; }
-        public void setMaxActiveSessions(int maxActiveSessions) { this.maxActiveSessions = maxActiveSessions; }
-
-        public int getCleanupIntervalSeconds() { return cleanupIntervalSeconds; }
-        public void setCleanupIntervalSeconds(int cleanupIntervalSeconds) { this.cleanupIntervalSeconds = cleanupIntervalSeconds; }
-
-        public int getDirectoryRetentionDays() { return directoryRetentionDays; }
-        public void setDirectoryRetentionDays(int directoryRetentionDays) { this.directoryRetentionDays = directoryRetentionDays; }
     }
 
     /**
@@ -120,6 +85,8 @@ public class SandboxConfigProperties {
      * @author zsg
      * @since 2026-03-01
      */
+    @Setter
+    @Getter
     public static class Validator {
 
         /** 是否启用预检，默认 true。 */
@@ -128,11 +95,6 @@ public class SandboxConfigProperties {
         /** 是否拒绝 CRITICAL 级别违规，默认 true。 */
         private boolean rejectCritical = true;
 
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-        public boolean isRejectCritical() { return rejectCritical; }
-        public void setRejectCritical(boolean rejectCritical) { this.rejectCritical = rejectCritical; }
     }
 
     /**
@@ -141,6 +103,8 @@ public class SandboxConfigProperties {
      * @author zsg
      * @since 2026-03-01
      */
+    @Setter
+    @Getter
     public static class Docker {
 
         /** 内存限制（MB），默认 256。 */
@@ -155,17 +119,6 @@ public class SandboxConfigProperties {
         /** Docker 镜像前缀，默认 zhiwei/sandbox-。 */
         private String imagePrefix = "zhiwei/sandbox-";
 
-        public int getMemoryLimitMb() { return memoryLimitMb; }
-        public void setMemoryLimitMb(int memoryLimitMb) { this.memoryLimitMb = memoryLimitMb; }
-
-        public double getCpuLimit() { return cpuLimit; }
-        public void setCpuLimit(double cpuLimit) { this.cpuLimit = cpuLimit; }
-
-        public boolean isNetworkEnabled() { return networkEnabled; }
-        public void setNetworkEnabled(boolean networkEnabled) { this.networkEnabled = networkEnabled; }
-
-        public String getImagePrefix() { return imagePrefix; }
-        public void setImagePrefix(String imagePrefix) { this.imagePrefix = imagePrefix; }
     }
 
     /**
@@ -174,6 +127,8 @@ public class SandboxConfigProperties {
      * @author zsg
      * @since 2026-04-26
      */
+    @Setter
+    @Getter
     public static class Runtime {
 
         /** Python 捆绑运行时配置。 */
@@ -182,18 +137,14 @@ public class SandboxConfigProperties {
         /** Shell 命令护栏配置。 */
         private CommandGuardConfig commandGuard = new CommandGuardConfig();
 
-        public Python getPython() { return python; }
-        public void setPython(Python python) { this.python = python; }
-
-        public CommandGuardConfig getCommandGuard() { return commandGuard; }
-        public void setCommandGuard(CommandGuardConfig commandGuard) { this.commandGuard = commandGuard; }
-
         /**
          * Python 捆绑运行时配置 — 离线包版本、下载地址、安装路径与预期库清单。
          *
          * @author zsg
          * @since 2026-04-26
          */
+        @Setter
+        @Getter
         public static class Python {
 
             /** 捆绑 Python 运行时版本，默认 3.12.13。 */
@@ -214,20 +165,6 @@ public class SandboxConfigProperties {
             /** 是否禁用捆绑 Python 运行时（true 时回退到系统 PATH 中的 python）。 */
             private boolean disabled = false;
 
-            public String getBundledVersion() { return bundledVersion; }
-            public void setBundledVersion(String bundledVersion) { this.bundledVersion = bundledVersion; }
-
-            public String getDownloadUrlTemplate() { return downloadUrlTemplate; }
-            public void setDownloadUrlTemplate(String downloadUrlTemplate) { this.downloadUrlTemplate = downloadUrlTemplate; }
-
-            public String getSha256UrlTemplate() { return sha256UrlTemplate; }
-            public void setSha256UrlTemplate(String sha256UrlTemplate) { this.sha256UrlTemplate = sha256UrlTemplate; }
-
-            public List<String> getExpectedLibraries() { return expectedLibraries; }
-            public void setExpectedLibraries(List<String> expectedLibraries) { this.expectedLibraries = expectedLibraries; }
-
-            public boolean isDisabled() { return disabled; }
-            public void setDisabled(boolean disabled) { this.disabled = disabled; }
         }
 
         /**
@@ -239,6 +176,8 @@ public class SandboxConfigProperties {
          * @author zsg
          * @since 2026-04-26
          */
+        @Setter
+        @Getter
         public static class CommandGuardConfig {
 
             /** 是否启用命令护栏，默认 true。 */
@@ -247,11 +186,6 @@ public class SandboxConfigProperties {
             /** 是否启用 yolo 模式（DANGEROUS 自动放行，HARDLINE 仍拦截；仅用于本地调试），默认 false。 */
             private boolean yoloMode = false;
 
-            public boolean isEnabled() { return enabled; }
-            public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-            public boolean isYoloMode() { return yoloMode; }
-            public void setYoloMode(boolean yoloMode) { this.yoloMode = yoloMode; }
         }
     }
 }

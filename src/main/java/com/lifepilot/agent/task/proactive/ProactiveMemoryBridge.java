@@ -11,6 +11,8 @@ import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.governance.lifecycle.events.ProactiveTaskCancelled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -364,14 +366,18 @@ public class ProactiveMemoryBridge {
         try {
             String entityName = "proactive_insight_" + category + "_" + key;
             String description = "主动引擎洞察: %s/%s, 信号=%.2f, 证据=%s".formatted(category, key, value, evidence);
+            var now = Instant.now();
+            float trustScore = Math.max(0.50f, Math.min(0.75f, value));
 
             var entity = new TemporalEntity(
                     null, EntityType.PREFERENCE, entityName, description,
                     Map.of("category", category, "key", key, "signal", value, "evidence", evidence),
-                    1, true, Instant.now(), null, null,
-                    0.8f, Math.max(0.5f, value), 0, null, Instant.now(), Instant.now())
-                    .withQuality(MemoryEvidenceKind.BEHAVIOR_INFERRED, MemoryTrustLevel.INFERRED,
-                            Math.max(0.50f, Math.min(0.75f, value)), 1, null);
+                    1, true, now, null, null,
+                    0.8f, Math.max(0.5f, value), 0, null, now, now,
+                    LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
+                    null, false, List.of(),
+                    MemoryEvidenceKind.BEHAVIOR_INFERRED, MemoryTrustLevel.INFERRED,
+                    trustScore, 1, null);
             semanticMemory.upsertWithConflictDetection(
                     entity,
                     "proactive-engine",

@@ -17,9 +17,9 @@ import java.util.Map;
  *
  * <p>提供两个工具：
  * <ul>
- *   <li>{@code memory} —— 按 toolId / callId / keyword / success / since 检索 tool_result，
+ *   <li>{@code transcript.search} —— 按 toolId / callId / keyword / success / since 检索 tool_result，
  *       返回轻量 preview 列表</li>
- *   <li>{@code memory} —— 按 entryId / callId 取单条 tool_result 的完整 outputJson</li>
+ *   <li>{@code transcript.get} —— 按 entryId / callId 取单条 tool_result 的完整 outputJson</li>
  * </ul>
  *
  * <p>SessionTranscriptRepository 必须由 Spring 注入；Web 上下文未启用时本 provider

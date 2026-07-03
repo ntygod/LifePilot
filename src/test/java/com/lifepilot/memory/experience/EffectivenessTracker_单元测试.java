@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.floatThat;
@@ -78,17 +79,17 @@ class EffectivenessTracker_单元测试 {
         }
 
         @Test
-        void 仓储层异常_应吞没异常不向外抛出() {
+        void 仓储层异常_应直接抛出() {
             // given
             var traceId = "trace-err";
             var entityIds = List.of("entity-x");
             doThrow(new RuntimeException("数据库写入失败"))
                     .when(injectionRecordRepository).saveWithType(any(), any(), any(), any());
 
-            // when — 不应抛异常
-            tracker.recordInjection(traceId, entityIds);
+            // when
+            assertThrows(RuntimeException.class, () -> tracker.recordInjection(traceId, entityIds));
 
-            // then — 方法正常返回，异常被 catch
+            // then
             verify(injectionRecordRepository).saveWithType(traceId, traceId, entityIds, "EXPERIENCE");
         }
     }
@@ -199,20 +200,21 @@ class EffectivenessTracker_单元测试 {
         }
 
         @Test
-        void 查询注入记录异常_应吞没异常不向外抛出() {
+        void 查询注入记录异常_应直接抛出() {
             // given
             when(injectionRecordRepository.findEntityIdsBySourceTraceIdAndType("trace-err", "EXPERIENCE"))
                     .thenThrow(new RuntimeException("查询失败"));
 
-            // when — 不应抛异常
-            tracker.evaluate(buildState(null, List.of()), "trace-err");
+            // when
+            assertThrows(RuntimeException.class,
+                    () -> tracker.evaluate(buildState(null, List.of()), "trace-err"));
 
             // then
             verifyNoInteractions(semanticMemory);
         }
 
         @Test
-        void 单个实体调整分数异常_应继续处理其余实体() {
+        void 单个实体调整分数异常_应直接失败并停止后续实体() {
             // given
             var state = buildState(null, List.of(
                     new ReactStep.Observation("tool.a", "工具A", true, "ok", 10)
@@ -221,18 +223,16 @@ class EffectivenessTracker_单元测试 {
                     .thenReturn(List.of("entity-err", "entity-ok"));
             when(semanticMemory.findById("entity-err"))
                     .thenThrow(new RuntimeException("查找失败"));
-            when(semanticMemory.findById("entity-ok"))
-                    .thenReturn(Optional.of(buildEntity("entity-ok", 0.7f)));
 
             // when
-            tracker.evaluate(state, "trace-001");
+            assertThrows(RuntimeException.class, () -> tracker.evaluate(state, "trace-001"));
 
-            // then — entity-err 失败但 entity-ok 仍应被处理
-            verify(semanticMemory).updateImportanceScore("entity-ok", 0.75f, WeightSource.EFFECTIVENESS);
+            // then — entity-err 失败后停止，避免部分调分被误认为整轮成功
+            verify(semanticMemory, never()).updateImportanceScore(eq("entity-ok"), any(float.class), any(WeightSource.class));
         }
 
         @Test
-        void 实体不存在_findById返回空_应跳过不报错() {
+        void 实体不存在_findById返回空_应直接失败() {
             // given
             var state = buildState(null, List.of(
                     new ReactStep.Observation("tool.a", "工具A", true, "ok", 10)
@@ -243,11 +243,51 @@ class EffectivenessTracker_单元测试 {
                     .thenReturn(Optional.empty());
 
             // when
-            tracker.evaluate(state, "trace-001");
+            assertThrows(IllegalStateException.class, () -> tracker.evaluate(state, "trace-001"));
 
-            // then — 不应调用 updateImportanceScore 或 archive
+            // then
             verify(semanticMemory, never()).updateImportanceScore(any(), any(float.class), any(WeightSource.class));
             verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
+        }
+
+        @Test
+        void 注入记录实体ID包含首尾空白应直接失败() {
+            var state = buildState(null, List.of(
+                    new ReactStep.Observation("tool.a", "工具A", true, "ok", 10)
+            ));
+            when(injectionRecordRepository.findEntityIdsBySourceTraceIdAndType("trace-001", "EXPERIENCE"))
+                    .thenReturn(List.of(" entity-1 "));
+
+            assertThrows(IllegalArgumentException.class, () -> tracker.evaluate(state, "trace-001"));
+
+            verifyNoInteractions(semanticMemory);
+        }
+
+        @Test
+        void 注入经验查询返回null应直接失败() {
+            var state = buildState(null, List.of(
+                    new ReactStep.Observation("tool.a", "工具A", true, "ok", 10)
+            ));
+            when(injectionRecordRepository.findEntityIdsBySourceTraceIdAndType("trace-001", "EXPERIENCE"))
+                    .thenReturn(List.of("entity-null"));
+            when(semanticMemory.findById("entity-null")).thenReturn(null);
+
+            assertThrows(IllegalStateException.class, () -> tracker.evaluate(state, "trace-001"));
+
+            verify(semanticMemory, never()).updateImportanceScore(any(), any(float.class), any(WeightSource.class));
+            verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
+        }
+
+        @Test
+        void 效果评估配置越界应直接失败() {
+            memoryProperties.getExperience().getEffectiveness().setSuccessRatioThreshold(1.2f);
+            tracker = new EffectivenessTracker(semanticMemory, injectionRecordRepository, memoryProperties);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> tracker.evaluate(buildState(null, List.of()), "trace-001"));
+
+            verifyNoInteractions(injectionRecordRepository);
+            verifyNoInteractions(semanticMemory);
         }
     }
 
@@ -562,6 +602,18 @@ class EffectivenessTracker_单元测试 {
                 null,
                 Instant.now(),
                 Instant.now()
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
     }
 }

@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 操作模板 — L4 程序记忆的核心数据载体。
@@ -38,9 +39,21 @@ public record ProcedureTemplate(
 ) {
     /** compact constructor：确保集合字段不可变。 */
     public ProcedureTemplate {
-        steps = steps != null ? List.copyOf(steps) : List.of();
-        variables = variables != null ? Map.copyOf(variables) : Map.of();
-        sourceTraceIds = sourceTraceIds != null ? List.copyOf(sourceTraceIds) : List.of();
+        Objects.requireNonNull(templateId, "模板 ID 不能为空");
+        Objects.requireNonNull(name, "模板名称不能为空");
+        Objects.requireNonNull(description, "模板描述不能为空");
+        Objects.requireNonNull(triggerIntent, "触发意图不能为空");
+        steps = List.copyOf(Objects.requireNonNull(steps, "模板步骤不能为空"));
+        variables = Map.copyOf(Objects.requireNonNull(variables, "模板变量不能为空"));
+        sourceTraceIds = List.copyOf(Objects.requireNonNull(sourceTraceIds, "来源轨迹 ID 列表不能为空"));
+        Objects.requireNonNull(createdAt, "模板创建时间不能为空");
+        Objects.requireNonNull(updatedAt, "模板更新时间不能为空");
+        if (!(successRate >= 0.0f && successRate <= 1.0f)) {
+            throw new IllegalArgumentException("模板成功率必须在 [0,1] 范围内: " + successRate);
+        }
+        if (useCount < 0) {
+            throw new IllegalArgumentException("模板使用次数不能为负数: " + useCount);
+        }
     }
 
     /**

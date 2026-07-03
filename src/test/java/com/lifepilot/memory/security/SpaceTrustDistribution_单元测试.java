@@ -4,6 +4,7 @@ import com.lifepilot.memory.governance.security.SpaceTrustDistribution;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * SpaceTrustDistribution 单元测试。
@@ -42,6 +43,22 @@ class SpaceTrustDistribution_单元测试 {
             dist.observe("s1", 0.5f);
         }
         assertThat(dist.sampleCount("s1")).isLessThanOrEqualTo(10);
+    }
+
+    @Test
+    void 窗口小于估计样本数时抛异常() {
+        assertThatThrownBy(() -> new SpaceTrustDistribution(9))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("trustScore 分布样本窗口不能小于 10");
+    }
+
+    @Test
+    void trustScore越界时抛异常() {
+        var dist = new SpaceTrustDistribution(100);
+
+        assertThatThrownBy(() -> dist.observe("s1", 1.5f))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("trustScore 必须在 [0,1] 范围内");
     }
 
     @Test

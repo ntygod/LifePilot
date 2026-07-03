@@ -11,6 +11,7 @@ import com.lifepilot.skill.install.SkillSourceType;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.validation.SkillValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -58,6 +59,7 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
     private final SkillInstaller installer;
     private final SkillInstallationRepository installationRepository;
     private final MarkdownSkillParser parser;
+    private final SkillValidator validator;
     private final SkillRegistry skillRegistry;
 
     public SkillDiscoveryRegistrar(MetaProperties properties,
@@ -65,12 +67,14 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
                                    SkillInstaller installer,
                                    SkillInstallationRepository installationRepository,
                                    MarkdownSkillParser parser,
+                                   SkillValidator validator,
                                    SkillRegistry skillRegistry) {
         this.properties = properties;
         this.zhiweiPaths = zhiweiPaths;
         this.installer = installer;
         this.installationRepository = installationRepository;
         this.parser = parser;
+        this.validator = validator;
         this.skillRegistry = skillRegistry;
     }
 
@@ -113,6 +117,7 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
             try {
                 String classpathContent = resource.getContentAsString(StandardCharsets.UTF_8);
                 ParsedSkill classpathParsed = parser.parse(classpathContent);
+                validator.validate(classpathParsed);
                 String classpathVersion = classpathParsed.frontmatter().version();
 
                 Optional<SkillInstallation> existing = installationRepository.findByName(skillName);
@@ -209,6 +214,7 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
             if (Files.exists(localSkillMd)) {
                 String localContent = Files.readString(localSkillMd, StandardCharsets.UTF_8);
                 ParsedSkill localParsed = parser.parse(localContent);
+                validator.validate(localParsed);
                 registerParsed(localParsed, skillFolder);
                 return;
             }

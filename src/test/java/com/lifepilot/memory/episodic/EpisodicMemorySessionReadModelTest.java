@@ -7,8 +7,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EpisodicMemorySessionReadModelTest {
 
@@ -196,6 +198,15 @@ class EpisodicMemorySessionReadModelTest {
     }
 
     @Test
+    void searchSnippetsExcludingSession_缺失Fts表时应直接暴露错误() {
+        jdbcTemplate.execute("DROP TABLE session_transcript_entries_fts");
+
+        assertThatThrownBy(() -> episodicMemory.searchSnippetsExcludingSession("oolong", "s1", 3))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("session_transcript_entries_fts");
+    }
+
+    @Test
     void sessionReadModelUsesSessionStoreAndTranscriptAsSourceOfTruth() {
         insertSession("s1", "tea preferences", "tea notes", Instant.parse("2026-03-19T09:00:00Z"));
         insertTurn("s1", "m1", "user", "My favorite is oolong tea.", Instant.parse("2026-03-19T09:00:01Z"));
@@ -216,6 +227,159 @@ class EpisodicMemorySessionReadModelTest {
         assertThat(listed).extracting(ConversationRecord::id).contains("s1", "s2");
     }
 
+    @Test
+    void save应使用结构化JSON写入并正确读回特殊字符() {
+        var now = Instant.parse("2026-06-24T10:00:00Z");
+        String content = "他说 \"hello\"，路径 C:\\tmp\\a\n下一行";
+        var record = new ConversationRecord(
+                "conv-json",
+                "session-json",
+                "JSON 写入",
+                "summary",
+                List.of(new MessageRecord(
+                        "msg-json",
+                        "session-json",
+                        "user",
+                        content,
+                        null,
+                        CompressionLevel.ORIGINAL,
+                        false,
+                        null,
+                        12,
+                        now)),
+                now,
+                now);
+
+        episodicMemory.save(record);
+
+        var loaded = episodicMemory.getById("session-json").orElseThrow();
+        assertThat(loaded.messages()).singleElement()
+                .extracting(MessageRecord::content)
+                .isEqualTo(content);
+    }
+
+    @Test
+    void save遇到负tokenCount应拒绝写入() {
+        var now = Instant.parse("2026-06-24T10:10:00Z");
+        var record = new ConversationRecord(
+                "conv-negative-token",
+                "session-negative-token",
+                "负 token",
+                "summary",
+                List.of(new MessageRecord(
+                        "msg-negative-token",
+                        "session-negative-token",
+                        "user",
+                        "content",
+                        null,
+                        CompressionLevel.ORIGINAL,
+                        false,
+                        null,
+                        -1,
+                        now)),
+                now,
+                now);
+
+        assertThatThrownBy(() -> episodicMemory.save(record))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("情景记忆消息 tokenCount 不能为负数");
+        Integer transcriptCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM session_transcript_entries WHERE session_id = ?",
+                Integer.class,
+                "session-negative-token");
+        assertThat(transcriptCount).isZero();
+    }
+
+    @Test
+    void save遇到空记录应直接失败() {
+        assertThatThrownBy(() -> episodicMemory.save(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("情景记忆记录不能为空");
+    }
+
+    @Test
+    void save遇到空sessionId应直接失败() {
+        var now = Instant.parse("2026-06-24T10:20:00Z");
+        var record = new ConversationRecord(
+                "conv-blank-session",
+                " ",
+                "空会话",
+                "summary",
+                List.of(),
+                now,
+                now);
+
+        assertThatThrownBy(() -> episodicMemory.save(record))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("情景记忆会话 ID不能为空");
+    }
+
+    @Test
+    void 公共查询入口遇到非法参数应直接失败() {
+        assertThatThrownBy(() -> episodicMemory.getRecent(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("limit 必须大于 0");
+        assertThatThrownBy(() -> episodicMemory.getRecent(java.time.Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("duration 必须为正数");
+        assertThatThrownBy(() -> episodicMemory.search(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("搜索关键词不能为空");
+        assertThatThrownBy(() -> episodicMemory.getById(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("会话 ID 不能为空");
+        assertThatThrownBy(() -> episodicMemory.getMessagesBySessionId(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("会话 ID 不能为空");
+        assertThatThrownBy(() -> episodicMemory.searchSnippetsExcludingSession("oolong", "s1", 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("跨会话片段召回参数非法");
+        assertThatThrownBy(() -> episodicMemory.getByIntent(" ", 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("情景记忆意图查询参数非法");
+        assertThatThrownBy(() -> episodicMemory.listConversations(-1, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("page 不能为负数");
+        assertThatThrownBy(() -> episodicMemory.listConversations(0, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("size 必须大于 0");
+        assertThatThrownBy(() -> episodicMemory.delete(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("会话 ID 不能为空");
+    }
+
+    @Test
+    void search命中孤儿transcript时应直接失败() {
+        insertOrphanTurn("orphan-session", "orphan-message", "user", "orphan marker",
+                Instant.parse("2026-06-24T10:30:00Z"));
+
+        assertThatThrownBy(() -> episodicMemory.search("orphan marker"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("情景记忆搜索命中缺少会话记录: orphan-session");
+    }
+
+    @Test
+    void searchSnippets命中非法角色行时应直接失败() {
+        insertSession("s1", "current", "current summary", Instant.parse("2026-06-24T10:40:00Z"));
+        insertSession("bad-role-session", "bad role", "summary", Instant.parse("2026-06-24T10:39:00Z"));
+        insertTurn("bad-role-session", "bad-role-hit", "system", "bad role recall marker",
+                Instant.parse("2026-06-24T10:39:00Z"));
+
+        assertThatThrownBy(() -> episodicMemory.searchSnippetsExcludingSession("bad role recall marker", "s1", 3))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("情景记忆消息角色非法: system");
+    }
+
+    @Test
+    void transcript持久化坏时间应直接失败() {
+        insertSession("bad-time-session", "bad time", "summary", Instant.parse("2026-06-24T10:50:00Z"));
+        insertTurnWithCreatedAt("bad-time-session", "bad-time-message", "user", "坏时间", "not-an-instant");
+
+        assertThatThrownBy(() -> episodicMemory.getMessagesBySessionId("bad-time-session"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("情景记忆消息.created_at解析失败: not-an-instant");
+    }
+
     private void insertSession(String id, String title, String summary, Instant createdAt) {
         jdbcTemplate.update("""
                         INSERT INTO session_store (
@@ -228,15 +392,7 @@ class EpisodicMemorySessionReadModelTest {
     }
 
     private void insertTurn(String sessionId, String messageId, String role, String content, Instant createdAt) {
-        String payloadJson = "{\"content\":\"" + content.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
-        jdbcTemplate.update("""
-                        INSERT INTO session_transcript_entries (
-                            id, session_id, branch_id, entry_type, role, visible_to_model,
-                            visible_to_user, payload_json, token_estimate, created_at
-                        ) VALUES (?, ?, 'main', ?, ?, 1, 1, ?, 0, ?)
-                        """,
-                messageId, sessionId, "user".equals(role) ? "user_message" : "assistant_message",
-                role, payloadJson, createdAt.toString());
+        insertTurnWithCreatedAt(sessionId, messageId, role, content, createdAt.toString());
         jdbcTemplate.update("""
                         UPDATE session_store
                         SET message_count = message_count + 1,
@@ -246,5 +402,29 @@ class EpisodicMemorySessionReadModelTest {
                         WHERE session_id = ?
                         """,
                 createdAt.toString(), createdAt.toString(), createdAt.toString(), sessionId);
+    }
+
+    private void insertOrphanTurn(String sessionId,
+                                  String messageId,
+                                  String role,
+                                  String content,
+                                  Instant createdAt) {
+        insertTurnWithCreatedAt(sessionId, messageId, role, content, createdAt.toString());
+    }
+
+    private void insertTurnWithCreatedAt(String sessionId,
+                                         String messageId,
+                                         String role,
+                                         String content,
+                                         String createdAt) {
+        String payloadJson = "{\"content\":\"" + content.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
+        jdbcTemplate.update("""
+                        INSERT INTO session_transcript_entries (
+                            id, session_id, branch_id, entry_type, role, visible_to_model,
+                            visible_to_user, payload_json, token_estimate, created_at
+                        ) VALUES (?, ?, 'main', ?, ?, 1, 1, ?, 0, ?)
+                        """,
+                messageId, sessionId, "user".equals(role) ? "user_message" : "assistant_message",
+                role, payloadJson, createdAt);
     }
 }

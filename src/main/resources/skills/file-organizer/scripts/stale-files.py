@@ -5,7 +5,7 @@
   python stale-files.py <目录> --days 30 [--json] [--dry-run]
 
 LLM 调用示例:
-  shell_exec(command="python {skill_scripts_dir}/stale-files.py /home/user/downloads --days 60 --json")
+  shell.exec(command="python {skill_scripts_dir}/stale-files.py /home/user/downloads --days 60 --json")
 """
 
 import argparse

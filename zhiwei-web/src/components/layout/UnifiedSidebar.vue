@@ -245,10 +245,10 @@ function switchToChatTab() {
   activeTab.value = 'chat'
 }
 
-/** 从对话 Tab 切换到管理 Tab 时，导航到通用设置页（管理首页） */
+/** 从对话 Tab 切换到管理 Tab 时，导航到能力中心。 */
 function switchToManageTab() {
   if (activeTab.value === 'chat') {
-    router.push('/settings/general')
+    router.push('/capabilities')
   }
   activeTab.value = 'manage'
 }

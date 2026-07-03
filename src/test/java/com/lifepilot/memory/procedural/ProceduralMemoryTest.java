@@ -102,6 +102,19 @@ class ProceduralMemoryTest {
     }
 
     @Test
+    void 构造依赖为空时应直接失败() {
+        assertThatThrownBy(() -> new ProceduralMemory(null, projectionService, new ObjectMapper()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("JdbcTemplate 不能为空");
+        assertThatThrownBy(() -> new ProceduralMemory(jdbcTemplate, null, new ObjectMapper()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("MemoryProjectionService 不能为空");
+        assertThatThrownBy(() -> new ProceduralMemory(jdbcTemplate, projectionService, null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("ObjectMapper 不能为空");
+    }
+
+    @Test
     void save_findById_完整字段往返一致() {
         var now = Instant.now();
         var steps = List.of(
@@ -203,6 +216,19 @@ class ProceduralMemoryTest {
     }
 
     @Test
+    void update_模板不存在时应直接失败且不登记投影() {
+        var now = Instant.now();
+        var missing = createSimpleTemplate("tpl-missing-update", "不存在模板", now);
+
+        assertThatThrownBy(() -> proceduralMemory.update(missing))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 更新模板失败")
+                .hasMessageContaining("tpl-missing-update");
+        verify(projectionService, never())
+                .enqueueProcedureTemplateVectorUpsertAfterCommit(anyString(), anyString());
+    }
+
+    @Test
     void delete_删除后_查询返回空() {
         var now = Instant.now();
         var template = createSimpleTemplate("tpl-delete", "待删除模板", now);
@@ -214,6 +240,16 @@ class ProceduralMemoryTest {
 
         assertThat(proceduralMemory.findById(template.templateId())).isEmpty();
         verify(projectionService).enqueueProcedureTemplateVectorDeleteAfterCommit(template.templateId());
+    }
+
+    @Test
+    void delete_模板不存在时应直接失败且不登记投影() {
+        assertThatThrownBy(() -> proceduralMemory.delete("tpl-missing-delete"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 删除模板失败")
+                .hasMessageContaining("tpl-missing-delete");
+        verify(projectionService, never())
+                .enqueueProcedureTemplateVectorDeleteAfterCommit(anyString());
     }
 
     @Test
@@ -296,9 +332,11 @@ class ProceduralMemoryTest {
     }
 
     @Test
-    void recordExecution_模板不存在_不抛异常() {
-        // 不应抛异常，仅记录 WARN 日志
-        proceduralMemory.recordExecution("non-existent-id", true);
+    void recordExecution_模板不存在时应直接失败() {
+        assertThatThrownBy(() -> proceduralMemory.recordExecution("non-existent-id", true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 记录执行结果失败")
+                .hasMessageContaining("non-existent-id");
     }
 
     @Test
@@ -431,9 +469,11 @@ class ProceduralMemoryTest {
     }
 
     @Test
-    void reinforcePreference_规则不存在_不抛异常() {
-        // 不应抛异常，仅记录 WARN 日志
-        proceduralMemory.reinforcePreference("non-existent-id");
+    void reinforcePreference_规则不存在时应直接失败() {
+        assertThatThrownBy(() -> proceduralMemory.reinforcePreference("non-existent-id"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 强化偏好规则失败")
+                .hasMessageContaining("non-existent-id");
     }
 
     // --- 辅助方法 ---

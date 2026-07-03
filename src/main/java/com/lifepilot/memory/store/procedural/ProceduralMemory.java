@@ -36,9 +36,9 @@ public class ProceduralMemory {
     public ProceduralMemory(JdbcTemplate jdbcTemplate,
                             MemoryProjectionService projectionService,
                             ObjectMapper objectMapper) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.projectionService = projectionService;
-        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        this.projectionService = Objects.requireNonNull(projectionService, "MemoryProjectionService 不能为空");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "ObjectMapper 不能为空");
     }
 
     // ========== 模板 CRUD ==========
@@ -125,7 +125,7 @@ public class ProceduralMemory {
             String sourceTraceIdsJson = objectMapper.writeValueAsString(template.sourceTraceIds());
 
             // 模板巩固去重会更新源 entity id，手工失活会写入 deactivated_reason。
-            jdbcTemplate.update(
+            int updated = jdbcTemplate.update(
                     """
                     UPDATE procedure_templates SET
                         name = ?, description = ?, trigger_intent = ?,
@@ -142,6 +142,7 @@ public class ProceduralMemory {
                     template.updatedAt().toString(),
                     template.sourceEntityId(), template.deactivatedReason(),
                     template.templateId());
+            requireUpdated(updated, "程序记忆: 更新模板失败，模板不存在, templateId=" + template.templateId());
 
             projectionService.enqueueProcedureTemplateVectorUpsertAfterCommit(
                     template.templateId(), template.triggerIntent());
@@ -158,7 +159,8 @@ public class ProceduralMemory {
      * @param templateId 模板 ID
      */
     public void delete(String templateId) {
-        jdbcTemplate.update("DELETE FROM procedure_templates WHERE template_id = ?", templateId);
+        int deleted = jdbcTemplate.update("DELETE FROM procedure_templates WHERE template_id = ?", templateId);
+        requireUpdated(deleted, "程序记忆: 删除模板失败，模板不存在, templateId=" + templateId);
         projectionService.enqueueProcedureTemplateVectorDeleteAfterCommit(templateId);
         log.info("程序记忆: 删除模板, id={}", templateId);
     }
@@ -180,8 +182,7 @@ public class ProceduralMemory {
                 templateId);
 
         if (results.isEmpty()) {
-            log.warn("程序记忆: 记录执行结果失败, 模板不存在, templateId={}", templateId);
-            return;
+            throw new IllegalStateException("程序记忆: 记录执行结果失败，模板不存在, templateId=" + templateId);
         }
 
         float oldRate = results.getFirst()[0];
@@ -189,13 +190,14 @@ public class ProceduralMemory {
         float newRate = (oldRate * oldCount + (success ? 1.0f : 0.0f)) / (oldCount + 1);
         String now = Instant.now().toString();
 
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
                 """
                 UPDATE procedure_templates
                 SET success_rate = ?, use_count = ?, last_used_at = ?, updated_at = ?
                 WHERE template_id = ?
                 """,
                 newRate, oldCount + 1, now, now, templateId);
+        requireUpdated(updated, "程序记忆: 记录执行结果失败，模板不存在, templateId=" + templateId);
 
         log.debug("程序记忆: 记录执行结果, templateId={}, success={}, newRate={}, newCount={}",
                 templateId, success, newRate, oldCount + 1);
@@ -276,10 +278,9 @@ public class ProceduralMemory {
                 now, ruleId);
 
         if (updated == 0) {
-            log.warn("程序记忆: 强化偏好规则失败, 规则不存在, ruleId={}", ruleId);
-        } else {
-            log.debug("程序记忆: 强化偏好规则, ruleId={}", ruleId);
+            throw new IllegalStateException("程序记忆: 强化偏好规则失败，规则不存在, ruleId=" + ruleId);
         }
+        log.debug("程序记忆: 强化偏好规则, ruleId={}", ruleId);
     }
 
     /**
@@ -410,6 +411,12 @@ public class ProceduralMemory {
         if (json == null || json.isBlank()) {
             throw new IllegalStateException(
                     "程序记忆: " + columnName + " 不能为空, templateId=" + templateId);
+        }
+    }
+
+    private static void requireUpdated(int updated, String message) {
+        if (updated != 1) {
+            throw new IllegalStateException(message + ", updated=" + updated);
         }
     }
 }

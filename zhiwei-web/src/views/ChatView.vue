@@ -10,6 +10,7 @@ import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, Sessio
 import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
+import CapabilityHintStrip from '@/components/chat/CapabilityHintStrip.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ContinuationHint from '@/components/chat/ContinuationHint.vue'
@@ -50,6 +51,7 @@ const {
   reasoningStatusText,
   reasoningEvents,
   streamingReactSteps,
+  capabilitySuggestions,
   streamingA2uiComponents,
   streamingArtifactRefs,
   pendingPermissionApprovals,
@@ -78,6 +80,13 @@ const activeSessionConfig = ref<SessionConfig>({
   knowledgeBaseIds: [],
 })
 const currentSessionDetail = ref<ChatSessionDetail | null>(null)
+
+const streamingCapabilitySuggestions = computed(() =>
+  capabilitySuggestions.value.slice(0, 6)
+)
+const showStreamingCapabilities = computed(() =>
+  isStreaming.value && streamingCapabilitySuggestions.value.length > 0
+)
 
 /** 空状态：无消息且非流式中 */
 // 消息加载完成且为空时显示欢迎页（加载中不显示，防止闪烁）
@@ -263,6 +272,7 @@ watch(() => route.fullPath, () => {
     messagesReady.value = true
     currentSessionDetail.value = null
     resetActiveSessionConfig()
+    void applyPendingDraftMessage()
   } else if (sessionId && sessionId !== chatStore.activeSessionId) {
     chatStore.activeSessionId = sessionId
   }
@@ -306,6 +316,7 @@ onMounted(async () => {
 
   // 首次加载标记就绪
   messagesReady.value = true
+  await applyPendingDraftMessage()
 
   // 监听滚动，判断是否显示"回到底部"按钮
   scrollListenerEl = getScrollEl()
@@ -444,6 +455,24 @@ async function handleSend(payload: {
 }
 
 const emptyInputRef = ref<InstanceType<typeof ChatInput> | null>(null)
+const composerInputRef = ref<InstanceType<typeof ChatInput> | null>(null)
+
+async function applyPendingDraftMessage() {
+  const content = chatStore.pendingDraftMessage
+  if (!content) return
+
+  chatStore.pendingDraftMessage = null
+  await nextTick()
+  emptyInputRef.value?.setContent?.(content)
+  emptyInputRef.value?.focus?.()
+}
+
+async function fillActiveInput(content: string) {
+  await nextTick()
+  const target = isEmptyChat.value ? emptyInputRef.value : composerInputRef.value
+  target?.setContent?.(content)
+  target?.focus?.()
+}
 
 function getAttachmentIds(message: Message): string[] | undefined {
   const attachmentIds = message.attachments?.map(attachment => attachment.fileId).filter(Boolean)
@@ -589,8 +618,7 @@ async function handleUpdateSessionTitle(title: string) {
 
 function handlePromptPick(card: { prompt: string }) {
   // 点击示例卡片 → 把 prompt 灌入空态输入框并聚焦
-  emptyInputRef.value?.setContent?.(card.prompt)
-  emptyInputRef.value?.focus?.()
+  void fillActiveInput(card.prompt)
 }
 
 // ─── 执行轨迹面板 ───
@@ -697,6 +725,19 @@ const shouldShowContinuationHint = computed(() =>
             <div class="chat-empty__gallery">
               <PromptGallery @pick="handlePromptPick" />
             </div>
+            <StatePanel
+              v-if="showGlobalErrorPanel"
+              class="chat-empty__error"
+              title="本轮对话出现错误"
+              :description="error ?? undefined"
+              tone="danger"
+            >
+              <template #actions>
+                <Button type="button" variant="outline" size="sm" @click="error = null">
+                  关闭
+                </Button>
+              </template>
+            </StatePanel>
             <div class="chat-empty__composer">
               <ChatInput
                 ref="emptyInputRef"
@@ -791,7 +832,15 @@ const shouldShowContinuationHint = computed(() =>
                 </template>
               </StatePanel>
 
+              <CapabilityHintStrip
+                v-if="showStreamingCapabilities"
+                compact
+                class="chat-composer-wrap__capabilities"
+                :active-capabilities="streamingCapabilitySuggestions"
+              />
+
               <ChatInput
+                ref="composerInputRef"
                 :disabled="isStreaming"
                 :streaming="isStreaming"
                 :placeholder="inputPlaceholder"
@@ -970,6 +1019,12 @@ const shouldShowContinuationHint = computed(() =>
   animation-delay: 220ms;
 }
 
+.chat-empty__error {
+  width: min(100%, 600px);
+  animation: fade-slide-in 500ms ease-out both;
+  animation-delay: 210ms;
+}
+
 @keyframes fade-slide-in {
   from {
     opacity: 0;
@@ -1001,6 +1056,10 @@ const shouldShowContinuationHint = computed(() =>
 }
 
 .chat-composer-wrap__continuation {
+  margin-bottom: 8px;
+}
+
+.chat-composer-wrap__capabilities {
   margin-bottom: 8px;
 }
 

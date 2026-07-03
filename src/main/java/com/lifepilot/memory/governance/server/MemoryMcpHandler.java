@@ -3,6 +3,11 @@ package com.lifepilot.memory.governance.server;
 import com.lifepilot.mcp.protocol.JsonRpcMessage;
 import com.lifepilot.memory.governance.config.MemoryGovernanceProperties;
 import com.lifepilot.memory.episodic.ConversationRecord;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
@@ -20,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Memory MCP Server 消息处理器 — 把 JSON-RPC 消息路由到对应的记忆操作。
@@ -46,20 +52,20 @@ public class MemoryMcpHandler {
 
     private final MemoryMcpToolRegistry toolRegistry;
     private final MemoryGovernanceProperties properties;
-    @Nullable private final HybridRetriever hybridRetriever;
-    @Nullable private final EpisodicMemory episodicMemory;
-    @Nullable private final SemanticMemory semanticMemory;
+    private final HybridRetriever hybridRetriever;
+    private final EpisodicMemory episodicMemory;
+    private final SemanticMemory semanticMemory;
 
     public MemoryMcpHandler(MemoryMcpToolRegistry toolRegistry,
                              MemoryGovernanceProperties properties,
-                             @Nullable HybridRetriever hybridRetriever,
-                             @Nullable EpisodicMemory episodicMemory,
-                             @Nullable SemanticMemory semanticMemory) {
-        this.toolRegistry = toolRegistry;
-        this.properties = properties;
-        this.hybridRetriever = hybridRetriever;
-        this.episodicMemory = episodicMemory;
-        this.semanticMemory = semanticMemory;
+                             HybridRetriever hybridRetriever,
+                             EpisodicMemory episodicMemory,
+                             SemanticMemory semanticMemory) {
+        this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry");
+        this.properties = Objects.requireNonNull(properties, "properties");
+        this.hybridRetriever = Objects.requireNonNull(hybridRetriever, "hybridRetriever");
+        this.episodicMemory = Objects.requireNonNull(episodicMemory, "episodicMemory");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory");
     }
 
     public JsonRpcMessage handle(@Nullable JsonRpcMessage request) {
@@ -107,12 +113,17 @@ public class MemoryMcpHandler {
         if (!(params instanceof Map<?, ?> pm)) {
             return error(req.id(), -32602, "Invalid params: expected object");
         }
-        String name = pm.get("name") != null ? pm.get("name").toString() : null;
-        Object argsObj = pm.get("arguments");
-        Map<String, Object> args = argsObj instanceof Map<?, ?> m
-                ? (Map<String, Object>) m : Map.of();
-        if (name == null) {
-            return error(req.id(), -32602, "Invalid params: missing tool name");
+        String name;
+        try {
+            name = requiredString(pm, "name");
+        } catch (IllegalArgumentException e) {
+            return error(req.id(), -32602, e.getMessage());
+        }
+        Map<String, Object> args;
+        try {
+            args = toolArguments(pm);
+        } catch (IllegalArgumentException e) {
+            return error(req.id(), -32602, e.getMessage());
         }
         return switch (name) {
             case MemoryMcpToolRegistry.TOOL_SEARCH -> executeSearch(req.id(), args);
@@ -125,14 +136,18 @@ public class MemoryMcpHandler {
     // ── 工具执行 ──
 
     private JsonRpcMessage executeSearch(Long id, Map<String, Object> args) {
-        if (hybridRetriever == null) {
-            return error(id, -32603, "HybridRetriever 不可用");
+        String query;
+        try {
+            query = requiredString(args, "query");
+        } catch (IllegalArgumentException e) {
+            return error(id, -32602, e.getMessage());
         }
-        String query = strArg(args, "query");
-        if (query == null || query.isBlank()) {
-            return error(id, -32602, "Missing param: query");
+        int topK;
+        try {
+            topK = positiveIntArg(args, "topK", 10);
+        } catch (IllegalArgumentException e) {
+            return error(id, -32602, e.getMessage());
         }
-        int topK = intArg(args, "topK", 10);
 
         List<RetrievalResult> results = hybridRetriever.retrieve(query, topK, RetrievalWeights.DEFAULT);
         List<Map<String, Object>> items = new ArrayList<>(results.size());
@@ -150,14 +165,18 @@ public class MemoryMcpHandler {
     }
 
     private JsonRpcMessage executeRecall(Long id, Map<String, Object> args) {
-        if (episodicMemory == null) {
-            return error(id, -32603, "EpisodicMemory 不可用");
+        String query;
+        try {
+            query = requiredString(args, "query");
+        } catch (IllegalArgumentException e) {
+            return error(id, -32602, e.getMessage());
         }
-        String query = strArg(args, "query");
-        if (query == null || query.isBlank()) {
-            return error(id, -32602, "Missing param: query");
+        int limit;
+        try {
+            limit = positiveIntArg(args, "limit", 5);
+        } catch (IllegalArgumentException e) {
+            return error(id, -32602, e.getMessage());
         }
-        int limit = intArg(args, "limit", 5);
 
         List<ConversationRecord> conversations = episodicMemory.search(query);
         List<Map<String, Object>> items = new ArrayList<>();
@@ -177,29 +196,36 @@ public class MemoryMcpHandler {
     }
 
     private JsonRpcMessage executeCreate(Long id, Map<String, Object> args) {
-        if (semanticMemory == null) {
-            return error(id, -32603, "SemanticMemory 不可用");
+        String name;
+        String typeStr;
+        String description;
+        try {
+            name = requiredString(args, "name");
+            typeStr = requiredString(args, "entityType");
+            description = optionalString(args, "description");
+        } catch (IllegalArgumentException e) {
+            return error(id, -32602, e.getMessage());
         }
-        String name = strArg(args, "name");
-        String typeStr = strArg(args, "entityType");
-        String description = strArg(args, "description");
-
-        if (name == null || name.isBlank()) return error(id, -32602, "Missing param: name");
-        if (typeStr == null || typeStr.isBlank()) return error(id, -32602, "Missing param: entityType");
 
         EntityType type;
         try {
-            type = EntityType.valueOf(typeStr.toUpperCase());
+            type = EntityType.valueOf(typeStr);
         } catch (IllegalArgumentException e) {
             return error(id, -32602, "Invalid entityType: " + typeStr);
         }
 
         Instant now = Instant.now();
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.USER_CONFIRMED;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, 0.8f);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
         var incoming = new TemporalEntity(
                 null, type, name, description,
                 Map.of(), 1, true,
                 now, null, null,
-                0.8f, 0.5f, 0, null, now, now
+                0.8f, 0.5f, 0, null, now, now,
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
+                null, false, List.of(),
+                evidenceKind, trustLevel, trustScore, 1, now
         );
         var created = semanticMemory.upsertWithConflictDetection(
                 incoming,
@@ -234,23 +260,64 @@ public class MemoryMcpHandler {
         return new JsonRpcMessage("2.0", id, null, null, null, err);
     }
 
-    @Nullable
-    private static String strArg(Map<String, Object> args, String key) {
-        Object v = args.get(key);
-        if (v == null) return null;
-        String s = v.toString().trim();
-        return s.isEmpty() ? null : s;
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> toolArguments(Map<?, ?> params) {
+        if (!params.containsKey("arguments")) {
+            return Map.of();
+        }
+        Object value = params.get("arguments");
+        if (!(value instanceof Map<?, ?> args)) {
+            throw new IllegalArgumentException("arguments must be an object");
+        }
+        return (Map<String, Object>) args;
     }
 
-    private static int intArg(Map<String, Object> args, String key, int fallback) {
+    private static String requiredString(Map<?, ?> args, String key) {
+        Object v = args.get(key);
+        if (!(v instanceof String s)) {
+            throw new IllegalArgumentException("Missing param: " + key);
+        }
+        if (s.isBlank()) {
+            throw new IllegalArgumentException("Missing param: " + key);
+        }
+        if (!s.equals(s.trim())) {
+            throw new IllegalArgumentException(key + " must not contain leading or trailing whitespace");
+        }
+        return s;
+    }
+
+    @Nullable
+    private static String optionalString(Map<?, ?> args, String key) {
+        Object v = args.get(key);
+        if (v == null) {
+            return null;
+        }
+        if (!(v instanceof String s)) {
+            throw new IllegalArgumentException(key + " must be a string");
+        }
+        if (!s.equals(s.trim())) {
+            throw new IllegalArgumentException(key + " must not contain leading or trailing whitespace");
+        }
+        return s;
+    }
+
+    private static int positiveIntArg(Map<String, Object> args, String key, int fallback) {
         Object v = args.get(key);
         if (v == null) return fallback;
-        if (v instanceof Number n) return n.intValue();
-        try {
-            return Integer.parseInt(v.toString());
-        } catch (NumberFormatException e) {
-            return fallback;
+        int value;
+        if (v instanceof Number n) {
+            double doubleValue = n.doubleValue();
+            value = n.intValue();
+            if (!Double.isFinite(doubleValue) || doubleValue != value) {
+                throw new IllegalArgumentException(key + " must be a positive integer");
+            }
+        } else {
+            throw new IllegalArgumentException(key + " must be a positive integer");
         }
+        if (value <= 0) {
+            throw new IllegalArgumentException(key + " must be a positive integer");
+        }
+        return value;
     }
 
     private static long nvl(@Nullable Long id) {

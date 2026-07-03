@@ -12,7 +12,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doThrow;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link L4SyncListener} 单元测试 —— 验证 L3 生命周期转非活状态时对 L4 仓库的联动失活调用。
@@ -111,7 +113,7 @@ class L4SyncListener_单元测试 {
     }
 
     @Test
-    void preference仓库失败不应阻断procedure仓库调用() {
+    void preference仓库失败应直接抛出且不继续procedure仓库调用() {
         doThrow(new RuntimeException("DB 忙"))
                 .when(ruleRepo).deactivateBySourceEntity("e-7", "expired");
         var event = new EntityLifecycleChanged(
@@ -119,9 +121,10 @@ class L4SyncListener_单元测试 {
                 LifecycleState.ACTIVE, LifecycleState.EXPIRED,
                 "expired", ChangeSource.CRON_EXPIRE);
 
-        // 期望：不抛异常；procedureRepo 仍被调用
-        listener.onLifecycleChanged(event);
+        assertThatThrownBy(() -> listener.onLifecycleChanged(event))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("DB 忙");
 
-        verify(procedureRepo).deactivateBySourceEntity("e-7", "expired");
+        verify(procedureRepo, never()).deactivateBySourceEntity("e-7", "expired");
     }
 }

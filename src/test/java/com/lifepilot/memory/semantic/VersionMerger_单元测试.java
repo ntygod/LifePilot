@@ -52,7 +52,19 @@ class VersionMerger_单元测试 {
                 BASE_TIME, null, null,
                 extractionConfidence, importanceScore,
                 5, BASE_TIME, BASE_TIME, BASE_TIME
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.CHAT_INFERRED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.INFERRED,
+                0.65f,
+                1,
+                BASE_TIME);
     }
 
     /** 快捷构造：默认 confidence=0.8, importance=0.5, version=1 */

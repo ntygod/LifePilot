@@ -121,7 +121,7 @@
 
 ## 硬约束（校验失败会被拒）
 
-- 单次 `ui_render` 组件数 ≤ `app.web.a2ui.max-components-per-tree`（默认 50）
+- 单次 `ui_render` 组件数 ≤ `lifepilot.a2ui.max-components-per-tree`（默认 50）
 - 组件 `id` 同次调用内必须唯一
 - `signal` 必须在组件**顶层**，放 `properties` 内会被拒
 - `signal.name` ≤ 120 字符；`signal.payload` 条目 ≤ 16

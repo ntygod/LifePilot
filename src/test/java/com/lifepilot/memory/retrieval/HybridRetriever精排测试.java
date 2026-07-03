@@ -6,6 +6,8 @@ import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
+import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.rerank.router.RerankRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,15 +19,18 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +50,7 @@ class HybridRetriever精排测试 {
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
     private MemoryRetrievalProperties properties;
+    private MemoryProvenanceRepository provenanceRepository;
 
     @BeforeEach
     void setUp() {
@@ -53,10 +59,70 @@ class HybridRetriever精排测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
+        provenanceRepository = mock(MemoryProvenanceRepository.class);
         properties = new MemoryRetrievalProperties();
         properties.setMinVectorSimilarity(0.0f);
         properties.setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
+        when(provenanceRepository.findStaleEntityIds(anyCollection())).thenReturn(Set.of());
+    }
+
+    @Test
+    void query为空时检索失败() {
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        var exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> retriever.retrieve("   ", 10, RetrievalWeights.DEFAULT));
+
+        assertTrue(exception.getMessage().contains("混合检索 query 不能为空"));
+    }
+
+    @Test
+    void topK非法时检索失败() {
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        var exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> retriever.retrieve("test query", 0, RetrievalWeights.DEFAULT));
+
+        assertTrue(exception.getMessage().contains("混合检索 topK 必须大于 0"));
+    }
+
+    @Test
+    void weights为空时检索失败() {
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        var exception = assertThrows(
+                NullPointerException.class,
+                () -> retriever.retrieve("test query", 10, null));
+
+        assertTrue(exception.getMessage().contains("检索权重不能为空"));
+    }
+
+    @Test
+    void 读取过滤可用实体ID返回null时检索失败() {
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+        when(semanticMemory.findEligibleEntityIds(MemoryReadFilter.userMemory())).thenReturn(null);
+
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory()));
+
+        assertTrue(exception.getMessage().contains("读取过滤可用实体 ID返回 null"));
+        verify(vectorSearcher, never()).searchEntities(anyString(), anyInt(), anyFloat(), any());
     }
 
     @Test
@@ -81,12 +147,35 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                rerankRouter, mock(MemoryProvenanceRepository.class));
+                rerankRouter, provenanceRepository);
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
 
         verify(rerankRouter).rerankMemoryCandidates(anyString(), anyCollectionToList());
         assertFalse(results.isEmpty(), "精排后应有结果");
+    }
+
+    @Test
+    void 记忆精排返回未知候选ID时检索失败() {
+        properties.getReranker().setEnabled(true);
+        var rerankRouter = mock(RerankRouter.class);
+        when(rerankRouter.isMemoryRerankEnabled()).thenReturn(true);
+        when(rerankRouter.rerankMemoryCandidates(anyString(), anyCollectionToList()))
+                .thenReturn(List.of(new RerankCandidate("entity-unknown", "未知候选", 1.0)));
+
+        setupMockResults();
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                rerankRouter, provenanceRepository);
+
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT));
+
+        assertTrue(exception.getMessage().contains("记忆精排失败"));
+        assertTrue(exception.getCause().getMessage().contains("未知候选 ID"));
     }
 
     @Test
@@ -101,7 +190,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                rerankRouter, mock(MemoryProvenanceRepository.class));
+                rerankRouter, provenanceRepository);
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
 
@@ -110,18 +199,38 @@ class HybridRetriever精排测试 {
     }
 
     @Test
-    void 路由不存在时跳过记忆精排() {
+    void 路由不存在时构造失败() {
         properties.getReranker().setEnabled(true);
         setupMockResults();
 
+        var exception = assertThrows(
+                NullPointerException.class,
+                () -> new HybridRetriever(
+                        vectorSearcher, ftsSearcher, graphTraverser,
+                        semanticMemory, null, properties, jdbcTemplate,
+                        null, provenanceRepository));
+
+        assertTrue(exception.getMessage().contains("rerankRouter"));
+    }
+
+    @Test
+    void L4意图匹配失败时检索失败() {
+        setupMockResults();
+        var intentMatcher = mock(IntentMatcher.class);
+        when(intentMatcher.match(anyString()))
+                .thenThrow(new IllegalStateException("L4 索引缺失"));
+
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, null, properties, jdbcTemplate,
-                null, mock(MemoryProvenanceRepository.class));
+                semanticMemory, intentMatcher, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
 
-        var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT));
 
-        assertFalse(results.isEmpty(), "无精排路由时仍应有结果");
+        assertTrue(exception.getMessage().contains("L4 意图匹配"));
+        assertTrue(exception.getCause().getMessage().contains("L4 索引缺失"));
     }
 
     @Test
@@ -132,7 +241,7 @@ class HybridRetriever精排测试 {
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                null, mock(MemoryProvenanceRepository.class));
+                mock(RerankRouter.class), provenanceRepository);
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
 
@@ -162,21 +271,63 @@ class HybridRetriever精排测试 {
         entities.put(duplicateId, buildEntity(duplicateId));
         entities.put("entity-unique", buildEntity("entity-unique"));
 
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat())).thenReturn(vecResults);
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any())).thenReturn(vecResults);
         when(ftsSearcher.search(anyString(), anyInt())).thenReturn(ftsResults);
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(graphResults);
+        when(graphTraverser.traverse(anyString(), anyInt(), isNull())).thenReturn(graphResults);
         when(semanticMemory.findByIds(anyCollection())).thenReturn(entities);
 
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                null, mock(MemoryProvenanceRepository.class));
+                mock(RerankRouter.class), provenanceRepository);
 
         var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
         var entityIds = results.stream().map(RetrievalResult::entityId).toList();
 
         assertEquals(new HashSet<>(entityIds).size(), entityIds.size(), "结果中存在重复 entityId");
         assertEquals(1, entityIds.stream().filter(id -> id.equals(duplicateId)).count());
+    }
+
+    @Test
+    void provenance待复核查询返回null时检索失败() {
+        setupMockResults();
+        when(provenanceRepository.findStaleEntityIds(anyCollection())).thenReturn(null);
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT));
+
+        assertTrue(exception.getMessage().contains("provenance 待复核查询返回 null"));
+    }
+
+    @Test
+    void 可信度实体批量查询缺候选时检索失败() {
+        var ftsResults = List.of(
+                new RankedItem("entity-trust-missing", "TOPIC", "命中项", "描述",
+                        0.8f, Instant.now(), 0.5f, null, Instant.now())
+        );
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any())).thenReturn(List.of());
+        when(ftsSearcher.search(anyString(), anyInt())).thenReturn(ftsResults);
+        when(graphTraverser.traverse(anyString(), anyInt(), isNull())).thenReturn(List.of());
+        when(semanticMemory.findByIds(anyCollection()))
+                .thenReturn(Map.of("entity-trust-missing", buildEntity("entity-trust-missing")),
+                        Map.of());
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, null, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT));
+
+        assertTrue(exception.getMessage().contains("可信度实体批量查询 缺少候选实体"));
     }
 
     @Test
@@ -199,15 +350,15 @@ class HybridRetriever精排测试 {
         entities.put(exactId, buildEntity(exactId));
         entities.put(vectorId, buildEntity(vectorId));
 
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat())).thenReturn(vecResults);
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any())).thenReturn(vecResults);
         when(ftsSearcher.search(anyString(), anyInt())).thenReturn(ftsResults);
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(List.of());
+        when(graphTraverser.traverse(anyString(), anyInt(), isNull())).thenReturn(List.of());
         when(semanticMemory.findByIds(anyCollection())).thenReturn(entities);
 
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, null, properties, jdbcTemplate,
-                null, mock(MemoryProvenanceRepository.class));
+                mock(RerankRouter.class), provenanceRepository);
 
         var results = retriever.retrieve("取消 MT-CANCEL-0507", 10, RetrievalWeights.DEFAULT);
 
@@ -230,9 +381,9 @@ class HybridRetriever精排测试 {
         entities.put("entity-1", buildEntity("entity-1"));
         entities.put("entity-2", buildEntity("entity-2"));
 
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat())).thenReturn(vecResults);
+        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any())).thenReturn(vecResults);
         when(ftsSearcher.search(anyString(), anyInt())).thenReturn(ftsResults);
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(graphResults);
+        when(graphTraverser.traverse(anyString(), anyInt(), isNull())).thenReturn(graphResults);
         when(semanticMemory.findByIds(anyCollection())).thenReturn(entities);
     }
 
@@ -242,7 +393,19 @@ class HybridRetriever精排测试 {
                 Map.of(), 1, true, Instant.now(), null,
                 null, 0.9f, 0.5f, 0, Instant.now(),
                 Instant.now(), Instant.now()
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
     }
 
     @SuppressWarnings("unchecked")

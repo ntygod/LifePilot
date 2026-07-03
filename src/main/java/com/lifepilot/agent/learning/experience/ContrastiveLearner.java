@@ -10,6 +10,7 @@ import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -20,7 +21,6 @@ import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -41,21 +41,21 @@ public class ContrastiveLearner {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final AgentLearningProperties.Experience.Contrastive config;
 
     public ContrastiveLearner(SemanticMemory semanticMemory,
                                VectorSearcher vectorSearcher,
-                               @Nullable GenerationRouter generationRouter,
+                               GenerationRouter generationRouter,
                                PromptRegistry promptRegistry,
-                               AgentLearningProperties AgentLearningProperties) {
-        this.semanticMemory = semanticMemory;
-        this.vectorSearcher = vectorSearcher;
-        this.generationRouter = generationRouter;
-        this.promptRegistry = promptRegistry;
-        this.config = AgentLearningProperties.getExperience().getContrastive();
+                               AgentLearningProperties properties) {
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "vectorSearcher 不能为空");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter 不能为空");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "promptRegistry 不能为空");
+        this.config = Objects.requireNonNull(properties, "properties 不能为空")
+                .getExperience().getContrastive();
     }
 
     /**
@@ -68,99 +68,89 @@ public class ContrastiveLearner {
             log.debug("对比学习: 功能已关闭");
             return;
         }
-        if (generationRouter == null) {
-            log.debug("对比学习: GenerationRouter 不可用，跳过");
+
+        // 获取新经验的 success 标志
+        requireExperience(newExperience);
+        boolean newSuccess = requiredSuccess(newExperience);
+
+        // 搜索相似经验
+        var searchResults = requireVectorResults(vectorSearcher.searchEntities(
+                newExperience.textRepresentation(), 5,
+                similarityThreshold(config.getSimilarityThreshold(), "对比学习相似度阈值")));
+
+        // 过滤 success 标志相反的经验
+        TemporalEntity matchedEntity = null;
+        for (var result : searchResults) {
+            // 排除自身
+            if (result.entityId().equals(newExperience.id())) continue;
+
+            var optEntity = semanticMemory.findById(result.entityId());
+            if (optEntity == null || optEntity.isEmpty()) {
+                throw new IllegalStateException("对比学习: 向量候选实体不存在: " + result.entityId());
+            }
+
+            var entity = optEntity.get();
+            // 必须是 EXPERIENCE 类型
+            if (entity.type() != EntityType.EXPERIENCE) continue;
+
+            boolean entitySuccess = requiredSuccess(entity);
+            if (entitySuccess != newSuccess) {
+                matchedEntity = entity;
+                break;
+            }
+        }
+
+        if (matchedEntity == null) {
+            log.debug("对比学习: 未找到匹配的对比轨迹对, entityId={}", newExperience.id());
             return;
         }
 
-        try {
-            // 获取新经验的 success 标志
-            boolean newSuccess = Boolean.TRUE.equals(newExperience.properties().get("success"));
+        // 确定成功/失败经验
+        TemporalEntity successExp = newSuccess ? newExperience : matchedEntity;
+        TemporalEntity failureExp = newSuccess ? matchedEntity : newExperience;
 
-            // 搜索相似经验
-            var searchResults = vectorSearcher.searchEntities(
-                    newExperience.textRepresentation(), 5, config.getSimilarityThreshold());
+        var insight = analyzeContrast(successExp, failureExp);
 
-            // 过滤 success 标志相反的经验
-            TemporalEntity matchedEntity = null;
-            for (var result : searchResults) {
-                // 排除自身
-                if (result.entityId().equals(newExperience.id())) continue;
-
-                var optEntity = semanticMemory.findById(result.entityId());
-                if (optEntity.isEmpty()) continue;
-
-                var entity = optEntity.get();
-                // 必须是 EXPERIENCE 类型
-                if (entity.type() != EntityType.EXPERIENCE) continue;
-
-                boolean entitySuccess = Boolean.TRUE.equals(entity.properties().get("success"));
-                if (entitySuccess != newSuccess) {
-                    matchedEntity = entity;
-                    break;
-                }
-            }
-
-            if (matchedEntity == null) {
-                log.debug("对比学习: 未找到匹配的对比轨迹对, entityId={}", newExperience.id());
-                return;
-            }
-
-            // 确定成功/失败经验
-            TemporalEntity successExp = newSuccess ? newExperience : matchedEntity;
-            TemporalEntity failureExp = newSuccess ? matchedEntity : newExperience;
-
-            // LLM 对比分析
-            var insight = analyzeContrast(successExp, failureExp);
-            if (insight == null) return;
-
-            // 空洞察丢弃
-            if (insight.failureReason() == null || insight.failureReason().isBlank()
-                    || insight.successFactor() == null || insight.successFactor().isBlank()) {
-                log.debug("对比学习: 空洞察丢弃, successId={}, failureId={}",
-                        successExp.id(), failureExp.id());
-                return;
-            }
-
-            // 产出独立派生洞察实体（带血缘，源失效可级联）
-            createContrastiveInsight(insight, successExp, failureExp);
-
-        } catch (Exception e) {
-            log.warn("对比学习失败: entityId={}, error={}", newExperience.id(), e.getMessage());
-        }
+        // 产出独立派生洞察实体（带血缘，源失效可级联）
+        createContrastiveInsight(insight, successExp, failureExp);
     }
 
     /** 调用 LLM 进行对比分析。 */
-    @jakarta.annotation.Nullable
     private ContrastiveInsight analyzeContrast(TemporalEntity successExp, TemporalEntity failureExp) {
-        try {
-            var vars = Map.<String, Object>of(
-                    "successScenario", successExp.name(),
-                    "successStrategy", successExp.description() != null ? successExp.description() : "",
-                    "successLessons", String.valueOf(successExp.properties().getOrDefault("lessons", List.of())),
-                    "successTools", String.valueOf(successExp.properties().getOrDefault("toolsUsed", List.of())),
-                    "failureScenario", failureExp.name(),
-                    "failureStrategy", failureExp.description() != null ? failureExp.description() : "",
-                    "failureLessons", String.valueOf(failureExp.properties().getOrDefault("lessons", List.of())),
-                    "failureTools", String.valueOf(failureExp.properties().getOrDefault("toolsUsed", List.of()))
-            );
-            String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            Duration timeout = Duration.ofSeconds(Math.max(1, config.getLlmTimeoutSeconds()));
-            log.debug("对比学习: 发起 JSON 分析调用, timeoutSeconds={}, promptChars={}, successId={}, failureId={}",
-                    timeout.toSeconds(), prompt.length(), successExp.id(), failureExp.id());
-            LlmResponse response = generationRouter.call(
-                    LlmScene.BACKGROUND_ANALYSIS,
-                    prompt,
-                    null,
-                    null,
-                    null,
-                    GenerationCapability.CHAT,
-                    timeout);
-            return JsonOutputParser.parse(response.content(), ContrastiveInsight.class);
-        } catch (Exception e) {
-            log.warn("对比学习: JSON 分析失败, errorType={}, error={}", e.getClass().getSimpleName(), e.getMessage());
-            return null;
+        var vars = Map.<String, Object>of(
+                "successScenario", successExp.name(),
+                "successStrategy", requireNonBlank(successExp.description(), "对比学习经验描述"),
+                "successLessons", String.valueOf(requiredStringListProperty(successExp, "lessons")),
+                "successTools", String.valueOf(requiredStringListProperty(successExp, "toolsUsed")),
+                "failureScenario", failureExp.name(),
+                "failureStrategy", requireNonBlank(failureExp.description(), "对比学习经验描述"),
+                "failureLessons", String.valueOf(requiredStringListProperty(failureExp, "lessons")),
+                "failureTools", String.valueOf(requiredStringListProperty(failureExp, "toolsUsed"))
+        );
+        String prompt = promptRegistry.render(PROMPT_KEY, vars);
+        if (prompt == null || prompt.isBlank()) {
+            throw new IllegalStateException("对比学习 prompt 渲染结果不能为空");
         }
+        Duration timeout = Duration.ofSeconds(positive(config.getLlmTimeoutSeconds(), "对比学习 LLM 超时秒数"));
+        log.debug("对比学习: 发起 JSON 分析调用, timeoutSeconds={}, promptChars={}, successId={}, failureId={}",
+                timeout.toSeconds(), prompt.length(), successExp.id(), failureExp.id());
+        LlmResponse response = generationRouter.call(
+                LlmScene.BACKGROUND_ANALYSIS,
+                prompt,
+                null,
+                null,
+                null,
+                GenerationCapability.CHAT,
+                timeout);
+        if (response == null || response.content() == null || response.content().isBlank()) {
+            throw new IllegalStateException("对比学习 LLM 响应不能为空");
+        }
+        var insight = JsonOutputParser.parse(response.content(), ContrastiveInsight.class);
+        if (insight == null || insight.failureReason() == null || insight.failureReason().isBlank()
+                || insight.successFactor() == null || insight.successFactor().isBlank()) {
+            throw new IllegalStateException("对比学习 LLM 响应缺少 failureReason 或 successFactor");
+        }
+        return insight;
     }
 
     /**
@@ -213,8 +203,8 @@ public class ContrastiveLearner {
                 Math.max(0.5f, successExp.importanceScore()),
                 0, null, now, now,
                 LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
-                null, true, List.of(successExp.id(), failureExp.id()))
-                .withQuality(MemoryEvidenceKind.DERIVED, MemoryTrustLevel.DERIVED, trustScore, 1, null);
+                null, true, List.of(successExp.id(), failureExp.id()),
+                MemoryEvidenceKind.DERIVED, MemoryTrustLevel.DERIVED, trustScore, 1, null);
 
         SqliteBusyRetry.run(() ->
                 semanticMemory.upsertWithConflictDetection(
@@ -224,5 +214,95 @@ public class ContrastiveLearner {
 
         log.info("对比学习: 产出对比洞察派生实体, id={}, sources=[{}, {}], lessons={}条",
                 derived.id(), successExp.id(), failureExp.id(), lessons.size());
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
+    }
+
+    private static void requireExperience(TemporalEntity entity) {
+        Objects.requireNonNull(entity, "对比学习新经验不能为空");
+        requireCanonicalId(entity.id(), "对比学习经验 ID");
+        if (entity.type() != EntityType.EXPERIENCE) {
+            throw new IllegalArgumentException("对比学习只能处理 EXPERIENCE 实体: " + entity.id());
+        }
+        requireNonBlank(entity.name(), "对比学习经验名称");
+        requireNonBlank(entity.description(), "对比学习经验描述");
+        requiredStringListProperty(entity, "lessons");
+        requiredStringListProperty(entity, "toolsUsed");
+    }
+
+    private static boolean requiredSuccess(TemporalEntity entity) {
+        Object success = entity.properties().get("success");
+        if (!(success instanceof Boolean value)) {
+            throw new IllegalStateException("对比学习: EXPERIENCE success 必须是 boolean, entityId="
+                    + entity.id());
+        }
+        return value;
+    }
+
+    private static List<?> requiredStringListProperty(TemporalEntity entity, String key) {
+        Object value = entity.properties().get(key);
+        if (!(value instanceof List<?> list)) {
+            throw new IllegalStateException("对比学习: EXPERIENCE " + key + " 必须是数组, entityId="
+                    + entity.id());
+        }
+        for (Object item : list) {
+            if (!(item instanceof String text) || text.isBlank()) {
+                throw new IllegalStateException("对比学习: EXPERIENCE " + key + " 只能包含非空字符串, entityId="
+                        + entity.id());
+            }
+            if (!text.equals(text.trim())) {
+                throw new IllegalStateException("对比学习: EXPERIENCE " + key + " 不能包含首尾空白, entityId="
+                        + entity.id());
+            }
+        }
+        return list;
+    }
+
+    private static List<VectorSearchResult> requireVectorResults(List<VectorSearchResult> results) {
+        if (results == null) {
+            throw new IllegalStateException("对比学习: 向量搜索结果不能为空");
+        }
+        for (VectorSearchResult result : results) {
+            if (result == null) {
+                throw new IllegalStateException("对比学习: 向量搜索结果不能包含 null 元素");
+            }
+            requireCanonicalId(result.entityId(), "对比学习向量候选 ID");
+            if (!Float.isFinite(result.similarity())
+                    || result.similarity() < 0.0f
+                    || result.similarity() > 1.0f) {
+                throw new IllegalStateException("对比学习: 向量相似度必须在 [0,1] 范围内: "
+                        + result.similarity());
+            }
+        }
+        return results;
+    }
+
+    private static float similarityThreshold(float value, String name) {
+        if (!Float.isFinite(value) || value < 0.0f || value > 1.0f) {
+            throw new IllegalArgumentException(name + "必须在 [0,1] 范围内: " + value);
+        }
+        return value;
+    }
+
+    private static void requireCanonicalId(String value, String label) {
+        requireNonBlank(value, label);
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+    }
+
+    private static String requireNonBlank(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(label + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+        return value;
     }
 }

@@ -44,6 +44,7 @@ import com.lifepilot.sandbox.validator.CodeValidator;
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.install.SkillInstaller;
 import com.lifepilot.skill.registry.SkillRegistry;
+import com.lifepilot.skill.validation.SkillValidator;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import com.lifepilot.workflow.registry.WorkflowRegistry;
 import com.lifepilot.workflow.repository.WorkflowRepository;
@@ -241,27 +242,27 @@ public class MetaAutoConfiguration {
                                                     SkillInstaller installer,
                                                     com.lifepilot.skill.install.SkillInstallationRepository installationRepository,
                                                     MarkdownSkillParser parser,
+                                                    SkillValidator skillValidator,
                                                     SkillRegistry skillRegistry) {
         return new SkillDiscoveryRegistrar(properties, zhiweiPaths, installer,
-                installationRepository, parser, skillRegistry);
+                installationRepository, parser, skillValidator, skillRegistry);
     }
 
     /**
      * 注册记忆管理工具提供者。
-     *
-     * <p>仅在完整记忆治理依赖可用时注册。
-     * EpisodicMemory、DocumentRetriever、SessionKnowledgeBaseRepository、MemoryRetrievalProperties 为可选依赖。</p>
      */
     @Bean
-    @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class, ProjectContextResolver.class,
-            ChatSessionRepository.class, MemoryAccessPolicy.class})
+    @ConditionalOnBean({HybridRetriever.class, SemanticMemory.class, EpisodicMemory.class,
+            DocumentRetriever.class, SessionKnowledgeBaseRepository.class,
+            SessionKnowledgeScopeResolver.class, MemoryRetrievalProperties.class,
+            ProjectContextResolver.class, ChatSessionRepository.class, MemoryAccessPolicy.class})
     MemoryToolProvider memoryToolProvider(HybridRetriever hybridRetriever,
                                           SemanticMemory semanticMemory,
-                                          @Nullable EpisodicMemory episodicMemory,
-                                          @Nullable DocumentRetriever documentRetriever,
-                                          @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
-                                          @Nullable SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
-                                          @Nullable MemoryRetrievalProperties memoryProperties,
+                                          EpisodicMemory episodicMemory,
+                                          DocumentRetriever documentRetriever,
+                                          SessionKnowledgeBaseRepository sessionKbRepo,
+                                          SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver,
+                                          MemoryRetrievalProperties memoryProperties,
                                           ProjectContextResolver projectContextResolver,
                                           ChatSessionRepository chatSessionRepository,
                                           MemoryAccessPolicy memoryAccessPolicy) {
@@ -290,11 +291,10 @@ public class MetaAutoConfiguration {
         ctx.getBean(InfraToolProvider.class).registerTools(toolRegistry);
         ctx.getBean(IntrospectionToolProvider.class).registerTools(toolRegistry);
 
-        var memoryToolProvider = ctx.getBeanProvider(MemoryToolProvider.class).getIfAvailable();
-        if (memoryToolProvider != null) {
-            memoryToolProvider.registerTools(toolRegistry);
-        } else {
-            log.warn("记忆工具: MemoryToolProvider 不可用，跳过 memory 工具注册");
+        boolean memoryEnabled = ctx.getEnvironment()
+                .getProperty("lifepilot.memory.enabled", Boolean.class, true);
+        if (memoryEnabled) {
+            ctx.getBean(MemoryToolProvider.class).registerTools(toolRegistry);
         }
 
         log.info("元能力模块工具注册完成");

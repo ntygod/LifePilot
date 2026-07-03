@@ -14,8 +14,7 @@ import net.jqwik.api.Provide;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -25,7 +24,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * QueryRewriter 属性测试，验证降级不变量。
+ * QueryRewriter 属性测试，验证失败暴露不变量。
  *
  * @author zsg
  * @since 2026-03-17
@@ -33,7 +32,7 @@ import static org.mockito.Mockito.when;
 class QueryRewriter属性测试 {
 
     @Property(tries = 100)
-    void rewrite模式异常时降级返回原始查询(@ForAll("refinedQueries") String refinedQuery) {
+    void rewrite模式异常时应抛出(@ForAll("refinedQueries") String refinedQuery) {
         var generationRouter = mock(GenerationRouter.class);
         var embeddingRouter = mock(EmbeddingRouter.class);
         when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
@@ -45,15 +44,12 @@ class QueryRewriter属性测试 {
 
         var rewriteProps = buildProperties("rewrite");
         var rewriter = new QueryRewriter(generationRouter, embeddingRouter, rewriteProps, promptRegistry);
-        var result = rewriter.rewrite(refinedQuery);
 
-        assertEquals(refinedQuery, result.primaryQuery());
-        assertTrue(result.rewrittenQueries().isEmpty());
-        assertTrue(result.hydeEmbedding().isEmpty());
+        assertThrows(LlmUnavailableException.class, () -> rewriter.rewrite(refinedQuery));
     }
 
     @Property(tries = 100)
-    void hyde模式异常时降级返回原始查询(@ForAll("refinedQueries") String refinedQuery) {
+    void hyde模式异常时应抛出(@ForAll("refinedQueries") String refinedQuery) {
         var generationRouter = mock(GenerationRouter.class);
         var embeddingRouter = mock(EmbeddingRouter.class);
         when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
@@ -65,11 +61,8 @@ class QueryRewriter属性测试 {
 
         var hydeProps = buildProperties("hyde");
         var rewriter = new QueryRewriter(generationRouter, embeddingRouter, hydeProps, promptRegistry);
-        var result = rewriter.rewrite(refinedQuery);
 
-        assertEquals(refinedQuery, result.primaryQuery());
-        assertTrue(result.rewrittenQueries().isEmpty());
-        assertTrue(result.hydeEmbedding().isEmpty());
+        assertThrows(LlmUnavailableException.class, () -> rewriter.rewrite(refinedQuery));
     }
 
     @Provide

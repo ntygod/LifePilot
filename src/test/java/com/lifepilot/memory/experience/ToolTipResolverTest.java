@@ -158,13 +158,27 @@ class ToolTipResolverTest {
     }
 
     @Test
-    void 查询抛异常时降级返回空串() {
+    void 查询抛异常时直接失败() {
         var semanticMemory = mock(SemanticMemory.class);
         when(semanticMemory.findCurrentByType(eq(EntityType.EXPERIENCE), any(MemoryReadFilter.class)))
                 .thenThrow(new RuntimeException("DB down"));
 
         var resolver = resolver(semanticMemory);
-        assertThat(resolver.tipsFor("file.read", null)).isEmpty();
+        assertThatThrownBy(() -> resolver.tipsFor("file.read", null))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("DB down");
+    }
+
+    @Test
+    void 查询返回null时直接失败() {
+        var semanticMemory = mock(SemanticMemory.class);
+        when(semanticMemory.findCurrentByType(eq(EntityType.EXPERIENCE), any(MemoryReadFilter.class)))
+                .thenReturn(null);
+
+        var resolver = resolver(semanticMemory);
+        assertThatThrownBy(() -> resolver.tipsFor("file.read", null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("工具经验查询结果不能为空");
     }
 
     @Test
@@ -239,7 +253,7 @@ class ToolTipResolverTest {
     }
 
     @Test
-    void 项目上下文解析失败时返回空串且不读取记忆() {
+    void 项目上下文解析失败时直接失败且不读取记忆() {
         var semanticMemory = mock(SemanticMemory.class);
         var chatSessionRepository = mock(ChatSessionRepository.class);
         var projectContextResolver = mock(ProjectContextResolver.class);
@@ -257,7 +271,9 @@ class ToolTipResolverTest {
                 chatSessionRepository,
                 new MemoryAccessPolicy());
 
-        assertThat(resolver.tipsFor("file.read", "session-2")).isEmpty();
+        assertThatThrownBy(() -> resolver.tipsFor("file.read", "session-2"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("项目不存在");
         verify(semanticMemory, never()).findCurrentByType(any(), any());
     }
 
@@ -296,7 +312,19 @@ class ToolTipResolverTest {
                 0,
                 null,
                 now,
-                now)
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now)
                 .withQuality(MemoryEvidenceKind.LLM_SUMMARIZED_EXPERIENCE,
                         MemoryTrustLevel.DERIVED, 0.7f, 1, null);
     }

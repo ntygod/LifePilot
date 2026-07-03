@@ -1,6 +1,7 @@
 package com.lifepilot.memory.governance.lifecycle;
 
 import com.lifepilot.memory.governance.lifecycle.events.EntityLifecycleChanged;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.feedback.RegenerationQueueRepository;
 import com.lifepilot.memory.governance.lifecycle.listeners.DerivedEntityListener;
 import com.lifepilot.memory.retrieval.VectorSearcher;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -82,8 +84,8 @@ class DerivedEntityListener_集成测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         publishedEvents = new ArrayList<>();
         ApplicationEventPublisher publisher = publishedEvents::add;
@@ -247,6 +249,88 @@ class DerivedEntityListener_集成测试 {
                 .as("非 SUPERSEDED/CANCELLED/EXPIRED 事件不级联")
                 .isEqualTo(LifecycleState.ACTIVE);
         assertThat(queueRepo.countPendingByDerived("insight-y")).isZero();
+    }
+
+    @Test
+    void 非法事件字段应直接失败() {
+        assertThatThrownBy(() -> listener.onLifecycleChanged(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("生命周期变化事件不能为空");
+
+        assertThatThrownBy(() -> new EntityLifecycleChanged(
+                " ", "EXPERIENCE",
+                LifecycleState.ACTIVE, LifecycleState.SUPERSEDED,
+                "bad-event", ChangeSource.CONFLICT_RESOLVE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("生命周期变化事件 entityId 不能为空");
+
+        assertThatThrownBy(() -> new EntityLifecycleChanged(
+                " exp-bad", "EXPERIENCE",
+                LifecycleState.ACTIVE, LifecycleState.SUPERSEDED,
+                "bad-event", ChangeSource.CONFLICT_RESOLVE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("生命周期变化事件 entityId 不能包含首尾空白");
+
+        assertThatThrownBy(() -> new EntityLifecycleChanged(
+                "exp-bad", " ",
+                LifecycleState.ACTIVE, LifecycleState.SUPERSEDED,
+                "bad-event", ChangeSource.CONFLICT_RESOLVE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("生命周期变化事件 entityType 不能为空");
+
+        assertThatThrownBy(() -> new EntityLifecycleChanged(
+                "exp-bad", "BROKEN",
+                LifecycleState.ACTIVE, LifecycleState.SUPERSEDED,
+                "bad-event", ChangeSource.CONFLICT_RESOLVE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("生命周期变化事件 entityType 未知: BROKEN");
+
+        assertThatThrownBy(() -> new EntityLifecycleChanged(
+                "exp-bad", "EXPERIENCE",
+                LifecycleState.ACTIVE, null,
+                "bad-event", ChangeSource.CONFLICT_RESOLVE))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("生命周期变化事件 newState 不能为空");
+
+        assertThatThrownBy(() -> new EntityLifecycleChanged(
+                "exp-bad", "EXPERIENCE",
+                LifecycleState.ACTIVE, LifecycleState.SUPERSEDED,
+                "bad-event", null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("生命周期变化事件 source 不能为空");
+    }
+
+    @Test
+    void 入队失败应直接抛出且不继续处理后续派生实体() {
+        插入ACTIVE实体("exp-fail", "EXPERIENCE", "经验失败", false, List.of());
+        插入ACTIVE实体("insight-fail-1", "CUSTOM", "insight-fail-1",
+                true, List.of("exp-fail"));
+        插入ACTIVE实体("insight-fail-2", "CUSTOM", "insight-fail-2",
+                true, List.of("exp-fail"));
+
+        RegenerationQueueRepository failingQueue = new RegenerationQueueRepository(jdbcTemplate) {
+            @Override
+            public void enqueue(String derivedEntityId, String triggerSourceEntityId, Instant when) {
+                throw new IllegalStateException("队列写入失败");
+            }
+        };
+        var failingListener = new DerivedEntityListener(
+                semanticMemory,
+                failingQueue,
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> failingListener.onLifecycleChanged(new EntityLifecycleChanged(
+                "exp-fail", "EXPERIENCE",
+                LifecycleState.ACTIVE, LifecycleState.SUPERSEDED,
+                "conflict", ChangeSource.CONFLICT_RESOLVE)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("队列写入失败");
+
+        assertThat(List.of(读取LifecycleState("insight-fail-1"), 读取LifecycleState("insight-fail-2")))
+                .as("第一条派生实体失败后应停止循环，不能继续污染后续派生实体")
+                .containsExactlyInAnyOrder(LifecycleState.REGENERATION_NEEDED, LifecycleState.ACTIVE);
+        assertThat(queueRepo.countPendingByDerived("insight-fail-1")).isZero();
+        assertThat(queueRepo.countPendingByDerived("insight-fail-2")).isZero();
     }
 
     // ---------- 测试夹具 ----------

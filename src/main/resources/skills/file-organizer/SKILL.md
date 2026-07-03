@@ -1,7 +1,7 @@
 ---
 name: file-organizer
 description: 当用户要整理文件、批量重命名、按类型/日期/项目分类归档、清理重复文件或分析磁盘空间占用时使用。
-version: 2.1.0
+version: 2.1.2
 metadata:
   zhiwei:
     tags:
@@ -12,31 +12,32 @@ metadata:
       - disk-cleanup
       - dedup
     suggested_tools:
-      - file_read
-      - file_write
-      - file_manage
-      - shell_exec
+      - file.read
+      - file.write
+      - file.manage
+      - shell.exec
+    outputs:
+      - file
+      - text
 ---
-
 # 文件管理指南
 
 批量整理 / 重命名 / 归档 / 去重 / 磁盘分析。**核心约束：所有破坏性操作必须先输出预览，用户确认才执行。**
 
-## 适用场景
-
+## 触发判断
 - 批量重命名（按规则 / 日期 / 序号）
 - 目录结构整理（按类型 / 日期 / 项目分类归档）
 - 重复文件检测与清理
 - 磁盘空间分析（哪些目录大）
 - 旧文件清理（按修改时间）
 
-## 不适用场景
+不要触发：
 
-- 单个文件读 / 写 → `file_read` / `file_write`
+- 单个文件读 / 写 → `file.read` / `file.write`
 - 代码文件重构 → code-assistant
 - 文档格式转换（docx ↔ pdf 等）→ doc-processor
 
-## 工作流（按用户表达分流）
+## 决策路径
 
 | 用户表达 | 路径 |
 |---|---|
@@ -49,11 +50,24 @@ metadata:
 各路径要点：
 
 - **预览不可省**：执行前列出"会改哪些 / 改成什么"给用户对，不直接动手
-- **优先 file_manage**：跨平台，避免 `shell_exec` 的 mv / rm 差异（Windows 没有 mv）
+- **优先 file.manage**：跨平台，避免 `shell.exec` 的 mv / rm 差异（Windows 没有 mv）
 - **移动优于删除**：删除 / 覆盖先归档到操作目录下 `.trash/<日期>/` 子目录，用户确认无误后再清
 - **大批量分批**：> 100 个文件分批跑，每批后让用户回看
 - **重命名记映射**：批量重命名后落 `rename-map.json`（旧名→新名）到操作目录，便于回溯
 
-## 详细参考
 
+## 输出标准
+
+- 输出预览表、影响文件数、目标路径规则和实际执行结果。
+- 去重/清理要列保留依据、候选删除项和可恢复策略。
+- 生成脚本或清单时返回文件路径。
+
+
+## 失败策略
+
+- 破坏性操作必须先预览，用户确认后才执行。
+- 路径权限不足或跨盘移动失败时说明未完成项。
+- 规则不明确时先处理样本或追问命名/归档规则。
+
+## 详细参考
 - 分类依据矩阵、命令模板、错误处理：`{skill_dir}/references/organize-patterns.md`

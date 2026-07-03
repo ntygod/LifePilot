@@ -1,14 +1,11 @@
 package com.lifepilot.agent.learning.forgetting;
 
-import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.store.entity.TemporalEntity;
-import jakarta.annotation.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Reflection-Summary 遗忘策略 — 选择中等重要度实体用于 LLM 摘要压缩。
@@ -17,33 +14,20 @@ import java.util.List;
  * 按 importanceScore 升序排列（最低重要度优先），限制返回数量不超过预算。
  * 实际的 LLM 摘要生成由 {@code ForgettingEngine} 执行，本策略仅负责候选选择。</p>
  *
- * <p>LLM 不可用时（{@code generationRouter} 为 null），直接返回空列表跳过本阶段。</p>
- *
  * @author zsg
  * @since 2026-03-01
  */
 public final class ReflectionSummaryPolicy implements ForgettingPolicy {
 
-    private static final Logger log = LoggerFactory.getLogger(ReflectionSummaryPolicy.class);
-
-    @Nullable
-    private final GenerationRouter generationRouter;
     private final AgentLearningProperties.Forgetting config;
 
-    public ReflectionSummaryPolicy(@Nullable GenerationRouter generationRouter, AgentLearningProperties.Forgetting config) {
-        this.generationRouter = generationRouter;
-        this.config = config;
+    public ReflectionSummaryPolicy(AgentLearningProperties.Forgetting config) {
+        this.config = Objects.requireNonNull(config, "config 不能为空");
     }
 
     @Override
     public List<TemporalEntity> selectForForgetting(List<TemporalEntity> candidates, int budget) {
         if (budget <= 0 || candidates == null || candidates.isEmpty()) {
-            return List.of();
-        }
-
-        // LLM 不可用时跳过 Reflection-Summary 阶段
-        if (generationRouter == null) {
-            log.warn("LLM 不可用，跳过 Reflection-Summary 遗忘策略");
             return List.of();
         }
 

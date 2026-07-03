@@ -8,6 +8,7 @@ import com.lifepilot.memory.governance.security.SpaceTrustDistribution;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * MemoryInjectionDetector 单元测试。
@@ -111,5 +112,34 @@ class MemoryInjectionDetector_单元测试 {
 
         assertThat(detector.detect("s1", null, 0.5f).isPass()).isTrue();
         assertThat(detector.detect(null, "text", 0.5f).isPass()).isTrue();
+    }
+
+    @Test
+    void 检测开启时非法trustScore抛异常() {
+        var props = new MemoryGovernanceProperties();
+        props.getSecurity().setInjectionDetectionEnabled(true);
+        var detector = new MemoryInjectionDetector(
+                new PromptInjectionPatternScanner(),
+                new SpaceTrustDistribution(100),
+                props);
+
+        assertThatThrownBy(() -> detector.detect("s1", "正常文本", -0.1f))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("trustScore 必须在 [0,1] 范围内");
+    }
+
+    @Test
+    void 检测开启时非法异常阈值抛异常() {
+        var props = new MemoryGovernanceProperties();
+        props.getSecurity().setInjectionDetectionEnabled(true);
+        props.getSecurity().setOutlierThreshold(0.0f);
+        var detector = new MemoryInjectionDetector(
+                new PromptInjectionPatternScanner(),
+                new SpaceTrustDistribution(100),
+                props);
+
+        assertThatThrownBy(() -> detector.detect("s1", "正常文本", 0.5f))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("注入检测异常阈值必须是正有限数");
     }
 }

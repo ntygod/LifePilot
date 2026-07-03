@@ -20,6 +20,7 @@ import com.lifepilot.skill.tool.SkillLoadTool;
 import com.lifepilot.skill.tool.SkillLoadToolExecutor;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -166,11 +167,10 @@ public class SkillAutoConfiguration {
     public MarkdownSkillLoader markdownSkillLoader(SkillRegistry registry,
                                                    SkillConfigProperties config,
                                                    MarkdownSkillParser parser,
-                                                   SkillDescriptionValidator descriptionValidator,
-                                                   SkillBodyValidator bodyValidator,
+                                                   SkillValidator validator,
                                                    ZhiweiPaths zhiweiPaths) {
         log.info("Skill 系统: 注册 MarkdownSkillLoader, directory={}", zhiweiPaths.home("skills"));
-        return new MarkdownSkillLoader(registry, config, parser, descriptionValidator, bodyValidator, zhiweiPaths);
+        return new MarkdownSkillLoader(registry, config, parser, validator, zhiweiPaths);
     }
 
     @Bean

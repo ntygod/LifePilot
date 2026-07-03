@@ -51,28 +51,29 @@ public class ConflictResolutionRepository {
         if (candidateIds == null || candidateIds.isEmpty()) {
             throw new IllegalArgumentException("candidateIds 不能为空");
         }
-        var normalizedCandidateIds = candidateIds.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(candidateId -> !candidateId.isBlank())
-                .toList();
-        if (normalizedCandidateIds.size() != candidateIds.size()) {
-            throw new IllegalArgumentException("candidateIds 不能包含空值");
+        for (String candidateId : candidateIds) {
+            if (candidateId == null || candidateId.isBlank()) {
+                throw new IllegalArgumentException("candidateIds 不能包含空值");
+            }
+            if (!candidateId.equals(candidateId.trim())) {
+                throw new IllegalArgumentException("candidateIds 不能包含首尾空白: " + candidateId);
+            }
         }
         var id = UUID.randomUUID().toString();
         String candidatesJson;
         try {
-            candidatesJson = objectMapper.writeValueAsString(normalizedCandidateIds);
+            candidatesJson = objectMapper.writeValueAsString(candidateIds);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("候选列表 JSON 序列化失败: " + normalizedCandidateIds, e);
+            throw new IllegalStateException("候选列表 JSON 序列化失败: " + candidateIds, e);
         }
-        jdbcTemplate.update(
+        int rows = jdbcTemplate.update(
                 """
                 INSERT INTO conflict_resolution_queue
                     (id, new_entity_id, candidate_entity_ids, status, attempt_count, created_at)
                 VALUES (?, ?, ?, 'PENDING', 0, ?)
                 """,
                 id, newEntityId, candidatesJson, Instant.now().toString());
+        requireSingleRow(rows, "冲突裁决队列入队", id);
         return id;
     }
 
@@ -83,7 +84,9 @@ public class ConflictResolutionRepository {
      * @param verdict LLM 裁决结果
      */
     public void markResolved(String id, ConflictVerdict verdict) {
-        jdbcTemplate.update(
+        requireId(id);
+        Objects.requireNonNull(verdict, "verdict 不能为空");
+        int rows = jdbcTemplate.update(
                 """
                 UPDATE conflict_resolution_queue
                 SET status = 'RESOLVED',
@@ -94,6 +97,7 @@ public class ConflictResolutionRepository {
                 """,
                 verdict.verdict().name(), verdict.rationale(),
                 Instant.now().toString(), id);
+        requireSingleRow(rows, "冲突裁决队列标记 RESOLVED", id);
     }
 
     /**
@@ -104,7 +108,11 @@ public class ConflictResolutionRepository {
      * @param reason 失败原因（写入 rationale，便于运维定位）
      */
     public void markFailed(String id, String reason) {
-        jdbcTemplate.update(
+        requireId(id);
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("失败原因不能为空");
+        }
+        int rows = jdbcTemplate.update(
                 """
                 UPDATE conflict_resolution_queue
                 SET status = 'FAILED',
@@ -113,6 +121,19 @@ public class ConflictResolutionRepository {
                 WHERE id = ?
                 """,
                 reason, id);
+        requireSingleRow(rows, "冲突裁决队列标记 FAILED", id);
+    }
+
+    private static void requireId(String id) {
+        if (id == null || id.isBlank()) {
+            throw new IllegalArgumentException("队列项 id 不能为空");
+        }
+    }
+
+    private static void requireSingleRow(int rows, String operation, String id) {
+        if (rows != 1) {
+            throw new IllegalStateException(operation + "影响行数必须为 1, id=" + id + ", rows=" + rows);
+        }
     }
 
     /**
@@ -122,6 +143,9 @@ public class ConflictResolutionRepository {
      * @return 符合条件的队列项，按 created_at 升序
      */
     public List<QueueItem> findFailedRetriable(int maxAttempts) {
+        if (maxAttempts <= 0) {
+            throw new IllegalArgumentException("maxAttempts 必须大于 0");
+        }
         return jdbcTemplate.query(
                 """
                 SELECT id, new_entity_id, candidate_entity_ids
@@ -144,9 +168,13 @@ public class ConflictResolutionRepository {
                             throw new IllegalStateException(
                                     "候选列表不能为空, id=" + rs.getString("id"));
                         }
-                        candidates = Arrays.stream(array)
-                                .map(String::trim)
-                                .toList();
+                        candidates = Arrays.stream(array).toList();
+                        for (String candidateId : candidates) {
+                            if (!candidateId.equals(candidateId.trim())) {
+                                throw new IllegalStateException(
+                                        "候选列表不能包含首尾空白, id=" + rs.getString("id"));
+                            }
+                        }
                     } catch (JsonProcessingException e) {
                         throw new IllegalStateException(
                                 "候选列表反序列化失败, id=" + rs.getString("id"), e);
@@ -168,7 +196,22 @@ public class ConflictResolutionRepository {
      */
     public record QueueItem(String id, String newEntityId, List<String> candidateEntityIds) {
         public QueueItem {
-            candidateEntityIds = candidateEntityIds != null ? List.copyOf(candidateEntityIds) : List.of();
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("队列项 id 不能为空");
+            }
+            if (newEntityId == null || newEntityId.isBlank()) {
+                throw new IllegalArgumentException("队列项 newEntityId 不能为空");
+            }
+            Objects.requireNonNull(candidateEntityIds, "candidateEntityIds 不能为空");
+            if (candidateEntityIds.isEmpty()) {
+                throw new IllegalArgumentException("candidateEntityIds 不能为空");
+            }
+            for (String candidateEntityId : candidateEntityIds) {
+                if (candidateEntityId == null || candidateEntityId.isBlank()) {
+                    throw new IllegalArgumentException("candidateEntityId 不能为空");
+                }
+            }
+            candidateEntityIds = List.copyOf(candidateEntityIds);
         }
     }
 }

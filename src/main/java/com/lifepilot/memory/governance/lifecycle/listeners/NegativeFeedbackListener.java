@@ -14,6 +14,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Clock;
+import java.util.Objects;
 
 /**
  * 负反馈累计监听器：写账本 → 判定阈值 → 对达阈值的 ACTIVE 实体转 {@code SUPERSEDED}。
@@ -54,10 +55,10 @@ public class NegativeFeedbackListener {
                                     SemanticMemory semanticMemory,
                                     FeedbackThresholdConfig cfg,
                                     Clock clock) {
-        this.ledger = ledger;
-        this.semanticMemory = semanticMemory;
-        this.cfg = cfg;
-        this.clock = clock;
+        this.ledger = Objects.requireNonNull(ledger, "ledger 不能为空");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.cfg = Objects.requireNonNull(cfg, "cfg 不能为空");
+        this.clock = Objects.requireNonNull(clock, "clock 不能为空");
     }
 
     /**
@@ -67,15 +68,10 @@ public class NegativeFeedbackListener {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onWeightChanged(EntityWeightChanged event) {
+        Objects.requireNonNull(event, "权重变化事件不能为空");
         // ① 无差别写账本（正向也写入，用于审计）
-        try {
-            ledger.append(event.entityId(), event.delta(), event.cumulativeScore(),
-                    event.source(), clock.instant());
-        } catch (Exception ex) {
-            log.warn("反馈账本入账失败 entity={}, delta={}, error={}",
-                    event.entityId(), event.delta(), ex.getMessage());
-            // 账本失败不阻塞后续判定，SUPERSEDED 触发本身不依赖本次账本
-        }
+        ledger.append(event.entityId(), event.delta(), event.cumulativeScore(),
+                event.source(), clock.instant());
 
         // ② 只对负向 delta 判定阈值
         if (event.delta() >= 0) {
@@ -83,13 +79,7 @@ public class NegativeFeedbackListener {
         }
 
         // ③ 判定：或关系 —— 计数 / 累计分任一满足即触发
-        int negativeCount;
-        try {
-            negativeCount = ledger.countNegative(event.entityId());
-        } catch (Exception ex) {
-            log.warn("负反馈计数查询失败 entity={}, error={}", event.entityId(), ex.getMessage());
-            return;
-        }
+        int negativeCount = ledger.countNegative(event.entityId());
         boolean triggeredByCount = negativeCount >= cfg.getNegativeThresholdCount();
         boolean triggeredByScore = event.cumulativeScore() < cfg.getNegativeThresholdScore();
         if (!triggeredByCount && !triggeredByScore) {
@@ -110,18 +100,13 @@ public class NegativeFeedbackListener {
         }
 
         // ⑤ 调 SemanticMemory 代发 EntityLifecycleChanged（source=NEGATIVE_FEEDBACK）
-        try {
-            semanticMemory.updateLifecycleState(
-                    event.entityId(),
-                    LifecycleState.SUPERSEDED,
-                    SUPERSEDED_REASON,
-                    ChangeSource.NEGATIVE_FEEDBACK);
-            log.info("负反馈触发 SUPERSEDED: entity={}, negativeCount={}, cumulative={}, byCount={}, byScore={}",
-                    event.entityId(), negativeCount, event.cumulativeScore(),
-                    triggeredByCount, triggeredByScore);
-        } catch (Exception ex) {
-            log.warn("负反馈转 SUPERSEDED 失败 entity={}, error={}",
-                    event.entityId(), ex.getMessage(), ex);
-        }
+        semanticMemory.updateLifecycleState(
+                event.entityId(),
+                LifecycleState.SUPERSEDED,
+                SUPERSEDED_REASON,
+                ChangeSource.NEGATIVE_FEEDBACK);
+        log.info("负反馈触发 SUPERSEDED: entity={}, negativeCount={}, cumulative={}, byCount={}, byScore={}",
+                event.entityId(), negativeCount, event.cumulativeScore(),
+                triggeredByCount, triggeredByScore);
     }
 }

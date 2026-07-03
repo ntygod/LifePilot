@@ -7,6 +7,7 @@ import com.lifepilot.memory.store.scope.MemoryScope;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.rerank.router.RerankRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,6 +16,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -39,6 +41,7 @@ class HybridRetriever作用域过滤测试 {
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
     private MemoryRetrievalProperties properties;
+    private MemoryProvenanceRepository provenanceRepository;
 
     @BeforeEach
     void setUp() {
@@ -47,10 +50,12 @@ class HybridRetriever作用域过滤测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
+        provenanceRepository = mock(MemoryProvenanceRepository.class);
         properties = new MemoryRetrievalProperties();
         properties.setMinVectorSimilarity(0.0f);
         properties.setMinFusedScore(0.0f);
         when(jdbcTemplate.update(anyString(), org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(1);
+        when(provenanceRepository.findStaleEntityIds(anyCollection())).thenReturn(Set.of());
     }
 
     @Test
@@ -68,7 +73,7 @@ class HybridRetriever作用域过滤测试 {
                 new RankedItem(domainEntity.id(), domainEntity.type().name(), domainEntity.name(),
                         domainEntity.description(), 0.8f, Instant.now(), 0.5f, null, Instant.now())
         ));
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(List.of(
+        when(graphTraverser.traverse(anyString(), anyInt(), eq(MemoryReadFilter.userMemory()))).thenReturn(List.of(
                 new RankedItem(domainEntity.id(), domainEntity.type().name(), domainEntity.name(),
                         domainEntity.description(), 1.0f, Instant.now(), 0.5f, null, Instant.now())
         ));
@@ -78,6 +83,8 @@ class HybridRetriever作用域过滤测试 {
 
         when(semanticMemory.findByIds(anyCollection(), eq(MemoryReadFilter.userMemory())))
                 .thenReturn(filteredEntities);
+        when(semanticMemory.findEligibleEntityIds(eq(MemoryReadFilter.userMemory())))
+                .thenReturn(Set.of(userEntity.id()));
 
         var retriever = new HybridRetriever(
                 vectorSearcher,
@@ -87,8 +94,8 @@ class HybridRetriever作用域过滤测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null,
-                mock(MemoryProvenanceRepository.class));
+                mock(RerankRouter.class),
+                provenanceRepository);
 
         var results = retriever.retrieve("帮我回忆一下", 10, RetrievalWeights.DEFAULT, MemoryReadFilter.userMemory());
 
@@ -117,6 +124,18 @@ class HybridRetriever作用域过滤测试 {
                 Instant.now(),
                 Instant.now(),
                 Instant.now()
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                Instant.now());
     }
 }

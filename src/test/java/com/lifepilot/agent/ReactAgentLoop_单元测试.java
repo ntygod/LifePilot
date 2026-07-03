@@ -104,8 +104,7 @@ class ReactAgentLoop_单元测试 {
                 null,  // intentMatcher
                 null,  // compactionEngine
                 sharedScheduler,
-                null,  // workspaceService
-                null   // experienceSummarizer
+                null   // workspaceService
         );
     }
 
@@ -384,7 +383,7 @@ class ReactAgentLoop_单元测试 {
                     customConfig,
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, null, null, null, null, sharedScheduler, null, null
+                    null, null, null, null, null, null, sharedScheduler, null
             );
 
             when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
@@ -436,7 +435,7 @@ class ReactAgentLoop_单元测试 {
                     customConfig,
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, null, null, null, null, sharedScheduler, null, null
+                    null, null, null, null, null, null, sharedScheduler, null
             );
 
             when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
@@ -507,7 +506,7 @@ class ReactAgentLoop_单元测试 {
                     customConfig,
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, null, null, null, null, sharedScheduler, null, null
+                    null, null, null, null, null, null, sharedScheduler, null
             );
 
             when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
@@ -687,7 +686,7 @@ class ReactAgentLoop_单元测试 {
                     new AgentConfigProperties(),
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, eventPublisher, null, null, null, sharedScheduler, null, null
+                    null, null, eventPublisher, null, null, null, sharedScheduler, null
             );
 
             var state = ReactAgentState.builder()
@@ -728,7 +727,7 @@ class ReactAgentLoop_单元测试 {
                     new AgentConfigProperties(),
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, eventPublisher, null, null, null, sharedScheduler, null, null
+                    null, null, eventPublisher, null, null, null, sharedScheduler, null
             );
 
             var state = ReactAgentState.builder()

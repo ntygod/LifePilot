@@ -7,6 +7,7 @@ import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import { logger } from '@/utils/logger'
 import type {
   A2uiComponent,
+  CapabilitySuggestion,
   ChatAttachment,
   ChatTurnAction,
   ChatTurnStatus,
@@ -14,6 +15,7 @@ import type {
   ReactStepDto,
   SessionConfigOverride,
   SseAgentSuspendedEvent,
+  SseCapabilitySuggestedEvent,
   SseDoneEvent,
   SseErrorEvent,
   SseMediaEvent,
@@ -63,6 +65,7 @@ export function useChat() {
   // 首个 reasoning delta 到达时间戳；用于流结束时计算思考时长
   let reasoningStartedAt: number | null = null
   const streamingReactSteps = ref<ReactStepDto[]>([])
+  const capabilitySuggestions = ref<CapabilitySuggestion[]>([])
   const streamingMedia = ref<SseMediaEvent[]>([])
   const streamingArtifactRefs = ref<import('@/api/artifacts').ArtifactRefPayload[]>([])
   const pendingPermissionApprovals = ref<Map<string, PermissionApprovalRequest>>(new Map())
@@ -288,6 +291,7 @@ export function useChat() {
     reasoningDurationMs.value = 0
     reasoningStartedAt = null
     streamingReactSteps.value = []
+    capabilitySuggestions.value = []
     streamingMedia.value = []
     streamingArtifactRefs.value = []
     pendingPermissionApprovals.value = new Map()
@@ -464,6 +468,11 @@ export function useChat() {
         case SSE_EVENT_TYPES.MEDIA: {
           const event: SseMediaEvent = JSON.parse(data)
           streamingMedia.value.push(event)
+          break
+        }
+        case SSE_EVENT_TYPES.CAPABILITY_SUGGESTED: {
+          const event: SseCapabilitySuggestedEvent = JSON.parse(data)
+          capabilitySuggestions.value = Array.isArray(event.tools) ? event.tools : []
           break
         }
         case SSE_EVENT_TYPES.ARTIFACT_REF: {
@@ -1131,6 +1140,7 @@ export function useChat() {
     isReasoningActive,
     reasoningDurationMs,
     streamingReactSteps,
+    capabilitySuggestions,
     streamingMedia,
     streamingArtifactRefs,
     streamingA2uiComponents: a2uiStore.components,

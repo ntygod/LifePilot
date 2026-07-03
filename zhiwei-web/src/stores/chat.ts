@@ -28,14 +28,16 @@ export const useChatStore = defineStore('chat', () => {
   const streamingContent = ref('')
   // 首屏输入的待发送消息（纯文本形态，历史路径保留兼容）
   const pendingFirstMessage = ref<string | null>(null)
+  // 跨路由预填到新对话输入框的草稿，不自动发送
+  const pendingDraftMessage = ref<string | null>(null)
   // 首轮完整待发送结构（项目详情页等页面跨路由使用，支持附件 / sessionConfig）
   const pendingFirstSend = ref<PendingFirstSend | null>(null)
 
-  /** 加载会话列表。 */
-  async function loadSessions() {
+  /** 加载会话列表。默认只刷新列表，不抢占当前路由正在表达的会话意图。 */
+  async function loadSessions(options: { activateFirst?: boolean } = {}) {
     sessions.value = await chatApi.listSessions()
-    // 当前未选中会话时，默认选中最近一个。
-    if (!activeSessionId.value && sessions.value.length > 0) {
+    // 少数旧入口需要打开应用即选中最近会话时，可以显式 opt-in。
+    if (options.activateFirst && !activeSessionId.value && sessions.value.length > 0) {
       activeSessionId.value = sessions.value[0]?.id ?? null
     }
   }
@@ -156,6 +158,7 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming,
     streamingContent,
     pendingFirstMessage,
+    pendingDraftMessage,
     pendingFirstSend,
     loadSessions,
     loadMessages,

@@ -5,7 +5,7 @@
   python diagnose.py [--json]
 
 LLM 调用示例:
-  shell_exec(command="python {skill_scripts_dir}/diagnose.py --json")
+  shell.exec(command="python {skill_scripts_dir}/diagnose.py --json")
 """
 
 import json

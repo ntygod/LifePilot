@@ -27,7 +27,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.lang.Nullable;
 
 import java.util.List;
 
@@ -173,6 +172,12 @@ public class KnowledgeAutoConfiguration {
         return new DocumentChunkRepository(jdbcTemplate, objectMapper);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository(JdbcTemplate jdbcTemplate) {
+        return new SessionKnowledgeBaseRepository(jdbcTemplate);
+    }
+
     // ---- 索引服务 ----
 
     @Bean
@@ -192,7 +197,7 @@ public class KnowledgeAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SessionKnowledgeScopeResolver sessionKnowledgeScopeResolver(
-            @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository) {
+            SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository) {
         return new SessionKnowledgeScopeResolver(sessionKnowledgeBaseRepository);
     }
 

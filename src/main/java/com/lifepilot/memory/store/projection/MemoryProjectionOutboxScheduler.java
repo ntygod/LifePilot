@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * 记忆投影 outbox 补偿调度器。
@@ -24,18 +25,14 @@ public class MemoryProjectionOutboxScheduler {
     private final MemoryProjectionOutboxProcessor processor;
 
     public MemoryProjectionOutboxScheduler(MemoryProjectionOutboxProcessor processor) {
-        this.processor = processor;
+        this.processor = Objects.requireNonNull(processor, "MemoryProjectionOutboxProcessor 不能为空");
     }
 
     @Scheduled(fixedDelayString = "${lifepilot.memory.projection.outbox.retry-delay:PT1M}")
     public void processDueTasks() {
-        try {
-            int count = processor.processDue(DEFAULT_BATCH_SIZE, PROCESSING_TIMEOUT);
-            if (count > 0) {
-                log.info("记忆投影 outbox 补偿完成: count={}", count);
-            }
-        } catch (Exception e) {
-            log.warn("记忆投影 outbox 补偿失败: error={}", e.getMessage());
+        int count = processor.processDue(DEFAULT_BATCH_SIZE, PROCESSING_TIMEOUT);
+        if (count > 0) {
+            log.info("记忆投影 outbox 补偿完成: count={}", count);
         }
     }
 }

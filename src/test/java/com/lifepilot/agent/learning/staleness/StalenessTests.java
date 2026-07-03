@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -155,6 +157,167 @@ class StalenessTests {
             assertThat(stale).hasSize(1);
             assertThat(stale.get(0).id()).isEqualTo("nb1");
         }
+
+        @Test
+        @DisplayName("max-neighbors 非法 → 抛异常")
+        void maxNeighbors非法_抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of("PREFERENCE"));
+            cfg.setMaxNeighborsPerDetection(0);
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("staleness 单次邻居上限必须大于 0");
+        }
+
+        @Test
+        @DisplayName("detectableTypes 为空 → 抛异常")
+        void detectableTypes为空_抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of());
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("staleness detectableTypes 不能为空集合");
+        }
+
+        @Test
+        @DisplayName("detectableTypes 含未知类型 → 抛异常")
+        void detectableTypes含未知类型_抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of("PREFERENCE", "UNKNOWN_TYPE"));
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("staleness detectableTypes 包含未知实体类型")
+                    .hasMessageContaining("UNKNOWN_TYPE");
+        }
+
+        @Test
+        @DisplayName("向量检索失败 → 直接抛异常")
+        void 向量检索失败_直接抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of("PREFERENCE"));
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            when(vec.searchEntities(anyString(), anyInt(), anyFloat()))
+                    .thenThrow(new RuntimeException("向量检索失败"));
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("向量检索失败");
+        }
+
+        @Test
+        @DisplayName("向量检索返回 null → 直接抛异常")
+        void 向量检索返回null_直接抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of("PREFERENCE"));
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            when(vec.searchEntities(anyString(), anyInt(), anyFloat())).thenReturn(null);
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("staleness 向量检索结果不能为空");
+        }
+
+        @Test
+        @DisplayName("向量检索返回 null 候选 → 直接抛异常")
+        void 向量检索返回null候选_直接抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of("PREFERENCE"));
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            when(vec.searchEntities(anyString(), anyInt(), anyFloat()))
+                    .thenReturn(Collections.singletonList(null));
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("staleness 向量候选不能为空");
+        }
+
+        @Test
+        @DisplayName("向量候选实体不存在 → 直接抛异常")
+        void 向量候选实体不存在_直接抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of("PREFERENCE"));
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            when(vec.searchEntities(anyString(), anyInt(), anyFloat()))
+                    .thenReturn(List.of(new VectorSearchResult("missing", 0.95f)));
+            when(mem.findById("missing")).thenReturn(Optional.empty());
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("staleness 向量候选实体不存在: missing");
+        }
+
+        @Test
+        @DisplayName("向量候选与实体 ID 不匹配 → 直接抛异常")
+        void 向量候选实体ID不匹配_直接抛异常() {
+            AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
+            cfg.setDetectableTypes(Set.of("PREFERENCE"));
+            VectorSearcher vec = mock(VectorSearcher.class);
+            SemanticMemory mem = mock(SemanticMemory.class);
+            when(vec.searchEntities(anyString(), anyInt(), anyFloat()))
+                    .thenReturn(List.of(new VectorSearchResult("nb1", 0.95f)));
+            when(mem.findById("nb1")).thenReturn(Optional.of(
+                    newEntity("other", EntityType.PREFERENCE, "旧偏好",
+                            LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT)));
+            VectorBasedStaleConflictDetector det =
+                    new VectorBasedStaleConflictDetector(vec, mem, cfg);
+
+            TemporalEntity e = newEntity("new", EntityType.PREFERENCE, "新偏好长文本",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
+
+            assertThatThrownBy(() -> det.findStaleNeighbors(e))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("staleness 向量候选实体不匹配")
+                    .hasMessageContaining("nb1")
+                    .hasMessageContaining("other");
+        }
     }
 
     @Nested
@@ -190,8 +353,8 @@ class StalenessTests {
         }
 
         @Test
-        @DisplayName("某条更新抛异常 → 继续下一条")
-        void 异常_不中断() {
+        @DisplayName("更新抛异常 → 直接暴露")
+        void 更新异常_直接暴露() {
             SemanticMemory mem = mock(SemanticMemory.class);
             doThrow(new RuntimeException("db err"))
                     .when(mem).updateLifecycleState(eq("nb1"), any(), anyString(), any());
@@ -201,10 +364,12 @@ class StalenessTests {
                     newEntity("nb1", EntityType.PREFERENCE, "A", LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT),
                     newEntity("nb2", EntityType.PREFERENCE, "B", LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT)
             );
-            int count = marker.markAsStale("trig", list);
-            assertThat(count).isEqualTo(1);
-            verify(mem, times(2)).updateLifecycleState(anyString(), any(), anyString(), any());
+            assertThatThrownBy(() -> marker.markAsStale("trig", list))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("db err");
+            verify(mem, times(1)).updateLifecycleState(anyString(), any(), anyString(), any());
         }
+
     }
 
     @Nested
@@ -275,22 +440,25 @@ class StalenessTests {
         }
 
         @Test
-        @DisplayName("detector 抛异常 → 不调用 marker")
-        void detector异常_隔离() {
+        @DisplayName("detector 抛异常 → 直接暴露")
+        void detector异常_直接暴露() {
             AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             StaleConflictDetector detector = e -> { throw new RuntimeException("boom"); };
             StalenessMarker marker = mock(StalenessMarker.class);
             NeighborRefreshService refresh = mock(NeighborRefreshService.class);
             StalenessCoordinator c = new StalenessCoordinator(detector, marker, refresh, cfg);
 
-            c.processSync(newEntity("x", EntityType.PREFERENCE, "desc ok", LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT));
+            assertThatThrownBy(() -> c.processSync(newEntity("x", EntityType.PREFERENCE, "desc ok",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT)))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("boom");
             verify(marker, never()).markAsStale(anyString(), any());
             verify(refresh, never()).writeRefreshCandidates(any(), any());
         }
 
         @Test
-        @DisplayName("marker 异常 → refresh 不触发")
-        void marker异常_refresh不触发() {
+        @DisplayName("marker 异常 → 直接暴露且 refresh 不触发")
+        void marker异常_直接暴露且refresh不触发() {
             AgentLearningProperties.Staleness cfg = new AgentLearningProperties.Staleness();
             TemporalEntity nb = newEntity("nb", EntityType.PREFERENCE, "x", LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT);
             StaleConflictDetector detector = e -> List.of(nb);
@@ -299,7 +467,10 @@ class StalenessTests {
             NeighborRefreshService refresh = mock(NeighborRefreshService.class);
             StalenessCoordinator c = new StalenessCoordinator(detector, marker, refresh, cfg);
 
-            c.processSync(newEntity("x", EntityType.PREFERENCE, "desc ok", LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT));
+            assertThatThrownBy(() -> c.processSync(newEntity("x", EntityType.PREFERENCE, "desc ok",
+                    LifecycleState.ACTIVE, MemoryTrustLevel.EXPLICIT)))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("x");
             verify(refresh, never()).writeRefreshCandidates(any(), any());
         }
 

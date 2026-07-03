@@ -3,6 +3,7 @@ package com.lifepilot.agent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.capability.ConversationCapabilityPlanner;
 import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
 import com.lifepilot.agent.checkpoint.SqliteAgentCheckpointStore;
 import com.lifepilot.agent.context.*;
@@ -300,6 +301,15 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public ConversationCapabilityPlanner conversationCapabilityPlanner(
+            DynamicToolRegistry toolRegistry,
+            @Autowired(required = false) SkillRegistry skillRegistry,
+            @Autowired(required = false) SkillInstallationRepository skillInstallationRepository) {
+        return new ConversationCapabilityPlanner(toolRegistry, skillRegistry, skillInstallationRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public ReactAgentLoop reactAgentLoop(
             ContextAssembler contextAssembler,
             ProviderMessageBuilder providerMessageBuilder,
@@ -317,10 +327,10 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) ExperienceSummarizer experienceSummarizer,
             @Autowired(required = false) SessionArtifactRepository sessionArtifactRepository,
             @Autowired(required = false) com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager,
-            @Autowired(required = false) com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor) {
+            @Autowired(required = false) com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor,
+            @Autowired(required = false) ConversationCapabilityPlanner capabilityPlanner) {
         var loop = new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -336,14 +346,14 @@ public class AgentAutoConfiguration {
                 intentMatcher,
                 compactionEngine,
                 sharedScheduler,
-                workspaceService,
-                experienceSummarizer);
+                workspaceService);
         // 注入 run(sessionId, UserMessage) 便捷入口所需的路由器
         loop.setGenerationRouter(generationRouter);
         // 文件产物链路：让 Agent 主循环把工具产物升级为 session_artifacts 并通过 SSE 推送
         loop.setSessionArtifactRepository(sessionArtifactRepository);
         loop.setSseSessionManager(sseSessionManager);
         loop.setCapabilityAssessor(capabilityAssessor);
+        loop.setCapabilityPlanner(capabilityPlanner);
         return loop;
     }
 

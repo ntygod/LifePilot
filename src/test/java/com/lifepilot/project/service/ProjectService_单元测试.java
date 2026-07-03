@@ -24,7 +24,6 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -133,32 +132,23 @@ class ProjectService_单元测试 {
     }
 
     @Test
-    void createProject_KB管理器未注入时_仅跳过KB创建_项目仍成功() {
-        // 构造一个 knowledgeBaseManager = null 的 service，模拟 KB 功能未启用
-        ProjectService noKbService = new ProjectService(
-                projectRepository, memorySpaceRepository, sessionStoreRepository, jdbcTemplate, null);
-        when(memorySpaceRepository.ensureProjectSpace(anyString())).thenReturn(mockSpace("ms-1"));
-
-        Project created = noKbService.createProject("项目", "", ProjectIsolation.ISOLATED);
-
-        assertNotNull(created);
-        verify(projectRepository).insert(created);
-        // 未注入 KB 时不应调 attach
-        verify(memorySpaceRepository, never()).attachKnowledgeBase(anyString(), anyString());
+    void constructor_KnowledgeBaseManager缺失_立即失败() {
+        NullPointerException ex = assertThrows(NullPointerException.class, () -> new ProjectService(
+                projectRepository, memorySpaceRepository, sessionStoreRepository, jdbcTemplate, null, projectionService));
+        assertEquals("KnowledgeBaseManager 不能为空", ex.getMessage());
     }
 
     @Test
-    void createProject_KB创建异常时_项目仍保留_不抛异常() {
+    void createProject_KB创建异常时_向外抛出_不绑定项目空间() {
         when(memorySpaceRepository.ensureProjectSpace(anyString())).thenReturn(mockSpace("ms-1"));
         when(knowledgeBaseManager.createKnowledgeBase(
                 anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("向量索引初始化失败"));
 
-        Project created = service.createProject("项目", "", ProjectIsolation.ISOLATED);
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> service.createProject("项目", "", ProjectIsolation.ISOLATED));
 
-        assertNotNull(created);
-        verify(projectRepository).insert(created);
-        // KB 失败时不 attach
+        assertEquals("向量索引初始化失败", ex.getMessage());
         verify(memorySpaceRepository, never()).attachKnowledgeBase(anyString(), anyString());
     }
 
@@ -300,45 +290,24 @@ class ProjectService_单元测试 {
     }
 
     @Test
-    void deleteProject_KB缺失时跳过_不影响删除流程() {
-        // 绑定表里还有 kb-missing，但 KB 本体已被别的路径先删了 → getKnowledgeBase 返回 empty
-        // 此时 Step 0 跳过该项（不抛空指针），主流程继续
+    void deleteProject_KB缺失时_抛错且不继续级联() {
+        // 绑定表里还有 kb-missing，但 KB 本体已被别的路径先删了，这是持久化契约损坏。
         Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
                 Instant.now(), Instant.now());
         when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
-        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
         when(memorySpaceRepository.findKnowledgeBaseIdsForSpace("ms-1"))
                 .thenReturn(List.of("kb-missing"));
         when(knowledgeBaseManager.getKnowledgeBase("kb-missing"))
                 .thenReturn(Optional.empty());
 
-        service.deleteProject("p-1");
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.deleteProject("p-1"));
 
-        // KB 缺失时不调 delete
+        assertEquals("项目绑定的知识库不存在: kb-missing", ex.getMessage());
         verify(knowledgeBaseManager, never()).deleteKnowledgeBase(anyString());
-        // 但后续 Step 1-5 正常执行
-        verify(projectRepository).deleteById("p-1");
-        verify(memorySpaceRepository).deleteById("ms-1");
-    }
-
-    @Test
-    void deleteProject_KB管理器未注入时_跳过Step0_其余级联正常() {
-        // 构造 knowledgeBaseManager=null 的 service，模拟极简部署/集成测试场景
-        ProjectService noKbService = new ProjectService(
-                projectRepository, memorySpaceRepository, sessionStoreRepository, jdbcTemplate, null);
-        Project p = new Project("p-1", "论文", "", ProjectIsolation.ISOLATED, "ms-1",
-                Instant.now(), Instant.now());
-        when(projectRepository.findById("p-1")).thenReturn(Optional.of(p));
-        when(sessionStoreRepository.findIdsByProjectId("p-1")).thenReturn(List.of());
-
-        noKbService.deleteProject("p-1");
-
-        // KB 管理器为 null：不查 space 的 KB 绑定，不调 deleteKnowledgeBase
-        verify(memorySpaceRepository, never()).findKnowledgeBaseIdsForSpace(anyString());
-        verifyNoInteractions(knowledgeBaseManager);
-        // Step 1-5 仍正常执行
-        verify(projectRepository).deleteById("p-1");
-        verify(memorySpaceRepository).deleteById("ms-1");
+        verify(sessionStoreRepository, never()).findIdsByProjectId(anyString());
+        verify(projectRepository, never()).deleteById(anyString());
+        verify(memorySpaceRepository, never()).deleteById(anyString());
     }
 
     @Test

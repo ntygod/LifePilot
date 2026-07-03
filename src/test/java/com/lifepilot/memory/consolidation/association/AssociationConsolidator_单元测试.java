@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * AssociationConsolidator 单元测试。
@@ -76,8 +77,31 @@ class AssociationConsolidator_单元测试 {
         var store = new AssociationCandidateStore(tempDir);
         var consolidator = new AssociationConsolidator(props, store);
 
-        assertThat(consolidator.consolidate(null)).isEqualTo(0);
         assertThat(consolidator.consolidate(List.of())).isEqualTo(0);
+    }
+
+    @Test
+    void null候选列表应暴露调用错误(@TempDir Path tempDir) {
+        var props = new AgentLearningProperties();
+        var store = new AssociationCandidateStore(tempDir);
+        var consolidator = new AssociationConsolidator(props, store);
+
+        assertThatThrownBy(() -> consolidator.consolidate(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("REM 联想候选列表不能为空");
+    }
+
+    @Test
+    void 非法去重窗口应暴露配置错误(@TempDir Path tempDir) {
+        var props = new AgentLearningProperties();
+        props.getRem().setDeduplicationWindowHours(0);
+        var store = new AssociationCandidateStore(tempDir);
+        var consolidator = new AssociationConsolidator(props, store);
+
+        assertThatThrownBy(() -> consolidator.consolidate(List.of(
+                cand("a", "b", AssociationType.CAUSES, 0.9f))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("REM 去重窗口小时数必须大于 0");
     }
 
     private AssociationCandidate cand(String src, String tgt, AssociationType type, float conf) {

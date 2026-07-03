@@ -4,6 +4,7 @@ import org.springframework.lang.Nullable;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -18,8 +19,8 @@ public record MemoryReadFilter(
 ) {
 
     public MemoryReadFilter {
-        spaceIds = Set.copyOf(normalizeSpaceIds(spaceIds));
-        scopes = scopes != null ? Set.copyOf(scopes) : Set.of();
+        spaceIds = Set.copyOf(validateSpaceIds(spaceIds));
+        scopes = Set.copyOf(Objects.requireNonNull(scopes, "记忆读取 scope 集合不能为空"));
     }
 
     public static MemoryReadFilter all() {
@@ -50,11 +51,11 @@ public record MemoryReadFilter(
         return !restrictsSpaces() && !restrictsScopes();
     }
 
-    public static MemoryReadFilter of(@Nullable Collection<String> spaceIds,
-                                      @Nullable Collection<MemoryScope> scopes) {
+    public static MemoryReadFilter of(Collection<String> spaceIds,
+                                      Collection<MemoryScope> scopes) {
         return new MemoryReadFilter(
-                normalizeSpaceIds(spaceIds),
-                scopes != null ? new LinkedHashSet<>(scopes) : Set.of()
+                validateSpaceIds(spaceIds),
+                new LinkedHashSet<>(Objects.requireNonNull(scopes, "记忆读取 scope 集合不能为空"))
         );
     }
 
@@ -83,10 +84,10 @@ public record MemoryReadFilter(
             boolean isolated) {
         Set<String> spaces = new LinkedHashSet<>();
         if (projectSpaceId != null && isolated) {
-            spaces.add(projectSpaceId);
+            spaces.add(requireSpaceId(projectSpaceId, "projectSpaceId"));
         }
-        spaces.add(personalSpaceId);
-        spaces.add(experienceSpaceId);
+        spaces.add(requireSpaceId(personalSpaceId, "personalSpaceId"));
+        spaces.add(requireSpaceId(experienceSpaceId, "experienceSpaceId"));
         return new MemoryReadFilter(spaces, Set.of());
     }
 
@@ -100,24 +101,34 @@ public record MemoryReadFilter(
      * @param personalSpaceId   主账户 personal MemorySpace id
      * @param experienceSpaceId 主账户 experience MemorySpace id
      * @param isolated          当前项目是否 ISOLATED
-     * @param scopes            需要限定的 scope 集合；为 null 时等同 {@code Set.of()}（不限定 scope）
+     * @param scopes            需要限定的 scope 集合；不限定时显式传 {@code Set.of()}
      */
     public static MemoryReadFilter buildForProject(
             @Nullable String projectSpaceId,
             String personalSpaceId,
             String experienceSpaceId,
             boolean isolated,
-            @Nullable Set<MemoryScope> scopes) {
+            Set<MemoryScope> scopes) {
         MemoryReadFilter base = buildForProject(projectSpaceId, personalSpaceId, experienceSpaceId, isolated);
-        return new MemoryReadFilter(base.spaceIds(), scopes != null ? scopes : Set.of());
+        return new MemoryReadFilter(base.spaceIds(), Objects.requireNonNull(scopes, "记忆读取 scope 集合不能为空"));
     }
 
-    private static Set<String> normalizeSpaceIds(@Nullable Collection<String> spaceIds) {
-        if (spaceIds == null || spaceIds.isEmpty()) {
+    private static Set<String> validateSpaceIds(Collection<String> spaceIds) {
+        Objects.requireNonNull(spaceIds, "记忆读取空间集合不能为空");
+        if (spaceIds.isEmpty()) {
             return Set.of();
         }
-        return spaceIds.stream()
-                .filter(id -> id != null && !id.isBlank())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String spaceId : spaceIds) {
+            normalized.add(requireSpaceId(spaceId, "spaceId"));
+        }
+        return normalized;
+    }
+
+    private static String requireSpaceId(@Nullable String spaceId, String name) {
+        if (spaceId == null || spaceId.isBlank()) {
+            throw new IllegalArgumentException(name + " 不能为空");
+        }
+        return spaceId;
     }
 }

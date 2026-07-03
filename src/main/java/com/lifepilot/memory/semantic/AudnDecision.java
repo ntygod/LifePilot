@@ -14,17 +14,17 @@ import java.util.Map;
  * 由 {@link RealtimeExtractor} 通过 LLM 结构化输出获取。</p>
  *
  * <p>{@code temporality} 与 {@code expiresAt} 字段承载记忆持久度
- * 与过期时间，驱动生命周期的 Cron 回收。两字段都允许为 null，由 RealtimeExtractor
- * 按规则补默认（null → PERSISTENT / 非持久时按 temporality 自动推导 expiresAt）。</p>
+ * 与过期时间，驱动生命周期的 Cron 回收。{@code temporality} 是 LLM 契约必填字段；
+ * {@code expiresAt} 可为空，由 RealtimeExtractor 按 temporality 自动推导非持久实体过期时间。</p>
  *
  * @param operation  操作类型
  * @param entityName 实体名称
  * @param entityType 实体类型
  * @param description 实体描述（ADD/UPDATE 时使用）
  * @param properties 实体属性键值对（ADD/UPDATE 时使用）
- * @param extractionConfidence LLM 提取置信度 [0.0, 1.0]，可能为 null
- * @param importanceScore 信息重要性评分 [0.0, 1.0]，可能为 null
- * @param temporalityRaw LLM 输出的 temporality 字符串（EPHEMERAL/SHORT_TERM/PERSISTENT），可能为 null
+ * @param extractionConfidence LLM 提取置信度 [0.0, 1.0]，LLM 契约要求必填
+ * @param importanceScore 信息重要性评分 [0.0, 1.0]，LLM 契约要求必填
+ * @param temporalityRaw LLM 输出的 temporality 字符串（EPHEMERAL/SHORT_TERM/PERSISTENT）
  * @param expiresAtRaw LLM 输出的 ISO 8601 到期时间字符串，可能为 null
  * @param evidenceKindRaw 证据类型字符串，可能为 null
  * @param evidenceExcerpt 最小必要证据片段，可能为 null

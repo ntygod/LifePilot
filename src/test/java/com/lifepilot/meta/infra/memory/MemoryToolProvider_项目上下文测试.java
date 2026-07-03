@@ -153,6 +153,21 @@ class MemoryToolProvider_项目上下文测试 {
     }
 
     @Test
+    void 空白sessionId应拒绝且不按主账户兜底() {
+        var tool = registry.resolve("memory").orElseThrow();
+
+        var result = tool.execute(new ToolInput(tool.id(),
+                Map.of("action", "search", "query", "xxx"), tool.inputSchema(), null,
+                Map.of("sessionId", " s-1")));
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.error()).contains("sessionId不能包含首尾空白");
+        verify(projectContextResolver, never()).resolve(null);
+        verify(chatSessionRepository, never()).findById(anyString());
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
     void 主账户session_通过resolver得到主账户space过滤() {
         when(chatSessionRepository.findById("s-personal"))
                 .thenReturn(Optional.of(session("s-personal", null)));

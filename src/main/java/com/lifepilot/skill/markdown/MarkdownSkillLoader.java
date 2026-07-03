@@ -7,8 +7,7 @@ import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
 import com.lifepilot.skill.registry.SkillRegistry;
-import com.lifepilot.skill.validation.SkillBodyValidator;
-import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,8 +24,8 @@ import java.util.stream.Stream;
 /**
  * Markdown Skill 加载器 — 扫描 Skill 目录并注册到 {@link SkillRegistry}。
  *
- * <p>用 {@link MarkdownSkillParser} 解析 SKILL.md，经 {@link SkillDescriptionValidator}
- * + {@link SkillBodyValidator} 校验后映射为 {@link SkillDefinition} 注册到 {@link SkillRegistry}。</p>
+ * <p>用 {@link MarkdownSkillParser} 解析 SKILL.md，经 {@link SkillValidator}
+ * 合一校验后映射为 {@link SkillDefinition} 注册到 {@link SkillRegistry}。</p>
  *
  * <p>本加载器只走"文件系统 → 内存注册表"的扫描路径。持久化（skills 表 upsert）由
  * {@link com.lifepilot.skill.install.SkillInstaller} 在首次安装时完成，热重载阶段不回写 DB
@@ -45,21 +44,18 @@ public class MarkdownSkillLoader {
     private final SkillRegistry skillRegistry;
     private final SkillConfigProperties config;
     private final MarkdownSkillParser parser;
-    private final SkillDescriptionValidator descriptionValidator;
-    private final SkillBodyValidator bodyValidator;
+    private final SkillValidator validator;
     private final Path skillsDirectory;
 
     public MarkdownSkillLoader(SkillRegistry skillRegistry,
                                SkillConfigProperties config,
                                MarkdownSkillParser parser,
-                               SkillDescriptionValidator descriptionValidator,
-                               SkillBodyValidator bodyValidator,
+                               SkillValidator validator,
                                ZhiweiPaths zhiweiPaths) {
         this.skillRegistry = skillRegistry;
         this.config = config;
         this.parser = parser;
-        this.descriptionValidator = descriptionValidator;
-        this.bodyValidator = bodyValidator;
+        this.validator = validator;
         this.skillsDirectory = zhiweiPaths.home("skills");
     }
 
@@ -69,14 +65,12 @@ public class MarkdownSkillLoader {
     MarkdownSkillLoader(SkillRegistry skillRegistry,
                         SkillConfigProperties config,
                         MarkdownSkillParser parser,
-                        SkillDescriptionValidator descriptionValidator,
-                        SkillBodyValidator bodyValidator,
+                        SkillValidator validator,
                         Path skillsDirectory) {
         this.skillRegistry = skillRegistry;
         this.config = config;
         this.parser = parser;
-        this.descriptionValidator = descriptionValidator;
-        this.bodyValidator = bodyValidator;
+        this.validator = validator;
         this.skillsDirectory = skillsDirectory;
     }
 
@@ -145,11 +139,10 @@ public class MarkdownSkillLoader {
         try {
             String content = Files.readString(skillFile, StandardCharsets.UTF_8);
             ParsedSkill parsed = parser.parse(content);
-            descriptionValidator.validate(parsed.frontmatter().description());
-            bodyValidator.validate(parsed.body());
+            validator.validate(parsed);
             return Optional.of(toDefinition(parsed, skillFolder));
         } catch (IllegalArgumentException e) {
-            // 解析/校验失败：老格式或结构不符合 v2 规范
+            // 解析/校验失败：老格式或结构不符合 v3 规范
             log.warn("Skill 解析/校验失败，跳过: folder={}, error={}", skillFolder, e.getMessage());
             return Optional.empty();
         } catch (IOException e) {
@@ -203,7 +196,7 @@ public class MarkdownSkillLoader {
      *
      * <p>约定：
      * <ul>
-     *   <li>{@code id} 取自 frontmatter.name（v2 规范 name 已取代老 id）</li>
+     *   <li>{@code id} 取自 frontmatter.name（v3 规范 name 已取代老 id）</li>
      *   <li>{@code instructions} 取自 body 原文（含标题和工作流段落）</li>
      *   <li>{@code source} 用 {@link SkillSource.UserDefined} 承载</li>
      *   <li>{@code suggestedTools} / {@code zhiweiMeta} 直接转自 frontmatter 的 metadata.zhiwei 块</li>

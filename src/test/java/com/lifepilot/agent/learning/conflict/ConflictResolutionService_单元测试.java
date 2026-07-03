@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -40,7 +41,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * ConflictResolutionService LLM 冲突裁决单元测试 — 覆盖高相似过滤、入队、调 LLM
- * 解析 verdict、按 verdict 应用状态转换的完整路径，以及失败降级与非法 target 跳过。
+ * 解析 verdict、按 verdict 应用状态转换的完整路径，以及失败暴露与非法 target 校验。
  *
  * @author zsg
  * @since 2026-04-23
@@ -87,7 +88,12 @@ class ConflictResolutionService_单元测试 {
                 Map.of(), 1, true, now, null, null,
                 0.9f, 0.5f, 0, null, now, now,
                 state, null, null, Temporality.PERSISTENT,
-                null, false, List.of());
+                null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 
     /** 构造裁决前的新实体（ACTIVE）。 */
@@ -226,13 +232,48 @@ class ConflictResolutionService_单元测试 {
                 anyString(), any(LifecycleState.class), anyString(), any(ChangeSource.class));
     }
 
+    @Test
+    @DisplayName("相似度查询失败应抛出且不入队")
+    void 相似度查询失败应抛出且不入队() {
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        when(vectorSearcher.searchEntities(anyString(), eq(10), eq(0.0f)))
+                .thenThrow(new RuntimeException("向量索引不可用"));
+
+        assertThrows(RuntimeException.class, () -> service.resolveSync(newEnt, List.of(oldEnt)));
+
+        verify(queueRepository, never()).enqueue(anyString(), any());
+        verify(generationRouter, never()).call(
+                anyString(), anyString(), any(), any(), any(),
+                any(GenerationCapability.class), any());
+    }
+
+    @Test
+    @DisplayName("相似度查询返回null候选应抛出且不入队")
+    void 相似度查询返回null候选应抛出且不入队() {
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        when(vectorSearcher.searchEntities(anyString(), eq(10), eq(0.0f)))
+                .thenReturn(java.util.Collections.singletonList(null));
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决相似度查询结果不能包含 null 元素");
+        verify(queueRepository, never()).enqueue(anyString(), any());
+        verify(generationRouter, never()).call(
+                anyString(), anyString(), any(), any(), any(),
+                any(GenerationCapability.class), any());
+    }
+
     // ------------------------------------------------------------------
-    // 场景 5：LLM 调用失败应 markFailed，不抛异常出去
+    // 场景 5：LLM 调用失败应 markFailed 并抛出
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("LLM调用失败应markFailed不抛")
-    void LLM调用失败应markFailed不抛() {
+    @DisplayName("LLM调用失败应markFailed并抛出")
+    void LLM调用失败应markFailed并抛出() {
         // given
         var newEnt = newEntity();
         var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
@@ -243,8 +284,10 @@ class ConflictResolutionService_单元测试 {
                 any(GenerationCapability.class), any()))
                 .thenThrow(new RuntimeException("模拟 LLM 超时"));
 
-        // when / then — 不抛异常
-        service.resolveSync(newEnt, List.of(oldEnt));
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 LLM 调用失败");
 
         verify(queueRepository).enqueue(eq(NEW_ID), any());
         verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
@@ -253,13 +296,115 @@ class ConflictResolutionService_单元测试 {
                 anyString(), any(LifecycleState.class), anyString(), any(ChangeSource.class));
     }
 
+    @Test
+    @DisplayName("prompt渲染为空应markFailed并抛出")
+    void prompt渲染为空应markFailed并抛出() {
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        模拟高相似度(TARGET_ID, 0.9f);
+        when(queueRepository.enqueue(eq(NEW_ID), any())).thenReturn(QUEUE_ID);
+        when(promptRegistry.render(anyString(), any())).thenReturn(" ");
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 LLM 调用失败")
+                .hasCauseInstanceOf(IllegalStateException.class);
+        org.assertj.core.api.Assertions.assertThat(ex.getCause())
+                .hasMessageContaining("冲突裁决 prompt 渲染结果不能为空");
+        verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+        verify(generationRouter, never()).call(
+                anyString(), anyString(), any(), any(), any(),
+                any(GenerationCapability.class), any());
+    }
+
+    @Test
+    @DisplayName("LLM响应为空应markFailed并抛出")
+    void LLM响应为空应markFailed并抛出() {
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        模拟高相似度(TARGET_ID, 0.9f);
+        when(queueRepository.enqueue(eq(NEW_ID), any())).thenReturn(QUEUE_ID);
+        when(generationRouter.call(
+                anyString(), anyString(), any(), any(), any(),
+                any(GenerationCapability.class), any()))
+                .thenReturn(null);
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 LLM 调用失败")
+                .hasCauseInstanceOf(IllegalStateException.class);
+        org.assertj.core.api.Assertions.assertThat(ex.getCause())
+                .hasMessageContaining("冲突裁决 LLM 响应不能为空");
+        verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+        verify(queueRepository, never()).markResolved(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("LLM返回非候选targetId应markFailed并抛出")
+    void LLM返回非候选targetId应markFailed并抛出() {
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        模拟高相似度(TARGET_ID, 0.9f);
+        when(queueRepository.enqueue(eq(NEW_ID), any())).thenReturn(QUEUE_ID);
+        模拟LLM返回("""
+                {"verdict":"REPLACE","target_id":"other-1","rationale":"覆盖其他实体"}
+                """);
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 LLM 调用失败")
+                .hasCauseInstanceOf(IllegalStateException.class);
+        org.assertj.core.api.Assertions.assertThat(ex.getCause())
+                .hasMessageContaining("冲突裁决 target_id 不在候选集中");
+        verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+        verify(queueRepository, never()).markResolved(anyString(), any());
+        verify(semanticMemory, never()).findById("other-1");
+        verify(semanticMemory, never()).updateLifecycleState(
+                anyString(), any(LifecycleState.class), anyString(), any(ChangeSource.class));
+    }
+
+    @Test
+    @DisplayName("LLM失败且markFailed失败时应保留原始异常并追加suppressed")
+    void LLM失败且markFailed失败时应保留原始异常并追加suppressed() {
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        模拟高相似度(TARGET_ID, 0.9f);
+        when(queueRepository.enqueue(eq(NEW_ID), any())).thenReturn(QUEUE_ID);
+        when(generationRouter.call(
+                anyString(), anyString(), any(), any(), any(),
+                any(GenerationCapability.class), any()))
+                .thenThrow(new RuntimeException("模拟 LLM 超时"));
+        doThrow(new IllegalStateException("队列失败标记写入失败"))
+                .when(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 LLM 调用失败")
+                .hasCauseInstanceOf(RuntimeException.class);
+        org.assertj.core.api.Assertions.assertThat(ex.getCause())
+                .hasMessageContaining("模拟 LLM 超时");
+        org.assertj.core.api.Assertions.assertThat(ex.getSuppressed())
+                .hasSize(1);
+        org.assertj.core.api.Assertions.assertThat(ex.getSuppressed()[0])
+                .hasMessageContaining("队列失败标记写入失败");
+        verify(queueRepository, never()).markResolved(anyString(), any());
+    }
+
     // ------------------------------------------------------------------
-    // 场景 6：target 已非 ACTIVE 应跳过应用（不抛错）
+    // 场景 6：target 已非 ACTIVE 应 markFailed 并抛出
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("target已非ACTIVE应跳过apply_但仍markResolved")
-    void target已非ACTIVE应跳过apply() {
+    @DisplayName("target已非ACTIVE应markFailed并抛出")
+    void target已非ACTIVE应markFailed并抛出() {
         // given — REPLACE verdict 但 target 处于 SUPERSEDED
         var newEnt = newEntity();
         var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
@@ -272,22 +417,55 @@ class ConflictResolutionService_单元测试 {
         var supersededTarget = buildEntity(TARGET_ID, LifecycleState.SUPERSEDED);
         when(semanticMemory.findById(TARGET_ID)).thenReturn(Optional.of(supersededTarget));
 
-        // when
-        service.resolveSync(newEnt, List.of(oldEnt));
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 verdict 应用失败");
 
-        // then — apply 跳过，但队列仍 markResolved（不视为失败）
         verify(semanticMemory, never()).updateLifecycleState(
                 anyString(), any(LifecycleState.class), anyString(), any(ChangeSource.class));
-        verify(queueRepository).markResolved(eq(QUEUE_ID), any(ConflictVerdict.class));
+        verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+        verify(queueRepository, never()).markResolved(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("verdict应用失败且markFailed失败时应保留原始异常并追加suppressed")
+    void verdict应用失败且markFailed失败时应保留原始异常并追加suppressed() {
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        模拟高相似度(TARGET_ID, 0.9f);
+        when(queueRepository.enqueue(eq(NEW_ID), any())).thenReturn(QUEUE_ID);
+        模拟LLM返回("""
+                {"verdict":"REPLACE","target_id":"old-1","rationale":"覆盖旧偏好"}
+                """);
+        when(semanticMemory.findById(TARGET_ID)).thenReturn(Optional.empty());
+        doThrow(new IllegalStateException("队列失败标记写入失败"))
+                .when(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 verdict 应用失败")
+                .hasCauseInstanceOf(IllegalStateException.class);
+        org.assertj.core.api.Assertions.assertThat(ex.getCause())
+                .hasMessageContaining("冲突裁决 REPLACE target 不存在或非 ACTIVE");
+        org.assertj.core.api.Assertions.assertThat(ex.getSuppressed())
+                .hasSize(1);
+        org.assertj.core.api.Assertions.assertThat(ex.getSuppressed()[0])
+                .hasMessageContaining("队列失败标记写入失败");
+        verify(queueRepository, never()).markResolved(anyString(), any());
+        verify(semanticMemory, never()).updateLifecycleState(
+                anyString(), any(LifecycleState.class), anyString(), any(ChangeSource.class));
     }
 
     // ------------------------------------------------------------------
-    // 场景 7：target 不存在应跳过应用
+    // 场景 7：target 不存在应 markFailed 并抛出
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("target不存在应跳过apply")
-    void target不存在应跳过apply() {
+    @DisplayName("target不存在应markFailed并抛出")
+    void target不存在应markFailed并抛出() {
         // given — TIMELINE verdict 但 target 已被删除
         var newEnt = newEntity();
         var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
@@ -298,14 +476,16 @@ class ConflictResolutionService_单元测试 {
                 """);
         when(semanticMemory.findById(TARGET_ID)).thenReturn(Optional.empty());
 
-        // when
-        service.resolveSync(newEnt, List.of(oldEnt));
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 verdict 应用失败");
 
-        // then — 不调用 updateSucceededBy 也不调用 updateLifecycleState
         verify(semanticMemory, never()).updateSucceededBy(anyString(), anyString());
         verify(semanticMemory, never()).updateLifecycleState(
                 anyString(), any(LifecycleState.class), anyString(), any(ChangeSource.class));
-        verify(queueRepository).markResolved(eq(QUEUE_ID), any(ConflictVerdict.class));
+        verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+        verify(queueRepository, never()).markResolved(anyString(), any());
     }
 
     // ------------------------------------------------------------------
@@ -324,10 +504,35 @@ class ConflictResolutionService_单元测试 {
                 {"verdict":"UNKNOWN_KIND","target_id":"","rationale":"x"}
                 """);
 
-        // when / then
-        service.resolveSync(newEnt, List.of(oldEnt));
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 LLM 调用失败");
 
         verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
         verify(queueRepository, never()).markResolved(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("REPLACE缺targetId应markFailed")
+    void replace缺targetId应markFailed() {
+        // given
+        var newEnt = newEntity();
+        var oldEnt = buildEntity(TARGET_ID, LifecycleState.ACTIVE);
+        模拟高相似度(TARGET_ID, 0.9f);
+        when(queueRepository.enqueue(eq(NEW_ID), any())).thenReturn(QUEUE_ID);
+        模拟LLM返回("""
+                {"verdict":"REPLACE","rationale":"覆盖旧偏好"}
+                """);
+
+        var ex = assertThrows(IllegalStateException.class,
+                () -> service.resolveSync(newEnt, List.of(oldEnt)));
+        org.assertj.core.api.Assertions.assertThat(ex)
+                .hasMessageContaining("冲突裁决 LLM 调用失败");
+
+        verify(queueRepository).markFailed(eq(QUEUE_ID), anyString());
+        verify(queueRepository, never()).markResolved(anyString(), any());
+        verify(semanticMemory, never()).updateLifecycleState(
+                anyString(), any(LifecycleState.class), anyString(), any(ChangeSource.class));
     }
 }

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -40,6 +41,10 @@ public class SkillValidator {
             Pattern.compile("(?i)password\\s*[:=]\\s*['\"][^'\"]{4,}['\"]"),
             Pattern.compile("sk-[a-zA-Z0-9]{40,}")
     );
+
+    /** v3 输出形态枚举；只作为路由和 UI 提示，不代表硬执行能力。 */
+    private static final Set<String> ALLOWED_OUTPUTS = Set.of(
+            "text", "file", "a2ui", "memory", "notification", "task");
 
     private final SkillDescriptionValidator descriptionValidator;
     private final SkillBodyValidator bodyValidator;
@@ -109,6 +114,13 @@ public class SkillValidator {
         SkillFrontmatter fm = parsed.frontmatter();
         descriptionValidator.validate(fm.description());
         bodyValidator.validate(parsed.body());
+        for (String output : fm.zhiweiMeta().outputs()) {
+            if (!ALLOWED_OUTPUTS.contains(output)) {
+                throw new IllegalArgumentException(
+                        "metadata.zhiwei.outputs 包含未知输出形态: " + output
+                                + "（允许: " + ALLOWED_OUTPUTS + "）");
+            }
+        }
         for (Pattern p : SECRET_PATTERNS) {
             if (p.matcher(parsed.body()).find()) {
                 throw new IllegalArgumentException(

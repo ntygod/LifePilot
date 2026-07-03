@@ -118,7 +118,19 @@ class MemoryToolProvider_项目写入路径测试 {
 
         var oldEntity = new TemporalEntity("e-1", EntityType.PREFERENCE, "旧名", "desc",
                 Map.of(), 1, true, Instant.now(), null, "s-upd",
-                1.0f, 0.5f, 0, null, Instant.now(), Instant.now());
+                1.0f, 0.5f, 0, null, Instant.now(), Instant.now(),
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        Instant.now());
         when(semanticMemory.findByIds(any(), any())).thenReturn(Map.of("e-1", oldEntity));
 
         var tool = registry.resolve("memory").orElseThrow();
@@ -173,13 +185,37 @@ class MemoryToolProvider_项目写入路径测试 {
         return new TemporalEntity("gen-" + System.nanoTime(), e.type(), e.name(), e.description(),
                 e.properties(), e.version(), e.isCurrent(), e.validFrom(), e.validTo(),
                 e.sourceConversationId(), e.extractionConfidence(), e.importanceScore(),
-                e.accessCount(), e.lastAccessedAt(), e.createdAt(), e.updatedAt());
+                e.accessCount(), e.lastAccessedAt(), e.createdAt(), e.updatedAt(),
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        e.updatedAt());
     }
 
     private TemporalEntity entity(String id) {
         var now = Instant.now();
         return new TemporalEntity(id, EntityType.PREFERENCE, id, "desc",
                 Map.of(), 1, true, now, null, "s-tag",
-                1.0f, 0.5f, 0, null, now, now);
+                1.0f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

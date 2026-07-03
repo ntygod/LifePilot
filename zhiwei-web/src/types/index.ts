@@ -258,6 +258,22 @@ export interface ReasoningEvent {
   extra?: Record<string, any>
 }
 
+/** Agent 本轮预发现能力 */
+export interface CapabilitySuggestion {
+  id: string
+  label: string
+  reason: string
+  kind?: 'tool' | 'skill'
+  outputs?: Array<'text' | 'file' | 'a2ui' | 'memory' | 'notification' | 'task'>
+}
+
+/** 能力预发现 SSE 事件 */
+export interface SseCapabilitySuggestedEvent {
+  traceId?: string
+  turnId?: string
+  tools: CapabilitySuggestion[]
+}
+
 // ===== ReactStep 类型定义（对应后端 ReactStepSerializer） =====
 
 /** ReactStep 类型 */

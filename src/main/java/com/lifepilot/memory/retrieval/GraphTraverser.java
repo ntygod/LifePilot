@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 图遍历检索器 — 基于 SQLite 递归 CTE 的 N 跳关系遍历。
@@ -27,7 +28,7 @@ public class GraphTraverser {
     private static final int MAX_DEPTH = 2;
 
     private final JdbcTemplate jdbcTemplate;
-    /** 关系最低可信分门控；trust_score < 此值的边被跳过（NULL 历史边放行）。 */
+    /** 关系最低可信分门控；trust_score < 此值的边被跳过。 */
     private final float minRelationTrust;
 
     public GraphTraverser(JdbcTemplate jdbcTemplate) {
@@ -35,8 +36,11 @@ public class GraphTraverser {
     }
 
     public GraphTraverser(JdbcTemplate jdbcTemplate, float minRelationTrust) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.minRelationTrust = Math.max(0.0f, minRelationTrust);
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        if (!(minRelationTrust >= 0.0f && minRelationTrust <= 1.0f)) {
+            throw new IllegalArgumentException("关系最低可信分必须在 [0,1] 范围内: " + minRelationTrust);
+        }
+        this.minRelationTrust = minRelationTrust;
     }
 
     /**
@@ -57,14 +61,18 @@ public class GraphTraverser {
      * 导致项目内同名实体的关系无法召回。</p>
      */
     public List<RankedItem> traverse(String query, int topK, @Nullable MemoryReadFilter filter) {
-        if (query == null || query.isBlank()) {
-            return List.of();
+        if (topK <= 0) {
+            throw new IllegalArgumentException("图遍历 topK 必须大于 0: " + topK);
         }
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("图遍历 query 不能为空");
+        }
+        String normalizedQuery = query.trim();
 
         // 从查询文本中识别起始实体（名称精确匹配）
-        var startEntities = findStartEntities(query, filter);
+        var startEntities = findStartEntities(normalizedQuery, filter);
         if (startEntities.isEmpty()) {
-            log.debug("图遍历: 未识别到起始实体, query={}", query);
+            log.debug("图遍历: 未识别到起始实体, query={}", normalizedQuery);
             return List.of();
         }
 
@@ -72,40 +80,33 @@ public class GraphTraverser {
                 .limit(MAX_START_ENTITIES)
                 .toList();
 
-        try {
-            return jdbcTemplate.query(
-                    buildGraphSql(startEntities.size()),
-                    (rs, rowNum) -> {
-                        int depth = rs.getInt("min_depth");
-                        // depth=1 得分 1.0，depth=2 得分 0.5
-                        float score = depth == 1 ? 1.0f : 0.5f;
-                        String lastAccessedStr = rs.getString("last_accessed_at");
-                        String validToStr = rs.getString("valid_to");
-                        String updatedAtStr = rs.getString("updated_at");
-                        return new RankedItem(
-                                rs.getString("id"),
-                                rs.getString("type"),
-                                rs.getString("name"),
-                                rs.getString("description"),
-                                score,
-                                lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
-                                rs.getFloat("importance_score"),
-                                validToStr != null ? Instant.parse(validToStr) : null,
-                                updatedAtStr != null ? Instant.parse(updatedAtStr) : null);
-                    },
-                    buildGraphParams(startEntities, topK).toArray());
-        } catch (Exception e) {
-            log.warn("图遍历: 查询失败, startEntityIds={}, error={}", startEntities, e.getMessage());
-            return List.of();
-        }
+        return requireRankedItems(jdbcTemplate.query(
+                buildGraphSql(startEntities.size()),
+                (rs, rowNum) -> {
+                    int depth = rs.getInt("min_depth");
+                    // depth=1 得分 1.0，depth=2 得分 0.5
+                    float score = depth == 1 ? 1.0f : 0.5f;
+                    String lastAccessedStr = rs.getString("last_accessed_at");
+                    String validToStr = rs.getString("valid_to");
+                    String updatedAtStr = rs.getString("updated_at");
+                    return new RankedItem(
+                            rs.getString("id"),
+                            rs.getString("type"),
+                            rs.getString("name"),
+                            rs.getString("description"),
+                            score,
+                            lastAccessedStr != null ? Instant.parse(lastAccessedStr) : null,
+                            rs.getFloat("importance_score"),
+                            validToStr != null ? Instant.parse(validToStr) : null,
+                            updatedAtStr != null ? Instant.parse(updatedAtStr) : null);
+                },
+                buildGraphParams(startEntities, topK).toArray()), "图遍历 CTE 查询结果");
     }
 
     private String buildGraphSql(int startEntityCount) {
         String seedValues = String.join(",", Collections.nCopies(startEntityCount, "(?)"));
         String startPlaceholders = buildPlaceholders(startEntityCount);
-        String trustClause = minRelationTrust > 0.0f
-                ? " AND (mr.trust_score IS NULL OR mr.trust_score >= ?)"
-                : "";
+        String trustClause = minRelationTrust > 0.0f ? " AND mr.trust_score >= ?" : "";
         return """
                 WITH RECURSIVE
                 start(entity_id) AS (VALUES %s),
@@ -168,10 +169,6 @@ public class GraphTraverser {
     }
 
     /** 从查询文本中识别起始实体（名称精确匹配 temporal_entities）。 */
-    private List<String> findStartEntities(String query) {
-        return findStartEntities(query, null);
-    }
-
     private List<String> findStartEntities(String query, @Nullable MemoryReadFilter filter) {
         StringBuilder sql = new StringBuilder(
                 "SELECT id FROM temporal_entities WHERE is_current = 1"
@@ -181,10 +178,10 @@ public class GraphTraverser {
         params.add(query);
         appendReadFilter(sql, params, filter);
         sql.append(" ORDER BY LENGTH(name) DESC");
-        return jdbcTemplate.query(
+        return requireEntityIds(jdbcTemplate.query(
                 sql.toString(),
                 (rs, rowNum) -> rs.getString("id"),
-                params.toArray());
+                params.toArray()), "图遍历起始实体查询结果");
     }
 
     private void appendReadFilter(StringBuilder sql,
@@ -227,5 +224,30 @@ public class GraphTraverser {
 
     private String buildPlaceholders(int count) {
         return String.join(",", Collections.nCopies(count, "?"));
+    }
+
+    private List<RankedItem> requireRankedItems(List<RankedItem> results, String label) {
+        if (results == null) {
+            throw new IllegalStateException(label + "不能为空");
+        }
+        if (results.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalStateException(label + "包含 null 条目");
+        }
+        return results;
+    }
+
+    private List<String> requireEntityIds(List<String> ids, String label) {
+        if (ids == null) {
+            throw new IllegalStateException(label + "不能为空");
+        }
+        for (String id : ids) {
+            if (id == null || id.isBlank()) {
+                throw new IllegalStateException(label + "包含空实体 ID");
+            }
+            if (!id.equals(id.trim())) {
+                throw new IllegalStateException(label + "实体 ID 包含首尾空白: " + id);
+            }
+        }
+        return ids;
     }
 }

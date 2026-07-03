@@ -7,18 +7,23 @@ import com.lifepilot.agent.model.Budget;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.modelservice.model.GenerationCapability;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,6 +48,8 @@ class ExperienceSummarizerTest {
         var generationRouter = mock(GenerationRouter.class);
         var promptRegistry = mock(PromptRegistry.class);
         var qualityAssessor = mock(TrajectoryQualityAssessor.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        var projectContextResolver = mock(ProjectContextResolver.class);
 
         var properties = new AgentLearningProperties();
         properties.getExperience().setLlmTimeoutSeconds(120);
@@ -81,7 +88,9 @@ class ExperienceSummarizerTest {
                 generationRouter,
                 promptRegistry,
                 properties,
-                qualityAssessor
+                qualityAssessor,
+                chatSessionRepository,
+                projectContextResolver
         );
 
         assertNotNull(summarizer.summarize(buildState()));
@@ -96,10 +105,165 @@ class ExperienceSummarizerTest {
         );
     }
 
+    @Test
+    void LLM响应缺success时应直接暴露() {
+        var semanticMemory = mock(SemanticMemory.class);
+        var vectorSearcher = mock(VectorSearcher.class);
+        var generationRouter = mock(GenerationRouter.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var qualityAssessor = mock(TrajectoryQualityAssessor.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        var properties = new AgentLearningProperties();
+
+        when(qualityAssessor.assess(eq(buildState())))
+                .thenReturn(new TrajectoryQualityReport(true, true, 1.0f, true, 2, true));
+        when(promptRegistry.render(eq("memory/experience-extraction"), anyMap())).thenReturn("prompt");
+        when(generationRouter.call(
+                eq(LlmScene.BACKGROUND_ANALYSIS),
+                eq("prompt"),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(GenerationCapability.CHAT),
+                eq(Duration.ofSeconds(120))
+        )).thenReturn(new LlmResponse("""
+                {
+                  "scenario": "测试场景",
+                  "strategy": "测试策略"
+                }
+                """, null, null, List.of(), Map.of(), 10, 5, null, 0, "qwen-plus", "qwen3.5-plus", 100, false));
+
+        var summarizer = new ExperienceSummarizer(
+                semanticMemory,
+                vectorSearcher,
+                generationRouter,
+                promptRegistry,
+                properties,
+                qualityAssessor,
+                chatSessionRepository,
+                projectContextResolver
+        );
+
+        assertThatThrownBy(() -> summarizer.summarize(buildState()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("经验提炼 LLM 响应 success 必须是 boolean");
+    }
+
+    @Test
+    void LLM响应缺lessons时应直接暴露() {
+        var semanticMemory = mock(SemanticMemory.class);
+        var vectorSearcher = mock(VectorSearcher.class);
+        var generationRouter = mock(GenerationRouter.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var qualityAssessor = mock(TrajectoryQualityAssessor.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        var properties = new AgentLearningProperties();
+
+        when(qualityAssessor.assess(eq(buildState())))
+                .thenReturn(new TrajectoryQualityReport(true, true, 1.0f, true, 2, true));
+        when(promptRegistry.render(eq("memory/experience-extraction"), anyMap())).thenReturn("prompt");
+        when(generationRouter.call(
+                eq(LlmScene.BACKGROUND_ANALYSIS),
+                eq("prompt"),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(GenerationCapability.CHAT),
+                eq(Duration.ofSeconds(120))
+        )).thenReturn(new LlmResponse("""
+                {
+                  "scenario": "测试场景",
+                  "strategy": "测试策略",
+                  "applicableConditions": [],
+                  "toolsUsed": [],
+                  "success": true,
+                  "failureAttribution": null,
+                  "effectivenessScore": 0.0,
+                  "injectionCount": 0,
+                  "positiveOutcomes": 0,
+                  "negativeOutcomes": 0
+                }
+                """, null, null, List.of(), Map.of(), 10, 5, null, 0, "qwen-plus", "qwen3.5-plus", 100, false));
+
+        var summarizer = new ExperienceSummarizer(
+                semanticMemory,
+                vectorSearcher,
+                generationRouter,
+                promptRegistry,
+                properties,
+                qualityAssessor,
+                chatSessionRepository,
+                projectContextResolver
+        );
+
+        assertThatThrownBy(() -> summarizer.summarize(buildState()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("经验提炼 LLM 响应 lessons 必须是数组");
+    }
+
+    @Test
+    void 去重命中实体不存在时应直接暴露() {
+        var semanticMemory = mock(SemanticMemory.class);
+        var vectorSearcher = mock(VectorSearcher.class);
+        var generationRouter = mock(GenerationRouter.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var qualityAssessor = mock(TrajectoryQualityAssessor.class);
+        var chatSessionRepository = mock(ChatSessionRepository.class);
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        var properties = new AgentLearningProperties();
+
+        when(qualityAssessor.assess(eq(buildState())))
+                .thenReturn(new TrajectoryQualityReport(true, true, 1.0f, true, 2, true));
+        when(promptRegistry.render(eq("memory/experience-extraction"), anyMap())).thenReturn("prompt");
+        when(vectorSearcher.searchEntities(eq("测试场景: 测试策略"), eq(1), eq(0.90f)))
+                .thenReturn(List.of(new VectorSearchResult("missing-exp", 0.95f)));
+        when(semanticMemory.findById("missing-exp")).thenReturn(Optional.empty());
+        when(generationRouter.call(
+                eq(LlmScene.BACKGROUND_ANALYSIS),
+                eq("prompt"),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(GenerationCapability.CHAT),
+                eq(Duration.ofSeconds(120))
+        )).thenReturn(new LlmResponse("""
+                {
+                  "scenario": "测试场景",
+                  "strategy": "测试策略",
+                  "lessons": [],
+                  "applicableConditions": [],
+                  "toolsUsed": [],
+                  "success": true,
+                  "failureAttribution": null,
+                  "effectivenessScore": 0.0,
+                  "injectionCount": 0,
+                  "positiveOutcomes": 0,
+                  "negativeOutcomes": 0
+                }
+                """, null, null, List.of(), Map.of(), 10, 5, null, 0, "qwen-plus", "qwen3.5-plus", 100, false));
+
+        var summarizer = new ExperienceSummarizer(
+                semanticMemory,
+                vectorSearcher,
+                generationRouter,
+                promptRegistry,
+                properties,
+                qualityAssessor,
+                chatSessionRepository,
+                projectContextResolver
+        );
+
+        assertThatThrownBy(() -> summarizer.summarize(buildState()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("经验提炼: 去重命中实体不存在");
+    }
+
     private ReactAgentState buildState() {
         return ReactAgentState.builder()
                 .traceId("trace-exp")
-                .sessionId("session-exp")
+                .sessionId(null)
                 .goal("整理一次复杂执行经验")
                 .channel("web")
                 .steps(List.of(

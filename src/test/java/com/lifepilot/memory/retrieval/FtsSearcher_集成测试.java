@@ -8,6 +8,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * FtsSearcher transcript 集成测试。
@@ -92,6 +93,20 @@ class FtsSearcher_集成测试 {
     }
 
     @Test
+    void search_query为空时直接拒绝() {
+        assertThatThrownBy(() -> ftsSearcher.search("   ", 5))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("全文搜索 query 不能为空");
+    }
+
+    @Test
+    void search_topK非法时直接拒绝() {
+        assertThatThrownBy(() -> ftsSearcher.search("oolong", 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("全文搜索 topK 必须大于 0");
+    }
+
+    @Test
     void search_使用TranscriptFts关联当前实体() {
         Instant now = Instant.parse("2026-03-23T12:00:00Z");
         jdbcTemplate.update("""
@@ -165,5 +180,38 @@ class FtsSearcher_集成测试 {
         assertThat(results).isNotEmpty();
         assertThat(results.getFirst().entityId()).isEqualTo("entity-cancel");
         assertThat(results.getFirst().score()).isGreaterThanOrEqualTo(4.0f);
+    }
+
+    @Test
+    void search_实体重要度越界时直接暴露错误() {
+        Instant now = Instant.parse("2026-05-07T06:10:00Z");
+        jdbcTemplate.update("""
+                        INSERT INTO temporal_entities (
+                            id, type, name, description, version, is_current, valid_from,
+                            source_conversation_id, extraction_confidence, importance_score,
+                            access_count, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, 1, 1, ?, ?, 0.9, 1.5, 0, ?, ?)
+                        """,
+                "entity-bad-score",
+                "PREFERENCE",
+                "异常重要度实体",
+                "这条实体的重要度超过允许范围。",
+                now.toString(),
+                "session-bad-score",
+                now.toString(),
+                now.toString());
+
+        assertThatThrownBy(() -> ftsSearcher.search("异常重要度实体", 5))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("排名条目重要度必须在 [0,1] 范围内");
+    }
+
+    @Test
+    void search_缺失TranscriptFts表时应直接暴露错误() {
+        jdbcTemplate.execute("DROP TABLE session_transcript_entries_fts");
+
+        assertThatThrownBy(() -> ftsSearcher.search("oolong", 5))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("session_transcript_entries_fts");
     }
 }

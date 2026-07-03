@@ -59,7 +59,19 @@ class ExperiencePromoter_单元测试 {
                 3,
                 now,
                 now,
-                now);
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
         when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.empty());
 
@@ -81,7 +93,19 @@ class ExperiencePromoter_单元测试 {
         // accessCount=5（>= minAccessCount 默认 3），importanceScore=0.95（>= 阈值）
         var experience = new TemporalEntity(
                 "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
-                1, true, now, null, "session-1", 1.0f, 0.95f, 5, now, now, now);
+                1, true, now, null, "session-1", 1.0f, 0.95f, 5, now, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
         when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.empty());
 
@@ -108,7 +132,19 @@ class ExperiencePromoter_单元测试 {
         var now = Instant.parse("2026-05-07T06:30:00Z");
         var experience = new TemporalEntity(
                 "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
-                1, true, now, null, "session-1", 1.0f, 0.95f, 3, now, now, now);
+                1, true, now, null, "session-1", 1.0f, 0.95f, 3, now, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
         when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.of(mock(ProcedureTemplate.class)));
 
@@ -128,7 +164,19 @@ class ExperiencePromoter_单元测试 {
         var now = Instant.parse("2026-05-07T06:30:00Z");
         var experience = new TemporalEntity(
                 "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
-                1, true, now, null, "session-1", 1.0f, 0.95f, 4, now, now, now);
+                1, true, now, null, "session-1", 1.0f, 0.95f, 4, now, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
 
         // 模拟去重的真实时序：首次提升前查无现存模板（保存）；保存后再次提升时
@@ -159,7 +207,19 @@ class ExperiencePromoter_单元测试 {
         var now = Instant.parse("2026-05-07T06:30:00Z");
         var experience = new TemporalEntity(
                 "exp-1", EntityType.EXPERIENCE, "经验名", "经验描述", Map.of(),
-                1, true, now, null, "session-1", 1.0f, 0.95f, 3, now, now, now);
+                1, true, now, null, "session-1", 1.0f, 0.95f, 3, now, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
         when(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).thenReturn(List.of(experience));
         when(proceduralMemory.findBySourceEntityId("exp-1")).thenReturn(Optional.empty());
 

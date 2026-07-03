@@ -2,6 +2,7 @@ package com.lifepilot.memory.store.procedural;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,7 +29,13 @@ public record TemplateStep(
 
     /** compact constructor：确保 parameterTemplate 不可变。 */
     public TemplateStep {
-        parameterTemplate = parameterTemplate != null ? Map.copyOf(parameterTemplate) : Map.of();
+        if (stepOrder <= 0) {
+            throw new IllegalArgumentException("步骤序号必须大于 0: " + stepOrder);
+        }
+        Objects.requireNonNull(toolId, "工具 ID 不能为空");
+        Objects.requireNonNull(action, "工具动作不能为空");
+        parameterTemplate = Map.copyOf(Objects.requireNonNull(parameterTemplate, "参数模板不能为空"));
+        Objects.requireNonNull(description, "步骤描述不能为空");
     }
 
     /**

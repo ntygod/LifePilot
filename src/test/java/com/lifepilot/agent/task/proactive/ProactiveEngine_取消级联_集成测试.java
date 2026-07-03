@@ -1,6 +1,7 @@
 package com.lifepilot.agent.task.proactive;
 
 import com.lifepilot.agent.task.proactive.behavior.BehaviorActivationPolicy;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
@@ -87,8 +88,8 @@ class ProactiveEngine_取消级联_集成测试 {
 
         var conflictDetector = new ConflictDetector(
                 jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         goalTrackingRepository = new GoalTrackingRepository(jdbcTemplate);
         captured = new ArrayList<>();
@@ -215,6 +216,11 @@ class ProactiveEngine_取消级联_集成测试 {
                 null,
                 false,
                 List.of()
-        );
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
     }
 }

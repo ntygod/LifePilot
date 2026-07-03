@@ -27,7 +27,7 @@ public class MemoryProvenanceRepository {
     private final JdbcTemplate jdbcTemplate;
 
     public MemoryProvenanceRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate");
     }
 
     /**
@@ -58,7 +58,7 @@ public class MemoryProvenanceRepository {
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
         conditions.add("entity_id = ?");
-        params.add(entityId);
+        params.add(requireCleanText(entityId, "entityId"));
         appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId);
         String sql = """
                 SELECT origin_type, source_reference, source_conversation_id, source_session_id,
@@ -104,6 +104,7 @@ public class MemoryProvenanceRepository {
                                                                           @Nullable String sourceKnowledgeBaseId,
                                                                           @Nullable String sourceDocumentId,
                                                                           int limit) {
+        requirePositive(limit, "limit");
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
         appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId);
@@ -136,15 +137,8 @@ public class MemoryProvenanceRepository {
                 LIMIT ?
                 """.formatted(whereClause);
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
-            String entityType = rs.getString("entity_type");
-            String entityTypeLabel = entityType;
-            if (entityType != null && !entityType.isBlank()) {
-                try {
-                    entityTypeLabel = EntityType.valueOf(entityType).label();
-                } catch (IllegalArgumentException ignored) {
-                    entityTypeLabel = entityType;
-                }
-            }
+            String entityType = requireCleanText(rs.getString("entity_type"), "entityType");
+            String entityTypeLabel = entityTypeLabel(entityType);
             return new MemoryProvenanceSummaryDto(
                     rs.getString("entity_id"),
                     rs.getString("entity_name"),
@@ -211,10 +205,11 @@ public class MemoryProvenanceRepository {
      * @return 实体 ID → 元数据映射
      */
     public Map<String, EntityMetadata> loadEntityMetadata(Collection<String> entityIds) {
-        if (entityIds == null || entityIds.isEmpty()) {
+        List<String> cleanEntityIds = requireCleanTexts(entityIds, "entityId");
+        if (cleanEntityIds.isEmpty()) {
             return Map.of();
         }
-        String placeholders = String.join(",", Collections.nCopies(entityIds.size(), "?"));
+        String placeholders = String.join(",", Collections.nCopies(cleanEntityIds.size(), "?"));
         var rows = jdbcTemplate.query(
                 """
                 SELECT id, space_id, memory_scope, reality_type, is_current, version
@@ -228,7 +223,7 @@ public class MemoryProvenanceRepository {
                         rs.getString("memory_scope"),
                         rs.getString("reality_type")
                 ),
-                entityIds.toArray()
+                cleanEntityIds.toArray()
         );
         Map<String, EntityMetadata> metadataById = new LinkedHashMap<>();
         for (var row : rows) {
@@ -272,12 +267,14 @@ public class MemoryProvenanceRepository {
      * @param when     失效时刻
      */
     public void markStale(SourceType type, String sourceId, Instant when) {
-        String column = sourceColumn(type);
+        String column = sourceColumn(Objects.requireNonNull(type, "type"));
+        String cleanSourceId = requireCleanText(sourceId, "sourceId");
+        Objects.requireNonNull(when, "when");
         int affected = jdbcTemplate.update(
                 "UPDATE memory_entity_provenances SET status = 'STALE', invalidated_at = ? WHERE "
                         + column + " = ?",
-                when.toString(), sourceId);
-        log.debug("记忆溯源: markStale type={}, sourceId={}, affected={}", type, sourceId, affected);
+                when.toString(), cleanSourceId);
+        log.debug("记忆溯源: markStale type={}, sourceId={}, affected={}", type, cleanSourceId, affected);
     }
 
     /**
@@ -288,10 +285,11 @@ public class MemoryProvenanceRepository {
      * @return 实体 ID 列表（可能为空）
      */
     public List<String> findEntityIdsBySource(SourceType type, String sourceId) {
-        String column = sourceColumn(type);
+        String column = sourceColumn(Objects.requireNonNull(type, "type"));
+        String cleanSourceId = requireCleanText(sourceId, "sourceId");
         return jdbcTemplate.queryForList(
                 "SELECT DISTINCT entity_id FROM memory_entity_provenances WHERE " + column + " = ?",
-                String.class, sourceId);
+                String.class, cleanSourceId);
     }
 
     /**
@@ -299,21 +297,13 @@ public class MemoryProvenanceRepository {
      * 打 {@code needsRevalidation=true} 标注。
      *
      * <p>一次 SQL IN 查询，避免每条检索结果单独走 {@code findEntityProvenances} 的 N+1。
-     * 仅返回入参集合中"至少有一条 provenance 处于 STALE"的实体 ID；若入参为空则直接返回空集。</p>
+     * 仅返回入参集合中"至少有一条 provenance 处于 STALE"的实体 ID；若入参集合为空则直接返回空集。</p>
      *
      * @param entityIds 待检查的实体 ID 集合（通常是单次检索的 topK 结果）
      * @return 需要复核的实体 ID 集合（去重），不含未命中的 ID
      */
     public Set<String> findStaleEntityIds(Collection<String> entityIds) {
-        if (entityIds == null || entityIds.isEmpty()) {
-            return Set.of();
-        }
-        List<String> uniqueIds = entityIds.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(id -> !id.isBlank())
-                .distinct()
-                .toList();
+        List<String> uniqueIds = requireCleanTexts(entityIds, "entityId");
         if (uniqueIds.isEmpty()) {
             return Set.of();
         }
@@ -369,17 +359,17 @@ public class MemoryProvenanceRepository {
                                           @Nullable String originType,
                                           @Nullable String sourceKnowledgeBaseId,
                                           @Nullable String sourceDocumentId) {
-        if (originType != null && !originType.isBlank()) {
+        if (originType != null) {
             conditions.add("origin_type = ?");
-            params.add(originType.trim());
+            params.add(requireCleanText(originType, "originType"));
         }
-        if (sourceKnowledgeBaseId != null && !sourceKnowledgeBaseId.isBlank()) {
+        if (sourceKnowledgeBaseId != null) {
             conditions.add("source_knowledge_base_id = ?");
-            params.add(sourceKnowledgeBaseId.trim());
+            params.add(requireCleanText(sourceKnowledgeBaseId, "sourceKnowledgeBaseId"));
         }
-        if (sourceDocumentId != null && !sourceDocumentId.isBlank()) {
+        if (sourceDocumentId != null) {
             conditions.add("source_document_id = ?");
-            params.add(sourceDocumentId.trim());
+            params.add(requireCleanText(sourceDocumentId, "sourceDocumentId"));
         }
     }
 
@@ -390,15 +380,7 @@ public class MemoryProvenanceRepository {
                                            String idColumn,
                                            String nameColumn,
                                            Collection<String> rawIds) {
-        if (rawIds == null || rawIds.isEmpty()) {
-            return Map.of();
-        }
-        List<String> ids = rawIds.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(id -> !id.isBlank())
-                .distinct()
-                .toList();
+        List<String> ids = optionalCleanTexts(rawIds, "id");
         if (ids.isEmpty()) {
             return Map.of();
         }
@@ -410,12 +392,51 @@ public class MemoryProvenanceRepository {
                 """.formatted(idColumn, nameColumn, tableName, idColumn, placeholders);
         Map<String, String> names = new LinkedHashMap<>();
         jdbcTemplate.query(sql, rs -> {
-            String itemId = rs.getString("item_id");
-            String itemName = rs.getString("item_name");
-            if (itemId != null && !itemId.isBlank() && itemName != null && !itemName.isBlank()) {
-                names.put(itemId, itemName);
-            }
+            String itemId = requireCleanText(rs.getString("item_id"), "itemId");
+            String itemName = requireCleanText(rs.getString("item_name"), "itemName");
+            names.put(itemId, itemName);
         }, ids.toArray());
         return names;
+    }
+
+    private static List<String> requireCleanTexts(Collection<String> values, String field) {
+        Objects.requireNonNull(values, field);
+        return values.stream()
+                .map(value -> requireCleanText(value, field))
+                .distinct()
+                .toList();
+    }
+
+    private static List<String> optionalCleanTexts(Collection<String> values, String field) {
+        Objects.requireNonNull(values, field);
+        return values.stream()
+                .filter(Objects::nonNull)
+                .map(value -> requireCleanText(value, field))
+                .distinct()
+                .toList();
+    }
+
+    private static String requireCleanText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(field + "不能包含首尾空白: " + value);
+        }
+        return value;
+    }
+
+    private static String entityTypeLabel(String entityType) {
+        try {
+            return EntityType.valueOf(entityType).label();
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("entityType包含未知值: " + entityType, e);
+        }
+    }
+
+    private static void requirePositive(int value, String field) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(field + "必须大于 0");
+        }
     }
 }

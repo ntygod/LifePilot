@@ -2,6 +2,7 @@ package com.lifepilot.memory.consumption.hot;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * L3.5 热记忆摘要快照。
@@ -25,7 +26,11 @@ public record HotMemoryDigest(
         List<HotMemorySection> sections
 ) {
     public HotMemoryDigest {
-        sections = sections != null ? List.copyOf(sections) : List.of();
+        Objects.requireNonNull(digestId, "热摘要 ID 不能为空");
+        Objects.requireNonNull(viewKey, "热摘要视图 key 不能为空");
+        Objects.requireNonNull(builtAt, "热摘要构建时间不能为空");
+        Objects.requireNonNull(sourceRevision, "热摘要来源版本不能为空");
+        sections = List.copyOf(Objects.requireNonNull(sections, "热摘要分区不能为空"));
     }
 
     /**
@@ -46,9 +51,12 @@ public record HotMemoryDigest(
             int tokenBudget
     ) {
         public HotMemorySection {
-            content = content != null ? content : "";
-            sourceEntityIds = sourceEntityIds != null ? List.copyOf(sourceEntityIds) : List.of();
+            Objects.requireNonNull(kind, "热摘要分区类型不能为空");
+            Objects.requireNonNull(content, "热摘要分区内容不能为空");
+            sourceEntityIds = List.copyOf(Objects.requireNonNull(sourceEntityIds, "热摘要来源实体不能为空"));
+            if (tokenBudget <= 0) {
+                throw new IllegalArgumentException("热摘要分区 tokenBudget 必须大于 0: " + tokenBudget);
+            }
         }
     }
 }
-

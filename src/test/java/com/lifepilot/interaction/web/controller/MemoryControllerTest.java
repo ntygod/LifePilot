@@ -95,14 +95,27 @@ class MemoryControllerTest {
         return new TemporalEntity(
                 id, type, name, name + " 描述",
                 Map.of(), 1, true, NOW, null, "conv-1",
-                0.9f, 0.5f, 3, NOW, NOW, NOW)
+                0.9f, 0.5f, 3, NOW, NOW, NOW,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        NOW)
                 .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
     }
 
     private static TemporalRelation testRelation(String id, String sourceId, String targetId) {
         return new TemporalRelation(
                 id, sourceId, targetId, "KNOWS", 0.8f,
-                null, NOW, null, "conv-1", NOW);
+                null, NOW, null, "conv-1", NOW,
+                MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f);
     }
 
     private static ConversationRecord testConversation(String id) {
@@ -245,6 +258,22 @@ class MemoryControllerTest {
             mockMvc.perform(get("/api/memories/search").param("q", ""))
                     .andExpect(status().isBadRequest());
         }
+
+        @Test
+        void topK非正数_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/search")
+                            .param("q", "张三")
+                            .param("topK", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void projectId包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/search")
+                            .param("q", "张三")
+                            .param("projectId", " p-1"))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     // ── L3 实体管理 ──────────────────────────────────────
@@ -299,6 +328,54 @@ class MemoryControllerTest {
         }
 
         @Test
+        void 实体列表_memoryScope包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("memoryScope", " DOMAIN_MEMORY"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_spaceId为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("spaceId", " "))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_timeFrom为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("timeFrom", " "))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_timeTo格式非法_返回400() throws Exception {
+            when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("timeTo", "2026-03-13"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_sortBy无效_返回400() throws Exception {
+            when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("sortBy", "updatedAt"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_order大小写不匹配_返回400() throws Exception {
+            when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("order", "DESC"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         void 实体列表_按来源字段过滤() throws Exception {
             when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of(
                     testEntity("e1", "林夜", EntityType.PERSON),
@@ -312,6 +389,13 @@ class MemoryControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.items", hasSize(1)))
                     .andExpect(jsonPath("$.data.items[0].id").value("e1"));
+        }
+
+        @Test
+        void 实体列表_来源过滤包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("originType", " KNOWLEDGE_BASE_DOCUMENT"))
+                    .andExpect(status().isBadRequest());
         }
 
         @Test
@@ -365,6 +449,16 @@ class MemoryControllerTest {
             verify(semanticMemory).upsertWithConflictDetection(
                     any(TemporalEntity.class), eq("manual-edit"), captor.capture());
             assertThat(captor.getValue().originType()).isEqualTo(MemoryOriginType.MANUAL);
+        }
+
+        @Test
+        void 创建实体_name包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(post("/api/memories/entities")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"name":" 张三","type":"PERSON","description":"产品经理","importanceScore":0.7}
+                                    """))
+                    .andExpect(status().isBadRequest());
         }
 
         @Test
@@ -529,6 +623,15 @@ class MemoryControllerTest {
         }
 
         @Test
+        void 实体来源明细_来源过滤包含首尾空白_返回400() throws Exception {
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
+
+            mockMvc.perform(get("/api/memories/entities/e1/provenances")
+                            .param("sourceDocumentId", " doc-1"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         void 最近来源摘要_返回知识库和文档友好名称() throws Exception {
             when(provenanceRepository.findRecentProvenanceSummaries(
                     eq(null), eq(null), eq(null), eq(5)))
@@ -572,6 +675,13 @@ class MemoryControllerTest {
                     .andExpect(jsonPath("$.data[0].sourceSessionId").value("session-1"))
                     .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseName").value("世界观资料库"))
                     .andExpect(jsonPath("$.data[0].sourceDocumentName").value("人物设定.md"));
+        }
+
+        @Test
+        void 最近来源摘要_来源过滤包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/provenances/recent")
+                            .param("sourceKnowledgeBaseId", " kb-1"))
+                    .andExpect(status().isBadRequest());
         }
     }
 
@@ -623,6 +733,13 @@ class MemoryControllerTest {
             mockMvc.perform(delete("/api/memories/conversations/not-exist"))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        void 对话列表_timeFrom为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/conversations")
+                            .param("timeFrom", " "))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     // ── 巩固 ─────────────────────────────────────────────
@@ -668,6 +785,59 @@ class MemoryControllerTest {
                     .andExpect(jsonPath("$.data.items[0].targetEntitySpaceId").value("domain:knowledge-base:novel"))
                     .andExpect(jsonPath("$.data.items[0].targetEntityMemoryScope").value("DOMAIN_MEMORY"))
                     .andExpect(jsonPath("$.data.items[0].targetEntityRealityType").value("FICTIONAL"));
+        }
+
+        @Test
+        void 关系列表_relationType包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/relations")
+                            .param("relationType", " KNOWS"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 关联实体_maxDepth非正_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities/e1/related")
+                            .param("maxDepth", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 关系列表_relationType大小写必须精确匹配() throws Exception {
+            var relation = testRelation("r1", "e1", "e2");
+            when(semanticMemory.findAllCurrentRelations()).thenReturn(List.of(relation));
+            when(semanticMemory.findByIds(anyCollection(), any(MemoryReadFilter.class))).thenReturn(Map.of());
+            when(provenanceRepository.loadEntityMetadata(anyCollection())).thenReturn(Map.of());
+
+            mockMvc.perform(get("/api/memories/relations")
+                            .param("relationType", "knows"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items", hasSize(0)))
+                    .andExpect(jsonPath("$.data.total").value(0));
+        }
+    }
+
+    @Nested
+    class 过滤参数 {
+
+        @Test
+        void 偏好分类为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/preferences")
+                            .param("category", " "))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 遗忘日志_timeTo包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/forgetting-logs")
+                            .param("timeTo", " 2026-03-13T10:00:00Z"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 遗忘日志_timeFrom格式非法_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/forgetting-logs")
+                            .param("timeFrom", "2026-03-13"))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

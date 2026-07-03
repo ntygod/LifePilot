@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 反馈处理器，消费消息反馈并调整关联记忆实体的 importanceScore。
@@ -35,10 +36,13 @@ public class FeedbackProcessor {
                              SemanticMemory semanticMemory,
                              MessageFeedbackRepository feedbackRepository,
                              AgentLearningProperties properties) {
-        this.injectionRecordRepository = injectionRecordRepository;
-        this.semanticMemory = semanticMemory;
-        this.feedbackRepository = feedbackRepository;
-        this.feedbackConfig = properties.getFeedback();
+        this.injectionRecordRepository = Objects.requireNonNull(
+                injectionRecordRepository, "injectionRecordRepository 不能为空");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.feedbackRepository = Objects.requireNonNull(feedbackRepository, "feedbackRepository 不能为空");
+        this.feedbackConfig = Objects.requireNonNull(
+                Objects.requireNonNull(properties, "properties 不能为空").getFeedback(),
+                "feedbackConfig 不能为空");
     }
 
     /**
@@ -48,16 +52,30 @@ public class FeedbackProcessor {
      * @param feedbackType 反馈类型，'like' 或 'dislike'
      */
     public void processFeedbackForEntry(String assistantEntryId, String feedbackType) {
+        if (assistantEntryId == null || assistantEntryId.isBlank()) {
+            throw new IllegalArgumentException("assistantEntryId 不能为空");
+        }
+        if (!assistantEntryId.equals(assistantEntryId.trim())) {
+            throw new IllegalArgumentException("assistantEntryId 不能包含首尾空白: " + assistantEntryId);
+        }
+        validateFeedbackType(feedbackType);
         List<String> entityIds = injectionRecordRepository.findEntityIdsBySourceEntryId(assistantEntryId);
+        if (entityIds == null) {
+            throw new IllegalStateException("注入记录查询结果不能为空: assistantEntryId=" + assistantEntryId);
+        }
         if (entityIds.isEmpty()) {
             log.debug("无注入记录，跳过反馈处理: assistantEntryId={}", assistantEntryId);
             return;
         }
+        validateEntityIds(entityIds, assistantEntryId);
 
         var existingFeedbacks = feedbackRepository.findByEntryId(assistantEntryId);
+        if (existingFeedbacks == null) {
+            throw new IllegalStateException("反馈历史查询结果不能为空: assistantEntryId=" + assistantEntryId);
+        }
         if (existingFeedbacks.size() > 1) {
             var previousFeedback = existingFeedbacks.get(existingFeedbacks.size() - 2);
-            String previousType = (String) previousFeedback.get("type");
+            String previousType = requiredHistoryFeedbackType(previousFeedback, assistantEntryId);
             if (feedbackType.equals(previousType)) {
                 log.debug("同类型重复反馈，跳过调整: assistantEntryId={}, type={}", assistantEntryId, feedbackType);
                 return;
@@ -71,9 +89,13 @@ public class FeedbackProcessor {
     }
 
     private float computeDelta(String feedbackType) {
-        return "like".equals(feedbackType)
-                ? feedbackConfig.getLikeBoost()
-                : -feedbackConfig.getDislikePenalty();
+        float likeBoost = requireScoreDelta(feedbackConfig.getLikeBoost(), "likeBoost");
+        float dislikePenalty = requireScoreDelta(feedbackConfig.getDislikePenalty(), "dislikePenalty");
+        return switch (feedbackType) {
+            case "like" -> likeBoost;
+            case "dislike" -> -dislikePenalty;
+            default -> throw new IllegalArgumentException("非法反馈类型: " + feedbackType);
+        };
     }
 
     private void applyDelta(List<String> entityIds,
@@ -81,18 +103,66 @@ public class FeedbackProcessor {
                             String assistantEntryId,
                             String reason) {
         Map<String, TemporalEntity> entities = semanticMemory.findByIds(entityIds);
+        if (entities == null) {
+            throw new IllegalStateException("反馈关联实体查询结果不能为空: assistantEntryId=" + assistantEntryId);
+        }
+        var missingIds = entityIds.stream()
+                .filter(entityId -> entities.get(entityId) == null)
+                .toList();
+        if (!missingIds.isEmpty()) {
+            throw new IllegalStateException(
+                    "反馈关联实体不存在: assistantEntryId=" + assistantEntryId
+                            + ", entityIds=" + missingIds);
+        }
         for (String entityId : entityIds) {
             TemporalEntity entity = entities.get(entityId);
-            if (entity == null) {
-                log.debug("实体不存在，跳过: entityId={}", entityId);
-                continue;
-            }
             float oldScore = entity.importanceScore();
+            if (!Float.isFinite(oldScore) || oldScore < 0.0f || oldScore > 1.0f) {
+                throw new IllegalStateException("反馈关联实体 importanceScore 必须在 [0,1] 范围内: entityId="
+                        + entityId + ", score=" + oldScore);
+            }
             float newScore = Math.max(0.0f, Math.min(1.0f, oldScore + delta));
             SqliteBusyRetry.run(() -> semanticMemory.updateImportanceScore(
                     entityId, newScore, WeightSource.USER_FEEDBACK));
             log.debug("importanceScore 调整: entityId={}, assistantEntryId={}, reason={}, {} -> {}",
                     entityId, assistantEntryId, reason, oldScore, newScore);
         }
+    }
+
+    private static void validateFeedbackType(String feedbackType) {
+        if (!"like".equals(feedbackType) && !"dislike".equals(feedbackType)) {
+            throw new IllegalArgumentException("非法反馈类型: " + feedbackType);
+        }
+    }
+
+    private static void validateEntityIds(List<String> entityIds, String assistantEntryId) {
+        for (String entityId : entityIds) {
+            if (entityId == null || entityId.isBlank()) {
+                throw new IllegalStateException("注入记录包含空实体 ID: assistantEntryId=" + assistantEntryId);
+            }
+            if (!entityId.equals(entityId.trim())) {
+                throw new IllegalStateException("注入记录实体 ID 不能包含首尾空白: assistantEntryId="
+                        + assistantEntryId + ", entityId=" + entityId);
+            }
+        }
+    }
+
+    private static String requiredHistoryFeedbackType(Map<String, Object> feedback, String assistantEntryId) {
+        if (feedback == null) {
+            throw new IllegalStateException("反馈历史包含 null 记录: assistantEntryId=" + assistantEntryId);
+        }
+        Object rawType = feedback.get("type");
+        if (!(rawType instanceof String type)) {
+            throw new IllegalStateException("反馈历史缺少 type: assistantEntryId=" + assistantEntryId);
+        }
+        validateFeedbackType(type);
+        return type;
+    }
+
+    private static float requireScoreDelta(float value, String name) {
+        if (!Float.isFinite(value) || value < 0.0f || value > 1.0f) {
+            throw new IllegalArgumentException("反馈配置 " + name + " 必须在 [0,1] 范围内: " + value);
+        }
+        return value;
     }
 }
