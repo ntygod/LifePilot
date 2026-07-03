@@ -2,6 +2,8 @@ package com.lifepilot.memory.store.support;
 
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.vector.SqliteVecInitializer;
 import java.time.Instant;
 import java.time.ZoneId;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -113,6 +115,24 @@ public class ScenarioTestConfiguration {
                 .thenAnswer(inv -> tmpDir.resolve(inv.getArgument(0, String.class)));
         org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(tmpDir.resolve("workspace"));
         return paths;
+    }
+
+    /**
+     * sqlite-vec 原生库不参与场景测试，避免 Linux CI 缺少平台资源导致上下文失败。
+     */
+    @Bean
+    @Primary
+    public SqliteVecInitializer scenarioSqliteVecInitializer() {
+        return MemoryVectorTestDoubles.noopSqliteVecInitializer();
+    }
+
+    /**
+     * 向量检索替身 — 场景测试按需在单个用例中自行覆盖向量召回。
+     */
+    @Bean
+    @Primary
+    public VectorSearcher scenarioVectorSearcher() {
+        return MemoryVectorTestDoubles.emptyVectorSearcher();
     }
 
     /**

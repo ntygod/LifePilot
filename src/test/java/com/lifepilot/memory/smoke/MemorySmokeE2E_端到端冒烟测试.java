@@ -13,11 +13,13 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
 import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.support.MemoryVectorTestDoubles;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
@@ -25,6 +27,7 @@ import com.lifepilot.memory.store.scope.MemoryRealityType;
 import com.lifepilot.memory.store.scope.MemoryScope;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.vector.SqliteVecInitializer;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -44,8 +47,10 @@ import com.lifepilot.rerank.router.RerankRouter;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import org.springframework.beans.factory.annotation.Value;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -62,7 +67,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.sqlite.SQLiteConfig;
+import org.sqlite.SQLiteDataSource;
 
+import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -486,6 +495,38 @@ class MemorySmokeE2E_端到端冒烟测试 {
             EmbeddingRouter router = mock(EmbeddingRouter.class);
             when(router.embed(anyString(), any(), any(), any())).thenReturn(new float[1024]);
             return router;
+        }
+
+        @Bean
+        @Primary
+        SqliteVecInitializer smokeSqliteVecInitializer() {
+            return MemoryVectorTestDoubles.noopSqliteVecInitializer();
+        }
+
+        @Bean
+        @Primary
+        VectorSearcher smokeVectorSearcher() {
+            return MemoryVectorTestDoubles.emptyVectorSearcher();
+        }
+
+        @Bean
+        @Primary
+        DataSource smokeDataSource(@Value("${spring.datasource.url}") String url) {
+            var config = new SQLiteConfig();
+            config.setJournalMode(SQLiteConfig.JournalMode.WAL);
+            config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
+            config.enforceForeignKeys(true);
+            config.enableLoadExtension(true);
+
+            var dataSource = new SQLiteDataSource(config);
+            dataSource.setUrl(url);
+            return dataSource;
+        }
+
+        @Bean
+        @Primary
+        JdbcTemplate smokeJdbcTemplate(@Qualifier("smokeDataSource") DataSource dataSource) {
+            return new JdbcTemplate(dataSource);
         }
 
         @Bean

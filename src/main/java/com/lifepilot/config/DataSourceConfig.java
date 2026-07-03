@@ -70,7 +70,11 @@ public class DataSourceConfig {
         // 如果启用了记忆系统且 sqlite-vec 扩展资源可用，则确保每条连接都加载扩展
         SqliteVecInitializer sqliteVecInitializer = sqliteVecInitializerProvider.getIfAvailable();
         if (sqliteVecInitializer != null) {
-            return new SqliteVecDataSource(dataSource, sqliteVecInitializer, "main");
+            String extensionPath = sqliteVecInitializer.getExtractedExtensionAbsolutePath();
+            if (extensionPath != null && !extensionPath.isBlank()) {
+                return new SqliteVecDataSource(dataSource, sqliteVecInitializer, "main");
+            }
+            log.debug("SQLite 主数据源未启用 sqlite-vec 包装：扩展路径未准备");
         }
         return dataSource;
     }

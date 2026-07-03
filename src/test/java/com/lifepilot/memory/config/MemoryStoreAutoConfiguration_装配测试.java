@@ -3,8 +3,11 @@ package com.lifepilot.memory.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
+import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
+import com.lifepilot.memory.store.support.MemoryVectorTestDoubles;
+import com.lifepilot.memory.store.vector.SqliteVecInitializer;
 import com.lifepilot.prompt.PromptRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -32,6 +35,8 @@ class MemoryStoreAutoConfiguration_装配测试 {
             .withBean(EmbeddingRouter.class, () -> mock(EmbeddingRouter.class))
             .withBean(GenerationRouter.class, () -> mock(GenerationRouter.class))
             .withBean(PromptRegistry.class, () -> mock(PromptRegistry.class))
+            .withBean(SqliteVecInitializer.class, MemoryVectorTestDoubles::noopSqliteVecInitializer)
+            .withBean(VectorSearcher.class, MemoryVectorTestDoubles::emptyVectorSearcher)
             .withPropertyValues(
                     "lifepilot.memory.enabled=true",
                     "lifepilot.memory.workspace.enabled=false",
