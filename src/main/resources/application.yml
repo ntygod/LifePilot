@@ -160,12 +160,8 @@ lifepilot:
       max-recent-turns: 10
       cleanup-interval-ms: 300000
     task:
-      # ===== 自主任务配置（Cron + Heartbeat 双轨） =====
+      # ===== 自主任务配置（Cron 定时；主动性由事件驱动的 InitiativeEngine 承担，不再轮询） =====
       enabled: true
-      heartbeat-enabled: true
-      proactive-reminder-enabled: false
-      heartbeat-interval-seconds: 1800
-      heartbeat-file: "${zhiwei.home}/HEARTBEAT.md"
       execution-timeout-seconds: 300
       # active-hours-start: "08:00"
       # active-hours-end: "22:00"
