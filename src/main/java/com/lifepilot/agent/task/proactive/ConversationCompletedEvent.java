@@ -17,16 +17,33 @@ public class ConversationCompletedEvent extends ApplicationEvent {
     private final String userId;
     private final String sessionId;
     @Nullable
+    private final String turnId;
+    @Nullable
     private final String summary;
+    private final boolean memoryLearningEnabled;
+    @Nullable
+    private final String memoryLearningSkipReason;
 
-    public ConversationCompletedEvent(Object source, String userId, String sessionId, @Nullable String summary) {
+    public ConversationCompletedEvent(Object source,
+                                      String userId,
+                                      String sessionId,
+                                      @Nullable String turnId,
+                                      @Nullable String summary,
+                                      boolean memoryLearningEnabled,
+                                      @Nullable String memoryLearningSkipReason) {
         super(source);
         this.userId = userId;
         this.sessionId = sessionId;
+        this.turnId = turnId;
         this.summary = summary;
+        this.memoryLearningEnabled = memoryLearningEnabled;
+        this.memoryLearningSkipReason = memoryLearningSkipReason;
     }
 
     public String getUserId() { return userId; }
     public String getSessionId() { return sessionId; }
+    @Nullable public String getTurnId() { return turnId; }
     @Nullable public String getSummary() { return summary; }
+    public boolean isMemoryLearningEnabled() { return memoryLearningEnabled; }
+    @Nullable public String getMemoryLearningSkipReason() { return memoryLearningSkipReason; }
 }

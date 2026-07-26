@@ -46,7 +46,7 @@ public class ConversationInitiator {
                 InteractionSource.system("initiative:" + thought.id()),
                 null, null, null, null,
                 context,
-                null, null, 0, null, null, null, null, null, null
+                null, null, 0, null, null, null, null, null, null, null, null
         );
 
         AgentResponse response = agentOrchestrator.run(request);

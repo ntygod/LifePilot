@@ -23,7 +23,7 @@ class BoundarySignalCollector_单元测试 {
     @Test
     void 对话完成事件触发边界窗口内() {
         var collector = new BoundarySignalCollector(10, null);
-        collector.onConversationCompleted(new ConversationCompletedEvent(this, USER, "s1", null));
+        collector.onConversationCompleted(event(USER, "s1"));
 
         assertThat(collector.isWithinBoundary(USER, Instant.now())).isTrue();
     }
@@ -67,7 +67,7 @@ class BoundarySignalCollector_单元测试 {
 
         // 模拟一个 20 分钟前的事件（超出 10 分钟窗口）
         // 直接测试 isWithinBoundary 逻辑：用 snapshot 反证
-        collector.onConversationCompleted(new ConversationCompletedEvent(this, USER, "s1", null));
+        collector.onConversationCompleted(event(USER, "s1"));
         // 现在立即判定应为 true
         assertThat(collector.isWithinBoundary(USER, Instant.now())).isTrue();
 
@@ -87,7 +87,7 @@ class BoundarySignalCollector_单元测试 {
     void 容量硬上限32条() {
         var collector = new BoundarySignalCollector(10, null);
         for (int i = 0; i < 40; i++) {
-            collector.onConversationCompleted(new ConversationCompletedEvent(this, USER, "s" + i, null));
+            collector.onConversationCompleted(event(USER, "s" + i));
         }
         assertThat(collector.snapshot(USER).size()).isLessThanOrEqualTo(32);
     }
@@ -95,11 +95,15 @@ class BoundarySignalCollector_单元测试 {
     @Test
     void 多用户独立隔离() {
         var collector = new BoundarySignalCollector(10, null);
-        collector.onConversationCompleted(new ConversationCompletedEvent(this, "u1", "s1", null));
-        collector.onConversationCompleted(new ConversationCompletedEvent(this, "u2", "s2", null));
+        collector.onConversationCompleted(event("u1", "s1"));
+        collector.onConversationCompleted(event("u2", "s2"));
 
         assertThat(collector.isWithinBoundary("u1", Instant.now())).isTrue();
         assertThat(collector.isWithinBoundary("u2", Instant.now())).isTrue();
         assertThat(collector.isWithinBoundary("u3", Instant.now())).isFalse();
+    }
+
+    private ConversationCompletedEvent event(String userId, String sessionId) {
+        return new ConversationCompletedEvent(this, userId, sessionId, "turn-" + sessionId, null, true, null);
     }
 }

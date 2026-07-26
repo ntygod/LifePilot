@@ -58,10 +58,8 @@ class FocusStateDetector_单元测试 {
     void 高密度对话触发FOCUS_MODE() {
         var detector = new FocusStateDetector(5, 40);
         // 发送 6 条对话事件 — 快速间隔（默认 avg < 40s）
-        var now = Instant.now();
         for (int i = 0; i < 6; i++) {
-            detector.onConversationCompleted(
-                    new ConversationCompletedEvent(this, USER, "s" + i, null));
+            detector.onConversationCompleted(event("s" + i));
         }
 
         assertThat(detector.detect(USER, null)).isEqualTo(FocusMode.FOCUS_MODE);
@@ -70,10 +68,8 @@ class FocusStateDetector_单元测试 {
     @Test
     void 低密度对话不触发() {
         var detector = new FocusStateDetector(5, 40);
-        detector.onConversationCompleted(
-                new ConversationCompletedEvent(this, USER, "s1", null));
-        detector.onConversationCompleted(
-                new ConversationCompletedEvent(this, USER, "s2", null));
+        detector.onConversationCompleted(event("s1"));
+        detector.onConversationCompleted(event("s2"));
         // 只有 2 条 < 阈值 5
         assertThat(detector.detect(USER, null)).isEqualTo(FocusMode.NORMAL);
     }
@@ -95,5 +91,9 @@ class FocusStateDetector_单元测试 {
     void 用户无对话记录且空focusState() {
         var detector = new FocusStateDetector(5, 40);
         assertThat(detector.detect(null, null)).isEqualTo(FocusMode.NORMAL);
+    }
+
+    private ConversationCompletedEvent event(String sessionId) {
+        return new ConversationCompletedEvent(this, USER, sessionId, "turn-" + sessionId, null, true, null);
     }
 }

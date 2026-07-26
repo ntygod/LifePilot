@@ -47,6 +47,11 @@ public class InitiativeEventListener {
      */
     @EventListener
     public void onConversationCompleted(ConversationCompletedEvent event) {
+        if (!event.isMemoryLearningEnabled()) {
+            log.debug("主动引擎: 对话结束信号已按本轮记忆边界跳过, sessionId={}, turnId={}, reason={}",
+                    event.getSessionId(), event.getTurnId(), event.getMemoryLearningSkipReason());
+            return;
+        }
         Thread.startVirtualThread(() -> {
             try {
                 // 1. 将事件转化为 Signal 并交给 Thinker 处理

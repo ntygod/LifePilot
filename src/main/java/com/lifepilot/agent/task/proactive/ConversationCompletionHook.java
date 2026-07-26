@@ -62,7 +62,12 @@ public class ConversationCompletionHook {
     @EventListener
     public void handleEvent(ConversationCompletedEvent event) {
         Thread.ofVirtual().name("conversation-hook-" + event.getSessionId()).start(() -> {
-            onConversationCompleted(event.getUserId(), event.getSummary());
+            if (event.isMemoryLearningEnabled()) {
+                onConversationCompleted(event.getUserId(), event.getSummary());
+            } else {
+                log.debug("对话完成钩子: 记忆学习型信号已跳过, sessionId={}, turnId={}, reason={}",
+                        event.getSessionId(), event.getTurnId(), event.getMemoryLearningSkipReason());
+            }
 
             // 对话摘要生成
             try {
@@ -73,7 +78,9 @@ public class ConversationCompletionHook {
 
             // 画像巩固（内置防抖，距上次不到 2 小时自动跳过）
             try {
-                userProfileConsolidator.consolidate();
+                if (event.isMemoryLearningEnabled()) {
+                    userProfileConsolidator.consolidate();
+                }
             } catch (Exception e) {
                 log.debug("对话完成钩子: 画像巩固跳过: {}", e.getMessage());
             }
