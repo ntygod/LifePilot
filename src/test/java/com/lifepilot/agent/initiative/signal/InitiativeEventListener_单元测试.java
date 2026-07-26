@@ -1,7 +1,7 @@
 package com.lifepilot.agent.initiative.signal;
 
 import com.lifepilot.agent.initiative.InitiativeEngine;
-import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.conversation.event.ConversationCompletedEvent;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;

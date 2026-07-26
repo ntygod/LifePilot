@@ -1,7 +1,7 @@
 package com.lifepilot.agent.learning.config;
 
 import com.lifepilot.agent.learning.consolidation.ConsolidationScheduler;
-import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.conversation.event.ConversationCompletedEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;

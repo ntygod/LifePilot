@@ -3,7 +3,7 @@ package com.lifepilot.agent.initiative.signal;
 import com.lifepilot.agent.initiative.InitiativeEngine;
 import com.lifepilot.agent.initiative.gate.Gatekeeper;
 import com.lifepilot.agent.initiative.model.Signal;
-import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.conversation.event.ConversationCompletedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;

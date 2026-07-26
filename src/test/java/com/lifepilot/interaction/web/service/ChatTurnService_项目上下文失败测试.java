@@ -1,7 +1,7 @@
 package com.lifepilot.interaction.web.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.conversation.event.ConversationCompletedEvent;
 import com.lifepilot.interaction.web.model.ChatRequest;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;

@@ -21,7 +21,7 @@ import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshotRepository;
 import com.lifepilot.memory.store.scope.MemorySpace;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
-import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.conversation.event.ConversationCompletedEvent;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.notification.config.NotificationProperties;

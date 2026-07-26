@@ -5,6 +5,8 @@ import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MessageFeedbackRepository;
+import com.lifepilot.interaction.web.service.ConversationSummaryGenerator;
+import com.lifepilot.agent.learning.ConversationCompletionHook;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.agent.learning.consolidation.ConsolidationScheduler;
@@ -13,7 +15,7 @@ import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator
 import com.lifepilot.agent.learning.consolidation.ExperiencePromoter;
 import com.lifepilot.agent.learning.consolidation.PreferenceConsolidator;
 import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
-import com.lifepilot.agent.task.proactive.ConversationCompletedEvent;
+import com.lifepilot.conversation.event.ConversationCompletedEvent;
 import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
 import com.lifepilot.agent.learning.conflict.ConflictResolutionRepository;
 import com.lifepilot.agent.learning.conflict.ConflictResolutionService;
@@ -56,6 +58,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -278,6 +281,17 @@ public class AgentLearningAutoConfiguration {
                 "用户画像巩固 LLM 超时秒数"));
         return new UserProfileConsolidator(semanticMemory, episodicMemory,
                 proceduralMemory, generationRouter, promptRegistry, llmTimeout);
+    }
+
+    /** 对话完成钩子 — 每轮结束后做摘要生成与画像巩固；主动性由 InitiativeEventListener 独立驱动。 */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({ConversationSummaryGenerator.class, UserProfileConsolidator.class})
+    public ConversationCompletionHook conversationCompletionHook(
+            ConversationSummaryGenerator summaryGenerator,
+            UserProfileConsolidator userProfileConsolidator) {
+        log.info("记忆模块: 注册 ConversationCompletionHook");
+        return new ConversationCompletionHook(summaryGenerator, userProfileConsolidator);
     }
 
     @Bean
