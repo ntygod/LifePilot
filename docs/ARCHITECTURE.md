@@ -45,8 +45,8 @@ graph TB
 
     subgraph "引擎层"
         AGENT["Agent 引擎<br/>AgentOrchestrator + ReactAgentLoop"]
-        PROACTIVE["主动智能引擎<br/>ProactiveEngine + 行为插件"]
-        TASK["自主任务<br/>HeartbeatRunner → ProactiveEngine"]
+        PROACTIVE["主动引擎<br/>InitiativeEngine（事件驱动）"]
+        TASK["自主任务<br/>CronScheduler"]
         MULTI["多 Agent 协作<br/>spawn_workers"]
         CTX["ContextAssembler<br/>上下文组装"]
     end
@@ -76,7 +76,6 @@ graph TB
     end
 
     subgraph "生态层"
-        A2A["A2A 协议<br/>跨系统 Agent 互操作"]
         MKT["插件市场<br/>Skill 发布/发现/安装"]
         META["元能力<br/>便捷指令"]
     end
@@ -109,7 +108,6 @@ graph TB
     TOOL --> OBS
     AGENT --> OBS
     SKILL --> SYNC
-    MULTI --> A2A
     SKILL --> MKT
     MEM --> DB
     MEM --> VEC
@@ -130,7 +128,7 @@ graph TB
 | `rerank` | 精排路由（RerankRouter）、原生/LLM Pointwise/Listwise 策略 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `modelservice` | DB 驱动模型服务注册表（ModelServiceRegistry）、厂商模板管理 | [架构](architecture/llm-router.md) · [特性](features/llm-router.md) |
 | `agent` | Agent ReAct 循环、不可变状态管理、上下文组装、挂起恢复、自主任务执行 | [架构](architecture/agent-engine.md) · [特性](features/agent-engine.md) |
-| `agent.task.proactive` | 主动智能引擎（三级检测管线、行为插件、四级投递、信任阶梯） | [架构](architecture/proactive-reminder-engine.md) |
+| `agent.initiative` | 事件驱动主动引擎（Signal → Thinker → ThoughtPool → Gatekeeper → ConversationInitiator），输出为对话而非通知 | — |
 | `tool` | 工具契约、动态注册、执行管道、YAML 工具 | [架构](architecture/tool-ecosystem.md) · [特性](features/tool-ecosystem.md) |
 | `permission` | 工具授权、作用域匹配、任务级预授权、授权记录管理 | [架构](architecture/permission.md) · [特性](features/permission.md) |
 | `observability.guardrail` | 安全护栏（内容安全 / 速率限制 / 数据脱敏策略引擎，不再独立为顶层包） | [架构](architecture/guardrail.md) · [特性](features/guardrail.md) |
@@ -148,7 +146,6 @@ graph TB
 | `sync` | 外部数据源同步（CalDAV/Todoist/滴答清单/Obsidian）、冲突解决（规划中，尚未实现） | [规划](planned/external-data-sync-arch.md) |
 | `eval` | Agentic Evals 评估框架、YAML 场景、五维规则评估、LLM-as-a-Judge | [架构](architecture/agentic-evals.md) · [特性](features/agentic-evals.md) |
 | `multiagent` | 多 Agent 协作、AgentRegistry、spawn_workers 并行 Worker 执行 | [架构](architecture/multi-agent.md) · [特性](features/multi-agent.md) |
-| `a2a` | Agent-to-Agent 协议、Client/Server 实现、Agent Card | [架构](architecture/a2a-protocol.md) · [特性](features/a2a-protocol.md) |
 | `marketplace` | 插件市场、Skill 发布/发现/安装、安全审核 | [架构](architecture/skill-marketplace.md) · [特性](features/skill-marketplace.md) |
 | `meta` | 元能力（便捷指令、基础设施工具） | [架构](architecture/meta-capabilities.md) · [特性](features/meta-capabilities.md) |
 | `prompt` | Prompt 模板注册与管理 | [架构](architecture/prompt-management.md) · [特性](features/prompt-management.md) |

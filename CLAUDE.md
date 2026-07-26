@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ZhiWei（知微）is a self-hosted AI Agent system with a Spring Boot backend and Vue 3 SPA frontend. It supports multi-layer memory, autonomous task execution, workflow automation, multi-channel messaging (WeChat Work, DingTalk, Feishu), and a plugin marketplace.
+ZhiWei（知微）is a **local personal assistant** for ordinary users — explicitly not a developer tool. Spring Boot backend + Vue 3 SPA frontend.
+
+Positioning (from `docs/planned/memory-and-proactive-evolution-gaps.md`, treat as authoritative): users only perceive three things — **更少误打扰 / 更准记住 / 更懂何时该开口**. All optimization must hold on a single machine, with local LLM optional and a strict token budget.
+
+Deliberately out of scope: code execution, shell, and git tooling (vendor coding agents are stronger there, and none of it serves the three goals above). `lifepilot.sandbox.enabled` and `lifepilot.meta.infra.git.enabled` both default to `false`.
+
+Capabilities: multi-layer memory, event-driven proactivity, cron tasks, workflow automation, multi-channel messaging (WeChat Work, DingTalk, Feishu), and an extension marketplace.
 
 ## Build & Development Commands
 
@@ -39,7 +45,7 @@ The system is layered: **Interaction → Gateway → Agent Engine → Capability
 - **Interaction**: Web UI (Vue 3 SSE), Tauri 2.x desktop app, Channel adapters (Feishu/DingTalk/WeChat Work)
 - **Gateway**: `MessageGateway` with 6-stage middleware pipeline (Auth → RateLimit → Security → Router → Execution → Audit)
 - **Agent Engine**: `ReactAgentLoop` — ReAct-style control loop with suspend/resume, retry, and breakpoint recovery
-- **Capability Layer**: Skill system, Tool system, MCP protocol, Workflow engine, Code sandbox, Datastore
+- **Capability Layer**: Skill system, Tool system, MCP protocol, Workflow engine, Datastore（code sandbox 默认关闭）
 - **Memory**: 4-layer memory (Working L1 / Episodic L2 / Semantic L3 / Procedural L4) with consolidation pipeline
 - **Storage**: SQLite with WAL mode, FTS5 full-text index, sqlite-vec for vector storage (`~/.zhiwei/zhiwei.db`)
 
@@ -54,7 +60,8 @@ Key source files:
 - `src/main/resources/application.yml` — all runtime configuration
 - `src/main/resources/db/migration/` — Flyway migration scripts; run `scripts/harness/Get-FlywayLatest.ps1` before creating the next version
 - `src/main/resources/prompts/` — StringTemplate prompt files
-- `src/main/resources/skills/` — preset skill definitions (26 skills)
+- `src/main/resources/skills/` — preset skill definitions (13 skills; 删改此目录后必须 `mvn clean`，否则 `target/classes/skills/` 残留旧副本会让技能相关测试读到陈旧 classpath 数据)
+- `src/main/java/com/lifepilot/agent/initiative/` — 事件驱动主动引擎（Signal → Thinker → ThoughtPool → Gatekeeper → ConversationInitiator）；旧的心跳轮询提醒栈已删除
 - `zhiwei-web/src-tauri/` — Tauri 2.x desktop app (Rust)
 
 ## Agent Harness
