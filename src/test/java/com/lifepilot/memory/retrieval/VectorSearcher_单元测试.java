@@ -81,11 +81,11 @@ class VectorSearcher_单元测试 {
         }
 
         @Test
-        void vec扩展未加载时构造失败() {
-            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                    new VectorSearcher(vectorJdbcTemplate, embeddingRouter, false, DIMENSIONS))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("sqlite-vec 扩展未加载");
+        void vec扩展未加载时进入降级模式且不建表() {
+            var searcher = new VectorSearcher(vectorJdbcTemplate, embeddingRouter, false, DIMENSIONS);
+
+            assertThat(searcher.isVecExtensionLoaded()).isFalse();
+            verify(vectorJdbcTemplate, never()).execute(anyString());
         }
 
         @Test
@@ -131,11 +131,53 @@ class VectorSearcher_单元测试 {
         }
 
         @Test
-        void 扩展未加载时无法构造() {
-            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                    new VectorSearcher(vectorJdbcTemplate, embeddingRouter, false, DIMENSIONS))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("sqlite-vec 扩展未加载");
+        void 扩展未加载返回false() {
+            var searcher = new VectorSearcher(vectorJdbcTemplate, embeddingRouter, false, DIMENSIONS);
+
+            assertThat(searcher.isVecExtensionLoaded()).isFalse();
+        }
+    }
+
+    // ═════════════════════════════════════════════════
+    //  降级模式
+    // ═════════════════════════════════════════════════
+
+    @Nested
+    class 向量能力降级 {
+
+        private VectorSearcher searcher;
+
+        @BeforeEach
+        void 初始化() {
+            searcher = new VectorSearcher(vectorJdbcTemplate, embeddingRouter, false, DIMENSIONS);
+            clearInvocations(vectorJdbcTemplate, embeddingRouter);
+        }
+
+        @Test
+        void 搜索返回空结果且不请求Embedding() {
+            var results = searcher.searchEntities("测试查询", 5, 0.5f);
+
+            assertThat(results).isEmpty();
+            verifyNoInteractions(embeddingRouter);
+            verifyNoInteractions(vectorJdbcTemplate);
+        }
+
+        @Test
+        void 带候选集搜索返回空结果且不访问向量库() {
+            var results = searcher.searchEntities("测试查询", 5, 0.5f, Set.of("entity-1"));
+
+            assertThat(results).isEmpty();
+            verifyNoInteractions(embeddingRouter);
+            verifyNoInteractions(vectorJdbcTemplate);
+        }
+
+        @Test
+        void 写入和删除实体向量时跳过向量库() {
+            searcher.upsertEntityVector("entity-1", "测试文本");
+            searcher.deleteEntityVector("entity-1");
+
+            verifyNoInteractions(embeddingRouter);
+            verifyNoInteractions(vectorJdbcTemplate);
         }
     }
 

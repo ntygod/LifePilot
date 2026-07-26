@@ -20,6 +20,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -214,23 +217,145 @@ class HybridRetriever精排测试 {
     }
 
     @Test
-    void L4意图匹配失败时检索失败() {
+    void L4意图匹配默认关闭不启动后台增强() throws InterruptedException {
         setupMockResults();
         var intentMatcher = mock(IntentMatcher.class);
-        when(intentMatcher.match(anyString()))
-                .thenThrow(new IllegalStateException("L4 索引缺失"));
 
         var retriever = new HybridRetriever(
                 vectorSearcher, ftsSearcher, graphTraverser,
                 semanticMemory, intentMatcher, properties, jdbcTemplate,
                 mock(RerankRouter.class), provenanceRepository);
 
-        var exception = assertThrows(
-                IllegalStateException.class,
-                () -> retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT));
+        var results = retriever.retrieve("帮我整理项目计划", 10, RetrievalWeights.DEFAULT);
+        Thread.sleep(50);
 
-        assertTrue(exception.getMessage().contains("L4 意图匹配"));
-        assertTrue(exception.getCause().getMessage().contains("L4 索引缺失"));
+        assertFalse(results.isEmpty(), "默认关闭 L4 探针时仍应完成核心记忆召回");
+        verify(intentMatcher, never()).match(anyString());
+    }
+
+    @Test
+    void L4意图匹配失败时不阻塞检索() throws InterruptedException {
+        setupMockResults();
+        properties.setIntentMatchEnabled(true);
+        var intentMatcher = mock(IntentMatcher.class);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(intentMatcher.match(anyString()))
+                .thenAnswer(invocation -> {
+                    entered.countDown();
+                    release.await(2, TimeUnit.SECONDS);
+                    throw new IllegalStateException("L4 索引缺失");
+                });
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, intentMatcher, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        try {
+            long startNanos = System.nanoTime();
+            var results = retriever.retrieve("test query", 10, RetrievalWeights.DEFAULT);
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+
+            assertFalse(results.isEmpty(), "L4 失败不应影响核心记忆召回");
+            assertTrue(elapsedMs < 500, "L4 意图匹配不能阻塞主检索链路: elapsedMs=" + elapsedMs);
+            assertTrue(entered.await(500, TimeUnit.MILLISECONDS), "应在后台启动 L4 意图匹配");
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void L4意图匹配短输入直接跳过后台增强() throws InterruptedException {
+        setupMockResults();
+        properties.setIntentMatchEnabled(true);
+        var intentMatcher = mock(IntentMatcher.class);
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, intentMatcher, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        var results = retriever.retrieve("继续", 10, RetrievalWeights.DEFAULT);
+        Thread.sleep(50);
+
+        assertFalse(results.isEmpty(), "短输入仍应完成核心记忆召回");
+        verify(intentMatcher, never()).match(anyString());
+    }
+
+    @Test
+    void L4意图匹配超长输入只发送头尾探针() throws InterruptedException {
+        setupMockResults();
+        properties.setIntentMatchEnabled(true);
+        properties.setIntentMatchMaxQueryChars(40);
+        var intentMatcher = mock(IntentMatcher.class);
+        var entered = new CountDownLatch(1);
+        var capturedProbe = new AtomicReference<String>();
+        when(intentMatcher.match(anyString())).thenAnswer(invocation -> {
+            capturedProbe.set(invocation.getArgument(0));
+            entered.countDown();
+            return java.util.Optional.empty();
+        });
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, intentMatcher, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        var results = retriever.retrieve("资料".repeat(80) + "\n请帮我整理项目计划", 10, RetrievalWeights.DEFAULT);
+
+        assertFalse(results.isEmpty(), "长资料仍应完成核心记忆召回");
+        assertTrue(entered.await(500, TimeUnit.MILLISECONDS), "应在后台启动 L4 意图匹配");
+        assertTrue(capturedProbe.get().codePointCount(0, capturedProbe.get().length()) <= 40);
+        assertTrue(capturedProbe.get().contains("..."));
+        assertTrue(capturedProbe.get().contains("请帮我整理项目计划"));
+    }
+
+    @Test
+    void L4意图匹配后台忙时跳过新输入不启动更多任务() throws InterruptedException {
+        setupMockResults();
+        properties.setIntentMatchEnabled(true);
+        properties.setIntentMatchMaxPending(1);
+        var intentMatcher = mock(IntentMatcher.class);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(intentMatcher.match("帮我整理项目计划一")).thenAnswer(invocation -> {
+            entered.countDown();
+            release.await(2, TimeUnit.SECONDS);
+            return java.util.Optional.empty();
+        });
+
+        var retriever = new HybridRetriever(
+                vectorSearcher, ftsSearcher, graphTraverser,
+                semanticMemory, intentMatcher, properties, jdbcTemplate,
+                mock(RerankRouter.class), provenanceRepository);
+
+        try {
+            var firstResults = retriever.retrieve("帮我整理项目计划一", 10, RetrievalWeights.DEFAULT);
+            assertFalse(firstResults.isEmpty(), "第一个查询应完成核心记忆召回");
+            assertTrue(entered.await(500, TimeUnit.MILLISECONDS), "第一个 L4 任务应在后台启动");
+
+            var secondResults = retriever.retrieve("帮我整理项目计划二", 10, RetrievalWeights.DEFAULT);
+
+            assertFalse(secondResults.isEmpty(), "后台忙时第二个查询仍应完成核心记忆召回");
+            verify(intentMatcher, never()).match("帮我整理项目计划二");
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void L4意图匹配非法后台预算配置应构造失败() {
+        properties.setIntentMatchMaxPending(-1);
+
+        var exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> new HybridRetriever(
+                        vectorSearcher, ftsSearcher, graphTraverser,
+                        semanticMemory, mock(IntentMatcher.class), properties, jdbcTemplate,
+                        mock(RerankRouter.class), provenanceRepository));
+
+        assertTrue(exception.getMessage().contains("L4 意图匹配最大后台任务数"));
     }
 
     @Test

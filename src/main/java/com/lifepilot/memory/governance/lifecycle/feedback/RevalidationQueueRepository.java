@@ -15,8 +15,8 @@ import java.util.UUID;
  *
  * <p>队列条目由 {@code ReValidationListener} 在源失效时写入，状态迁移：
  * {@code PENDING → PROMPTED → RESOLVED} —— {@code PROMPTED} 表示已被检索层捎带给 LLM
- * 提示复核，{@code RESOLVED} 由 LLM 反馈或人工处理关闭。本仓库只负责入队与基础计数，
- * 后续状态迁移由更上层的检索 / 复核流程驱动。</p>
+ * 提示复核，{@code RESOLVED} 由 LLM 反馈或人工处理关闭。本仓库负责入队、基础计数与
+ * 人工关闭动作，复杂复核策略由更上层的检索 / 复核流程驱动。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -86,6 +86,29 @@ public class RevalidationQueueRepository {
             throw new IllegalStateException("再验证队列计数结果不能为空");
         }
         return n;
+    }
+
+    /**
+     * 人工确认实体仍有效后，关闭实体下所有未完成的再验证任务。
+     *
+     * <p>只关闭 {@code PENDING}/{@code PROMPTED} 队列项，保留 provenance 的 {@code STALE}
+     * 审计事实，避免抹掉来源曾经失效的历史。</p>
+     *
+     * @param entityId 实体 ID
+     * @return 被关闭的队列行数
+     */
+    public int markResolvedByEntityId(String entityId) {
+        String cleanEntityId = requireCleanText(entityId, "entityId");
+        int affected = jdbc.update(
+                """
+                UPDATE memory_revalidation_queue
+                   SET status = 'RESOLVED'
+                 WHERE entity_id = ?
+                   AND status IN ('PENDING', 'PROMPTED')
+                """,
+                cleanEntityId);
+        log.debug("再验证队列人工关闭: entity={}, affected={}", cleanEntityId, affected);
+        return affected;
     }
 
     private static String requireCleanText(String value, String field) {

@@ -1,20 +1,28 @@
 package com.lifepilot.agent.streaming;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.interaction.model.ArtifactRef;
 import com.lifepilot.interaction.model.TokenUsage;
 import com.lifepilot.interaction.web.model.A2uiComponentTree;
 import com.lifepilot.interaction.web.model.ChatTurnStatus;
+import com.lifepilot.interaction.web.model.MemorySourceSummarySupport;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.interaction.web.sse.SseEventType;
 import com.lifepilot.interaction.web.sse.SseSessionManager;
 import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.agent.learning.extraction.MemoryChangeSummarySupport;
+import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.CompletionReason;
+import com.lifepilot.agent.model.ExecutionConstraintSummarySupport;
 import com.lifepilot.agent.model.OutputContentRole;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.ReactStep;
 import com.lifepilot.agent.model.ReactStepSerializer;
+import com.lifepilot.agent.recovery.TaskRecoverySummaryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -39,16 +47,25 @@ public class StreamingEventHandler {
     @Nullable private final SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository;
     @Nullable private final KnowledgeBaseRepository knowledgeBaseRepository;
     @Nullable private final AttachmentRepository attachmentRepository;
+    @Nullable private final InjectionRecordRepository injectionRecordRepository;
+    @Nullable private final SemanticMemory semanticMemory;
+    @Nullable private final MemoryExtractionCandidateRepository memoryExtractionCandidateRepository;
 
     public StreamingEventHandler(
             ObjectMapper objectMapper,
             @Nullable SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
-            @Nullable AttachmentRepository attachmentRepository) {
+            @Nullable AttachmentRepository attachmentRepository,
+            @Nullable InjectionRecordRepository injectionRecordRepository,
+            @Nullable SemanticMemory semanticMemory,
+            @Nullable MemoryExtractionCandidateRepository memoryExtractionCandidateRepository) {
         this.objectMapper = objectMapper;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.knowledgeBaseRepository = knowledgeBaseRepository;
         this.attachmentRepository = attachmentRepository;
+        this.injectionRecordRepository = injectionRecordRepository;
+        this.semanticMemory = semanticMemory;
+        this.memoryExtractionCandidateRepository = memoryExtractionCandidateRepository;
     }
 
     // ===== SSE 事件发送 =====
@@ -102,6 +119,27 @@ public class StreamingEventHandler {
                                                      @Nullable String assistantEntryId,
                                                      @Nullable A2uiComponentTree lastCollectedA2uiTree,
                                                      @Nullable Map<String, Long> streamTimings) {
+        return buildDoneEventPayload(request, state, tempTurnId, finalTokenUsage, steps, reasoningSummary,
+                finalContent, assistantEntryId, lastCollectedA2uiTree, streamTimings, List.of());
+    }
+
+    /**
+     * 构建 DONE 事件 payload，并携带本轮最终产物引用。
+     *
+     * <p>{@code artifact-ref} SSE 负责即时展示，DONE 中的 {@code artifactRefs}
+     * 负责最终消息沉淀和事件丢失时的兜底。</p>
+     */
+    public Map<String, Object> buildDoneEventPayload(AgentRequest request,
+                                                     ReactAgentState state,
+                                                     String tempTurnId,
+                                                     @Nullable TokenUsage finalTokenUsage,
+                                                     @Nullable List<ReactStep> steps,
+                                                     @Nullable String reasoningSummary,
+                                                     @Nullable String finalContent,
+                                                     @Nullable String assistantEntryId,
+                                                     @Nullable A2uiComponentTree lastCollectedA2uiTree,
+                                                     @Nullable Map<String, Long> streamTimings,
+                                                     @Nullable List<ArtifactRef> artifactRefs) {
         var doneData = new HashMap<String, Object>();
         doneData.put("entryId", assistantEntryId != null ? assistantEntryId : tempTurnId);
         doneData.put("sessionId", request.sessionId());
@@ -116,16 +154,32 @@ public class StreamingEventHandler {
             doneData.put("tokenUsage", tokenUsageMap);
         }
 
+        var artifactRefPayloads = TaskRecoverySummaryBuilder.artifactRefPayloads(artifactRefs);
+
         // ReactStep 序列化
         var reactSteps = ReactStepSerializer.serialize(steps != null ? steps : List.of());
         if (!reactSteps.isEmpty()) {
             doneData.put("reactSteps", reactSteps);
         }
+        var toolSummaries = TaskRecoverySummaryBuilder.attachTurnArtifactRefs(
+                buildToolSummaries(reactSteps),
+                artifactRefPayloads);
+        if (!toolSummaries.isEmpty()) {
+            doneData.put("toolsSummary", toolSummaries);
+        }
+        TaskRecoverySummaryBuilder.fromState(state, toolSummaries)
+                .ifPresent(summary -> doneData.put("taskRecovery", summary));
 
-        // 知识库来源
-        var sources = buildKnowledgeSources(request.sessionId());
+        // 对话中自然浮现本轮使用的上下文来源：知识库 + 记忆。
+        var sources = new ArrayList<Map<String, Object>>();
+        sources.addAll(buildKnowledgeSources(request.sessionId()));
+        sources.addAll(buildMemorySources(assistantEntryId));
         if (!sources.isEmpty()) {
             doneData.put("sources", sources);
+        }
+        var memoryChanges = buildMemoryChanges(tempTurnId);
+        if (!memoryChanges.isEmpty()) {
+            doneData.put("memoryChanges", memoryChanges);
         }
 
         doneData.put("timestamp", Instant.now().toEpochMilli());
@@ -145,11 +199,21 @@ public class StreamingEventHandler {
         if (state.resumedFromTraceId() != null && !state.resumedFromTraceId().isBlank()) {
             doneData.put("resumedFromTraceId", state.resumedFromTraceId());
         }
+        if (state.turnRecoveryContext() != null && !state.turnRecoveryContext().isEmpty()) {
+            doneData.put("turnRecoveryContext", state.turnRecoveryContext());
+        }
+        Map<String, Object> executionConstraints = ExecutionConstraintSummarySupport.from(state);
+        if (!executionConstraints.isEmpty()) {
+            doneData.put("executionConstraints", executionConstraints);
+        }
         if (reasoningSummary != null) {
             doneData.put("reasoningSummary", reasoningSummary);
         }
         if (lastCollectedA2uiTree != null && !lastCollectedA2uiTree.components().isEmpty()) {
             doneData.put("a2uiComponents", lastCollectedA2uiTree.components());
+        }
+        if (!artifactRefPayloads.isEmpty()) {
+            doneData.put("artifactRefs", artifactRefPayloads);
         }
         if (streamTimings != null && !streamTimings.isEmpty()) {
             doneData.put("streamTimings", streamTimings);
@@ -234,6 +298,18 @@ public class StreamingEventHandler {
         return ChatTurnStatus.SUCCESS;
     }
 
+    // ===== 工具执行摘要 =====
+
+    /**
+     * 从 ReAct 步骤压缩出本轮工具执行摘要。
+     *
+     * <p>{@code reactSteps} 仍保留完整轨迹；{@code toolsSummary} 面向主对话轻量浮现，
+     * 让用户不用展开轨迹也能看到用了哪些工具、成败和输出摘要。</p>
+     */
+    List<Map<String, Object>> buildToolSummaries(List<Map<String, Object>> reactSteps) {
+        return TaskRecoverySummaryBuilder.toolSummariesFromSerializedSteps(reactSteps);
+    }
+
     // ===== 知识库来源 =====
 
     /** 构建知识库来源摘要。 */
@@ -266,6 +342,53 @@ public class StreamingEventHandler {
             return Collections.unmodifiableList(result);
         } catch (Exception e) {
             log.debug("构建知识库来源摘要失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    // ===== 记忆来源 =====
+
+    /** 构建本轮实际注入过的记忆摘要。 */
+    List<Map<String, Object>> buildMemorySources(@Nullable String assistantEntryId) {
+        if (assistantEntryId == null || assistantEntryId.isBlank()
+                || injectionRecordRepository == null || semanticMemory == null) {
+            return List.of();
+        }
+        try {
+            var entityIds = injectionRecordRepository.findEntityIdsBySourceEntryId(assistantEntryId);
+            if (entityIds.isEmpty()) {
+                return List.of();
+            }
+            var result = new ArrayList<Map<String, Object>>();
+            for (String entityId : entityIds) {
+                if (entityId == null || entityId.isBlank()) {
+                    continue;
+                }
+                semanticMemory.findById(entityId)
+                        .map(MemorySourceSummarySupport::toMemorySource)
+                        .ifPresent(result::add);
+            }
+            return Collections.unmodifiableList(result);
+        } catch (Exception e) {
+            log.debug("构建记忆来源摘要失败: entryId={}, error={}", assistantEntryId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    // ===== 记忆沉淀 =====
+
+    /** 构建本轮对话实际落库的记忆变更摘要。 */
+    List<Map<String, Object>> buildMemoryChanges(@Nullable String turnId) {
+        if (turnId == null || turnId.isBlank() || memoryExtractionCandidateRepository == null) {
+            return List.of();
+        }
+        try {
+            return MemoryChangeSummarySupport.buildAppliedMemoryChangeSummaries(
+                    memoryExtractionCandidateRepository,
+                    turnId,
+                    5);
+        } catch (Exception e) {
+            log.debug("构建记忆沉淀摘要失败: turnId={}, error={}", turnId, e.getMessage());
             return List.of();
         }
     }

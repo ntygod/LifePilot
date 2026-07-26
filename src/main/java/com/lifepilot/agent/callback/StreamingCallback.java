@@ -300,7 +300,7 @@ public class StreamingCallback implements IterationCallback {
         String preferredProviderId = request.preferredProvider();
 
         // 提取 system 文本，通过 CallbackHelper 集中增强（流式约束）
-        // A2UI 通过 ui.emit tool call 提交组件树，不再使用文本标签解析
+        // A2UI 通过 ui.render tool call 提交组件树，不再使用文本标签解析
         String systemText = messages.stream()
                 .filter(m -> m instanceof SystemMessage)
                 .map(m -> ((SystemMessage) m).getText())

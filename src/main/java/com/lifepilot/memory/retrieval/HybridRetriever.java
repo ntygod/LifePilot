@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -45,6 +46,7 @@ public class HybridRetriever {
 
     private static final Logger log = LoggerFactory.getLogger(HybridRetriever.class);
     private static final float EXACT_LEXICAL_MATCH_THRESHOLD = 4.0f;
+    private static final int MIN_INTENT_MATCH_MAX_QUERY_CHARS = 20;
 
     private final VectorSearcher vectorSearcher;
     private final FtsSearcher ftsSearcher;
@@ -57,8 +59,8 @@ public class HybridRetriever {
     private final ExecutorService virtualThreadExecutor;
     private final RerankRouter rerankRouter;
     private final MemoryProvenanceRepository provenanceRepository;
-
-    /** 最近一次 retrieve() 中 L4 程序记忆匹配结果（线程安全，每次 retrieve 重置）。 */
+    /** 正在执行的 L4 后台意图匹配任务；用于去重与并发预算控制。 */
+    private final Map<String, CompletableFuture<Void>> pendingIntentMatches = new ConcurrentHashMap<>();
 
     public HybridRetriever(VectorSearcher vectorSearcher,
                            FtsSearcher ftsSearcher,
@@ -79,6 +81,7 @@ public class HybridRetriever {
         this.rerankRouter = Objects.requireNonNull(rerankRouter, "rerankRouter");
         this.provenanceRepository = Objects.requireNonNull(provenanceRepository, "provenanceRepository");
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        validateIntentMatchBudget();
     }
 
     /**
@@ -119,7 +122,7 @@ public class HybridRetriever {
         String normalizedQuery = query.trim();
         long startTime = System.currentTimeMillis();
 
-        // 1. 并行执行三路检索 + 可选 L4 意图匹配
+        // 1. 并行执行三路检索，可选 L4 意图匹配只做后台增强，不阻塞主链路。
         float minVecSim = memoryProperties.getMinVectorSimilarity();
         // 向量路径 pre-filter：filter 生效时，预查合规实体 ID
         final Set<String> eligibleIds;
@@ -136,32 +139,17 @@ public class HybridRetriever {
         var graphFuture = CompletableFuture.supplyAsync(
                 () -> graphTraverser.traverse(normalizedQuery, topK, filter), virtualThreadExecutor);
 
-        // L4: 并行执行 IntentMatcher（不参与 RRF 融合，与三路检索一起等待）
-        CompletableFuture<Void> intentFuture = null;
-        if (intentMatcher != null) {
-            intentFuture = CompletableFuture.runAsync(() -> {
-                var matchOpt = intentMatcher.match(normalizedQuery);
-                matchOpt.ifPresent(match -> {
-                    var template = match.template();
-                    log.debug("混合检索: L4 意图匹配命中, template={}, score={}",
-                            template.name(), match.score());
-                });
-            }, virtualThreadExecutor);
+        var matcher = intentMatcher;
+        if (matcher != null) {
+            scheduleIntentMatch(matcher, normalizedQuery);
         }
 
-        // 等待所有并行任务完成（三路检索 + 可选 L4 意图匹配）
-        if (intentFuture != null) {
-            awaitAll(vectorFuture, ftsFuture, graphFuture, intentFuture);
-        } else {
-            awaitAll(vectorFuture, ftsFuture, graphFuture);
-        }
+        // 等待核心三路检索完成。L4 程序记忆匹配慢或失败时不拖住用户当前回答。
+        awaitAll(vectorFuture, ftsFuture, graphFuture);
 
         List<VectorSearchResult> vectorResults = getRequired(vectorFuture, "向量检索");
         List<RankedItem> ftsResults = filterRankedItems(getRequired(ftsFuture, "全文搜索"), filter);
         List<RankedItem> graphResults = filterRankedItems(getRequired(graphFuture, "图遍历"), filter);
-        if (intentFuture != null) {
-            waitRequired(intentFuture, "L4 意图匹配");
-        }
 
         if (vectorResults.isEmpty() && ftsResults.isEmpty() && graphResults.isEmpty()) {
             return List.of();
@@ -356,15 +344,115 @@ public class HybridRetriever {
         return finalResults;
     }
 
-    /**
-     * 获取最近一次 retrieve() 中 L4 程序记忆匹配结果。
-     *
-     * <p>L4 匹配结果不参与 RRF 融合排序，作为独立的执行建议注入 ReasoningSlot。
-     * 每次 retrieve() 调用后重置，无匹配时返回 Optional.empty()。</p>
-     *
-     * @return L4 程序记忆匹配的 ReasoningSlot
-     */
     // --- 内部方法 ---
+
+    private void scheduleIntentMatch(IntentMatcher matcher, String normalizedQuery) {
+        String probe = buildIntentMatchProbe(normalizedQuery);
+        if (probe == null) {
+            return;
+        }
+        pruneCompletedIntentMatches();
+        if (pendingIntentMatches.containsKey(probe)) {
+            log.debug("混合检索: L4 意图匹配已有后台任务，跳过重复探针: query={}", probe);
+            return;
+        }
+        int maxPending = memoryProperties.getIntentMatchMaxPending();
+        if (maxPending == 0 || pendingIntentMatches.size() >= maxPending) {
+            log.debug("混合检索: L4 意图匹配后台任务已达上限 {}，跳过本轮增强: query={}",
+                    maxPending, probe);
+            return;
+        }
+        pendingIntentMatches.computeIfAbsent(probe, key -> {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> runIntentMatch(matcher, key),
+                    virtualThreadExecutor);
+            future.whenComplete((ignored, error) -> pendingIntentMatches.remove(key, future));
+            return future;
+        });
+    }
+
+    private void runIntentMatch(IntentMatcher matcher, String probe) {
+        try {
+            var matchOpt = matcher.match(probe);
+            matchOpt.ifPresent(match -> {
+                var template = match.template();
+                log.debug("混合检索: L4 意图匹配命中, template={}, score={}",
+                        template.name(), match.score());
+            });
+        } catch (Exception e) {
+            log.debug("混合检索: L4 意图匹配跳过, query={}, error={}",
+                    probe, e.getMessage());
+        }
+    }
+
+    @Nullable
+    private String buildIntentMatchProbe(String normalizedQuery) {
+        if (!memoryProperties.isIntentMatchEnabled()) {
+            log.debug("混合检索: L4 意图匹配后台增强已关闭");
+            return null;
+        }
+        int informativeChars = informativeCharacterCount(normalizedQuery);
+        if (informativeChars < memoryProperties.getIntentMatchMinQueryChars()) {
+            log.debug("混合检索: L4 意图匹配有效字符数 {} 低于阈值 {}，跳过",
+                    informativeChars, memoryProperties.getIntentMatchMinQueryChars());
+            return null;
+        }
+        int maxChars = memoryProperties.getIntentMatchMaxQueryChars();
+        int codePointCount = normalizedQuery.codePointCount(0, normalizedQuery.length());
+        if (codePointCount <= maxChars) {
+            return normalizedQuery;
+        }
+        String marker = "\n...\n";
+        int available = Math.max(2, maxChars - marker.length());
+        int headChars = Math.max(1, available / 2);
+        int tailChars = Math.max(1, available - headChars);
+        String probe = (firstCodePoints(normalizedQuery, headChars).stripTrailing()
+                + marker
+                + lastCodePoints(normalizedQuery, tailChars).stripLeading()).strip();
+        log.debug("混合检索: L4 意图匹配输入过长，裁剪为后台探针: originalChars={}, probeChars={}",
+                codePointCount, probe.codePointCount(0, probe.length()));
+        return probe;
+    }
+
+    private void pruneCompletedIntentMatches() {
+        pendingIntentMatches.entrySet().removeIf(entry -> entry.getValue().isDone());
+    }
+
+    private int informativeCharacterCount(String value) {
+        int count = 0;
+        for (int offset = 0; offset < value.length(); ) {
+            int codePoint = value.codePointAt(offset);
+            if (Character.isLetterOrDigit(codePoint)) {
+                count += 1;
+            }
+            offset += Character.charCount(codePoint);
+        }
+        return count;
+    }
+
+    private String firstCodePoints(String value, int count) {
+        int total = value.codePointCount(0, value.length());
+        int end = value.offsetByCodePoints(0, Math.min(count, total));
+        return value.substring(0, end);
+    }
+
+    private String lastCodePoints(String value, int count) {
+        int total = value.codePointCount(0, value.length());
+        int start = value.offsetByCodePoints(0, Math.max(0, total - count));
+        return value.substring(start);
+    }
+
+    private void validateIntentMatchBudget() {
+        if (memoryProperties.getIntentMatchMinQueryChars() < 0) {
+            throw new IllegalArgumentException("L4 意图匹配最少有效字符数不能为负");
+        }
+        if (memoryProperties.getIntentMatchMaxQueryChars() < MIN_INTENT_MATCH_MAX_QUERY_CHARS) {
+            throw new IllegalArgumentException("L4 意图匹配最大查询字符数不能小于 "
+                    + MIN_INTENT_MATCH_MAX_QUERY_CHARS);
+        }
+        if (memoryProperties.getIntentMatchMaxPending() < 0) {
+            throw new IllegalArgumentException("L4 意图匹配最大后台任务数不能为负");
+        }
+    }
 
     /** 获取 CompletableFuture 结果，核心检索路径失败时直接暴露。 */
     private void awaitAll(CompletableFuture<?>... futures) {
@@ -414,15 +502,6 @@ public class HybridRetriever {
             }
         }
         return ids;
-    }
-
-    private void waitRequired(CompletableFuture<Void> future, String pathName) {
-        try {
-            future.join();
-        } catch (Exception e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            throw new IllegalStateException("混合检索: " + pathName + " 路径失败", cause);
-        }
     }
 
     /**

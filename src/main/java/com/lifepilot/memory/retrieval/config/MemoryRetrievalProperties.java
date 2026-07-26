@@ -81,6 +81,18 @@ public class MemoryRetrievalProperties {
      */
     private float minRelationTrust = 0.0f;
 
+    /** L4 程序记忆意图匹配后台增强开关，默认 false；需要程序模板探针时再显式开启。 */
+    private boolean intentMatchEnabled = false;
+
+    /** 启动 L4 意图匹配所需的最少有效字符数，默认 6；短补充直接跳过。 */
+    private int intentMatchMinQueryChars = 6;
+
+    /** 送入 L4 意图匹配器的最大查询字符数，默认 160；超长资料会压缩成头尾探针。 */
+    private int intentMatchMaxQueryChars = 160;
+
+    /** L4 意图匹配后台最大并发任务数，默认 1；超过后跳过本轮后台增强。 */
+    private int intentMatchMaxPending = 1;
+
     // ─── AgenticTool 配置 ───
 
     /** Agentic Tool 配置 — 控制记忆 tool 的默认检索参数。 */

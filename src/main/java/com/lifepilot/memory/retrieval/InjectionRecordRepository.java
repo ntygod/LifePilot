@@ -138,6 +138,23 @@ public class InjectionRecordRepository {
                 .toList();
     }
 
+    /**
+     * 删除指定会话下的注入来源记录。
+     *
+     * <p>该记录只用于解释某次回答参考了哪些记忆，清空或删除会话时不应继续孤立保留。</p>
+     *
+     * @param sessionId 会话 ID
+     * @return 删除行数
+     */
+    public int deleteBySessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("注入记录 sessionId 不能为空");
+        }
+        return jdbcTemplate.update(
+                "DELETE FROM memory_injection_records WHERE session_id = ?",
+                sessionId);
+    }
+
     private List<String> deserializeEntityIds(List<String> rows, String provenance) {
         if (rows.isEmpty()) {
             return List.of();

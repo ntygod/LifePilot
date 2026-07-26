@@ -121,6 +121,31 @@ class InjectionRecordRepository_集成测试 {
     }
 
     @Test
+    void deleteBySessionId_删除普通和Trace注入记录且保留其他会话() {
+        jdbcTemplate.update("""
+                        INSERT INTO session_store (
+                            session_id, title, created_at, updated_at, last_activity_at
+                        ) VALUES (?, ?, '2026-03-23T10:00:00Z', '2026-03-23T10:00:00Z', '2026-03-23T10:00:00Z')
+                        """,
+                "session-2", "其他会话");
+        jdbcTemplate.update("""
+                        INSERT INTO session_transcript_entries (
+                            id, session_id, branch_id, entry_type, role, payload_json, created_at
+                        ) VALUES (?, ?, 'main', 'assistant_message', 'assistant', '{"content":"你好"}', '2026-03-23T10:00:01Z')
+                        """,
+                "entry-2", "session-2");
+        repository.save("entry-1", "session-1", "trace-1", java.util.List.of("e1"));
+        repository.saveWithType("trace-exp", "session-1", java.util.List.of("exp-1"), "EXPERIENCE");
+        repository.save("entry-2", "session-2", "trace-2", java.util.List.of("other"));
+
+        int deleted = repository.deleteBySessionId("session-1");
+
+        assertThat(deleted).isEqualTo(2);
+        assertThat(countRowsBySession("session-1")).isZero();
+        assertThat(countRowsBySession("session-2")).isEqualTo(1);
+    }
+
+    @Test
     void sourceEntry注入记录Json被污染时查询应失败() {
         repository.save("entry-1", "session-1", "trace-1", java.util.List.of("e1", "e2"));
         jdbcTemplate.update("""
@@ -146,5 +171,12 @@ class InjectionRecordRepository_集成测试 {
         assertThatThrownBy(() -> repository.findEntityIdsBySourceTraceIdAndType("trace-exp", "EXPERIENCE"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("sourceTraceId=trace-exp");
+    }
+
+    private int countRowsBySession(String sessionId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM memory_injection_records WHERE session_id = ?",
+                Integer.class,
+                sessionId);
     }
 }

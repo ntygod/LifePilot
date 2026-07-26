@@ -28,6 +28,7 @@ public class SqliteVecDataSource extends AbstractDataSource {
     private final SqliteVecInitializer sqliteVecInitializer;
     private final String dataSourceName;
     private final AtomicBoolean loggedReadyOnce = new AtomicBoolean(false);
+    private final AtomicBoolean loggedUnavailableOnce = new AtomicBoolean(false);
 
     public SqliteVecDataSource(DataSource delegate, SqliteVecInitializer sqliteVecInitializer, String dataSourceName) {
         this.delegate = Objects.requireNonNull(delegate, "delegate 不能为空");
@@ -41,27 +42,25 @@ public class SqliteVecDataSource extends AbstractDataSource {
     @Override
     public Connection getConnection() throws SQLException {
         Connection con = delegate.getConnection();
-        return ensureVecLoadedOrClose(con);
+        return tryEnsureVecLoaded(con);
     }
 
     @Override
     public Connection getConnection(String username, String password) throws SQLException {
         Connection con = delegate.getConnection(username, password);
-        return ensureVecLoadedOrClose(con);
+        return tryEnsureVecLoaded(con);
     }
 
-    private Connection ensureVecLoadedOrClose(Connection con) throws SQLException {
+    private Connection tryEnsureVecLoaded(Connection con) {
         try {
             ensureVecLoaded(con);
-            return con;
         } catch (RuntimeException e) {
-            try {
-                con.close();
-            } catch (SQLException closeError) {
-                e.addSuppressed(closeError);
+            if (loggedUnavailableOnce.compareAndSet(false, true)) {
+                log.warn("记忆系统: sqlite-vec 扩展当前不可用, 数据源={} 将以普通 SQLite 连接继续运行, reason={}",
+                        dataSourceName, e.getMessage());
             }
-            throw e;
         }
+        return con;
     }
 
     private void ensureVecLoaded(Connection con) {

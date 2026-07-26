@@ -90,12 +90,14 @@ public class MemoryRetrievalAutoConfiguration {
             JdbcTemplate jdbcTemplate,
             MemoryRetrievalProperties properties,
             MemoryProvenanceRepository provenanceRepository) {
-        log.info("记忆模块: 注册 HybridRetriever, intentMatcher={}, reranker={}, provenance={}",
-                intentMatcher != null ? "enabled" : "disabled",
+        IntentMatcher activeIntentMatcher = properties.isIntentMatchEnabled() ? intentMatcher : null;
+        log.info("记忆模块: 注册 HybridRetriever, intentMatch={}, intentMatcher={}, reranker={}, provenance={}",
+                properties.isIntentMatchEnabled() ? "background" : "disabled",
+                intentMatcher != null ? "available" : "unavailable",
                 "enabled",
                 "enabled");
         var retriever = new HybridRetriever(vectorSearcher, ftsSearcher, graphTraverser,
-                semanticMemory, intentMatcher, properties, jdbcTemplate, rerankRouter,
+                semanticMemory, activeIntentMatcher, properties, jdbcTemplate, rerankRouter,
                 provenanceRepository);
         return retriever;
     }

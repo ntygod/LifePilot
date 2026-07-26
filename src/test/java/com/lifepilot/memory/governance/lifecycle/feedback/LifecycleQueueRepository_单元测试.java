@@ -7,9 +7,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * 生命周期反馈队列仓储单元测试。
@@ -50,6 +55,26 @@ class LifecycleQueueRepository_单元测试 {
                 "doc-1 "))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("sourceId 不能包含首尾空白");
+
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
+    void 再验证人工关闭只处理未完成队列() {
+        when(jdbcTemplate.update(contains("status IN ('PENDING', 'PROMPTED')"), eq("entity-1")))
+                .thenReturn(2);
+
+        int affected = revalidationQueueRepository.markResolvedByEntityId("entity-1");
+
+        assertThat(affected).isEqualTo(2);
+        verify(jdbcTemplate).update(contains("UPDATE memory_revalidation_queue"), eq("entity-1"));
+    }
+
+    @Test
+    void 再验证人工关闭遇到脏实体ID应失败且不写入() {
+        assertThatThrownBy(() -> revalidationQueueRepository.markResolvedByEntityId(" entity-1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("entityId 不能包含首尾空白");
 
         verifyNoInteractions(jdbcTemplate);
     }

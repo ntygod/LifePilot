@@ -260,7 +260,8 @@ public class MemoryStoreAutoConfiguration {
             vectorJdbcTemplate.queryForObject("SELECT vec_version()", String.class);
             return true;
         } catch (Exception e) {
-            throw new IllegalStateException("记忆模块: sqlite-vec 扩展未加载，无法启用向量检索", e);
+            log.warn("记忆模块: sqlite-vec 扩展未加载，向量检索将降级为空结果, reason={}", e.getMessage());
+            return false;
         }
     }
 }

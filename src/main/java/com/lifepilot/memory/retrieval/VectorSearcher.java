@@ -13,8 +13,8 @@ import java.util.Set;
 /**
  * 向量语义检索器 — 基于 sqlite-vec 的实体向量检索。
  *
- * <p>初始化时程序化创建 entity_embeddings vec0 虚拟表。sqlite-vec 或 EmbeddingRouter
- * 不可用时直接失败，避免向量索引静默缺失。</p>
+ * <p>初始化时程序化创建 entity_embeddings vec0 虚拟表。sqlite-vec 不可用时进入降级模式：
+ * 向量查询返回空结果，向量写入跳过，主对话和普通记忆读写继续可用。</p>
  *
  * @author zsg
  * @since 2026-02-25
@@ -47,11 +47,11 @@ public class VectorSearcher {
         if (embeddingDimensions <= 0) {
             throw new IllegalArgumentException("embeddingDimensions 必须大于 0: " + embeddingDimensions);
         }
-        if (!vecExtensionLoaded) {
-            throw new IllegalStateException("sqlite-vec 扩展未加载，无法启用向量检索");
+        if (vecExtensionLoaded) {
+            initVec0Table();
+        } else {
+            log.warn("向量检索: sqlite-vec 扩展未加载，向量能力降级为空结果");
         }
-
-        initVec0Table();
     }
 
     /** 程序化创建 entity_embeddings vec0 虚拟表。 */
@@ -74,6 +74,9 @@ public class VectorSearcher {
      */
     public List<VectorSearchResult> searchEntities(String queryText, int topK, float threshold) {
         validateSearchArguments(queryText, topK, threshold);
+        if (!vecExtensionLoaded) {
+            return List.of();
+        }
         float[] queryVector = embedRequired(queryText, "向量检索查询");
         return searchWithVec(queryVector, topK, threshold);
     }
@@ -95,6 +98,9 @@ public class VectorSearcher {
         validateSearchArguments(queryText, topK, threshold);
         validateEligibleIds(eligibleIds);
         if (eligibleIds != null && eligibleIds.isEmpty()) {
+            return List.of();
+        }
+        if (!vecExtensionLoaded) {
             return List.of();
         }
         int effectiveTopK = eligibleIds != null ? Math.multiplyExact(topK, 3) : topK;
@@ -146,6 +152,10 @@ public class VectorSearcher {
     public void upsertEntityVector(String entityId, String text) {
         validateEntityId(entityId);
         validateText(text, "向量写入文本");
+        if (!vecExtensionLoaded) {
+            log.debug("向量检索: sqlite-vec 不可用，跳过实体向量写入, entityId={}", entityId);
+            return;
+        }
         float[] vector = embedRequired(text, "实体向量写入");
         byte[] vectorBytes = floatArrayToBytes(vector);
         // vec0 虚拟表不支持 INSERT OR REPLACE，需先 DELETE 再 INSERT
@@ -164,6 +174,10 @@ public class VectorSearcher {
      */
     public void deleteEntityVector(String entityId) {
         validateEntityId(entityId);
+        if (!vecExtensionLoaded) {
+            log.debug("向量检索: sqlite-vec 不可用，跳过实体向量删除, entityId={}", entityId);
+            return;
+        }
         vectorJdbcTemplate.update(
                 "DELETE FROM entity_embeddings WHERE entity_id = ?", entityId);
         log.debug("向量检索: 删除实体向量, entityId={}", entityId);
