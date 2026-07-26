@@ -1,7 +1,7 @@
 /**
  * 构建后端 JAR 并复制到 Tauri resources 目录。
  *
- * 由 npm run tauri:build 调用，确保 npx tauri build 时
+ * 由 npm run tauri:prepare 调用，确保 npx tauri build 时
  * 始终使用最新的后端产物。跨平台兼容（Windows / macOS / Linux）。
  */
 import { execSync } from 'node:child_process'
