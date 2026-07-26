@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ThumbsUp, Check, X } from 'lucide-vue-next'
+import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import { parseNotificationDetail } from '@/utils/notificationContent'
-import { useNotificationStore } from '@/stores/notification'
 import type { NotificationItem } from '@/types'
 
 /** 组件 Props */
@@ -13,45 +11,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const notificationStore = useNotificationStore()
 
 /** 解析通知详情内容 */
 const detail = computed(() => parseNotificationDetail(props.contentJson))
-
-/** 是否为主动提醒类型 */
-const isProactiveReminder = computed(
-  () => props.notificationItem?.typeId === 'proactive_reminder' || props.notificationItem?.typeId === 'proactive_action'
-)
-
-/** 当前反馈类型（优先取 prop 中已有值，再取本地提交后的值） */
-const localFeedbackType = ref<string | null>(null)
-const feedbackType = computed(
-  () => localFeedbackType.value ?? props.notificationItem?.feedbackType ?? null
-)
-
-/** 反馈提交中 */
-const submitting = ref(false)
-
-/** 提交反馈 */
-async function handleFeedback(type: string) {
-  if (!props.notificationItem || submitting.value || feedbackType.value) return
-  submitting.value = true
-  try {
-    await notificationStore.submitFeedback(props.notificationItem.id, type)
-    localFeedbackType.value = type  // 只在成功时设置，失败会抛异常跳过此行
-  } catch {
-    // 失败时不设置 localFeedbackType，按钮保持可重试
-  } finally {
-    submitting.value = false
-  }
-}
-
-/** 反馈按钮配置 */
-const feedbackButtons = [
-  { type: 'ACTED', label: '有用', icon: ThumbsUp },
-  { type: 'SNOOZED', label: '知道了', icon: Check },
-  { type: 'NOT_RELEVANT', label: '不需要', icon: X },
-]
 </script>
 
 <template>
@@ -94,31 +56,5 @@ const feedbackButtons = [
       v-else
       class="whitespace-pre-wrap text-sm text-muted-foreground"
     >{{ detail.text }}</pre>
-
-    <!-- 主动提醒反馈操作条 -->
-    <div
-      v-if="isProactiveReminder"
-      class="mt-sm flex items-center gap-sm border-t pt-sm"
-    >
-      <span class="text-xs text-muted-foreground">这条提醒对你有帮助吗？</span>
-      <div class="flex gap-xs">
-        <Button
-          v-for="btn in feedbackButtons"
-          :key="btn.type"
-          variant="ghost"
-          size="sm"
-          class="h-xl gap-xs px-sm text-xs"
-          :class="{
-            'bg-accent text-accent-foreground': feedbackType === btn.type,
-            'opacity-40': feedbackType && feedbackType !== btn.type,
-          }"
-          :disabled="submitting || !!feedbackType"
-          @click="handleFeedback(btn.type)"
-        >
-          <component :is="btn.icon" class="size-sm" />
-          {{ btn.label }}
-        </Button>
-      </div>
-    </div>
   </div>
 </template>

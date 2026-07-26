@@ -3,14 +3,11 @@ import { ref, onMounted, type Component } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   Lightbulb, GitBranch, Settings, Bell, Loader2, AlertCircle,
-  MessageCircleQuestion, Sparkles, ClipboardCheck, FileBarChart,
-  BookOpenCheck, BellRing,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { useNotificationStore } from '@/stores/notification'
 import { parseNotificationContent } from '@/utils/notificationContent'
 import { formatRelativeTime } from '@/utils/relativeTime'
-import { getBehaviorTheme, getBehaviorLabel, behaviorBadgeStyle } from '@/constants/behaviorTheme'
 import NotificationDetail from '@/components/notification/NotificationDetail.vue'
 import type { NotificationItem } from '@/types'
 
@@ -35,29 +32,8 @@ const typeIconMap: Record<string, Component> = {
   task: Lightbulb,
 }
 
-/** 行为插件图标映射 */
-const behaviorIconMap: Record<string, Component> = {
-  'follow-up': MessageCircleQuestion,
-  'insight': Sparkles,
-  'clipboard': ClipboardCheck,
-  'report': FileBarChart,
-  'memory-attention': BookOpenCheck,
-  'reminder': BellRing,
-}
-
-/** 从通知项中提取行为名 */
-function getBehaviorFromItem(item: NotificationItem): string | undefined {
-  if (item.typeId !== 'proactive_action' && item.typeId !== 'proactive_reminder') return undefined
-  try {
-    const metadata = item.metadataJson ? JSON.parse(item.metadataJson) : {}
-    return metadata.behaviorName as string | undefined
-  } catch { return undefined }
-}
-
-/** 获取通知类型图标，主动推送优先使用行为图标 */
+/** 获取通知类型图标 */
 function getTypeIcon(item: NotificationItem): Component {
-  const behavior = getBehaviorFromItem(item)
-  if (behavior && behaviorIconMap[behavior]) return behaviorIconMap[behavior]
   return (item.typeId && typeIconMap[item.typeId]) || Bell
 }
 
@@ -201,13 +177,6 @@ onMounted(async () => {
             <!-- 通知内容 -->
             <div class="flex min-w-0 flex-1 flex-col gap-1">
               <div class="flex items-center gap-sm">
-                <span
-                  v-if="getBehaviorFromItem(item)"
-                  class="inline-flex shrink-0 items-center rounded-md px-xs text-[11px] font-semibold leading-5"
-                  :style="behaviorBadgeStyle(getBehaviorFromItem(item))"
-                >
-                  {{ getBehaviorLabel(getBehaviorFromItem(item)) }}
-                </span>
                 <p class="truncate text-sm">{{ getSummary(item) }}</p>
               </div>
               <div class="flex items-center gap-2 text-xs text-muted-foreground">

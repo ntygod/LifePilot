@@ -38,11 +38,7 @@ function connect() {
         notificationStore.setUnreadCount(data.unreadCount)
       } else {
         notificationStore.addNotification(data as NotificationItem)
-        const item = data as NotificationItem
-        // 主动提醒类通知由浮窗自己的 SSE 连接处理，主窗口不再转发，避免重复投递
-        if (item.typeId !== 'proactive_reminder' && item.typeId !== 'proactive_action' && item.typeId !== 'clipboard_intent') {
-          sendDesktopNotification(item)
-        }
+        sendDesktopNotification(data as NotificationItem)
       }
     } catch (error) {
       logger.error('通知事件解析失败:', error)
@@ -110,48 +106,6 @@ function disconnect() {
     connected.value = false
   }
   reconnectAttempts = MAX_RECONNECT_ATTEMPTS
-}
-
-/** 主动提醒/剪贴板意图通知 → 投递到浮窗 + 系统通知双保险 */
-async function sendToFloatWindow(item: NotificationItem) {
-  // 非 Tauri 环境仅推送系统通知
-  if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) {
-    sendDesktopNotification(item)
-    return
-  }
-
-  // 始终推送系统桌面通知（确保用户看到）
-  sendDesktopNotification(item)
-
-  // 尝试投递到浮窗
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    const { summary } = parseNotificationContent(item.contentJson)
-    const metadata = item.metadataJson ? JSON.parse(item.metadataJson) : {}
-    const pushLevel = metadata.action ?? 'NORMAL_PUSH'
-    const title = resolveNotificationTitle(item.typeId, metadata)
-    await invoke('show_reminder_bubble', {
-      notificationId: item.id,
-      title,
-      content: summary,
-      pushLevel,
-    })
-  } catch (error) {
-    logger.warn('浮窗投递失败，已降级为系统通知:', error)
-  }
-}
-
-/** 根据通知类型和 metadata 生成语义化标题 */
-function resolveNotificationTitle(typeId?: string, metadata?: Record<string, string>): string {
-  if (typeId === 'clipboard_intent') {
-    const intentLabels: Record<string, string> = {
-      TRACKING_NUMBER: '快递查询',
-      FLIGHT_NUMBER: '航班查询',
-      TRAIN_NUMBER: '车次查询',
-    }
-    return intentLabels[metadata?.intentType ?? ''] ?? '剪贴板识别'
-  }
-  return metadata?.topicKey ?? '主动提醒'
 }
 
 /** Tauri 桌面端收到通知时推送系统级桌面通知 */

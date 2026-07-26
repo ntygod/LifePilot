@@ -26,14 +26,6 @@ const mocks = vi.hoisted(() => ({
     list: [] as Array<{ id: string; documentCount: number }>,
     fetchList: vi.fn(),
   },
-  proactiveStore: {
-    config: { enabled: false },
-    queueCount: 0,
-    pendingUpgrades: [] as Array<{ behaviorName: string }>,
-    fetchConfig: vi.fn(),
-    fetchQueue: vi.fn(),
-    fetchTrustStatus: vi.fn(),
-  },
   toolStore: {
     tools: [] as Array<{ id: string }>,
     fetchTools: vi.fn(),
@@ -57,10 +49,6 @@ vi.mock('@/stores/memory', () => ({
 
 vi.mock('@/stores/knowledgeBase', () => ({
   useKnowledgeBaseStore: () => mocks.knowledgeBaseStore,
-}))
-
-vi.mock('@/stores/proactive', () => ({
-  useProactiveStore: () => mocks.proactiveStore,
 }))
 
 vi.mock('@/stores/tool', () => ({
@@ -99,15 +87,9 @@ beforeEach(() => {
     preferenceCount: 0,
   }
   mocks.knowledgeBaseStore.list = []
-  mocks.proactiveStore.config = { enabled: false }
-  mocks.proactiveStore.queueCount = 0
-  mocks.proactiveStore.pendingUpgrades = []
   mocks.toolStore.tools = []
   mocks.memoryStore.loadStats.mockReset().mockResolvedValue(undefined)
   mocks.knowledgeBaseStore.fetchList.mockReset().mockResolvedValue(undefined)
-  mocks.proactiveStore.fetchConfig.mockReset().mockResolvedValue(undefined)
-  mocks.proactiveStore.fetchQueue.mockReset().mockResolvedValue(undefined)
-  mocks.proactiveStore.fetchTrustStatus.mockReset().mockResolvedValue(undefined)
   mocks.toolStore.fetchTools.mockReset().mockResolvedValue(undefined)
 })
 
@@ -118,7 +100,6 @@ describe('CapabilityCenterView', () => {
 
     expect(mocks.memoryStore.loadStats).toHaveBeenCalled()
     expect(mocks.knowledgeBaseStore.fetchList).toHaveBeenCalled()
-    expect(mocks.proactiveStore.fetchConfig).toHaveBeenCalled()
     expect(mocks.toolStore.fetchTools).toHaveBeenCalled()
   })
 
@@ -128,7 +109,7 @@ describe('CapabilityCenterView', () => {
 
     expect(wrapper.text()).toContain('先建立你的长期上下文')
     expect(wrapper.text()).toContain('给项目喂资料')
-    expect(wrapper.text()).toContain('开启可控主动性')
+    expect(wrapper.text()).toContain('沉淀第一个复用流程')
   })
 
   it('点击场景按钮会把提示词带入新对话', async () => {

@@ -236,11 +236,6 @@ const router = createRouter({
       component: () => import('@/views/SettingsView.vue')
     },
     {
-      path: '/settings/proactive',
-      name: 'settingsProactive',
-      component: () => import('@/views/SettingsView.vue')
-    },
-    {
       path: '/settings/code-execution',
       name: 'settingsCodeExecution',
       component: () => import('@/views/SettingsView.vue')

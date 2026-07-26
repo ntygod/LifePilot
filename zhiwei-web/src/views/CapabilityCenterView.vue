@@ -30,10 +30,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useChatStore } from '@/stores/chat'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useMemoryStore } from '@/stores/memory'
-import { useProactiveStore } from '@/stores/proactive'
 import { useToolStore } from '@/stores/tool'
 
-type CapabilityId = 'memory' | 'project' | 'proactive' | 'knowledge' | 'experience' | 'execution'
+type CapabilityId = 'memory' | 'project' | 'knowledge' | 'experience' | 'execution'
 
 interface CapabilityCard {
   id: CapabilityId
@@ -83,7 +82,6 @@ const router = useRouter()
 const chatStore = useChatStore()
 const memoryStore = useMemoryStore()
 const knowledgeBaseStore = useKnowledgeBaseStore()
-const proactiveStore = useProactiveStore()
 const toolStore = useToolStore()
 
 const loading = ref(true)
@@ -164,17 +162,6 @@ const capabilities: CapabilityCard[] = [
     tags: ['项目空间', '隔离记忆', '资料绑定'],
   },
   {
-    id: 'proactive',
-    title: '主动跟进',
-    subtitle: '提醒、追问、升级',
-    description: '把目标、等待事项和节奏偏好转成可控的主动协作。',
-    icon: BellRing,
-    route: '/settings/proactive',
-    routeLabel: '主动助手',
-    prompt: '我想把一件事交给你持续跟进。请帮我拆成目标、检查点、提醒时机、需要我授权的主动行为，并给出第一版跟进计划。',
-    tags: ['提醒', '信任等级', '待阅队列'],
-  },
-  {
     id: 'knowledge',
     title: '资料工作',
     subtitle: '知识库、检索、引用',
@@ -222,14 +209,14 @@ const scenarios: ScenarioCard[] = [
     title: '启动一个项目搭档模式',
     description: '把目标、资料、会话和后续跟进收束到一个可持续工作的项目空间。',
     prompt: '我准备启动一个项目。请引导我建立项目搭档模式：确认目标、资料入口、记忆边界、关键里程碑、例行跟进方式，并输出第一版项目运行清单。',
-    capabilityIds: ['project', 'knowledge', 'proactive'],
+    capabilityIds: ['project', 'knowledge'],
   },
   {
     id: 'weekly-review',
     title: '做一次本周复盘',
     description: '从对话、记忆和任务里找线索，沉淀下周可执行的改进动作。',
     prompt: '请帮我做一次本周复盘：回顾最近对话和记忆线索，整理完成事项、卡点、反复出现的问题、值得沉淀的经验，并生成下周行动建议。',
-    capabilityIds: ['memory', 'experience', 'proactive'],
+    capabilityIds: ['memory', 'experience'],
   },
   {
     id: 'tool-plan',
@@ -268,14 +255,13 @@ const playbooks: Playbook[] = [
   {
     id: 'proactive-rhythm',
     title: '主动节奏',
-    description: '把目标、提醒、待阅队列和信任升级收束成可控节奏。',
+    description: '把目标和检查点收束成定时任务，让知微按节奏跟进。',
     icon: Target,
     steps: [
-      { label: '配置主动助手', route: '/settings/proactive' },
       { label: '管理定时任务', route: '/scheduled-tasks' },
       { label: '继续对话', route: '/conversations/new' },
     ],
-    prompt: '请帮我建立主动协作节奏：把我的目标转成提醒、检查点、待阅项和可升级的主动行为，并说明哪些动作需要先征得我同意。',
+    prompt: '请帮我建立主动协作节奏：把我的目标转成检查点和定时提醒，并说明每个节点你会主动确认什么。',
   },
 ]
 
@@ -285,9 +271,6 @@ const memoryEntityCount = computed(() => memoryStore.stats?.entityCount ?? 0)
 const memoryTemplateCount = computed(() => memoryStore.stats?.templateCount ?? 0)
 const knowledgeBaseCount = computed(() => knowledgeBaseStore.list.length)
 const knowledgeDocumentCount = computed(() => knowledgeBaseStore.list.reduce((sum, item) => sum + item.documentCount, 0))
-const proactiveEnabled = computed(() => proactiveStore.config?.enabled ?? false)
-const proactiveQueueCount = computed(() => proactiveStore.queueCount)
-const pendingUpgradeCount = computed(() => proactiveStore.pendingUpgrades.length)
 const toolCount = computed(() => toolStore.tools.length)
 
 const readinessItems = computed(() => [
@@ -302,12 +285,6 @@ const readinessItems = computed(() => [
     value: `${knowledgeBaseCount.value} 个库 / ${knowledgeDocumentCount.value} 份资料`,
     ready: knowledgeBaseCount.value > 0,
     icon: Database,
-  },
-  {
-    label: '主动助手',
-    value: proactiveEnabled.value ? `已启用，待阅 ${proactiveQueueCount.value}` : '未启用',
-    ready: proactiveEnabled.value,
-    icon: Sparkles,
   },
   {
     label: '工具执行',
@@ -348,24 +325,6 @@ const insightActions = computed<InsightAction[]>(() => {
     })
   }
 
-  if (!proactiveEnabled.value) {
-    actions.push({
-      id: 'enable-proactive',
-      title: '开启可控主动性',
-      description: '让知微能在目标、提醒和等待事项上主动跟进。',
-      route: '/settings/proactive',
-      icon: BellRing,
-    })
-  } else if (pendingUpgradeCount.value > 0) {
-    actions.push({
-      id: 'trust-upgrade',
-      title: '处理主动行为升级',
-      description: `${pendingUpgradeCount.value} 个行为表现稳定，可以确认是否提高自主度。`,
-      route: '/settings/proactive',
-      icon: CheckCircle2,
-    })
-  }
-
   if (memoryTemplateCount.value === 0) {
     actions.push({
       id: 'extract-template',
@@ -385,9 +344,6 @@ async function loadOverview() {
   const tasks = [
     memoryStore.loadStats(),
     knowledgeBaseStore.fetchList(),
-    proactiveStore.fetchConfig(),
-    proactiveStore.fetchQueue(),
-    proactiveStore.fetchTrustStatus(),
     toolStore.fetchTools(),
   ]
   const results = await Promise.allSettled(tasks)

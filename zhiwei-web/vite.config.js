@@ -9,12 +9,11 @@ export default defineConfig({
             '@': path.resolve(__dirname, './src')
         }
     },
-    // 多页面入口：主应用 + 浮窗
+    // 单页面入口：主应用（浮窗随旧主动引擎一并移除）
     build: {
         rollupOptions: {
             input: {
                 main: path.resolve(__dirname, 'index.html'),
-                float: path.resolve(__dirname, 'float.html'),
             },
         },
     },

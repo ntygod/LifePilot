@@ -188,7 +188,7 @@ function isKnowledgeTool(toolId: string) {
 }
 
 function isWorkflowTool(toolId: string) {
-  return startsWithAny(toolId, ['workflow.', 'task.', 'scheduled.', 'reminder.', 'proactive.'])
+  return startsWithAny(toolId, ['workflow.', 'task.', 'scheduled.'])
 }
 
 function isIntegrationTool(toolId: string) {

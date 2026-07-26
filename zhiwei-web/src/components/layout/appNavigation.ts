@@ -81,7 +81,6 @@ export const settingsNavGroups: NavGroup[] = [
       { label: '知识与检索', path: '/settings/knowledge', icon: BookOpen, matchPrefixes: ['/settings/knowledge'] },
       { label: '集成渠道', path: '/settings/channels', icon: MessageSquare, matchPrefixes: ['/settings/channels'] },
       { label: '授权与执行', path: '/settings/permissions', icon: Key, matchPrefixes: ['/settings/permissions'] },
-      { label: '主动助手', path: '/settings/proactive', icon: Sparkles, matchPrefixes: ['/settings/proactive'] },
       { label: '代码执行环境', path: '/settings/code-execution', icon: Cpu, matchPrefixes: ['/settings/code-execution'] },
     ],
   },
