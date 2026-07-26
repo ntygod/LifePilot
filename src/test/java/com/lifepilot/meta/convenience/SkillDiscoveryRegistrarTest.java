@@ -18,13 +18,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -126,5 +130,37 @@ class SkillDiscoveryRegistrarTest {
 
         // 用户目录也不应有任何文件生成
         assertThat(Files.exists(tempDir.resolve("daily-manager/SKILL.md"))).isFalse();
+    }
+
+    @Test
+    void afterPropertiesSet_本地已存在的Skill不应被出厂版本覆盖() throws Exception {
+        // 预置：用户本地已有 daily-manager 且手改过 SKILL.md（版本号故意低于出厂 3.0.2）
+        Path skillFolder = tempDir.resolve("daily-manager");
+        Files.createDirectories(skillFolder);
+        Path localSkillMd = skillFolder.resolve("SKILL.md");
+        String userEdited = """
+                ---
+                name: daily-manager
+                description: 当用户需要用户自定义的多步任务规划与日报汇总时使用，这是用户手改过的描述占位。
+                version: 1.0.0
+                ---
+                用户自定义正文，绝对不能被出厂版本覆盖。
+                """;
+        Files.writeString(localSkillMd, userEdited, StandardCharsets.UTF_8);
+
+        // skills 表已记录该 skill（version 低于出厂 3.0.2，旧逻辑会误判为 UPGRADE 并覆盖）
+        when(repository.findByName("daily-manager")).thenReturn(Optional.of(new SkillInstallation(
+                "daily-manager", SkillSourceType.BUILTIN, "classpath:skills/daily-manager",
+                skillFolder.toString(), "1.0.0", true, null, "oldchecksum",
+                Instant.now(), Instant.now(), null)));
+
+        var registrar = new SkillDiscoveryRegistrar(
+                properties, zhiweiPaths, installer, repository, parser, validator, registry);
+        registrar.afterPropertiesSet();
+
+        // 本地文件必须原样保留，不被出厂 3.0.2 覆盖
+        assertThat(Files.readString(localSkillMd, StandardCharsets.UTF_8)).isEqualTo(userEdited);
+        // KEEP 决策不应对 daily-manager 重装 / 写表
+        verify(repository, never()).upsert(argThat(i -> "daily-manager".equals(i.name())));
     }
 }

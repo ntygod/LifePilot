@@ -3,6 +3,7 @@ package com.lifepilot.skill.spec;
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillToolReferenceCatalog;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -21,32 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @since 2026-07-02
  */
 class BuiltinSkillMetadata_规范测试 {
-
-    private static final Set<String> CANONICAL_TOOL_IDS = Set.of(
-            "status",
-            "tool.search",
-            "skill.load",
-            "memory",
-            "web.search",
-            "web.fetch",
-            "browser",
-            "file.read",
-            "file.write",
-            "file.manage",
-            "file.attach",
-            "file.history",
-            "shell.exec",
-            "shell.process",
-            "code",
-            "git.query",
-            "git.mutate",
-            "transcript.search",
-            "transcript.get",
-            "cron",
-            "notify",
-            "ui.render",
-            "channel.feishu"
-    );
 
     private static final List<String> LEGACY_TOOL_ALIASES = List.of(
             "shell_exec",
@@ -98,7 +73,7 @@ class BuiltinSkillMetadata_规范测试 {
             String content = resource.getContentAsString(StandardCharsets.UTF_8);
             var parsed = parser.parse(content);
             for (String toolId : parsed.frontmatter().zhiweiMeta().suggestedTools()) {
-                if (!CANONICAL_TOOL_IDS.contains(toolId)) {
+                if (!SkillToolReferenceCatalog.isCanonicalToolId(toolId)) {
                     violations.add(parsed.frontmatter().name() + " 引用了未知工具 ID: " + toolId);
                 }
             }

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -49,6 +50,7 @@ public class SkillValidator {
     private final SkillDescriptionValidator descriptionValidator;
     private final SkillBodyValidator bodyValidator;
     private final DynamicToolRegistry toolRegistry;
+    private final Set<String> reportedUnknownSuggestedTools = ConcurrentHashMap.newKeySet();
 
     public SkillValidator(SkillDescriptionValidator descriptionValidator,
                           SkillBodyValidator bodyValidator,
@@ -71,9 +73,11 @@ public class SkillValidator {
     public void validate(ParsedSkill parsed) {
         validateCommon(parsed);
         for (String toolId : parsed.frontmatter().zhiweiMeta().suggestedTools()) {
+            if (SkillToolReferenceCatalog.isCanonicalToolId(toolId)) {
+                continue;
+            }
             if (toolRegistry.resolve(toolId).isEmpty()) {
-                log.debug("skill '{}' 引用了未知工具 '{}'（仅 DEBUG，不阻断）",
-                        parsed.frontmatter().name(), toolId);
+                logUnknownSuggestedToolOnce(parsed.frontmatter().name(), toolId);
             }
         }
     }
@@ -96,6 +100,11 @@ public class SkillValidator {
         for (String toolId : parsed.frontmatter().zhiweiMeta().suggestedTools()) {
             var toolOpt = toolRegistry.resolve(toolId);
             if (toolOpt.isEmpty()) {
+                if (SkillToolReferenceCatalog.isCanonicalToolId(toolId)) {
+                    throw new IllegalArgumentException(
+                            "自生成 skill '" + parsed.frontmatter().name()
+                                    + "' 引用了当前不可用工具: " + toolId);
+                }
                 throw new IllegalArgumentException(
                         "自生成 skill '" + parsed.frontmatter().name()
                                 + "' 引用了未知工具: " + toolId);
@@ -127,5 +136,13 @@ public class SkillValidator {
                         "body 命中疑似 secret 模式: " + p.pattern() + "（见 docs/skill-spec.md §5）");
             }
         }
+    }
+
+    private void logUnknownSuggestedToolOnce(String skillName, String toolId) {
+        String key = skillName + "\u0000" + toolId;
+        if (!reportedUnknownSuggestedTools.add(key)) {
+            return;
+        }
+        log.debug("skill '{}' 引用了未知工具 '{}'（仅 DEBUG，不阻断）", skillName, toolId);
     }
 }

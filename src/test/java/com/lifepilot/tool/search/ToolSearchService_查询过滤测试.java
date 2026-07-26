@@ -160,6 +160,16 @@ class ToolSearchService_查询过滤测试 {
         assertThat(result.results()).extracting(ToolSearchHit::id).containsOnly("mcp.fs.delete");
     }
 
+    @Test
+    void disabledToolIds非空时_搜索结果应排除禁用父级工具() {
+        ReactAgentState state = sampleState("trace-disabled", Set.of(), null, List.of("mcp.fs"));
+        ToolSearchResult result = searchService.search(state, "delete file", null, 5);
+
+        assertThat(result.results()).extracting(ToolSearchHit::id)
+                .contains("file.delete")
+                .doesNotContain("mcp.fs.delete");
+    }
+
     /** 注册一个最小可用的 BuiltinTool 到 registry。 */
     private void registerBuiltinTool(String id, String description, List<String> tags, ToolCategory cat) {
         registry.registerBuiltinTool(BuiltinTool.builder()
@@ -205,10 +215,18 @@ class ToolSearchService_查询过滤测试 {
      * 可直接 mock final 类；比起 full AgentRequest + Budget 链路构造更干净。</p>
      */
     private ReactAgentState sampleState(String traceId, Set<String> discovered, List<String> allowed) {
+        return sampleState(traceId, discovered, allowed, null);
+    }
+
+    private ReactAgentState sampleState(String traceId,
+                                        Set<String> discovered,
+                                        List<String> allowed,
+                                        List<String> disabled) {
         ReactAgentState state = mock(ReactAgentState.class);
         when(state.traceId()).thenReturn(traceId);
         when(state.discoveredToolIds()).thenReturn(discovered);
         when(state.allowedToolIds()).thenReturn(allowed);
+        when(state.disabledToolIds()).thenReturn(disabled);
         return state;
     }
 }

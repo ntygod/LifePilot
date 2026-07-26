@@ -224,7 +224,7 @@ public class InfraToolProvider {
             if (tmuxCmd.isTmuxAvailable()) {
                 tmuxSessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig, workspaceResolver);
             } else {
-                log.warn("tmux 不可用，Shell 持久会话能力将不可用");
+                log.info("tmux 不可用，Shell 持久会话能力将不可用，普通 shell.exec 不受影响");
             }
         }
 

@@ -34,6 +34,8 @@ class PlaywrightPageWrapper_index方法测试 {
 
     @BeforeAll
     static void setup() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(Boolean.getBoolean("lifepilot.browser.real-tests"),
+                "默认跳过真实 Playwright 浏览器测试；需要时使用 -Dlifepilot.browser.real-tests=true 开启");
         // CI 或未安装 Chromium 的环境下，Playwright 初始化会抛异常 —— 这里降级为跳过整类，
         // 使用 Assumptions.abort 让 JUnit 标记为 SKIPPED 而非 FAILED。
         try {

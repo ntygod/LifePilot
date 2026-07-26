@@ -76,6 +76,7 @@ public class AgentExecutor {
                     newDepth,
                     request.preferredProvider(),
                     allowedToolIds,
+                    request.disabledToolIds(),
                     null, // 子 Agent 委托不携带多模态媒体
                     request.temperature()
             );

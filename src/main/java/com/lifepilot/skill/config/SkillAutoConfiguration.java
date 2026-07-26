@@ -125,9 +125,10 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SkillLoadToolExecutor skillLoadToolExecutor(SkillActivator skillActivator,
-                                                       SkillInstallationRepository installationRepository) {
+                                                       SkillInstallationRepository installationRepository,
+                                                       DynamicToolRegistry toolRegistry) {
         log.info("Skill 系统: 注册 SkillLoadToolExecutor");
-        return new SkillLoadToolExecutor(skillActivator, installationRepository);
+        return new SkillLoadToolExecutor(skillActivator, installationRepository, toolRegistry);
     }
 
     /**

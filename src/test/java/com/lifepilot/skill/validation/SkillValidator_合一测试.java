@@ -21,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -96,11 +98,30 @@ class SkillValidator_合一测试 {
     }
 
     @Test
+    void 预置路径对核心工具目录不依赖运行时注册表() {
+        var parsed = parser.parse(validMd("canonical", List.of("shell.exec", "memory", "ui.render")));
+
+        assertThatCode(() -> validator.validate(parsed)).doesNotThrowAnyException();
+
+        verify(toolRegistry, never()).resolve(anyString());
+    }
+
+    @Test
     void 自生成路径对未知工具应ERROR() {
         when(toolRegistry.resolve("unknown.tool")).thenReturn(Optional.empty());
         var parsed = parser.parse(validMd("gen-bad", List.of("unknown.tool")));
         assertThatThrownBy(() -> validator.validateGenerated(parsed))
                 .hasMessageContaining("未知工具");
+    }
+
+    @Test
+    void 自生成路径对未注册核心工具应ERROR() {
+        when(toolRegistry.resolve("ui.render")).thenReturn(Optional.empty());
+        var parsed = parser.parse(validMd("gen-missing-core", List.of("ui.render")));
+
+        assertThatThrownBy(() -> validator.validateGenerated(parsed))
+                .hasMessageContaining("当前不可用工具")
+                .hasMessageContaining("ui.render");
     }
 
     @Test

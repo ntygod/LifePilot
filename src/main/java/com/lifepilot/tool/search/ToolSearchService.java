@@ -122,7 +122,7 @@ public class ToolSearchService {
         // BM25
         List<FtsRow> bm25Rows = executeFts(matchExpr, category, limit * 3);
 
-        // 语义搜索（预计算索引，零 API 调用）
+        // 语义搜索（懒构建索引；向量服务不可用时静默降级为 BM25）
         List<ToolEmbeddingIndex.SemanticHit> semanticRows = embeddingIndex != null
                 ? embeddingIndex.search(rawQuery, category, limit * 3)
                 : List.of();
@@ -130,11 +130,13 @@ public class ToolSearchService {
         // RRF 融合
         final Set<String> finalAllowedScope = searchScope.allowedScope();
         final Set<String> excluded = searchScope.excluded();
+        final Set<String> disabled = searchScope.disabled();
         List<String> mergedIds = fuseRrf(bm25Rows, semanticRows, 60, Math.max(limit * 3, 10));
 
         List<ToolSearchHit> hits = mergedIds.stream()
                 .filter(this::isDiscoverableTool)
                 .filter(id -> !excluded.contains(id))
+                .filter(id -> !isToolDisabled(id, disabled))
                 .filter(id -> finalAllowedScope == null || finalAllowedScope.contains(id))
                 .map(this::toHitById)
                 .filter(Objects::nonNull)
@@ -165,6 +167,10 @@ public class ToolSearchService {
         if (state != null && state.discoveredToolIds() != null) {
             excluded.addAll(state.discoveredToolIds());
         }
+        var disabled = new LinkedHashSet<String>();
+        if (state != null && state.disabledToolIds() != null) {
+            disabled.addAll(state.disabledToolIds());
+        }
 
         Set<String> allowedScope = null;
         if (state != null && state.allowedToolIds() != null && !state.allowedToolIds().isEmpty()) {
@@ -176,8 +182,21 @@ public class ToolSearchService {
                 + "|allowed="
                 + (allowedScope == null
                 ? "*"
-                : allowedScope.stream().sorted().collect(java.util.stream.Collectors.joining(",")));
-        return new SearchScope(Set.copyOf(excluded), allowedScope, cacheKey);
+                : allowedScope.stream().sorted().collect(java.util.stream.Collectors.joining(",")))
+                + "|disabled="
+                + disabled.stream().sorted().collect(java.util.stream.Collectors.joining(","));
+        return new SearchScope(Set.copyOf(excluded), allowedScope, Set.copyOf(disabled), cacheKey);
+    }
+
+    private boolean isToolDisabled(String toolId, Set<String> disabledToolIds) {
+        if (disabledToolIds.isEmpty()) {
+            return false;
+        }
+        if (disabledToolIds.contains(toolId)) {
+            return true;
+        }
+        return disabledToolIds.stream()
+                .anyMatch(disabledId -> toolId.startsWith(disabledId + "."));
     }
 
     private boolean isDiscoverableTool(String toolId) {
@@ -240,5 +259,8 @@ public class ToolSearchService {
 
     private record FtsRow(String toolId, double score) {}
 
-    private record SearchScope(Set<String> excluded, @Nullable Set<String> allowedScope, String cacheKey) {}
+    private record SearchScope(Set<String> excluded,
+                               @Nullable Set<String> allowedScope,
+                               Set<String> disabled,
+                               String cacheKey) {}
 }

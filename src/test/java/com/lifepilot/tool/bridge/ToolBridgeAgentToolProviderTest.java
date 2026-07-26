@@ -337,6 +337,55 @@ class ToolBridgeAgentToolProviderTest {
     }
 
     @Test
+    void 禁用父级工具时已发现子工具也不应注入() {
+        DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("tool.search")
+                .name("搜索工具")
+                .description("搜索工具")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW)
+                .idempotent(true)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("工具", "搜索", "发现"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+        registry.registerBuiltinTool(BuiltinTool.builder()
+                .id("browser.click")
+                .name("浏览器点击")
+                .description("点击浏览器页面元素")
+                .inputSchema(JsonSchema.of(Map.of("type", "object")))
+                .outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.MEDIUM)
+                .idempotent(false)
+                .executionSemantics(ToolExecutionSemantics.generic())
+                .tags(List.of("browser", "click"))
+                .executor(input -> ToolResult.success(Map.of("ok", true)))
+                .build());
+
+        var provider = new ToolBridgeAgentToolProvider(
+                registry,
+                mock(ToolExecutionPipeline.class),
+                new ObjectMapper(),
+                30000,
+                tier1For("tool.search")
+        );
+        ReactAgentState state = baseState()
+                .toBuilder()
+                .disabledToolIds(List.of("browser"))
+                .build()
+                .withDiscoveredToolIds(Set.of("browser.click"));
+
+        var toolNames = provider.getToolCallbacks(state, null).stream()
+                .map(callback -> callback.getToolDefinition().name())
+                .toList();
+
+        assertThat(toolNames).containsExactly("tool_search");
+        assertThat(provider.resolveCanonicalToolId("browser_click")).isEqualTo("browser_click");
+    }
+
+    @Test
     void 白名单只读工具应在同一Trace内生成稳定幂等键() {
         DynamicToolRegistry registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
         registry.registerBuiltinTool(BuiltinTool.builder()

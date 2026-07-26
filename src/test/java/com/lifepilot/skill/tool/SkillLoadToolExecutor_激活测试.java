@@ -1,10 +1,15 @@
 package com.lifepilot.skill.tool;
 
+import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.install.SkillInstallation;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.install.SkillSourceType;
 import com.lifepilot.skill.model.SkillActivation;
+import com.lifepilot.tool.BuiltinTool;
+import com.lifepilot.tool.model.ToolResult;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
+import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -31,7 +36,18 @@ class SkillLoadToolExecutor_激活测试 {
 
     @Mock SkillActivator activator;
     @Mock SkillInstallationRepository repository;
+    @Mock DynamicToolRegistry toolRegistry;
     @InjectMocks SkillLoadToolExecutor executor;
+
+    private static final BuiltinTool REGISTERED_TOOL = BuiltinTool.builder()
+            .id("registered.tool")
+            .name("已注册工具")
+            .description("测试用已注册工具")
+            .riskLevel(RiskLevel.LOW)
+            .idempotent(true)
+            .executionSemantics(ToolExecutionSemantics.generic())
+            .executor(input -> ToolResult.success(Map.of()))
+            .build();
 
     @Test
     void 应拒绝超过3个skill() {
@@ -64,12 +80,17 @@ class SkillLoadToolExecutor_激活测试 {
     @Test
     void 激活单个成功应返回content() {
         when(repository.findByName("x")).thenReturn(Optional.of(enabled("x")));
+        when(toolRegistry.resolve("tool-a")).thenReturn(Optional.of(REGISTERED_TOOL));
         when(activator.activate("x")).thenReturn(
                 new SkillActivation("x", "## 指南正文\n...", List.of("tool-a")));
 
         var result = executor.execute(Map.of("names", List.of("x")));
 
         assertThat(result).containsKey("content");
+        assertThat(result)
+                .containsEntry("capabilityStatus", "READY")
+                .containsEntry("suggestedTools", List.of("tool-a"))
+                .containsEntry("availableSuggestedTools", List.of("tool-a"));
         assertThat((String) result.get("content"))
                 .contains("<skill name=\"x\">")
                 .contains("## 指南正文")
@@ -141,15 +162,51 @@ class SkillLoadToolExecutor_激活测试 {
     }
 
     @Test
-    void 多skill重复suggested_tools不影响content返回() {
+    @SuppressWarnings("unchecked")
+    void 多skill重复suggested_tools应去重并标出缺失能力() {
         when(repository.findByName("a")).thenReturn(Optional.of(enabled("a")));
         when(repository.findByName("b")).thenReturn(Optional.of(enabled("b")));
+        when(toolRegistry.resolve("t1")).thenReturn(Optional.of(REGISTERED_TOOL));
+        when(toolRegistry.resolve("t2")).thenReturn(Optional.empty());
+        when(toolRegistry.resolve("t3")).thenReturn(Optional.empty());
         when(activator.activate("a")).thenReturn(new SkillActivation("a", "A", List.of("t1", "t2")));
         when(activator.activate("b")).thenReturn(new SkillActivation("b", "B", List.of("t2", "t3")));
 
-        executor.execute(Map.of("names", List.of("a", "b")));
+        var result = executor.execute(Map.of("names", List.of("a", "b")));
 
-        // suggested_tools 仅是元数据，不随 skill.load 输出注入运行时工具列表。
+        assertThat(result)
+                .containsEntry("capabilityStatus", "DEGRADED")
+                .containsEntry("suggestedTools", List.of("t1", "t2", "t3"))
+                .containsEntry("availableSuggestedTools", List.of("t1"));
+        List<Map<String, Object>> missingCapabilities =
+                (List<Map<String, Object>>) result.get("missingCapabilities");
+        assertThat(missingCapabilities)
+                .extracting(item -> item.get("id"))
+                .containsExactly("t2", "t3");
+        assertThat((String) result.get("content"))
+                .contains("技能能力状态")
+                .contains("unknown suggested tool: t2")
+                .contains("unknown suggested tool: t3");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void canonical建议工具缺失应给出可恢复原因() {
+        when(repository.findByName("research")).thenReturn(Optional.of(enabled("research")));
+        when(toolRegistry.resolve("web.search")).thenReturn(Optional.empty());
+        when(activator.activate("research")).thenReturn(
+                new SkillActivation("research", "需要搜索资料", List.of("web.search")));
+
+        var result = executor.execute(Map.of("names", List.of("research")));
+
+        List<Map<String, Object>> missingCapabilities =
+                (List<Map<String, Object>>) result.get("missingCapabilities");
+        assertThat(missingCapabilities).containsExactly(Map.of(
+                "kind", "TOOL",
+                "id", "web.search",
+                "source", "skill_reference",
+                "skillName", "research",
+                "reason", "Skill 引用了当前不可用工具"));
     }
 
     // 辅助方法

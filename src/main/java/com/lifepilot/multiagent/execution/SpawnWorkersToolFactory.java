@@ -3,6 +3,7 @@ package com.lifepilot.multiagent.execution;
 import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.Budget;
+import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.interaction.model.InteractionSource;
 import com.lifepilot.multiagent.config.MultiAgentProperties;
@@ -141,6 +142,9 @@ public class SpawnWorkersToolFactory {
         String callerSessionId = input.getContextValue(ToolContextKeys.SESSION_ID, String.class)
                 .orElse("worker-" + UUID.randomUUID().toString().substring(0, 8));
         Budget callerBudget = input.getContextValue(ToolContextKeys.CALLER_BUDGET, Budget.class).orElse(null);
+        ReactAgentState callerState = input.getContextValue(ToolContextKeys.CALLER_STATE, ReactAgentState.class)
+                .orElse(null);
+        List<String> disabledToolIds = callerState != null ? callerState.disabledToolIds() : null;
 
         // 4. 深度校验
         int workerDepth = callerDepth + 1;
@@ -188,6 +192,7 @@ public class SpawnWorkersToolFactory {
                         workerDepth,
                         null,
                         workerToolIds,
+                        disabledToolIds,
                         null,
                         null
                 );

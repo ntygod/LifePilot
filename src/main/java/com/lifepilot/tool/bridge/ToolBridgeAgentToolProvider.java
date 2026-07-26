@@ -124,20 +124,27 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             @Nullable java.util.function.Consumer<java.util.List<com.lifepilot.tool.model.ToolArtifact>> artifactSink) {
         List<ToolContract> all = toolRegistry.getToolSnapshot();
         var allowed = state.allowedToolIds();
+        Set<String> disabled = disabledToolIds(state);
 
         List<ToolContract> tools;
         if (allowed != null && !allowed.isEmpty()) {
             // 多 Agent / 受限代理场景 — 严格按白名单过滤
-            tools = all.stream().filter(t -> allowed.contains(t.id())).toList();
-            log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}", all.size(), tools.size());
+            tools = all.stream()
+                    .filter(t -> allowed.contains(t.id()))
+                    .filter(t -> !isToolDisabled(t.id(), disabled))
+                    .toList();
+            log.debug("ToolCallback 过滤 (allowedToolIds): total={}, filtered={}, disabled={}",
+                    all.size(), tools.size(), disabled.size());
         } else {
             Set<String> visibleToolIds = buildVisibleToolIds(state);
             tools = all.stream()
                     .filter(t -> visibleToolIds.contains(t.id()))
+                    .filter(t -> !isToolDisabled(t.id(), disabled))
                     .toList();
-            log.debug("ToolCallback 分层注入: total={}, visible={}, discovered={}",
+            log.debug("ToolCallback 分层注入: total={}, visible={}, discovered={}, disabled={}",
                     all.size(), tools.size(),
-                    state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0);
+                    state.discoveredToolIds() != null ? state.discoveredToolIds().size() : 0,
+                    disabled.size());
         }
 
         refreshToolNameMappings(tools);
@@ -154,6 +161,24 @@ public class ToolBridgeAgentToolProvider implements AgentToolProvider {
             visible.addAll(state.discoveredToolIds());
         }
         return Set.copyOf(visible);
+    }
+
+    private Set<String> disabledToolIds(ReactAgentState state) {
+        if (state.disabledToolIds() == null || state.disabledToolIds().isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(state.disabledToolIds());
+    }
+
+    private boolean isToolDisabled(String toolId, Set<String> disabledToolIds) {
+        if (disabledToolIds.isEmpty()) {
+            return false;
+        }
+        if (disabledToolIds.contains(toolId)) {
+            return true;
+        }
+        return disabledToolIds.stream()
+                .anyMatch(disabledId -> toolId.startsWith(disabledId + "."));
     }
 
     /**

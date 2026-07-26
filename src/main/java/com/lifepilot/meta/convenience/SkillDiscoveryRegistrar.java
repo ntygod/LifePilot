@@ -33,15 +33,17 @@ import java.util.Optional;
  * 通过 {@link SkillInstaller} 完成"校验 → 写文件 → upsert skills 表"三步，并注册到
  * {@link SkillRegistry} 使激活器（SkillActivator / ContextAssembler）可见。
  *
- * <h3>版本决策（保留用户修改）</h3>
- * 每个 BUILTIN Skill 启动时按 classpath 与 skills 表已记录版本做三态决策：
+ * <h3>启动决策（本地优先，永不覆盖）</h3>
+ * 每个 BUILTIN Skill 启动时只做二态决策，且<strong>不看版本号</strong>：
  * <ul>
- *   <li><b>INSTALL</b>：表中无该 name —— 首次安装，写入文件 + upsert + 复制 aux</li>
- *   <li><b>UPGRADE</b>：classpath version &gt; 表中 version —— 出厂升级，覆盖式重装并复制 aux</li>
- *   <li><b>KEEP</b>：classpath version &le; 表中 version —— 保留用户本地修改，不写文件、不复制 aux，
- *       但仍重新解析本地 SKILL.md 并 register 到 Registry，确保运行时能看到</li>
+ *   <li><b>INSTALL</b>：skills 表无该 name <em>且</em>本地无 {@code <name>/SKILL.md} —— 首次安装，
+ *       写入文件 + upsert + 复制 aux</li>
+ *   <li><b>KEEP</b>：skills 表已有该 name <em>或</em>本地已存在 {@code <name>/SKILL.md} —— 一律保留本地，
+ *       不写文件、不复制 aux，只重新解析本地 SKILL.md 并 register 到 Registry，确保运行时能看到</li>
  * </ul>
- * 用户编辑本地 SKILL.md 不会被重启覆盖；只有出厂升级（升 version 号）才会同步过来。
+ * 只要本地已经装过（表里有记录，或磁盘上已有文件），启动就绝不覆盖 —— 用户对 SKILL.md /
+ * references 的任何手改都不会被重启抹掉。出厂升级（升 version 号）不再在启动时自动同步，
+ * 改由用户显式触发的升级入口处理（后续 PR）。
  *
  * <p>解析/校验失败（罕见，多为用户手改坏了 SKILL.md）只记 WARN 跳过，不阻断启动。</p>
  *
@@ -87,11 +89,11 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
         installAllBuiltinSkills();
     }
 
-    /** Skill 同步决策三态。 */
-    private enum SyncAction { INSTALL, UPGRADE, KEEP }
+    /** Skill 同步决策二态。 */
+    private enum SyncAction { INSTALL, KEEP }
 
     /**
-     * 扫描 classpath 下所有 BUILTIN SKILL.md，按版本决策做 INSTALL / UPGRADE / KEEP。
+     * 扫描 classpath 下所有 BUILTIN SKILL.md，按本地是否已存在做 INSTALL / KEEP。
      */
     void installAllBuiltinSkills() {
         var resolver = new PathMatchingResourcePatternResolver();
@@ -105,7 +107,6 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
 
         Path skillsRoot = zhiweiPaths.home("skills");
         int installed = 0;
-        int upgraded = 0;
         int kept = 0;
         int skipped = 0;
         for (Resource resource : resources) {
@@ -118,39 +119,32 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
                 String classpathContent = resource.getContentAsString(StandardCharsets.UTF_8);
                 ParsedSkill classpathParsed = parser.parse(classpathContent);
                 validator.validate(classpathParsed);
-                String classpathVersion = classpathParsed.frontmatter().version();
 
                 Optional<SkillInstallation> existing = installationRepository.findByName(skillName);
-                SyncAction action = decideAction(classpathVersion, existing);
+                // 本地落盘目录：表里有记录以记录为准，否则回退到 skillsRoot/<name>
+                Path skillFolder = existing.map(i -> Path.of(i.filePath()))
+                        .orElseGet(() -> skillsRoot.resolve(skillName));
+                SyncAction action = decideAction(skillName, skillsRoot, existing);
 
                 switch (action) {
                     case KEEP -> {
                         kept++;
-                        registerKeptSkill(existing.orElseThrow(), classpathContent, classpathParsed);
-                        log.debug("BUILTIN Skill 保留本地修改: name={}, classpathVersion={}, localVersion={}",
-                                skillName, classpathVersion, existing.get().version());
+                        registerKeptSkill(skillFolder, classpathContent, classpathParsed);
+                        log.debug("BUILTIN Skill 保留本地: name={}, folder={}", skillName, skillFolder);
                     }
-                    case INSTALL, UPGRADE -> {
+                    case INSTALL -> {
                         SkillInstallation install = installer.install(new SkillInstaller.InstallRequest(
                                 SkillSourceType.BUILTIN,
                                 "classpath:skills/" + skillName,
                                 null,
                                 classpathContent,
                                 skillsRoot));
-                        Path skillFolder = Path.of(install.filePath());
-                        copyAuxiliaryFiles(skillName, skillFolder);
-                        registerToRegistry(classpathContent, skillFolder);
-                        if (action == SyncAction.INSTALL) {
-                            installed++;
-                            log.info("BUILTIN Skill 已安装: name={}, version={}",
-                                    install.name(), install.version());
-                        } else {
-                            upgraded++;
-                            log.info("BUILTIN Skill 已升级: name={}, oldVersion={}, newVersion={}",
-                                    install.name(),
-                                    existing.map(SkillInstallation::version).orElse("?"),
-                                    install.version());
-                        }
+                        Path installedFolder = Path.of(install.filePath());
+                        copyAuxiliaryFiles(skillName, installedFolder);
+                        registerToRegistry(classpathContent, installedFolder);
+                        installed++;
+                        log.info("BUILTIN Skill 已安装: name={}, version={}",
+                                install.name(), install.version());
                     }
                 }
             } catch (IllegalArgumentException e) {
@@ -163,52 +157,30 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
                 skipped++;
             }
         }
-        log.info("BUILTIN Skill 同步完成: installed={}, upgraded={}, kept={}, skipped={}, total={}",
-                installed, upgraded, kept, skipped, resources.length);
+        log.info("BUILTIN Skill 同步完成: installed={}, kept={}, skipped={}, total={}",
+                installed, kept, skipped, resources.length);
     }
 
     /**
-     * 三态决策：表中无 → INSTALL；classpath 版本号严格大于本地 → UPGRADE；否则 → KEEP。
+     * 二态决策：本地已装（skills 表有记录，<em>或</em>磁盘上已有 {@code <name>/SKILL.md}）→ KEEP；
+     * 否则 → INSTALL。启动阶段绝不因版本号差异覆盖本地文件。
      */
-    private SyncAction decideAction(String classpathVersion, Optional<SkillInstallation> existing) {
-        if (existing.isEmpty()) return SyncAction.INSTALL;
-        return compareSemver(classpathVersion, existing.get().version()) > 0
-                ? SyncAction.UPGRADE
-                : SyncAction.KEEP;
-    }
-
-    /**
-     * 简化的 semver 比较：按 {@code .} 切分逐段比对整数；前导段相同时长度更长视为更新。
-     * 仅支持纯数字段，碰到非数字段降级为字典序。
-     */
-    static int compareSemver(String a, String b) {
-        if (a == null) a = "";
-        if (b == null) b = "";
-        String[] aParts = a.split("\\.");
-        String[] bParts = b.split("\\.");
-        int max = Math.max(aParts.length, bParts.length);
-        for (int i = 0; i < max; i++) {
-            String ax = i < aParts.length ? aParts[i] : "0";
-            String bx = i < bParts.length ? bParts[i] : "0";
-            try {
-                int ai = Integer.parseInt(ax);
-                int bi = Integer.parseInt(bx);
-                if (ai != bi) return Integer.compare(ai, bi);
-            } catch (NumberFormatException e) {
-                int cmp = ax.compareTo(bx);
-                if (cmp != 0) return cmp;
-            }
+    private SyncAction decideAction(String skillName, Path skillsRoot,
+                                    Optional<SkillInstallation> existing) {
+        if (existing.isPresent()) return SyncAction.KEEP;
+        // 表无记录但本地文件已存在（如 DB 被重置 / 用户手动放入）→ 同样视为已装，绝不覆盖
+        if (Files.exists(skillsRoot.resolve(skillName).resolve("SKILL.md"))) {
+            return SyncAction.KEEP;
         }
-        return 0;
+        return SyncAction.INSTALL;
     }
 
     /**
      * KEEP 决策：保留本地 SKILL.md 内容（用户可能已修改），重新 parse 并 register 到 Registry。
-     * 本地解析失败时降级用 classpath 版本（保证 Registry 至少能看到这个 skill）。
+     * 本地文件缺失或解析失败时降级用 classpath 版本（保证 Registry 至少能看到这个 skill）。
      */
-    private void registerKeptSkill(SkillInstallation existing, String classpathContent,
+    private void registerKeptSkill(Path skillFolder, String classpathContent,
                                     ParsedSkill classpathParsed) {
-        Path skillFolder = Path.of(existing.filePath());
         Path localSkillMd = skillFolder.resolve("SKILL.md");
         try {
             if (Files.exists(localSkillMd)) {
@@ -219,8 +191,8 @@ public class SkillDiscoveryRegistrar implements InitializingBean {
                 return;
             }
         } catch (Exception e) {
-            log.warn("BUILTIN Skill 本地 SKILL.md 解析失败，降级用 classpath 注册: name={}, error={}",
-                    existing.name(), e.getMessage());
+            log.warn("BUILTIN Skill 本地 SKILL.md 解析失败，降级用 classpath 注册: folder={}, error={}",
+                    skillFolder, e.getMessage());
         }
         registerParsed(classpathParsed, skillFolder);
     }
