@@ -867,8 +867,10 @@ lifepilot:
       # 单个工作流最大并发实例数
       max-instances-per-workflow: 3
   sandbox:
-    # 沙箱总开关
-    enabled: true
+    # 沙箱总开关。默认关闭：代码执行属开发者能力，与「本地个人助手」定位无关，
+    # 且大厂编码 Agent 在此项上更强。关闭后 PythonRuntimeManager 不注册，
+    # code 与 kernel 工具一并跳过（见 InfraToolProvider 的降级分支）。
+    enabled: false
     # 沙箱类型：process / docker
     booter: process
     # 支持的语言列表
@@ -1032,7 +1034,8 @@ lifepilot:
         takeover:
           timeout-seconds: 300        # 人工接管挂起等待超时（秒），5 分钟
       git:
-        enabled: true
+        # 默认关闭：git 操作属开发者能力，零预置技能依赖
+        enabled: false
         timeout-seconds: 30
         max-diff-lines: 500
         max-log-entries: 50

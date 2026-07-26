@@ -33,8 +33,6 @@ metadata:
 不要触发：
 
 - 静态页面抓取（文档 / 博客 / 新闻）→ `web.fetch`
-- API 接口测试 → api-debugger
-- 桌面应用操作 → desktop-automation
 - 多源搜索 → `web.search`
 
 ## 决策路径

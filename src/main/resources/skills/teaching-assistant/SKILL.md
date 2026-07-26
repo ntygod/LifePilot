@@ -33,7 +33,7 @@ metadata:
 
 不要触发：
 
-- 用户要"帮我写好" → code-assistant（教学场景下 LLM 应让用户动手）
+- 用户要"帮我写好" → 教学场景下应让用户动手，不直接代写
 - 信息调研 → research-assistant
 - 文档撰写 → content-creator
 

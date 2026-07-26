@@ -35,7 +35,6 @@ metadata:
 不要触发：
 
 - 已知答案的简单问题 → 直接回答
-- 代码库内搜索 → code-assistant
 - 数据集统计 → data-analyst
 - 已绑定知识库的精确查询 → 直接 `memory`
 

@@ -37,8 +37,6 @@ metadata:
 
 不要触发：
 
-- 数据库 SQL 查询 → database-query
-- 日志文件分析 → log-analyzer
 - 简单数学计算 → 直接回答
 
 ## 决策路径

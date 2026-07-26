@@ -36,7 +36,6 @@ metadata:
 不要触发：
 
 - 从已有内容提炼摘要 → summarizer
-- 技术文档 / 代码注释 → code-assistant
 - 数据报表 → data-analyst
 
 ## 决策路径

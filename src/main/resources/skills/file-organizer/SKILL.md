@@ -34,7 +34,6 @@ metadata:
 不要触发：
 
 - 单个文件读 / 写 → `file.read` / `file.write`
-- 代码文件重构 → code-assistant
 - 文档格式转换（docx ↔ pdf 等）→ doc-processor
 
 ## 决策路径

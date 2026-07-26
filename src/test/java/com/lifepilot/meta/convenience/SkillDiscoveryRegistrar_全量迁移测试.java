@@ -58,20 +58,18 @@ class SkillDiscoveryRegistrar_全量迁移测试 {
         registrar.afterPropertiesSet();
 
         ArgumentCaptor<SkillInstallation> captor = ArgumentCaptor.forClass(SkillInstallation.class);
-        verify(repository, org.mockito.Mockito.atLeast(20)).upsert(captor.capture());
+        verify(repository, org.mockito.Mockito.atLeast(13)).upsert(captor.capture());
         List<SkillInstallation> installed = captor.getAllValues();
 
-        // 减法整理后：剩余 20 个 BUILTIN Skill
-        assertThat(installed).hasSize(20);
+        // 移除开发者面技能后：剩余 13 个 BUILTIN Skill
+        assertThat(installed).hasSize(13);
 
         // 检查所有预期 Skill 都在
         List<String> expected = List.of(
-                "a2ui", "api-debugger", "browser-automation", "code-assistant",
+                "a2ui", "browser-automation",
                 "content-creator", "cron-scheduler", "daily-manager", "data-analyst",
-                "database-query", "desktop-automation", "doc-processor",
-                "feishu", "file-organizer",
-                "github-workflow", "healthcheck",
-                "log-analyzer", "research-assistant", "skill-creator", "summarizer",
+                "doc-processor", "feishu", "file-organizer",
+                "research-assistant", "skill-creator", "summarizer",
                 "teaching-assistant"
         );
         assertThat(installed.stream().map(SkillInstallation::name).toList())
