@@ -527,6 +527,11 @@ public class AgentLearningAutoConfiguration {
     /** 对话结束事件 → 触发语义/程序巩固 + 登记画像防抖。 */
     @EventListener
     public void onConversationCompleted(ConversationCompletedEvent event) {
+        if (!event.isMemoryLearningEnabled()) {
+            log.debug("记忆模块: 对话完成巩固已按本轮记忆边界跳过, sessionId={}, turnId={}, reason={}",
+                    event.getSessionId(), event.getTurnId(), event.getMemoryLearningSkipReason());
+            return;
+        }
         ConsolidationScheduler scheduler = consolidationSchedulerProvider.getObject();
         scheduler.onConversationCompleted();
     }

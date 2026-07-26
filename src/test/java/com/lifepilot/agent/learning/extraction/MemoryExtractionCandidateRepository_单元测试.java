@@ -14,10 +14,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -187,5 +189,75 @@ class MemoryExtractionCandidateRepository_单元测试 {
                 .hasMessageContaining("记忆提取候选状态更新失败")
                 .hasMessageContaining("missing-candidate")
                 .hasMessageContaining("FAILED");
+    }
+
+    @Test
+    void 轮次记忆抽取开始时记录运行状态() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        var repository = new MemoryExtractionCandidateRepository(jdbcTemplate, new ObjectMapper());
+
+        repository.markTurnRunning("session-1", "turn-1");
+
+        verify(jdbcTemplate).update(
+                contains("INSERT INTO memory_extraction_turn_status"),
+                eq("turn-1"), eq("session-1"), eq("RUNNING"), isNull(),
+                any(), isNull(), any());
+    }
+
+    @Test
+    void 轮次记忆抽取完成时记录终态时间() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        var repository = new MemoryExtractionCandidateRepository(jdbcTemplate, new ObjectMapper());
+
+        repository.markTurnCompleted("session-1", "turn-1");
+
+        verify(jdbcTemplate).update(
+                contains("INSERT INTO memory_extraction_turn_status"),
+                eq("turn-1"), eq("session-1"), eq("COMPLETED"), isNull(),
+                any(), any(), any());
+    }
+
+    @Test
+    void 轮次记忆抽取失败时截断过长原因() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        var repository = new MemoryExtractionCandidateRepository(jdbcTemplate, new ObjectMapper());
+        String reason = "错".repeat(600);
+
+        repository.markTurnFailed("session-1", "turn-1", reason);
+
+        verify(jdbcTemplate).update(
+                contains("INSERT INTO memory_extraction_turn_status"),
+                eq("turn-1"), eq("session-1"), eq("FAILED"), eq("错".repeat(500)),
+                any(), any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("rawtypes")
+    void 查询已应用记忆变更时包含忘记操作() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        var repository = new MemoryExtractionCandidateRepository(jdbcTemplate, new ObjectMapper());
+
+        repository.findAppliedMemoryChangesByTurnId("turn-1", 5);
+
+        verify(jdbcTemplate).query(
+                contains("operation IN ('ADD', 'UPDATE', 'DELETE')"),
+                any(org.springframework.jdbc.core.RowMapper.class),
+                any(Object[].class));
+    }
+
+    @Test
+    void 删除会话候选时应同时清理轮次状态() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.update(contains("DELETE FROM memory_extraction_turn_status"), eq("session-1")))
+                .thenReturn(2);
+        when(jdbcTemplate.update(contains("DELETE FROM memory_extraction_candidates"), eq("session-1")))
+                .thenReturn(3);
+        var repository = new MemoryExtractionCandidateRepository(jdbcTemplate, new ObjectMapper());
+
+        int deleted = repository.deleteBySessionId("session-1");
+
+        assertThat(deleted).isEqualTo(5);
+        verify(jdbcTemplate).update(contains("DELETE FROM memory_extraction_turn_status"), eq("session-1"));
+        verify(jdbcTemplate).update(contains("DELETE FROM memory_extraction_candidates"), eq("session-1"));
     }
 }

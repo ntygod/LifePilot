@@ -120,6 +120,20 @@ public class RealtimeExtractor {
     void extract(String sessionId, String turnId, String userMessage, String aiResponse) {
         requireText(sessionId, "实时实体提取 sessionId 不能为空");
         requireText(turnId, "实时实体提取 turnId 不能为空");
+        candidateRepository.markTurnRunning(sessionId, turnId);
+        try {
+            doExtract(sessionId, turnId, userMessage, aiResponse);
+            candidateRepository.markTurnCompleted(sessionId, turnId);
+        } catch (Exception e) {
+            markTurnFailedQuietly(sessionId, turnId, e);
+            if (e instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new IllegalStateException("实时记忆抽取失败", e);
+        }
+    }
+
+    private void doExtract(String sessionId, String turnId, String userMessage, String aiResponse) {
         if (userMessage == null || userMessage.isBlank()) return;
         ChatTurnMemorySnapshot snapshot = resolveSnapshot(sessionId, turnId);
         MemoryWriteContext writeContext = memoryAccessPolicy.resolveAutoLearningWriteContext(snapshot, sessionId, turnId);
@@ -217,6 +231,19 @@ public class RealtimeExtractor {
         // 5. 关系抽取阶段 — 实体已持久化、ID 已知后，抽取实体间关系写入 memory_relations
         extractAndPersistRelations(conversationText, turnEntityIds, turnEntityDisplay,
                 writeContext, sessionId, summaryReadFilter);
+    }
+
+    private void markTurnFailedQuietly(String sessionId, String turnId, Exception error) {
+        try {
+            String message = error.getMessage() != null && !error.getMessage().isBlank()
+                    ? error.getMessage()
+                    : error.getClass().getSimpleName();
+            candidateRepository.markTurnFailed(sessionId, turnId, message);
+        } catch (Exception markFailure) {
+            if (markFailure != error) {
+                error.addSuppressed(markFailure);
+            }
+        }
     }
 
     /**
