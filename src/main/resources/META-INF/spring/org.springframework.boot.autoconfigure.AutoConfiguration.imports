@@ -22,7 +22,6 @@ com.lifepilot.sandbox.config.SandboxAutoConfiguration
 
 com.lifepilot.interaction.web.config.WebAutoConfiguration
 com.lifepilot.multiagent.config.MultiAgentAutoConfiguration
-com.lifepilot.a2a.config.A2aAutoConfiguration
 com.lifepilot.observability.config.ObservabilityAutoConfiguration
 com.lifepilot.marketplace.config.MarketplaceAutoConfiguration
 com.lifepilot.meta.config.MetaAutoConfiguration

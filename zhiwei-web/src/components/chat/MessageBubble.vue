@@ -741,8 +741,6 @@ function matchesIntegrationExecution(key: string) {
 
 function matchesAgentExecution(key: string) {
   return key.includes('agent.')
-    || key.includes('a2a.')
-    || key.includes('remote.')
     || key.includes('智能体')
 }
 

@@ -159,7 +159,7 @@ function naturalToolTitle(toolId?: string, toolName?: string, subjectNames?: str
   if (key.includes('mcp.') || key.includes('connector.') || key.includes('integration.') || key.includes('连接器')) {
     return '连接工具服务'
   }
-  if (key.includes('agent.') || key.includes('a2a.') || key.includes('remote.') || key.includes('智能体')) {
+  if (key.includes('agent.') || key.includes('智能体')) {
     return '协作处理'
   }
   if (

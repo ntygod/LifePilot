@@ -19,9 +19,7 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>本地运行的个人 AI Agent 助手，通过 {@code java -jar zhiwei.jar} 一键启动。
  *
- * <p>Web Controller 通过组件扫描自动注册，依赖缺失时 fail-fast 更清晰；
- * A2A Server Controller 由 {@code A2aAutoConfiguration} 条件注册，下方 regex
- * 将其排除在扫描之外以避免重复注册。
+ * <p>Web Controller 通过组件扫描自动注册，依赖缺失时 fail-fast 更清晰。
  *
  * @author zsg
  * @since 2026-02-24
@@ -30,8 +28,6 @@ import java.nio.charset.StandardCharsets;
 @ComponentScan(
         basePackages = "com.lifepilot",
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX, pattern = {
-                // A2A Server 所有 Controller（改由 A2aAutoConfiguration 条件注册）
-                "com\\.lifepilot\\.a2a\\.server\\..*Controller",
                 // 测试类中声明的内部 @Configuration 不污染主上下文
                 ".*Test\\$.*Config"
         })

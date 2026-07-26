@@ -196,7 +196,7 @@ function isIntegrationTool(toolId: string) {
 }
 
 function isAgentTool(toolId: string) {
-  return startsWithAny(toolId, ['agent.', 'a2a.', 'remote.'])
+  return startsWithAny(toolId, ['agent.'])
 }
 
 function isModelTool(toolId: string) {
