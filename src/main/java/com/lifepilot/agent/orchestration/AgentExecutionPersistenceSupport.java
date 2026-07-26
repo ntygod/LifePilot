@@ -65,7 +65,8 @@ final class AgentExecutionPersistenceSupport {
         if (isTransientSession(state.sessionId())) {
             return null;
         }
-        String assistantEntryId = persistenceHandler.persistAssistantMessage(state, reactStepsJson);
+        String assistantEntryId = persistenceHandler.persistAssistantMessage(
+                state, reactStepsJson, loopContext.getCollectedArtifactRefs());
         persistAssistantArtifacts(state, assistantEntryId, loopContext);
         return assistantEntryId;
     }
@@ -82,7 +83,8 @@ final class AgentExecutionPersistenceSupport {
             return null;
         }
         String assistantEntryId = persistenceHandler.persistAssistantMessageWithA2ui(
-                state, finalContent, reasoningSummary, a2uiJson, reactStepsJson);
+                state, finalContent, reasoningSummary, a2uiJson, reactStepsJson,
+                loopContext.getCollectedArtifactRefs());
         persistAssistantArtifacts(state, assistantEntryId, loopContext);
         return assistantEntryId;
     }

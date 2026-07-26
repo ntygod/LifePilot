@@ -13,6 +13,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.persistence.AgentPersistenceHandler;
+import com.lifepilot.agent.recovery.TaskRecoverySummaryBuilder;
 import com.lifepilot.agent.streaming.StreamingEventHandler;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
@@ -343,7 +344,7 @@ public class AgentOrchestrator {
                     saveCheckpoint(state, effectiveRequest);
                 }
 
-                // 从 ui.emit 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
+                // 从 ui.render 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
                 if (uiEmitTreeCapture != null) {
                     var capturedTree = uiEmitTreeCapture.poll(streamId);
                     if (capturedTree != null) {
@@ -370,7 +371,7 @@ public class AgentOrchestrator {
                 state = degradeForException(state, ex);
                 finalContent = state.finalOutput() != null ? state.finalOutput() : "";
                 saveCheckpoint(state, effectiveRequest);
-                // 从 ui.emit 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
+                // 从 ui.render 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
                 if (uiEmitTreeCapture != null) {
                     var capturedTree = uiEmitTreeCapture.poll(streamId);
                     if (capturedTree != null) {
@@ -428,7 +429,8 @@ public class AgentOrchestrator {
                         request, state, tempTurnId, finalTokenUsage,
                         state.steps(), reasoningSummary, finalContent, assistantEntryId,
                         loopContext.getLastCollectedA2uiTree(),
-                        loopContext.streamingTimingsMs());
+                        loopContext.streamingTimingsMs(),
+                        loopContext.getCollectedArtifactRefs());
                 if (eventBuffer != null && !eventBuffer.isClosed()) {
                     // 缓冲区模式：offerTerminal 触发排空 → 派发 DONE → 关闭 emitter
                     eventBuffer.offerTerminal(SseEventType.DONE, doneData);
@@ -591,10 +593,13 @@ public class AgentOrchestrator {
                     state.depth(),
                     state.preferredProvider(),
                     state.allowedToolIds(),
+                    state.disabledToolIds(),
                     null,
                     null,
                     ResumePolicy.AUTO,
-                    state.overrideKnowledgeBaseIds()
+                    state.overrideKnowledgeBaseIds(),
+                    state.memoryContextMode(),
+                    state.turnRecoveryContext()
             );
             var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
                     config, generationRouter, multimodalRouter, request, agentLoop);
@@ -667,10 +672,13 @@ public class AgentOrchestrator {
                     request.depth(),
                     request.preferredProvider(),
                     request.allowedToolIds(),
+                    request.disabledToolIds(),
                     processedMedia,
                     request.temperature(),
                     request.resumePolicy(),
-                    request.overrideKnowledgeBaseIds()
+                    request.overrideKnowledgeBaseIds(),
+                    request.memoryContextMode(),
+                    request.turnRecoveryContext()
             );
         } catch (MediaValidationException e) {
             log.warn("媒体内容校验失败：sessionId={}, error={}", request.sessionId(), e.getMessage());
@@ -781,6 +789,9 @@ public class AgentOrchestrator {
                 .source(request.source())
                 .parentTraceId(oldTraceId)
                 .resumedFromTraceId(oldTraceId)
+                .turnRecoveryContext(request.turnRecoveryContext() != null
+                        ? request.turnRecoveryContext()
+                        : restoredState.turnRecoveryContext())
                 .preferredProvider(
                         request.preferredProvider() != null
                                 ? request.preferredProvider()
@@ -789,6 +800,10 @@ public class AgentOrchestrator {
                         request.allowedToolIds() != null
                                 ? request.allowedToolIds()
                                 : restoredState.allowedToolIds())
+                .disabledToolIds(
+                        request.disabledToolIds() != null
+                                ? request.disabledToolIds()
+                                : restoredState.disabledToolIds())
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
@@ -1035,7 +1050,14 @@ public class AgentOrchestrator {
                 && browserTakeover.timeoutSeconds() != null) {
             suspendedEvent.put("timeoutSeconds", browserTakeover.timeoutSeconds());
         }
-        suspendedEvent.put("reasonDetail", agentLoop.formatSuspendReason(suspendedState.suspendReason()));
+        String reasonDetail = agentLoop.formatSuspendReason(suspendedState.suspendReason());
+        suspendedEvent.put("reasonDetail", reasonDetail);
+        suspendedEvent.put("taskRecovery", TaskRecoverySummaryBuilder.fromSuspendReason(
+                suspendedState.suspendReason(), reasonDetail));
+        Map<String, Object> executionConstraints = ExecutionConstraintSummarySupport.from(suspendedState);
+        if (!executionConstraints.isEmpty()) {
+            suspendedEvent.put("executionConstraints", executionConstraints);
+        }
         suspendedEvent.put("terminationReason", resolveSuspendTerminationReason(suspendedState));
         suspendedEvent.put("content", suspendMessage);
         suspendedEvent.put("suspendedAt", Instant.now().toString());
@@ -1137,6 +1159,8 @@ public class AgentOrchestrator {
                                              @Nullable List<com.lifepilot.interaction.web.model.A2uiComponent> a2uiComponents,
                                              @Nullable TokenUsage tokenUsage,
                                              java.util.List<com.lifepilot.interaction.model.ArtifactRef> artifactRefs) {
+        var toolSummaries = TaskRecoverySummaryBuilder.toolSummariesFromSteps(state.steps(), artifactRefs);
+        var taskRecovery = TaskRecoverySummaryBuilder.fromState(state, toolSummaries).orElse(null);
         return new AgentResponse(
                 state.traceId(),
                 state.sessionId(),
@@ -1153,7 +1177,9 @@ public class AgentOrchestrator {
                 state.completionMode(),
                 state.resumedFromTraceId(),
                 resolveTurnStatus(state),
-                artifactRefs
+                artifactRefs,
+                toolSummaries,
+                taskRecovery
         );
     }
 

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -27,6 +29,7 @@ public final class ReactStepSerializer {
     static final int THOUGHT_MAX_LENGTH = 500;
     static final int SUMMARY_MAX_LENGTH = 120;
     static final int DETAIL_MAX_LENGTH = 2000;
+    private static final String REDACTED_INPUT_VALUE = "***";
 
     /** 产出文件的工具 ID 集合 — 成功时 output 中含 "path" 字段。 */
     private static final Set<String> FILE_PRODUCING_TOOL_IDS = Set.of(
@@ -36,6 +39,12 @@ public final class ReactStepSerializer {
     /** 含工作目录的工具 ID 集合 — 成功时 output 中含 "workingDirectory" 字段。 */
     private static final Set<String> WORKDIR_TOOL_IDS = Set.of(
             "shell.exec", "code"
+    );
+
+    /** 恢复上下文里不应明文展示的输入字段。 */
+    private static final Set<String> SENSITIVE_INPUT_FIELD_NAMES = Set.of(
+            "password", "passwd", "secret", "token", "accessToken", "refreshToken",
+            "apiKey", "apikey", "authorization", "oauth", "cookie", "privateKey"
     );
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -64,7 +73,7 @@ public final class ReactStepSerializer {
      * @param index 步骤索引
      * @return 序列化后的 Map
      */
-    static Map<String, Object> serializeStep(ReactStep step, int index) {
+    public static Map<String, Object> serializeStep(ReactStep step, int index) {
         return switch (step) {
             case ReactStep.Progress(var content) -> Map.of(
                     "type", "PROGRESS",
@@ -84,6 +93,9 @@ public final class ReactStepSerializer {
                 if (toolCall.toolName() != null) map.put("toolName", toolCall.toolName());
                 if (toolCall.callId() != null) map.put("callId", toolCall.callId());
                 map.put("inputSummary", summarizeInput(toolCall.toolId(), toolCall.inputJson()));
+                String inputDetail = extractInputDetail(toolCall.inputJson());
+                if (inputDetail != null) map.put("inputDetail", inputDetail);
+                attachSkillSubjectFromInput(map, toolCall.toolId(), toolCall.inputJson());
                 map.put("latencyMs", toolCall.latencyMs());
                 yield Map.copyOf(map);
             }
@@ -96,6 +108,7 @@ public final class ReactStepSerializer {
                 if (observation.callId() != null) map.put("callId", observation.callId());
                 map.put("success", observation.success());
                 map.put("outputSummary", summarizeOutput(observation.toolId(), observation.output(), observation.success()));
+                attachSkillSubjectFromOutput(map, observation.toolId(), observation.output());
                 map.put("tokensUsed", observation.tokensUsed());
                 String detail = extractOutputDetail(observation.toolId(), observation.output(), observation.success());
                 if (detail != null) map.put("outputDetail", detail);
@@ -103,6 +116,10 @@ public final class ReactStepSerializer {
                 if (filePath != null) map.put("generatedFilePath", filePath);
                 String workDir = extractWorkingDirectory(observation);
                 if (workDir != null) map.put("workingDirectory", workDir);
+                List<Map<String, Object>> artifactRefs = extractArtifactRefs(observation.output());
+                if (!artifactRefs.isEmpty()) map.put("artifactRefs", artifactRefs);
+                List<Map<String, Object>> missingCapabilities = extractMissingCapabilities(observation.output());
+                if (!missingCapabilities.isEmpty()) map.put("missingCapabilities", missingCapabilities);
                 // 浏览器工具 observation 透传结构化 output（url/title/screenshot/elements/viewport 等），
                 // 让前端 BrowserToolCallCard 能直接渲染截图和可交互元素清单。
                 if (isBrowserTool(observation.toolId())) {
@@ -175,6 +192,113 @@ public final class ReactStepSerializer {
     }
 
     /**
+     * 从工具输出中提取可复用产物引用，供失败恢复和主对话产物提示复用。
+     */
+    static List<Map<String, Object>> extractArtifactRefs(String output) {
+        JsonNode root = safeParse(output);
+        if (root == null || !root.isObject()) {
+            return List.of();
+        }
+        var result = new ArrayList<Map<String, Object>>();
+        var seen = new java.util.LinkedHashSet<String>();
+        addArtifactRef(result, seen, root, false);
+        JsonNode refs = firstArray(root, "artifactRefs", "artifacts");
+        if (refs != null) {
+            for (JsonNode ref : refs) {
+                addArtifactRef(result, seen, ref, true);
+                if (result.size() >= 8) {
+                    break;
+                }
+            }
+        }
+        return result.isEmpty() ? List.of() : List.copyOf(result);
+    }
+
+    private static void addArtifactRef(List<Map<String, Object>> result,
+                                       java.util.Set<String> seen,
+                                       JsonNode node,
+                                       boolean allowIdAlias) {
+        if (result.size() >= 8 || node == null || !node.isObject()) {
+            return;
+        }
+        String artifactId = allowIdAlias ? firstText(node, "artifactId", "id") : textField(node, "artifactId");
+        if (artifactId == null || artifactId.isBlank() || !seen.add(artifactId)) {
+            return;
+        }
+        var ref = new LinkedHashMap<String, Object>();
+        ref.put("artifactId", artifactId);
+        putText(ref, "fileName", firstText(node, "fileName", "filename", "name"));
+        String mimeType = firstText(node, "mimeType", "contentType");
+        String type = textField(node, "type");
+        if (mimeType == null && type != null && type.contains("/")) {
+            mimeType = type;
+        }
+        putText(ref, "mimeType", mimeType);
+        String kind = textField(node, "kind");
+        if (kind == null && type != null && !type.contains("/")) {
+            kind = type;
+        }
+        putText(ref, "kind", kind);
+        long size = longField(node, "size");
+        if (size >= 0) {
+            ref.put("size", size);
+        }
+        String downloadUrl = textField(node, "downloadUrl");
+        if (downloadUrl == null) {
+            downloadUrl = "/api/artifacts/" + artifactId + "/download";
+        }
+        ref.put("downloadUrl", downloadUrl);
+        result.add(Map.copyOf(ref));
+    }
+
+    /** 从工具输出中提取缺失能力列表，支持直接字段或 ToolResult data 信封。 */
+    static List<Map<String, Object>> extractMissingCapabilities(String output) {
+        JsonNode root = safeParse(output);
+        if (root == null || !root.isObject()) {
+            return List.of();
+        }
+        JsonNode capabilities = firstArray(root, "missingCapabilities");
+        if ((capabilities == null || capabilities.isEmpty()) && root.get("data") != null) {
+            capabilities = firstArray(root.get("data"), "missingCapabilities");
+        }
+        if (capabilities == null || capabilities.isEmpty()) {
+            return List.of();
+        }
+        var result = new ArrayList<Map<String, Object>>();
+        for (JsonNode node : capabilities) {
+            if (node == null || !node.isObject()) {
+                continue;
+            }
+            String id = firstText(node, "id", "toolId", "name");
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            var item = new LinkedHashMap<String, Object>();
+            item.put("kind", firstText(node, "kind") != null ? firstText(node, "kind") : "TOOL");
+            item.put("id", id);
+            putText(item, "source", firstText(node, "source"));
+            putText(item, "reason", firstText(node, "reason"));
+            putText(item, "skillName", firstText(node, "skillName"));
+            result.add(Map.copyOf(item));
+        }
+        return result.isEmpty() ? List.of() : List.copyOf(result);
+    }
+
+    private static List<String> extractMissingCapabilityIds(String output) {
+        return extractMissingCapabilities(output).stream()
+                .map(item -> item.get("id"))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .toList();
+    }
+
+    private static void putText(Map<String, Object> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.put(key, value);
+        }
+    }
+
+    /**
      * 从工具观察的 JSON 输出中提取指定字段的文本值。
      *
      * @param observation 工具观察步骤
@@ -208,6 +332,12 @@ public final class ReactStepSerializer {
      */
     static String summarizeInput(String toolId, String inputJson) {
         JsonNode root = safeParse(inputJson);
+        if (isSkillTool(toolId) && !"skill.load".equals(toolId)) {
+            List<String> names = extractSkillNamesFromInput(inputJson);
+            return names.isEmpty()
+                    ? "执行技能"
+                    : "执行技能「" + truncate(String.join("、", names), 60) + "」";
+        }
         return switch (toolId) {
             case "web.search" -> {
                 String q = textField(root, "query");
@@ -305,6 +435,12 @@ public final class ReactStepSerializer {
                 String title = textField(root, "title");
                 yield title != null ? "通知「" + truncate(title, 30) + "」" : "推送通知";
             }
+            case "skill.load" -> {
+                List<String> names = extractSkillNamesFromInput(inputJson);
+                yield names.isEmpty()
+                        ? "加载技能指南"
+                        : "加载技能「" + truncate(String.join("、", names), 60) + "」";
+            }
             default -> {
                 // 通用兜底：尝试常见字段
                 String q = textField(root, "query");
@@ -323,6 +459,29 @@ public final class ReactStepSerializer {
                 yield truncate(inputJson, SUMMARY_MAX_LENGTH);
             }
         };
+    }
+
+    /**
+     * 工具输入 → 恢复上下文详情（≤2000 字符）。
+     *
+     * <p>inputSummary 用于轻量展示，inputDetail 用于断点恢复时让模型拿到可复用参数。
+     * 明显敏感的字段会被脱敏，避免在前端和恢复 prompt 中直接暴露密钥。</p>
+     */
+    @org.springframework.lang.Nullable
+    static String extractInputDetail(String inputJson) {
+        if (inputJson == null || inputJson.isBlank()) {
+            return null;
+        }
+        String text = inputJson.strip();
+        JsonNode root = safeParse(text);
+        if (root == null) {
+            return truncate(text, DETAIL_MAX_LENGTH);
+        }
+        try {
+            return truncate(MAPPER.writeValueAsString(redactInputNode(root)), DETAIL_MAX_LENGTH);
+        } catch (JsonProcessingException ignored) {
+            return truncate(text, DETAIL_MAX_LENGTH);
+        }
     }
 
     /**
@@ -367,6 +526,16 @@ public final class ReactStepSerializer {
             case "tool.search" -> "查询完成";
             case "browser" -> "操作成功";
             case "notify" -> "通知已发送";
+            case "skill.load" -> {
+                List<String> names = extractSkillNamesFromOutput(output);
+                List<String> missing = extractMissingCapabilityIds(output);
+                String base = names.isEmpty()
+                        ? "技能指南已加载"
+                        : "已加载 " + names.size() + " 个技能";
+                yield missing.isEmpty()
+                        ? base
+                        : base + "，缺少建议工具 " + truncate(String.join("、", missing), 50);
+            }
             default -> "操作成功";
         };
     }
@@ -464,6 +633,41 @@ public final class ReactStepSerializer {
         catch (JsonProcessingException e) { return null; }
     }
 
+    private static JsonNode redactInputNode(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return MAPPER.nullNode();
+        }
+        if (node.isObject()) {
+            ObjectNode redacted = MAPPER.createObjectNode();
+            node.fields().forEachRemaining(entry -> {
+                if (isSensitiveInputField(entry.getKey())) {
+                    redacted.put(entry.getKey(), REDACTED_INPUT_VALUE);
+                } else {
+                    redacted.set(entry.getKey(), redactInputNode(entry.getValue()));
+                }
+            });
+            return redacted;
+        }
+        if (node.isArray()) {
+            ArrayNode array = MAPPER.createArrayNode();
+            node.forEach(item -> array.add(redactInputNode(item)));
+            return array;
+        }
+        return node.deepCopy();
+    }
+
+    private static boolean isSensitiveInputField(String fieldName) {
+        if (fieldName == null || fieldName.isBlank()) {
+            return false;
+        }
+        String normalized = fieldName.replace("_", "")
+                .replace("-", "")
+                .toLowerCase(java.util.Locale.ROOT);
+        return SENSITIVE_INPUT_FIELD_NAMES.stream()
+                .map(field -> field.toLowerCase(java.util.Locale.ROOT))
+                .anyMatch(normalized::contains);
+    }
+
     /** 从 JsonNode 提取文本字段，不存在或非文本返回 null */
     @org.springframework.lang.Nullable
     private static String textField(JsonNode root, String field) {
@@ -483,6 +687,7 @@ public final class ReactStepSerializer {
     private static String firstText(JsonNode root, String... fields) {
         if (root == null) return null;
         for (String f : fields) {
+            if (f == null) continue;
             String v = textField(root, f);
             if (v != null) return v;
         }
@@ -505,6 +710,101 @@ public final class ReactStepSerializer {
         if (root == null) return -1;
         JsonNode node = root.get(field);
         return node != null && node.isArray() ? node.size() : -1;
+    }
+
+    private static long longField(JsonNode root, String field) {
+        if (root == null) return -1;
+        JsonNode node = root.get(field);
+        return node != null && node.isNumber() ? node.asLong() : -1;
+    }
+
+    private static void attachSkillSubjectFromInput(Map<String, Object> map, String toolId, String inputJson) {
+        if (!isSkillTool(toolId)) {
+            return;
+        }
+        putSkillSubject(map, extractSkillNamesFromInput(inputJson));
+    }
+
+    private static void attachSkillSubjectFromOutput(Map<String, Object> map, String toolId, String output) {
+        if (!isSkillTool(toolId)) {
+            return;
+        }
+        putSkillSubject(map, extractSkillNamesFromOutput(output));
+    }
+
+    private static void putSkillSubject(Map<String, Object> map, List<String> skillNames) {
+        if (skillNames.isEmpty()) {
+            return;
+        }
+        map.put("subjectNames", skillNames);
+        map.put("subjectLabel", "技能");
+    }
+
+    private static List<String> extractSkillNamesFromInput(String inputJson) {
+        JsonNode root = safeParse(inputJson);
+        var result = new ArrayList<String>();
+        addAll(result, skillNameListField(root, "names"));
+        addAll(result, skillNameListField(root, "skillNames"));
+        addAll(result, skillNameListField(root, "skillIds"));
+        addAll(result, skillNameListField(root, "skills"));
+        addIfPresent(result, textField(root, "name"));
+        addIfPresent(result, textField(root, "skill"));
+        addIfPresent(result, textField(root, "skillId"));
+        addIfPresent(result, textField(root, "skillName"));
+        return List.copyOf(result);
+    }
+
+    private static List<String> extractSkillNamesFromOutput(String output) {
+        JsonNode root = safeParse(output);
+        var result = new ArrayList<String>();
+        addAll(result, skillNameListField(root, "names"));
+        addAll(result, skillNameListField(root, "skillNames"));
+        addAll(result, skillNameListField(root, "skillIds"));
+        addAll(result, skillNameListField(root, "skills"));
+        addIfPresent(result, textField(root, "name"));
+        addIfPresent(result, textField(root, "skill"));
+        addIfPresent(result, textField(root, "skillId"));
+        addIfPresent(result, textField(root, "skillName"));
+        String content = textField(root, "content");
+        if (content == null || content.isBlank()) {
+            return List.copyOf(result);
+        }
+        var matcher = java.util.regex.Pattern.compile("<skill\\s+name=\"([^\"]+)\"").matcher(content);
+        while (matcher.find()) {
+            addIfPresent(result, matcher.group(1));
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<String> skillNameListField(JsonNode root, String field) {
+        if (root == null) return List.of();
+        JsonNode node = root.get(field);
+        if (node == null || !node.isArray()) return List.of();
+        var result = new ArrayList<String>();
+        for (JsonNode item : node) {
+            if (item.isTextual()) {
+                addIfPresent(result, item.asText());
+                continue;
+            }
+            if (item.isObject()) {
+                addIfPresent(result, firstText(item, "name", "skill", "skillId", "skillName", "id"));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static void addAll(List<String> target, List<String> values) {
+        values.forEach(value -> addIfPresent(target, value));
+    }
+
+    private static void addIfPresent(List<String> target, @org.springframework.lang.Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String normalized = value.trim();
+        if (!target.contains(normalized)) {
+            target.add(normalized);
+        }
     }
 
     /** 获取整数字段并格式化，不存在时返回默认标签 */
@@ -533,6 +833,11 @@ public final class ReactStepSerializer {
     /** 是否为 browser 工具家族（单工具 "browser" 或以 "browser." 开头的细分 ID）。 */
     private static boolean isBrowserTool(@org.springframework.lang.Nullable String toolId) {
         return "browser".equals(toolId) || (toolId != null && toolId.startsWith("browser."));
+    }
+
+    /** 是否为 Skill 工具家族（加载或执行技能）。 */
+    private static boolean isSkillTool(@org.springframework.lang.Nullable String toolId) {
+        return toolId != null && ("skill.load".equals(toolId) || toolId.startsWith("skill."));
     }
 
     /**

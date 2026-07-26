@@ -7,6 +7,7 @@ import com.lifepilot.interaction.web.model.ChatTurnStatus;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent 同步执行路径返回的响应载荷。
@@ -34,12 +35,38 @@ public record AgentResponse(
         CompletionMode completionMode,
         @Nullable String resumedFromTraceId,
         ChatTurnStatus turnStatus,
-        List<ArtifactRef> artifactRefs
+        List<ArtifactRef> artifactRefs,
+        List<Map<String, Object>> toolsSummary,
+        @Nullable Map<String, Object> taskRecovery
 ) {
     public AgentResponse {
         taskMode = taskMode != null ? taskMode : AgentTaskMode.AUTO;
         completionMode = completionMode != null ? completionMode : CompletionMode.NORMAL;
         artifactRefs = artifactRefs != null ? List.copyOf(artifactRefs) : List.of();
+        toolsSummary = toolsSummary != null ? List.copyOf(toolsSummary) : List.of();
+        taskRecovery = taskRecovery != null && !taskRecovery.isEmpty() ? Map.copyOf(taskRecovery) : null;
+    }
+
+    public AgentResponse(String traceId,
+                         String sessionId,
+                         @Nullable String turnId,
+                         AgentTaskMode taskMode,
+                         String content,
+                         int tokensUsed,
+                         int stepCount,
+                         @Nullable String terminationReason,
+                         @Nullable CompletionReason completionReason,
+                         @Nullable String assistantEntryId,
+                         @Nullable List<A2uiComponent> a2uiComponents,
+                         @Nullable TokenUsage tokenUsage,
+                         CompletionMode completionMode,
+                         @Nullable String resumedFromTraceId,
+                         ChatTurnStatus turnStatus,
+                         List<ArtifactRef> artifactRefs) {
+        this(traceId, sessionId, turnId, taskMode, content, tokensUsed, stepCount,
+                terminationReason, completionReason, assistantEntryId, a2uiComponents,
+                tokenUsage, completionMode, resumedFromTraceId, turnStatus, artifactRefs,
+                List.of(), null);
     }
 
     public AgentResponse(String traceId,
@@ -76,7 +103,9 @@ public record AgentResponse(
                         : (terminationReason != null && !terminationReason.isBlank()
                         ? ChatTurnStatus.FAILED
                         : ChatTurnStatus.SUCCESS),
-                List.of());
+                List.of(),
+                List.of(),
+                null);
     }
 
     public AgentResponse(String traceId,
@@ -110,7 +139,9 @@ public record AgentResponse(
                 CompletionMode.NORMAL,
                 state.resumedFromTraceId(),
                 ChatTurnStatus.FAILED,
-                List.of()
+                List.of(),
+                List.of(),
+                null
         );
     }
 
@@ -120,7 +151,9 @@ public record AgentResponse(
                 traceId, sessionId, turnId, taskMode, content, tokensUsed, stepCount,
                 terminationReason, completionReason, assistantEntryId, a2uiComponents,
                 tokenUsage, completionMode, resumedFromTraceId, turnStatus,
-                refs != null ? List.copyOf(refs) : List.of()
+                refs != null ? List.copyOf(refs) : List.of(),
+                toolsSummary,
+                taskRecovery
         );
     }
 }

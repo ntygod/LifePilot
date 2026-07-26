@@ -7,6 +7,7 @@ import lombok.Builder;
 import org.springframework.lang.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,6 +42,7 @@ public record ReactAgentState(
         Budget budget,
         @Nullable String parentTraceId,
         @Nullable String resumedFromTraceId,
+        @Nullable Map<String, Object> turnRecoveryContext,
         int depth,
         @Nullable String preferredProvider,
         boolean done,
@@ -50,6 +52,7 @@ public record ReactAgentState(
         @Nullable String reasoningSummary,
         CompletionMode completionMode,
         @Nullable List<String> allowedToolIds,
+        @Nullable List<String> disabledToolIds,
         /** 当前会话通过 {@code tool.search} 发现并已暴露给 LLM 的工具 ID 集合。 */
         @Nullable Set<String> discoveredToolIds,
         /** 已加载的 Skill 指南内容 — 注入系统提示词供 LLM 遵循。 */
@@ -59,7 +62,9 @@ public record ReactAgentState(
         boolean suspended,
         @Nullable SuspendReason suspendReason,
         /** 单轮临时覆盖的知识库 ID 列表；非空时 ContextAssembler / 知识检索优先使用此列表，而非会话持久化绑定。 */
-        @Nullable List<String> overrideKnowledgeBaseIds
+        @Nullable List<String> overrideKnowledgeBaseIds,
+        /** 单轮记忆上下文模式：auto / focused / off。 */
+        @Nullable String memoryContextMode
 ) {
 
     public ReactAgentState {
@@ -69,9 +74,14 @@ public record ReactAgentState(
         shortTermMemory = List.copyOf(shortTermMemory);
         mentionedEntities = List.copyOf(mentionedEntities);
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
-        discoveredToolIds = discoveredToolIds != null ? Set.copyOf(discoveredToolIds) : null;
+        disabledToolIds = disabledToolIds != null ? List.copyOf(disabledToolIds) : null;
+        discoveredToolIds = discoveredToolIds != null
+                ? Collections.unmodifiableSet(new LinkedHashSet<>(discoveredToolIds))
+                : null;
         pendingMedia = pendingMedia != null ? List.copyOf(pendingMedia) : null;
         overrideKnowledgeBaseIds = overrideKnowledgeBaseIds != null ? List.copyOf(overrideKnowledgeBaseIds) : null;
+        memoryContextMode = normalizeMemoryContextMode(memoryContextMode);
+        turnRecoveryContext = copyMap(turnRecoveryContext);
     }
 
     /**
@@ -97,6 +107,7 @@ public record ReactAgentState(
                 .budget(request.budget() != null ? request.budget() : defaultBudget)
                 .parentTraceId(request.parentTraceId())
                 .resumedFromTraceId(null)
+                .turnRecoveryContext(request.turnRecoveryContext())
                 .depth(request.depth())
                 .preferredProvider(request.preferredProvider())
                 .done(false)
@@ -105,12 +116,14 @@ public record ReactAgentState(
                 .completionReason(null)
                 .completionMode(CompletionMode.NORMAL)
                 .allowedToolIds(request.allowedToolIds())
+                .disabledToolIds(request.disabledToolIds())
                 .discoveredToolIds(null)
                 .pendingMedia(null)
                 .earlyStopRejectCount(0)
                 .suspended(false)
                 .suspendReason(null)
                 .overrideKnowledgeBaseIds(request.overrideKnowledgeBaseIds())
+                .memoryContextMode(request.memoryContextMode())
                 .build();
     }
 
@@ -268,6 +281,33 @@ public record ReactAgentState(
         return this.toBuilder()
                 .loadedSkillContent(merged)
                 .build();
+    }
+
+    @Nullable
+    private static String normalizeMemoryContextMode(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String normalized = raw.trim().toLowerCase();
+        return switch (normalized) {
+            case "auto", "focused", "off" -> normalized;
+            default -> null;
+        };
+    }
+
+    @Nullable
+    private static Map<String, Object> copyMap(@Nullable Map<String, Object> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (var entry : raw.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            result.put(entry.getKey(), entry.getValue());
+        }
+        return result.isEmpty() ? null : Collections.unmodifiableMap(result);
     }
 
     public static class ReactAgentStateBuilder {

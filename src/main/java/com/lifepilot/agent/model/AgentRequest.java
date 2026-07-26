@@ -6,7 +6,9 @@ import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.llm.multimodal.MediaContent;
 import org.springframework.lang.Nullable;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent 请求 record。
@@ -33,10 +35,13 @@ public record AgentRequest(
         int depth,
         @Nullable String preferredProvider,
         @Nullable List<String> allowedToolIds,
+        @Nullable List<String> disabledToolIds,
         @Nullable List<MediaContent> mediaContents,
         @Nullable Double temperature,
         @Nullable ResumePolicy resumePolicy,
-        @Nullable List<String> overrideKnowledgeBaseIds
+        @Nullable List<String> overrideKnowledgeBaseIds,
+        @Nullable String memoryContextMode,
+        @Nullable Map<String, Object> turnRecoveryContext
 ) {
 
     public AgentRequest {
@@ -44,9 +49,81 @@ public record AgentRequest(
         action = action != null ? action : ChatTurnAction.SEND;
         taskMode = taskMode != null ? taskMode : AgentTaskMode.AUTO;
         allowedToolIds = allowedToolIds != null ? List.copyOf(allowedToolIds) : null;
+        disabledToolIds = disabledToolIds != null ? List.copyOf(disabledToolIds) : null;
         mediaContents = mediaContents != null ? List.copyOf(mediaContents) : null;
         resumePolicy = resumePolicy != null ? resumePolicy : ResumePolicy.AUTO;
         overrideKnowledgeBaseIds = overrideKnowledgeBaseIds != null ? List.copyOf(overrideKnowledgeBaseIds) : null;
+        memoryContextMode = normalizeMemoryContextMode(memoryContextMode);
+        turnRecoveryContext = copyMap(turnRecoveryContext);
+    }
+
+    public AgentRequest(String message,
+                        String sessionId,
+                        InteractionSource source,
+                        @Nullable String userId,
+                        @Nullable String turnId,
+                        @Nullable ChatTurnAction action,
+                        @Nullable AgentTaskMode taskMode,
+                        @Nullable String systemPrompt,
+                        @Nullable Budget budget,
+                        @Nullable String parentTraceId,
+                        int depth,
+                        @Nullable String preferredProvider,
+                        @Nullable List<String> allowedToolIds,
+                        @Nullable List<MediaContent> mediaContents,
+                        @Nullable Double temperature,
+                        @Nullable ResumePolicy resumePolicy,
+                        @Nullable List<String> overrideKnowledgeBaseIds,
+                        @Nullable Map<String, Object> turnRecoveryContext) {
+        this(message, sessionId, source, userId, turnId, action, taskMode, systemPrompt, budget,
+                parentTraceId, depth, preferredProvider, allowedToolIds, null, mediaContents,
+                temperature, resumePolicy, overrideKnowledgeBaseIds, null, turnRecoveryContext);
+    }
+
+    public AgentRequest(String message,
+                        String sessionId,
+                        InteractionSource source,
+                        @Nullable String userId,
+                        @Nullable String turnId,
+                        @Nullable ChatTurnAction action,
+                        @Nullable AgentTaskMode taskMode,
+                        @Nullable String systemPrompt,
+                        @Nullable Budget budget,
+                        @Nullable String parentTraceId,
+                        int depth,
+                        @Nullable String preferredProvider,
+                        @Nullable List<String> allowedToolIds,
+                        @Nullable List<MediaContent> mediaContents,
+                        @Nullable Double temperature,
+                        @Nullable ResumePolicy resumePolicy,
+                        @Nullable List<String> overrideKnowledgeBaseIds,
+                        @Nullable String memoryContextMode,
+                        @Nullable Map<String, Object> turnRecoveryContext) {
+        this(message, sessionId, source, userId, turnId, action, taskMode, systemPrompt, budget,
+                parentTraceId, depth, preferredProvider, allowedToolIds, null, mediaContents,
+                temperature, resumePolicy, overrideKnowledgeBaseIds, memoryContextMode, turnRecoveryContext);
+    }
+
+    public AgentRequest(String message,
+                        String sessionId,
+                        InteractionSource source,
+                        @Nullable String userId,
+                        @Nullable String turnId,
+                        @Nullable ChatTurnAction action,
+                        @Nullable AgentTaskMode taskMode,
+                        @Nullable String systemPrompt,
+                        @Nullable Budget budget,
+                        @Nullable String parentTraceId,
+                        int depth,
+                        @Nullable String preferredProvider,
+                        @Nullable List<String> allowedToolIds,
+                        @Nullable List<MediaContent> mediaContents,
+                        @Nullable Double temperature,
+                        @Nullable ResumePolicy resumePolicy,
+                        @Nullable List<String> overrideKnowledgeBaseIds) {
+        this(message, sessionId, source, userId, turnId, action, taskMode, systemPrompt, budget,
+                parentTraceId, depth, preferredProvider, allowedToolIds, null, mediaContents,
+                temperature, resumePolicy, overrideKnowledgeBaseIds, null, null);
     }
 
     public AgentRequest(String message,
@@ -65,8 +142,8 @@ public record AgentRequest(
                         @Nullable Double temperature,
                         @Nullable ResumePolicy resumePolicy) {
         this(message, sessionId, source, userId, turnId, action, null, systemPrompt, budget,
-                parentTraceId, depth, preferredProvider, allowedToolIds, mediaContents,
-                temperature, resumePolicy, null);
+                parentTraceId, depth, preferredProvider, allowedToolIds, null, mediaContents,
+                temperature, resumePolicy, null, null, null);
     }
 
     public AgentRequest(String message,
@@ -86,7 +163,7 @@ public record AgentRequest(
                         @Nullable ResumePolicy resumePolicy) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, turnId, action,
                 null, systemPrompt, budget, parentTraceId, depth, preferredProvider,
-                allowedToolIds, mediaContents, temperature, resumePolicy, null);
+                allowedToolIds, null, mediaContents, temperature, resumePolicy, null, null, null);
     }
 
     public AgentRequest(String message,
@@ -107,7 +184,7 @@ public record AgentRequest(
                         @Nullable ResumePolicy resumePolicy) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, turnId, action,
                 taskMode, systemPrompt, budget, parentTraceId, depth, preferredProvider,
-                allowedToolIds, mediaContents, temperature, resumePolicy, null);
+                allowedToolIds, null, mediaContents, temperature, resumePolicy, null, null, null);
     }
 
     public AgentRequest(String message,
@@ -124,8 +201,8 @@ public record AgentRequest(
                         @Nullable List<MediaContent> mediaContents,
                         @Nullable Double temperature) {
         this(message, sessionId, source, userId, null, ChatTurnAction.SEND, taskMode, systemPrompt, budget,
-                parentTraceId, depth, preferredProvider, allowedToolIds, mediaContents,
-                temperature, ResumePolicy.AUTO, null);
+                parentTraceId, depth, preferredProvider, allowedToolIds, null, mediaContents,
+                temperature, ResumePolicy.AUTO, null, null, null);
     }
 
     public AgentRequest(String message,
@@ -143,7 +220,7 @@ public record AgentRequest(
                         @Nullable Double temperature) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, null, ChatTurnAction.SEND,
                 taskMode, systemPrompt, budget, parentTraceId, depth, preferredProvider,
-                allowedToolIds, mediaContents, temperature, ResumePolicy.AUTO, null);
+                allowedToolIds, null, mediaContents, temperature, ResumePolicy.AUTO, null, null, null);
     }
 
     public AgentRequest(String message,
@@ -161,6 +238,24 @@ public record AgentRequest(
         this(message, sessionId, source, userId, null, systemPrompt, budget,
                 parentTraceId, depth, preferredProvider, allowedToolIds, mediaContents,
                 temperature);
+    }
+
+    public AgentRequest(String message,
+                        String sessionId,
+                        InteractionSource source,
+                        @Nullable String userId,
+                        @Nullable String systemPrompt,
+                        @Nullable Budget budget,
+                        @Nullable String parentTraceId,
+                        int depth,
+                        @Nullable String preferredProvider,
+                        @Nullable List<String> allowedToolIds,
+                        @Nullable List<String> disabledToolIds,
+                        @Nullable List<MediaContent> mediaContents,
+                        @Nullable Double temperature) {
+        this(message, sessionId, source, userId, null, ChatTurnAction.SEND, AgentTaskMode.AUTO, systemPrompt, budget,
+                parentTraceId, depth, preferredProvider, allowedToolIds, disabledToolIds, mediaContents,
+                temperature, ResumePolicy.AUTO, null, null, null);
     }
 
     public AgentRequest(String message,
@@ -189,22 +284,22 @@ public record AgentRequest(
      */
     public AgentRequest(String message, String sessionId, String channel) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), null, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null, null, null);
     }
 
     public AgentRequest(String message, String sessionId, InteractionSource source) {
         this(message, sessionId, source, null, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null, null, null);
     }
 
     public AgentRequest(String message, String sessionId, String channel, @Nullable String userId) {
         this(message, sessionId, InteractionSource.legacy(channel, sessionId), userId, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null, null, null);
     }
 
     public AgentRequest(String message, String sessionId, InteractionSource source, @Nullable String userId) {
         this(message, sessionId, source, userId, null, ChatTurnAction.SEND,
-                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null);
+                AgentTaskMode.AUTO, null, null, null, 0, null, null, null, null, ResumePolicy.AUTO, null, null, null);
     }
 
     /**
@@ -216,7 +311,8 @@ public record AgentRequest(
     public AgentRequest withMessage(String newMessage) {
         return new AgentRequest(newMessage, sessionId, source, userId, turnId, action, taskMode,
                 systemPrompt, budget, parentTraceId, depth, preferredProvider, allowedToolIds,
-                mediaContents, temperature, resumePolicy, overrideKnowledgeBaseIds);
+                disabledToolIds, mediaContents, temperature, resumePolicy, overrideKnowledgeBaseIds,
+                memoryContextMode, turnRecoveryContext);
     }
 
     /**
@@ -228,7 +324,8 @@ public record AgentRequest(
     public AgentRequest withMediaContents(@Nullable List<MediaContent> newMediaContents) {
         return new AgentRequest(message, sessionId, source, userId, turnId, action, taskMode,
                 systemPrompt, budget, parentTraceId, depth, preferredProvider, allowedToolIds,
-                newMediaContents, temperature, resumePolicy, overrideKnowledgeBaseIds);
+                disabledToolIds, newMediaContents, temperature, resumePolicy, overrideKnowledgeBaseIds,
+                memoryContextMode, turnRecoveryContext);
     }
 
     public String channel() {
@@ -247,5 +344,32 @@ public record AgentRequest(
     @Nullable
     public String channelInstanceId() {
         return source.channelInstanceId();
+    }
+
+    @Nullable
+    private static String normalizeMemoryContextMode(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String normalized = raw.trim().toLowerCase();
+        return switch (normalized) {
+            case "auto", "focused", "off" -> normalized;
+            default -> null;
+        };
+    }
+
+    @Nullable
+    private static Map<String, Object> copyMap(@Nullable Map<String, Object> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (var entry : raw.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            result.put(entry.getKey(), entry.getValue());
+        }
+        return result.isEmpty() ? null : Map.copyOf(result);
     }
 }
