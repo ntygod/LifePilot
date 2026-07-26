@@ -118,6 +118,59 @@ public class JdbcTranscriptStore implements TranscriptStore {
                                          @Nullable CompletionMode completionMode,
                                          @Nullable String resumedFromTraceId,
                                          @Nullable Instant createdAt) {
+        return appendAssistantMessage(sessionId, turnId, content, reasoningSummary, traceId,
+                a2uiComponentsJson, reactStepsJson, null, null, completionMode, resumedFromTraceId, createdAt);
+    }
+
+    @Override
+    public String appendAssistantMessage(String sessionId,
+                                         @Nullable String turnId,
+                                         String content,
+                                         @Nullable String reasoningSummary,
+                                         @Nullable String traceId,
+                                         @Nullable String a2uiComponentsJson,
+                                         @Nullable String reactStepsJson,
+                                         @Nullable String taskRecoveryJson,
+                                         @Nullable CompletionMode completionMode,
+                                         @Nullable String resumedFromTraceId,
+                                         @Nullable Instant createdAt) {
+        return appendAssistantMessage(sessionId, turnId, content, reasoningSummary, traceId,
+                a2uiComponentsJson, reactStepsJson, null, taskRecoveryJson,
+                completionMode, resumedFromTraceId, createdAt);
+    }
+
+    @Override
+    public String appendAssistantMessage(String sessionId,
+                                         @Nullable String turnId,
+                                         String content,
+                                         @Nullable String reasoningSummary,
+                                         @Nullable String traceId,
+                                         @Nullable String a2uiComponentsJson,
+                                         @Nullable String reactStepsJson,
+                                         @Nullable String toolsSummaryJson,
+                                         @Nullable String taskRecoveryJson,
+                                         @Nullable CompletionMode completionMode,
+                                         @Nullable String resumedFromTraceId,
+                                         @Nullable Instant createdAt) {
+        return appendAssistantMessage(sessionId, turnId, content, reasoningSummary, traceId,
+                a2uiComponentsJson, reactStepsJson, toolsSummaryJson, taskRecoveryJson, null,
+                completionMode, resumedFromTraceId, createdAt);
+    }
+
+    @Override
+    public String appendAssistantMessage(String sessionId,
+                                         @Nullable String turnId,
+                                         String content,
+                                         @Nullable String reasoningSummary,
+                                         @Nullable String traceId,
+                                         @Nullable String a2uiComponentsJson,
+                                         @Nullable String reactStepsJson,
+                                         @Nullable String toolsSummaryJson,
+                                         @Nullable String taskRecoveryJson,
+                                         @Nullable String executionConstraintsJson,
+                                         @Nullable CompletionMode completionMode,
+                                         @Nullable String resumedFromTraceId,
+                                         @Nullable Instant createdAt) {
         ensureSessionExists(sessionId);
         Instant timestamp = createdAt != null ? createdAt : Instant.now();
         String entryId = sessionTranscriptRepository.appendMessageEntry(
@@ -129,6 +182,9 @@ public class JdbcTranscriptStore implements TranscriptStore {
                 traceId,
                 a2uiComponentsJson,
                 reactStepsJson,
+                toolsSummaryJson,
+                taskRecoveryJson,
+                executionConstraintsJson,
                 completionMode,
                 resumedFromTraceId,
                 timestamp

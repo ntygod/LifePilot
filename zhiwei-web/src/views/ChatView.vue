@@ -1,22 +1,35 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  Activity,
+  Archive,
   ArrowDown,
+  Bot,
+  Brain,
+  Copy,
+  Cpu,
+  DatabaseBackup,
+  FileArchive,
+  KeyRound,
+  Loader2,
+  PlugZap,
+  X,
 } from 'lucide-vue-next'
-import { chatApi, modelServiceApi } from '@/api/client'
+import { chatApi, diagnosticsApi, knowledgeBaseApi, modelServiceApi } from '@/api/client'
 import type { ModelService } from '@/api/client'
-import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, Message, SessionConfig, SessionConfigOverride } from '@/types'
+import { buildArtifactDownloadUrl, type ArtifactRefPayload } from '@/api/artifacts'
+import type { ChatAttachment, ChatSessionDetail, ChatTurnAction, DiagnosticReport, EntityDetail, KnowledgeBase, Message, SessionConfig, SessionConfigOverride, SourceSummary, TaskRecoveryCheckpoint, ToolRecoveryAction } from '@/types'
 import { logger } from '@/utils/logger'
 import StatePanel from '@/components/common/StatePanel.vue'
 import { Button } from '@/components/ui/button'
-import CapabilityHintStrip from '@/components/chat/CapabilityHintStrip.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import ChatHeader from '@/components/chat/ChatHeader.vue'
 import ContinuationHint from '@/components/chat/ContinuationHint.vue'
 import EmptyState from '@/components/chat/EmptyState.vue'
 import HumanTakeoverModal from '@/components/chat/HumanTakeoverModal.vue'
 import MessageList from '@/components/chat/MessageList.vue'
+import MemoryInsightPanel from '@/components/chat/MemoryInsightPanel.vue'
 import OverlayHost from '@/components/chat/OverlayHost.vue'
 import PromptGallery from '@/components/chat/PromptGallery.vue'
 import SessionConfigPanel from '@/components/chat/SessionConfigPanel.vue'
@@ -28,14 +41,33 @@ import { useChat } from '@/composables/useChat'
 import { useChatOverlays } from '@/composables/useChatOverlays'
 import { useKnowledgeBaseStore } from '@/stores/knowledgeBase'
 import { useChatStore } from '@/stores/chat'
+import { useMemoryStore } from '@/stores/memory'
 import { useSkillStore } from '@/stores/skill'
 import { useUiStore } from '@/stores/ui'
 import { copyToClipboard } from '@/utils/clipboard'
+import { buildEmptyPromptSuggestions } from '@/utils/emptyPromptSuggestions'
+import type { EmptyPromptSuggestion } from '@/utils/emptyPromptSuggestions'
+import { buildDiagnosticNextActions, buildDiagnosticRepairLinks, buildErrorDiagnostic, buildMessageRepairLinks, type DiagnosticRepairLink } from '@/utils/errorDiagnostic'
+import { normalizeTurnStatusText } from '@/utils/turnPhase'
+import {
+  applyEntityToMemorySource,
+  buildDeletedMemorySource,
+  buildMemoryEntityMessagePatch,
+  buildMemoryEntityRemovalMessagePatch,
+} from '@/utils/memorySource'
+import {
+  canUseManualResumeForMessage,
+  isRecoverableAssistantTaskMessage,
+  isUserReplyRecovery,
+  resolveManualResumeStatusLabelForMessage,
+} from '@/utils/taskRecovery'
+import { buildToolRecoveryContextSummary, formatToolFailureCategory } from '@/utils/toolExecution'
 
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
 const kbStore = useKnowledgeBaseStore()
+const memoryStore = useMemoryStore()
 const skillStore = useSkillStore()
 const uiStore = useUiStore()
 
@@ -51,7 +83,6 @@ const {
   reasoningStatusText,
   reasoningEvents,
   streamingReactSteps,
-  capabilitySuggestions,
   streamingA2uiComponents,
   streamingArtifactRefs,
   pendingPermissionApprovals,
@@ -65,13 +96,81 @@ const {
 
 const scrollContainer = ref<HTMLElement | null>(null)
 const showScrollToBottom = ref(false)
-const messagesReady = ref(false)
+const messagesReady = ref(!route.params.sessionId)
 const searchQuery = ref('')
 const providers = ref<ModelService[]>([])
+const activeMemorySource = ref<SourceSummary | null>(null)
+const creatingBackup = ref(false)
+const creatingDiagnosticBundle = ref(false)
+const analyzingGlobalDiagnostic = ref(false)
+const globalDiagnosticStatus = ref<string | null>(null)
+const globalDiagnosticSummary = ref<string | null>(null)
+const globalDiagnosticActions = ref<string[]>([])
+const globalDiagnosticError = ref<string | null>(null)
+const globalDiagnosticRepairLinks = ref<DiagnosticRepairLink[]>([])
+const emptyComposerHasDraft = ref(false)
+const activeComposerDraftContent = ref('')
+const savingKnowledgeMessageId = ref<string | null>(null)
+
+interface DiagnosticRepairLinkView extends DiagnosticRepairLink {
+  icon: Component
+}
+
+function diagnosticRepairIcon(link: DiagnosticRepairLink): Component {
+  switch (link.id) {
+    case 'models':
+      return Bot
+    case 'code-execution':
+      return Cpu
+    case 'channels':
+      return PlugZap
+    case 'capabilities':
+      return PlugZap
+    case 'permissions':
+      return KeyRound
+    case 'general':
+      return DatabaseBackup
+    default:
+      return Activity
+  }
+}
+
+const globalDiagnosticRepairLinkViews = computed<DiagnosticRepairLinkView[]>(() =>
+  globalDiagnosticRepairLinks.value.map(link => ({ ...link, icon: diagnosticRepairIcon(link) })),
+)
+
+const showGlobalDiagnosticDetail = computed(() =>
+  !!globalDiagnosticSummary.value
+  || !!globalDiagnosticError.value
+  || globalDiagnosticActions.value.length > 0
+  || globalDiagnosticRepairLinks.value.length > 0,
+)
+interface PendingMemoryDraft {
+  sourceMessageId: string
+  sourceLabel: string
+  preview: string
+  previousContent: string
+}
+const pendingMemoryDraft = ref<PendingMemoryDraft | null>(null)
+interface SavedKnowledgeMessage {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+}
+interface ArtifactKnowledgeSavedPayload {
+  artifactId: string
+  fileName: string
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+}
+const savedKnowledgeMessages = ref<Record<string, SavedKnowledgeMessage>>({})
+const saveKnowledgeErrors = ref<Record<string, string>>({})
 
 const DEFAULT_SESSION_TEMPERATURE = 0.7
 const DEFAULT_SESSION_MAX_STEPS = 60
 const DEFAULT_SESSION_MAX_DURATION_SECONDS = 300
+const REMEMBER_DRAFT_PREFIX = '请记住：'
+const REMEMBER_DRAFT_MAX_LENGTH = 4000
+const MESSAGE_KNOWLEDGE_FALLBACK_TITLE = '知微回复'
 
 const activeSessionConfig = ref<SessionConfig>({
   temperature: DEFAULT_SESSION_TEMPERATURE,
@@ -80,13 +179,6 @@ const activeSessionConfig = ref<SessionConfig>({
   knowledgeBaseIds: [],
 })
 const currentSessionDetail = ref<ChatSessionDetail | null>(null)
-
-const streamingCapabilitySuggestions = computed(() =>
-  capabilitySuggestions.value.slice(0, 6)
-)
-const showStreamingCapabilities = computed(() =>
-  isStreaming.value && streamingCapabilitySuggestions.value.length > 0
-)
 
 /** 空状态：无消息且非流式中 */
 // 消息加载完成且为空时显示欢迎页（加载中不显示，防止闪烁）
@@ -117,6 +209,51 @@ const currentSession = computed(() => {
   if (!chatStore.activeSessionId) return null
   return chatStore.sessions.find(session => session.id === chatStore.activeSessionId) || null
 })
+
+const activeMemoryProjectId = computed(() =>
+  currentSessionDetail.value?.projectId ?? currentSession.value?.projectId ?? null
+)
+
+const artifactKnowledgeBaseTarget = computed<Pick<KnowledgeBase, 'id' | 'name'> | null>(() => {
+  const activeIds = (activeSessionConfig.value.knowledgeBaseIds ?? [])
+    .map(id => id.trim())
+    .filter(Boolean)
+  if (activeIds.length === 1) {
+    const id = activeIds[0]
+    const matched = kbStore.list.find(knowledgeBase => knowledgeBase.id === id)
+    return {
+      id,
+      name: matched?.name?.trim() || '当前资料库',
+    }
+  }
+  if (activeIds.length === 0 && kbStore.list.length === 1) {
+    const [knowledgeBase] = kbStore.list
+    return {
+      id: knowledgeBase.id,
+      name: knowledgeBase.name?.trim() || '资料库',
+    }
+  }
+  return null
+})
+
+const focusedSourceTurnId = computed(() => normalizeRouteQueryValue(route.query.turnId))
+const focusedSourceEntryId = computed(() => normalizeRouteQueryValue(route.query.entryId))
+const focusedSourceKey = computed(() => {
+  if (!focusedSourceTurnId.value && !focusedSourceEntryId.value) return ''
+  return `${focusedSourceEntryId.value}::${focusedSourceTurnId.value}`
+})
+const appliedFocusedSourceKey = ref('')
+const recoveryReturnSessionId = computed(() => (
+  chatStore.activeSessionId
+  ?? normalizeRouteQueryValue(route.params.sessionId)
+) || null)
+
+function normalizeRouteQueryValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return normalizeRouteQueryValue(value[0])
+  }
+  return typeof value === 'string' ? value.trim() : ''
+}
 
 function resetActiveSessionConfig() {
   activeSessionConfig.value = {
@@ -169,22 +306,37 @@ const lastAssistantMessage = computed(() => {
   return null
 })
 
-const latestSuspendedAssistant = computed<Message | null>(() => {
+function isRecoverableAssistantMessage(message: Message | null | undefined) {
+  return isRecoverableAssistantTaskMessage(message)
+}
+
+const latestRecoverableAssistant = computed<Message | null>(() => {
   const message = lastAssistantMessage.value
   if (!message) return null
-  if (message.turnStatus === 'SUSPENDED' || message.completionMode === 'SUSPENDED') {
-    return message
-  }
-  return null
+  return isRecoverableAssistantMessage(message) ? message : null
 })
+
+function isAwaitingUserReplyMessage(message: Message | null | undefined) {
+  return Boolean(message)
+    && (isUserReplyRecovery(message?.taskRecovery)
+      || message?.suspendReasonSourceId === '__await_user_input__')
+}
 
 function resolveContinuationDetail(message: Message | null) {
   if (!message) {
     return null
   }
 
-  if (message.suspendReasonSourceId === '__await_user_input__') {
-    return '这条回复会接着刚才继续。'
+  if (message.taskRecovery?.detail) {
+    return message.taskRecovery.detail
+  }
+
+  if (message.turnRecoveryContext?.detail) {
+    return message.turnRecoveryContext.detail
+  }
+
+  if (isAwaitingUserReplyMessage(message)) {
+    return '直接在输入框补充信息，发送后知微会接着当前任务继续。'
   }
 
   const detail = message.errorMessage?.trim()
@@ -196,25 +348,279 @@ function resolveContinuationDetail(message: Message | null) {
 }
 
 const continuationTitle = computed(() => {
-  if (!latestSuspendedAssistant.value || isStreaming.value) {
+  if (!latestRecoverableAssistant.value || isStreaming.value) {
     return null
   }
-  return '继续上一轮'
+  return latestRecoverableAssistant.value.taskRecovery?.title
+    ?? latestRecoverableAssistant.value.turnRecoveryContext?.title
+    ?? '继续上一轮'
 })
 
 const continuationDetail = computed(() => {
-  if (!latestSuspendedAssistant.value || isStreaming.value) {
+  if (!latestRecoverableAssistant.value || isStreaming.value) {
     return null
   }
-  return resolveContinuationDetail(latestSuspendedAssistant.value)
+  return resolveContinuationDetail(latestRecoverableAssistant.value)
 })
 
+const continuationCanResume = computed(() =>
+  canUseManualResumeForMessage(latestRecoverableAssistant.value),
+)
+
+const continuationActionLabel = computed(() =>
+  latestRecoverableAssistant.value?.taskRecovery?.actionLabel ?? '继续',
+)
+
+const continuationStatusLabel = computed(() =>
+  resolveManualResumeStatusLabelForMessage(latestRecoverableAssistant.value),
+)
+
+const continuationInputHint = computed(() => {
+  if (!latestRecoverableAssistant.value || isStreaming.value) {
+    return null
+  }
+  if (isAwaitingUserReplyMessage(latestRecoverableAssistant.value)) {
+    return '在输入框补充，发送后会自动续接。'
+  }
+  return null
+})
+
+const continuationCheckpoint = computed<TaskRecoveryCheckpoint | null>(() => {
+  if (!latestRecoverableAssistant.value || isStreaming.value) {
+    return null
+  }
+  return recoveryCheckpointForMessage(latestRecoverableAssistant.value)
+})
+
+const continuationCheckpointLabel = computed(() =>
+  formatContinuationCheckpointLabel(continuationCheckpoint.value),
+)
+
+const continuationCheckpointDetail = computed(() =>
+  formatContinuationCheckpointDetail(continuationCheckpoint.value),
+)
+
+const continuationNextActions = computed(() => {
+  const message = latestRecoverableAssistant.value
+  if (!message) return []
+  return uniqueContinuationTexts([
+    ...(message.taskRecovery?.nextActions ?? []),
+    ...(message.turnRecoveryContext?.nextActions ?? []),
+  ]).slice(0, 2)
+})
+
+const continuationRetainedContext = computed(() => {
+  const message = latestRecoverableAssistant.value
+  if (!message || isStreaming.value) {
+    return []
+  }
+  const checkpoint = recoveryCheckpointForMessage(message)
+  if (!checkpoint) {
+    return []
+  }
+  const artifactRefs = compactRecoveryArtifactRefs(checkpoint.artifactRefs, message.artifactRefs)
+  return buildToolRecoveryContextSummary({
+    toolId: checkpoint.toolId,
+    failureCategory: checkpoint.failureCategory,
+    executionKind: checkpoint.executionKind,
+    subjectLabel: checkpoint.subjectLabel,
+    subjectNames: checkpoint.subjectNames,
+    interrupted: checkpoint.interrupted,
+    inputSummary: checkpoint.inputSummary,
+    inputDetail: checkpoint.inputDetail,
+    outputSummary: checkpoint.outputSummary,
+    outputDetail: checkpoint.outputDetail,
+    workingDirectory: checkpoint.workingDirectory,
+    generatedFilePath: checkpoint.generatedFilePath,
+    artifactRefs,
+    missingCapabilities: checkpoint.missingCapabilities,
+  }).slice(0, 3)
+})
+
+const continuationRepairLabel = computed(() => {
+  const message = latestRecoverableAssistant.value
+  if (!message) return null
+  return buildMessageRepairLinks(message).some(link => link.id === 'capabilities') ? '能力中心' : null
+})
+
+const continuationRepairTitle = computed(() =>
+  continuationRepairLabel.value
+    ? '打开能力中心，检查工具、技能状态和 Skill 引用'
+    : null,
+)
+
+function compactMissingCapabilityIds(message: Message | null | undefined) {
+  const checkpoint = recoveryCheckpointForMessage(message)
+  return Array.from(new Set(
+    checkpoint?.missingCapabilities
+      ?.map(item => item.id?.trim())
+      .filter(Boolean) ?? [],
+  ))
+}
+
+function recoverySkillName(message: Message | null | undefined) {
+  const checkpoint = recoveryCheckpointForMessage(message)
+  return checkpoint?.subjectNames?.find(Boolean)
+    ?? checkpoint?.missingCapabilities?.find(item => item.skillName?.trim())?.skillName?.trim()
+    ?? ''
+}
+
+function recoveryCheckpointForMessage(message: Message | null | undefined): TaskRecoveryCheckpoint | null {
+  return message?.taskRecovery?.checkpoint
+    ?? message?.turnRecoveryContext?.checkpoint
+    ?? null
+}
+
+function uniqueContinuationTexts(values: string[]) {
+  return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)))
+}
+
+const isAwaitingUserReplyContinuation = computed(() => {
+  const message = latestRecoverableAssistant.value
+  if (!message || isStreaming.value) return false
+  return isAwaitingUserReplyMessage(message)
+})
+
+function buildContinuationRecoveryAction(message: Message): ToolRecoveryAction | undefined {
+  const recovery = message.taskRecovery
+  const turnRecovery = message.turnRecoveryContext
+  const checkpoint = recoveryCheckpointForMessage(message)
+  if (!recovery && !checkpoint && !turnRecovery) return undefined
+  const artifactRefs = compactRecoveryArtifactRefs(checkpoint?.artifactRefs, message.artifactRefs)
+  return {
+    id: 'task-recovery-resume',
+    label: recovery?.actionLabel ?? '继续',
+    description: checkpoint?.recoveryActionDescription ?? '保留当前进度，按恢复计划从卡住的位置继续。',
+    mode: 'resume',
+    category: checkpoint?.failureCategory,
+    toolId: checkpoint?.toolId,
+    callId: checkpoint?.callId,
+    toolName: checkpoint?.toolName,
+    executionKind: checkpoint?.executionKind,
+    action: checkpoint?.action,
+    interrupted: checkpoint?.interrupted,
+    subjectLabel: checkpoint?.subjectLabel,
+    subjectNames: checkpoint?.subjectNames,
+    inputSummary: checkpoint?.inputSummary,
+    inputDetail: checkpoint?.inputDetail,
+    outputSummary: checkpoint?.outputSummary,
+    outputDetail: checkpoint?.outputDetail,
+    workingDirectory: checkpoint?.workingDirectory,
+    generatedFilePath: checkpoint?.generatedFilePath,
+    ...(artifactRefs ? { artifactRefs } : {}),
+    missingCapabilities: checkpoint?.missingCapabilities,
+    recoveryHint: recovery?.detail ?? turnRecovery?.detail,
+    nextActions: uniqueContinuationTexts([
+      ...(recovery?.nextActions ?? []),
+      ...(turnRecovery?.nextActions ?? []),
+    ]).slice(0, 3),
+  }
+}
+
+function withMessageArtifactRefs(
+  action: ToolRecoveryAction | undefined,
+  message: Message,
+): ToolRecoveryAction | undefined {
+  if (!action) return undefined
+  const artifactRefs = compactRecoveryArtifactRefs(action.artifactRefs, message.artifactRefs)
+  return artifactRefs ? { ...action, artifactRefs } : action
+}
+
+function compactRecoveryArtifactRefs(
+  ...groups: Array<Array<ArtifactRefPayload | Partial<ArtifactRefPayload>> | undefined | null>
+): ArtifactRefPayload[] | undefined {
+  const seen = new Set<string>()
+  const refs: ArtifactRefPayload[] = []
+  for (const group of groups) {
+    for (const raw of group ?? []) {
+      if (!raw?.artifactId?.trim()) continue
+      const artifactId = raw.artifactId.trim()
+      if (seen.has(artifactId)) continue
+      seen.add(artifactId)
+      refs.push({
+        artifactId,
+        fileName: raw.fileName?.trim() || artifactId,
+        mimeType: raw.mimeType?.trim() || 'application/octet-stream',
+        kind: raw.kind === 'IMAGE' ? 'IMAGE' : 'FILE',
+        size: typeof raw.size === 'number' && Number.isFinite(raw.size) ? raw.size : 0,
+        downloadUrl: raw.downloadUrl?.trim() || buildArtifactDownloadUrl(artifactId),
+      })
+      if (refs.length >= 8) return refs
+    }
+  }
+  return refs.length > 0 ? refs : undefined
+}
+
+function formatContinuationCheckpointLabel(checkpoint: TaskRecoveryCheckpoint | null) {
+  if (!checkpoint) return null
+  const subject = checkpoint.subjectNames?.filter(Boolean).slice(0, 2).join('、')
+  if (checkpoint.executionKind === 'SKILL' || checkpoint.failureCategory === 'SKILL') {
+    return subject ? `技能 ${subject}` : (checkpoint.action ?? checkpoint.toolName ?? '技能步骤')
+  }
+  if (checkpoint.action && checkpoint.toolName && checkpoint.action !== checkpoint.toolName) {
+    return `${checkpoint.action} · ${checkpoint.toolName}`
+  }
+  return checkpoint.toolName
+    ?? checkpoint.action
+    ?? formatToolFailureCategory(checkpoint.failureCategory)
+    ?? '任务断点'
+}
+
+function formatContinuationCheckpointDetail(checkpoint: TaskRecoveryCheckpoint | null) {
+  if (!checkpoint) return null
+  const detail = checkpoint.outputSummary
+    ?? checkpoint.inputSummary
+    ?? checkpoint.outputDetail
+    ?? checkpoint.generatedFilePath
+    ?? checkpoint.workingDirectory
+  if (!detail) return null
+  return detail.length > 96 ? `${detail.slice(0, 96)}...` : detail
+}
+
 const inputPlaceholder = computed(() => {
+  if (isAwaitingUserReplyContinuation.value) {
+    return '补充信息，发送后继续…'
+  }
   if (continuationTitle.value) {
     return '继续说…'
   }
   return '输入问题或贴资料…'
 })
+
+const linkedKnowledgeBases = computed(() => {
+  const ids = activeSessionConfig.value.knowledgeBaseIds ?? []
+  if (ids.length === 0) {
+    return []
+  }
+  return ids.map(id => ({
+    id,
+    name: kbStore.list.find(knowledgeBase => knowledgeBase.id === id)?.name?.trim() || '资料库',
+  }))
+})
+
+const hasMemorySignals = computed(() => {
+  if (memoryStore.memoryDisabled || !memoryStore.stats) {
+    return false
+  }
+  return memoryStore.stats.entityCount > 0
+    || memoryStore.stats.preferenceCount > 0
+    || memoryStore.stats.conversationCount > 0
+    || memoryStore.stats.relationCount > 0
+    || memoryStore.stats.templateCount > 0
+})
+
+const emptyPromptSuggestions = computed<EmptyPromptSuggestion[]>(() =>
+  buildEmptyPromptSuggestions({
+    linkedKnowledgeBases: linkedKnowledgeBases.value,
+    hasKnowledgeBases: kbStore.list.length > 0,
+    hasMemories: hasMemorySignals.value,
+  }),
+)
+const showEmptyPromptGallery = computed(() =>
+  isEmptyChat.value
+  && !emptyComposerHasDraft.value
+  && emptyPromptSuggestions.value.length > 0
+)
 
 const latestUserErrorMessage = computed(() => {
   for (let index = chatStore.messages.length - 1; index >= 0; index -= 1) {
@@ -229,10 +635,6 @@ const showGlobalErrorPanel = computed(() => (
   && (!latestUserErrorMessage.value || latestUserErrorMessage.value.errorMessage !== error.value)
 ))
 
-const lastToolsSummary = computed(() => lastAssistantMessage.value?.toolsSummary ?? [])
-const lastSources = computed(() => lastAssistantMessage.value?.sources ?? [])
-const lastKbSources = computed(() => lastSources.value.filter(source => source.type === 'knowledgeBase'))
-
 // store 中的 title 由 SSE title-generated 事件实时更新，优先于可能过时的 currentSessionDetail
 const headerTitle = computed(() => currentSession.value?.title?.trim() || currentSessionDetail.value?.title?.trim() || '新对话')
 const activeContextCount = computed(() => (
@@ -240,10 +642,13 @@ const activeContextCount = computed(() => (
 ))
 const sessionStatusText = computed(() => {
   if (isStreaming.value) {
-    return reasoningStatusText.value || '处理中'
+    return normalizeTurnStatusText(reasoningStatusText.value) || '正在回应'
+  }
+  if (isAwaitingUserReplyContinuation.value) {
+    return '等你补充'
   }
   if (continuationTitle.value) {
-    return '可继续'
+    return continuationStatusLabel.value ?? '可继续'
   }
   if (chatStore.messages.length === 0) {
     return '待开始'
@@ -258,6 +663,10 @@ watch(() => chatStore.activeSessionId, (newId) => {
   if (newId && route.params.sessionId !== newId) {
     router.replace({ name: 'conversationDetail', params: { sessionId: newId } })
   }
+})
+
+watch(error, () => {
+  resetGlobalDiagnosticState()
 })
 
 // 同一组件在 newConversation ↔ conversationDetail 间复用时 onMounted 不会重新触发，
@@ -289,6 +698,9 @@ onMounted(async () => {
 
   void kbStore.fetchList()
   void skillStore.fetchSkills()
+  if (!memoryStore.stats && !memoryStore.statsLoading && !memoryStore.memoryDisabled) {
+    void memoryStore.loadStats()
+  }
 
   try {
     providers.value = await modelServiceApi.listEnabledServices('GENERATION')
@@ -336,6 +748,10 @@ onUnmounted(() => {
   if (scrollRaf !== null) {
     cancelAnimationFrame(scrollRaf)
     scrollRaf = null
+  }
+  if (sourceFocusRaf !== null) {
+    cancelAnimationFrame(sourceFocusRaf)
+    sourceFocusRaf = null
   }
   if (readyTimer !== null) {
     clearTimeout(readyTimer)
@@ -402,8 +818,10 @@ function getScrollEl(): HTMLElement | null {
 
 /* 滚动合并：用 rAF 将同一帧内的多次 scrollToBottom 合并为一次 */
 let scrollRaf: number | null = null
+let sourceFocusRaf: number | null = null
 
 function scrollToBottom() {
+  if (focusedSourceKey.value) return
   if (scrollRaf !== null) return
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = null
@@ -419,22 +837,82 @@ function scrollToBottomSmooth() {
 
 /** 强制滚到底（直接查询，不依赖 ref） */
 function forceScrollBottom() {
+  if (focusedSourceKey.value) return
   const el = getScrollEl()
   if (el && el.scrollHeight > el.clientHeight) {
     el.scrollTop = el.scrollHeight
   }
 }
 
+function escapeAttributeSelectorValue(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function findFocusedMessageElement() {
+  const el = getScrollEl()
+  if (!el) return null
+
+  const entryId = focusedSourceEntryId.value
+  if (entryId) {
+    const byEntry = el.querySelector<HTMLElement>(`[data-entry-id="${escapeAttributeSelectorValue(entryId)}"]`)
+    if (byEntry) return byEntry
+  }
+
+  const turnId = focusedSourceTurnId.value
+  if (turnId) {
+    return el.querySelector<HTMLElement>(`[data-turn-id="${escapeAttributeSelectorValue(turnId)}"]`)
+  }
+
+  return null
+}
+
+function scheduleScrollToFocusedMessage() {
+  const key = focusedSourceKey.value
+  if (!key || appliedFocusedSourceKey.value === key) return
+
+  if (sourceFocusRaf !== null) {
+    cancelAnimationFrame(sourceFocusRaf)
+    sourceFocusRaf = null
+  }
+
+  void nextTick(() => {
+    sourceFocusRaf = requestAnimationFrame(() => {
+      sourceFocusRaf = null
+      if (focusedSourceKey.value !== key || appliedFocusedSourceKey.value === key) return
+      const target = findFocusedMessageElement()
+      if (!target) return
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      appliedFocusedSourceKey.value = key
+    })
+  })
+}
+
 // 消息列表变化 → 有消息时标记就绪 + 滚到底部
 watch(() => chatStore.messages.length, (len) => {
   if (len > 0) {
     messagesReady.value = true
-    for (const delay of [50, 200, 500]) {
-      pendingTimers.push(window.setTimeout(forceScrollBottom, delay))
+    if (focusedSourceKey.value) {
+      scheduleScrollToFocusedMessage()
+    } else {
+      for (const delay of [50, 200, 500]) {
+        pendingTimers.push(window.setTimeout(forceScrollBottom, delay))
+      }
     }
   }
 })
 watch(() => chatStore.streamingContent, scrollToBottom)
+
+watch(focusedSourceKey, () => {
+  appliedFocusedSourceKey.value = ''
+  scheduleScrollToFocusedMessage()
+}, { immediate: true })
+
+watch(
+  () => chatStore.messages.map(message => `${message.id}:${message.turnId ?? ''}`).join('|'),
+  () => {
+    scheduleScrollToFocusedMessage()
+  },
+)
 
 async function handleSend(payload: {
   content: string
@@ -442,6 +920,8 @@ async function handleSend(payload: {
   attachments?: ChatAttachment[]
   singleTurnOverride?: SessionConfigOverride | null
 }) {
+  emptyComposerHasDraft.value = false
+  pendingMemoryDraft.value = null
   // 发送后立即滚到底，让用户看到消息弹入
   nextTick(() => {
     window.setTimeout(scrollToBottom, 50)
@@ -467,11 +947,241 @@ async function applyPendingDraftMessage() {
   emptyInputRef.value?.focus?.()
 }
 
+function handleEmptyDraftChange(payload: {
+  content: string
+  hasAttachments: boolean
+  contextCount: number
+}) {
+  activeComposerDraftContent.value = payload.content
+  emptyComposerHasDraft.value = Boolean(payload.content.trim())
+    || payload.hasAttachments
+    || payload.contextCount > 0
+  syncPendingMemoryDraft(payload.content)
+}
+
+function handleComposerDraftChange(payload: {
+  content: string
+  hasAttachments: boolean
+  contextCount: number
+}) {
+  activeComposerDraftContent.value = payload.content
+  syncPendingMemoryDraft(payload.content)
+}
+
 async function fillActiveInput(content: string) {
+  activeComposerDraftContent.value = content
+  if (isEmptyChat.value) {
+    emptyComposerHasDraft.value = Boolean(content.trim())
+  }
   await nextTick()
   const target = isEmptyChat.value ? emptyInputRef.value : composerInputRef.value
   target?.setContent?.(content)
   target?.focus?.()
+}
+
+function syncPendingMemoryDraft(content: string) {
+  if (!pendingMemoryDraft.value) return
+  if (!content.trim().startsWith(REMEMBER_DRAFT_PREFIX)) {
+    pendingMemoryDraft.value = null
+  }
+}
+
+function buildRememberDraft(message: Message): string | null {
+  const content = message.content.trim()
+  if (!content) return null
+
+  const availableLength = REMEMBER_DRAFT_MAX_LENGTH - REMEMBER_DRAFT_PREFIX.length
+  const clippedContent = content.length > availableLength
+    ? `${content.slice(0, Math.max(0, availableLength - 3)).trimEnd()}...`
+    : content
+  return `${REMEMBER_DRAFT_PREFIX}${clippedContent}`
+}
+
+function buildMemoryDraftPreview(message: Message): string {
+  const compact = message.content.replace(/\s+/g, ' ').trim()
+  if (!compact) return '这条消息'
+  return compact.length > 48 ? `${compact.slice(0, 45).trimEnd()}...` : compact
+}
+
+function handleRememberMessage(message: Message) {
+  const draft = buildRememberDraft(message)
+  if (!draft) {
+    uiStore.showToast('info', '这条消息没有可记住的文本')
+    return
+  }
+
+  const previousContent = activeComposerDraftContent.value
+  void fillActiveInput(draft)
+  pendingMemoryDraft.value = {
+    sourceMessageId: message.id,
+    sourceLabel: message.role === 'assistant' ? '知微回复' : '你的消息',
+    preview: buildMemoryDraftPreview(message),
+    previousContent,
+  }
+  uiStore.showToast('info', '已放入输入框，发送后后台整理为记忆')
+}
+
+async function cancelPendingMemoryDraft() {
+  const previousContent = pendingMemoryDraft.value?.previousContent ?? ''
+  pendingMemoryDraft.value = null
+  await fillActiveInput(previousContent)
+}
+
+function formatTimestampForFile(timestamp: number): string {
+  const date = new Date(timestamp)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`
+}
+
+function formatTimestampForDocument(timestamp: number): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return '未知时间'
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function sanitizeFileName(value: string): string {
+  const normalized = value
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return (normalized || MESSAGE_KNOWLEDGE_FALLBACK_TITLE).slice(0, 48)
+}
+
+function buildMessageKnowledgeTitle(message: Message): string {
+  const firstLine = message.content
+    .split(/\r?\n/)
+    .map(line => line.replace(/^#+\s*/, '').trim())
+    .find(Boolean)
+  return (firstLine || MESSAGE_KNOWLEDGE_FALLBACK_TITLE).slice(0, 48)
+}
+
+function buildMessageKnowledgeFile(message: Message, targetName: string): File {
+  const title = buildMessageKnowledgeTitle(message)
+  const sessionTitle = headerTitle.value.trim()
+  const sourceTitle = sessionTitle && sessionTitle !== '新对话'
+    ? `知微对话 / ${sessionTitle}`
+    : '知微对话'
+  const markdown = [
+    `# ${title}`,
+    '',
+    `> 来源：${sourceTitle}`,
+    `> 时间：${formatTimestampForDocument(message.timestamp)}`,
+    `> 存入：${targetName}`,
+    '',
+    message.content.trim(),
+    '',
+  ].join('\n')
+  const fileName = `${sanitizeFileName(title)}-${formatTimestampForFile(message.timestamp)}.md`
+  return new File([markdown], fileName, { type: 'text/markdown' })
+}
+
+async function handleSaveMessageToKnowledge(message: Message) {
+  const target = artifactKnowledgeBaseTarget.value
+  if (!target) {
+    if (kbStore.list.length > 0) {
+      uiStore.showToast('info', '先为会话选择一个资料库，再存入回复')
+      overlays.openSettings()
+    } else {
+      uiStore.showToast('info', '先创建一个资料库，再存入回复')
+    }
+    return
+  }
+  if (!message.content.trim()) {
+    uiStore.showToast('info', '这条消息没有可存入资料库的文本')
+    return
+  }
+  if (savingKnowledgeMessageId.value) return
+
+  savingKnowledgeMessageId.value = message.id
+  clearSaveKnowledgeError(message.id)
+  try {
+    const file = buildMessageKnowledgeFile(message, target.name)
+    await knowledgeBaseApi.uploadDocument(target.id, file)
+    await persistKnowledgeSettlement(message.id, {
+      knowledgeBaseId: target.id,
+      knowledgeBaseName: target.name,
+      sourceType: 'MESSAGE_TEXT',
+    }, { throwOnError: true })
+    await kbStore.fetchList()
+    savedKnowledgeMessages.value = {
+      ...savedKnowledgeMessages.value,
+      [message.id]: {
+        knowledgeBaseId: target.id,
+        knowledgeBaseName: target.name,
+      },
+    }
+    uiStore.showToast('success', `已存入资料库：${target.name}`)
+  } catch (event) {
+    logger.error('消息存入资料库失败:', event)
+    const messageText = resolveErrorMessage(event, '存入资料库失败')
+    saveKnowledgeErrors.value = {
+      ...saveKnowledgeErrors.value,
+      [message.id]: messageText,
+    }
+    uiStore.showToast('error', messageText)
+  } finally {
+    savingKnowledgeMessageId.value = null
+  }
+}
+
+function clearSaveKnowledgeError(messageId: string) {
+  if (!saveKnowledgeErrors.value[messageId]) return
+  const { [messageId]: _removed, ...rest } = saveKnowledgeErrors.value
+  saveKnowledgeErrors.value = rest
+}
+
+function handleArtifactSavedToKnowledge(message: Message, payload: ArtifactKnowledgeSavedPayload) {
+  const knowledgeBaseId = payload.knowledgeBaseId?.trim()
+  const knowledgeBaseName = payload.knowledgeBaseName?.trim()
+  if (!message.id || !knowledgeBaseId || !knowledgeBaseName) {
+    return
+  }
+  savedKnowledgeMessages.value = {
+    ...savedKnowledgeMessages.value,
+    [message.id]: {
+      knowledgeBaseId,
+      knowledgeBaseName,
+    },
+  }
+  void Promise.resolve(kbStore.fetchList()).catch(event => {
+    logger.warn('资料库列表刷新失败:', event)
+  })
+}
+
+async function persistArtifactKnowledgeSettlement(message: Message, payload: ArtifactKnowledgeSavedPayload) {
+  const knowledgeBaseId = payload.knowledgeBaseId?.trim()
+  const knowledgeBaseName = payload.knowledgeBaseName?.trim()
+  if (!message.id || !knowledgeBaseId || !knowledgeBaseName) {
+    throw new Error('缺少可记录的消息或资料库信息')
+  }
+  await persistKnowledgeSettlement(message.id, {
+    knowledgeBaseId,
+    knowledgeBaseName,
+    sourceType: 'ARTIFACT',
+    artifactId: payload.artifactId,
+    fileName: payload.fileName,
+  }, { throwOnError: true })
+}
+
+async function persistKnowledgeSettlement(
+  entryId: string,
+  settlement: {
+    knowledgeBaseId: string
+    knowledgeBaseName: string
+    sourceType: 'MESSAGE_TEXT' | 'ARTIFACT'
+    artifactId?: string
+    fileName?: string
+  },
+  options: { throwOnError?: boolean } = {},
+) {
+  try {
+    await chatApi.recordKnowledgeSettlement(entryId, settlement)
+  } catch (event) {
+    logger.warn('记录资料库沉淀状态失败:', event)
+    if (options.throwOnError) {
+      throw event
+    }
+  }
 }
 
 function getAttachmentIds(message: Message): string[] | undefined {
@@ -487,7 +1197,11 @@ function findUserMessageByTurnId(turnId: string): Message | null {
   return null
 }
 
-async function handleTurnAction(message: Message, action: ChatTurnAction) {
+async function handleTurnAction(
+  message: Message,
+  action: ChatTurnAction,
+  recoveryAction?: ToolRecoveryAction,
+) {
   if (!message.turnId) {
     if (action === 'SEND' || action === 'RETRY') {
       await sendMessage(
@@ -502,12 +1216,23 @@ async function handleTurnAction(message: Message, action: ChatTurnAction) {
   const userMessage = message.role === 'assistant'
     ? findUserMessageByTurnId(message.turnId)
     : message
+  const shouldUseRecoveryAction = !!recoveryAction && (action === 'RESUME' || action === 'RESTART')
+  const enrichedRecoveryAction = shouldUseRecoveryAction
+    ? withMessageArtifactRefs(recoveryAction, message)
+    : undefined
 
   await executeTurn(message.turnId, action, {
-    content: action === 'RESUME' ? undefined : userMessage?.content,
+    content: (action === 'RESUME' || action === 'RESTART')
+      ? (shouldUseRecoveryAction ? undefined : (action === 'RESTART' ? userMessage?.content : undefined))
+      : userMessage?.content,
+    visibleContent: action === 'RESTART' && shouldUseRecoveryAction
+      ? userMessage?.content
+      : undefined,
+    recoveryAction: enrichedRecoveryAction,
     attachmentIds: userMessage ? getAttachmentIds(userMessage) : undefined,
     attachments: userMessage?.attachments,
     userMessageId: userMessage?.id,
+    preserveUserMessageContent: shouldUseRecoveryAction,
   })
 }
 
@@ -519,12 +1244,12 @@ async function handleRegenerate(assistantMessage: Message) {
   await handleTurnAction(assistantMessage, 'RESTART')
 }
 
-async function handleResume(assistantMessage: Message) {
-  await handleTurnAction(assistantMessage, 'RESUME')
+async function handleResume(assistantMessage: Message, recoveryAction?: ToolRecoveryAction) {
+  await handleTurnAction(assistantMessage, 'RESUME', recoveryAction)
 }
 
-async function handleRestart(assistantMessage: Message) {
-  await handleTurnAction(assistantMessage, 'RESTART')
+async function handleRestart(assistantMessage: Message, recoveryAction?: ToolRecoveryAction) {
+  await handleTurnAction(assistantMessage, 'RESTART', recoveryAction)
 }
 
 async function handleFork(message: Message) {
@@ -556,9 +1281,121 @@ async function handleEdit(message: Message, newContent: string) {
   }
 }
 
-async function handleCopy(content: string) {
-  const ok = await copyToClipboard(content)
+function handleCopy(_content: string, ok: boolean) {
   uiStore.showToast(ok ? 'success' : 'error', ok ? '已复制到剪贴板' : '复制失败')
+}
+
+function resolveErrorMessage(event: unknown, fallback: string) {
+  if (event instanceof Error) return event.message
+  if (typeof event === 'object' && event !== null && 'message' in event) {
+    return String((event as { message?: unknown }).message ?? fallback)
+  }
+  return typeof event === 'string' ? event : fallback
+}
+
+function applyGlobalDiagnosticReport(report: DiagnosticReport) {
+  globalDiagnosticStatus.value = report.status
+  globalDiagnosticSummary.value = report.summary
+  globalDiagnosticActions.value = buildDiagnosticNextActions(report, error.value).slice(0, 3)
+  globalDiagnosticRepairLinks.value = buildDiagnosticRepairLinks(report)
+  globalDiagnosticError.value = null
+}
+
+function applyGlobalDiagnosticFailure(reason: string) {
+  globalDiagnosticStatus.value = null
+  globalDiagnosticSummary.value = null
+  globalDiagnosticError.value = reason
+  globalDiagnosticRepairLinks.value = []
+  const actions = buildDiagnosticNextActions(null, error.value)
+  globalDiagnosticActions.value = actions.length > 0
+    ? actions.slice(0, 3)
+    : ['本机状态暂时读取失败，先复制诊断信息并查看后端日志。']
+}
+
+function resetGlobalDiagnosticState() {
+  globalDiagnosticStatus.value = null
+  globalDiagnosticSummary.value = null
+  globalDiagnosticActions.value = []
+  globalDiagnosticError.value = null
+  globalDiagnosticRepairLinks.value = []
+}
+
+async function handleAnalyzeGlobalDiagnostic() {
+  if (analyzingGlobalDiagnostic.value) return
+  analyzingGlobalDiagnostic.value = true
+  globalDiagnosticError.value = null
+  try {
+    const report = await diagnosticsApi.getReport()
+    applyGlobalDiagnosticReport(report)
+  } catch (event) {
+    applyGlobalDiagnosticFailure(resolveErrorMessage(event, '获取本地诊断失败'))
+  } finally {
+    analyzingGlobalDiagnostic.value = false
+  }
+}
+
+function handleOpenDiagnosticRepair(link: DiagnosticRepairLink) {
+  router.push({ name: link.routeName })
+}
+
+async function handleCopyGlobalErrorDiagnostic() {
+  const latestMessage = chatStore.messages.at(-1) ?? null
+  let diagnosticReport: DiagnosticReport | null = null
+  let diagnosticReportError: string | null = null
+  try {
+    diagnosticReport = await diagnosticsApi.getReport()
+    applyGlobalDiagnosticReport(diagnosticReport)
+  } catch (event) {
+    diagnosticReportError = resolveErrorMessage(event, '获取本地诊断失败')
+    applyGlobalDiagnosticFailure(diagnosticReportError)
+  }
+  const ok = await copyToClipboard(buildErrorDiagnostic({
+    scope: 'global',
+    error: error.value,
+    message: latestMessage,
+    sessionId: chatStore.activeSessionId,
+    route: route.fullPath,
+    streaming: isStreaming.value,
+    lastPrompt: lastPrompt.value,
+    diagnosticReport,
+    diagnosticReportError,
+  }))
+  uiStore.showToast(ok ? 'success' : 'error', ok ? '诊断信息已复制' : '复制诊断失败')
+}
+
+async function handleCreateLocalBackup() {
+  if (creatingBackup.value) return
+  creatingBackup.value = true
+  try {
+    const backup = await diagnosticsApi.createBackup()
+    const validation = await diagnosticsApi.validateBackup(backup.fileName)
+    if (validation.status === 'OK') {
+      uiStore.showToast('success', `已创建并校验本地备份：${backup.fileName}`)
+    } else if (validation.status === 'ERROR') {
+      uiStore.showToast('error', `备份已创建，但校验失败：${validation.detail}`)
+    } else {
+      uiStore.showToast('info', `备份已创建，建议确认：${validation.detail}`)
+    }
+  } catch (event) {
+    logger.error('创建本地备份失败:', event)
+    uiStore.showToast('error', resolveErrorMessage(event, '创建本地备份失败'))
+  } finally {
+    creatingBackup.value = false
+  }
+}
+
+async function handleCreateDiagnosticBundle() {
+  if (creatingDiagnosticBundle.value) return
+  creatingDiagnosticBundle.value = true
+  try {
+    const bundle = await diagnosticsApi.createDiagnosticBundle()
+    uiStore.showToast('success', `已生成诊断包：${bundle.fileName}`)
+  } catch (event) {
+    logger.error('生成本地诊断包失败:', event)
+    uiStore.showToast('error', resolveErrorMessage(event, '生成本地诊断包失败'))
+  } finally {
+    creatingDiagnosticBundle.value = false
+  }
 }
 
 async function handleLike(message: Message) {
@@ -616,9 +1453,15 @@ async function handleUpdateSessionTitle(title: string) {
   }
 }
 
-function handlePromptPick(card: { prompt: string }) {
-  // 点击示例卡片 → 把 prompt 灌入空态输入框并聚焦
-  void fillActiveInput(card.prompt)
+function handlePromptPick(suggestion: { prompt: string }) {
+  // 点击轻量建议后，把 prompt 灌入当前输入框并聚焦
+  pendingMemoryDraft.value = null
+  void fillActiveInput(suggestion.prompt)
+}
+
+function handleMessageFollowUp(prompt: string) {
+  pendingMemoryDraft.value = null
+  void fillActiveInput(prompt)
 }
 
 // ─── 执行轨迹面板 ───
@@ -633,6 +1476,8 @@ const activeTraceData = computed(() => {
     return {
       reasoningEvents: reasoningEvents.value,
       reactSteps: streamingReactSteps.value,
+      toolSummaries: lastAssistantMessage.value?.toolsSummary ?? [],
+      turnRecoveryContext: lastAssistantMessage.value?.turnRecoveryContext ?? null,
       streaming: true,
       traceId: undefined as string | undefined,
     }
@@ -644,6 +1489,8 @@ const activeTraceData = computed(() => {
   return {
     reasoningEvents: msg.reasoningEvents ?? [],
     reactSteps: msg.reactSteps ?? [],
+    toolSummaries: msg.toolsSummary ?? [],
+    turnRecoveryContext: msg.turnRecoveryContext ?? null,
     streaming: false,
     traceId: msg.traceId,
   }
@@ -671,6 +1518,44 @@ function closeTracePanel() {
   }
 }
 
+function handleInspectMemory(source: SourceSummary) {
+  activeMemorySource.value = source
+  overlays.openMemory()
+}
+
+function closeMemoryPanel() {
+  if (overlays.activeOverlay.value === 'memory') {
+    overlays.close()
+  }
+}
+
+function handleMemoryUpdated(entity: EntityDetail) {
+  if (!activeMemorySource.value || activeMemorySource.value.id !== entity.id) return
+  activeMemorySource.value = applyEntityToMemorySource(activeMemorySource.value, entity)
+  for (const message of chatStore.messages) {
+    const patch = buildMemoryEntityMessagePatch(message, entity)
+    if (patch) {
+      chatStore.updateMessage(message.id, patch)
+    }
+  }
+}
+
+function handleMemoryDeleted(entityId: string, deletedSource?: SourceSummary) {
+  const shouldKeepDeletedExplanation = activeMemorySource.value?.id === entityId
+  if (activeMemorySource.value?.id === entityId) {
+    activeMemorySource.value = deletedSource ?? buildDeletedMemorySource(activeMemorySource.value)
+  }
+  for (const message of chatStore.messages) {
+    const patch = buildMemoryEntityRemovalMessagePatch(message, entityId)
+    if (patch) {
+      chatStore.updateMessage(message.id, patch)
+    }
+  }
+  if (!shouldKeepDeletedExplanation) {
+    closeMemoryPanel()
+  }
+}
+
 /* ── Overlay 统一管理 ── */
 
 const overlays = useChatOverlays()
@@ -681,14 +1566,34 @@ function dismissContinuationHint() {
 }
 const continuationHintDismissed = ref(false)
 
-/** 点击 ContinuationHint 的"继续"按钮 → 用空 RESUME 触发挂起会话恢复 */
-async function handleContinuationResume() {
-  const target = latestSuspendedAssistant.value
-  if (!target) return
-  await handleResume(target)
+function handleContinuationRepair() {
+  if (!continuationRepairLabel.value) return
+  const target = latestRecoverableAssistant.value
+  const returnSessionId = recoveryReturnSessionId.value || undefined
+  const missing = compactMissingCapabilityIds(target)
+  const skill = recoverySkillName(target)
+  router.push({
+    name: 'capabilities',
+    query: {
+      from: 'task-recovery',
+      returnSessionId,
+      returnTurnId: target?.turnId ?? undefined,
+      returnEntryId: target?.id ?? undefined,
+      missing: missing.length ? missing.join(',') : undefined,
+      skill: skill || undefined,
+    },
+  })
 }
 
-watch(() => latestSuspendedAssistant.value?.id, () => {
+/** 点击 ContinuationHint 的"继续"按钮 → 带上恢复摘要触发挂起会话恢复 */
+async function handleContinuationResume() {
+  const target = latestRecoverableAssistant.value
+  if (!target) return
+  if (!canUseManualResumeForMessage(target)) return
+  await handleResume(target, buildContinuationRecoveryAction(target))
+}
+
+watch(() => latestRecoverableAssistant.value?.id, () => {
   continuationHintDismissed.value = false
 })
 
@@ -697,6 +1602,12 @@ const shouldShowContinuationHint = computed(() =>
     && !continuationHintDismissed.value
     && !isStreaming.value
 )
+
+watch(isEmptyChat, (empty) => {
+  if (!empty) {
+    emptyComposerHasDraft.value = false
+  }
+})
 </script>
 
 <template>
@@ -719,12 +1630,9 @@ const shouldShowContinuationHint = computed(() =>
           data-scroll-container
           class="chat-scroll scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border"
         >
-          <!-- 空态：Wordmark + 欢迎语 + PromptGallery + 居中 Composer -->
+          <!-- 空态：Wordmark + 欢迎语 + 居中 Composer + 轻提示 -->
           <div v-if="isEmptyChat" key="empty" class="chat-empty">
             <EmptyState />
-            <div class="chat-empty__gallery">
-              <PromptGallery @pick="handlePromptPick" />
-            </div>
             <StatePanel
               v-if="showGlobalErrorPanel"
               class="chat-empty__error"
@@ -733,19 +1641,122 @@ const shouldShowContinuationHint = computed(() =>
               tone="danger"
             >
               <template #actions>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  :disabled="analyzingGlobalDiagnostic"
+                  @click="handleAnalyzeGlobalDiagnostic"
+                >
+                  <Loader2 v-if="analyzingGlobalDiagnostic" class="mr-1.5 size-3.5 animate-spin" />
+                  <Activity v-else class="mr-1.5 size-3.5" />
+                  {{ analyzingGlobalDiagnostic ? '分析中' : showGlobalDiagnosticDetail ? '重新分析' : '分析本机' }}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  :disabled="creatingBackup"
+                  @click="handleCreateLocalBackup"
+                >
+                  <Loader2 v-if="creatingBackup" class="mr-1.5 size-3.5 animate-spin" />
+                  <Archive v-else class="mr-1.5 size-3.5" />
+                  {{ creatingBackup ? '备份中' : '创建备份' }}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  :disabled="creatingDiagnosticBundle"
+                  @click="handleCreateDiagnosticBundle"
+                >
+                  <Loader2 v-if="creatingDiagnosticBundle" class="mr-1.5 size-3.5 animate-spin" />
+                  <FileArchive v-else class="mr-1.5 size-3.5" />
+                  {{ creatingDiagnosticBundle ? '生成中' : '生成诊断包' }}
+                </Button>
+                <Button type="button" variant="outline" size="sm" @click="handleCopyGlobalErrorDiagnostic">
+                  <Copy class="mr-1.5 size-3.5" />
+                  复制诊断
+                </Button>
                 <Button type="button" variant="outline" size="sm" @click="error = null">
                   关闭
                 </Button>
               </template>
+              <div
+                v-if="showGlobalDiagnosticDetail"
+                class="mt-3 space-y-2 rounded-md border border-destructive/15 bg-destructive/[0.03] px-3 py-2 text-xs leading-5 text-destructive/85"
+                role="status"
+              >
+                <p v-if="globalDiagnosticSummary">
+                  本机状态{{ globalDiagnosticStatus ? ` ${globalDiagnosticStatus}` : '' }}：{{ globalDiagnosticSummary }}
+                </p>
+                <p v-if="globalDiagnosticError" class="text-destructive/90">本机状态分析失败：{{ globalDiagnosticError }}</p>
+                <ul v-if="globalDiagnosticActions.length > 0" class="space-y-1">
+                  <li
+                    v-for="action in globalDiagnosticActions"
+                    :key="action"
+                    class="flex gap-1.5"
+                  >
+                    <span aria-hidden="true">-</span>
+                    <span>{{ action }}</span>
+                  </li>
+                </ul>
+                <div v-if="globalDiagnosticRepairLinkViews.length > 0" class="flex flex-wrap gap-2">
+                  <Button
+                    v-for="link in globalDiagnosticRepairLinkViews"
+                    :key="link.id"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    :title="link.title"
+                    @click="handleOpenDiagnosticRepair(link)"
+                  >
+                    <component :is="link.icon" class="mr-1.5 size-3.5" />
+                    {{ link.label }}
+                  </Button>
+                </div>
+              </div>
             </StatePanel>
             <div class="chat-empty__composer">
+              <div
+                v-if="pendingMemoryDraft"
+                class="memory-draft-notice"
+                role="status"
+              >
+                <span class="memory-draft-notice__icon" aria-hidden="true">
+                  <Brain class="size-3.5" />
+                </span>
+                <div class="memory-draft-notice__body">
+                  <div class="memory-draft-notice__title">
+                    <span>确认后记住</span>
+                    <small>发送后后台整理，可查看/调整</small>
+                  </div>
+                  <p>来源：{{ pendingMemoryDraft.sourceLabel }} · {{ pendingMemoryDraft.preview }}</p>
+                </div>
+                <button
+                  type="button"
+                  class="memory-draft-notice__close"
+                  aria-label="取消这条记忆草稿"
+                  title="取消这条记忆草稿"
+                  @click="cancelPendingMemoryDraft"
+                >
+                  <X class="size-3.5" />
+                </button>
+              </div>
               <ChatInput
                 ref="emptyInputRef"
                 :placeholder="inputPlaceholder"
                 :knowledge-bases="kbStore.list"
                 :base-session-config="activeSessionConfig"
                 @send="handleSend"
+                @draft-change="handleEmptyDraftChange"
               />
+              <div v-if="showEmptyPromptGallery" class="chat-empty__gallery">
+                <PromptGallery
+                  :suggestions="emptyPromptSuggestions"
+                  @pick="handlePromptPick"
+                />
+              </div>
             </div>
           </div>
 
@@ -762,6 +1773,16 @@ const shouldShowContinuationHint = computed(() =>
               :streaming-permission-approval-resolutions="pendingPermissionApprovalResolutions"
               :streaming-artifact-refs="streamingArtifactRefs"
               :query="searchQuery"
+              :focused-turn-id="focusedSourceTurnId"
+              :focused-entry-id="focusedSourceEntryId"
+              :project-id="activeMemoryProjectId"
+              :recovery-return-session-id="recoveryReturnSessionId"
+              :artifact-knowledge-base-id="artifactKnowledgeBaseTarget?.id ?? null"
+              :artifact-knowledge-base-name="artifactKnowledgeBaseTarget?.name ?? null"
+              :persist-artifact-knowledge-settlement="persistArtifactKnowledgeSettlement"
+              :saving-knowledge-message-id="savingKnowledgeMessageId"
+              :saved-knowledge-messages="savedKnowledgeMessages"
+              :save-knowledge-errors="saveKnowledgeErrors"
               @retry="handleRetry"
               @edit="handleEdit"
               @like="handleLike"
@@ -771,7 +1792,12 @@ const shouldShowContinuationHint = computed(() =>
               @resume="handleResume"
               @restart="handleRestart"
               @copy="handleCopy"
+              @remember="handleRememberMessage"
+              @save-knowledge="handleSaveMessageToKnowledge"
+              @save-artifact-knowledge="handleArtifactSavedToKnowledge"
+              @follow-up="handleMessageFollowUp"
               @show-trace="handleShowTrace"
+              @inspect-memory="handleInspectMemory"
               @permission-approval-resolve="resolvePermissionApproval"
             />
           </div>
@@ -807,13 +1833,24 @@ const shouldShowContinuationHint = computed(() =>
                 </Transition>
               </div>
 
-              <!-- 挂起恢复小卡片 -->
+              <!-- 任务恢复小卡片 -->
               <ContinuationHint
                 v-if="shouldShowContinuationHint && continuationTitle"
                 class="chat-composer-wrap__continuation"
                 :title="continuationTitle"
                 :detail="continuationDetail"
+                :input-hint="continuationInputHint"
+                :checkpoint-label="continuationCheckpointLabel"
+                :checkpoint-detail="continuationCheckpointDetail"
+                :next-actions="continuationNextActions"
+                :retained-context="continuationRetainedContext"
+                :can-resume="continuationCanResume"
+                :action-label="continuationActionLabel"
+                :status-label="continuationStatusLabel"
+                :repair-label="continuationRepairLabel"
+                :repair-title="continuationRepairTitle"
                 @resume="handleContinuationResume"
+                @repair="handleContinuationRepair"
                 @dismiss="dismissContinuationHint"
               />
 
@@ -826,30 +1863,118 @@ const shouldShowContinuationHint = computed(() =>
                 tone="danger"
               >
                 <template #actions>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    :disabled="analyzingGlobalDiagnostic"
+                    @click="handleAnalyzeGlobalDiagnostic"
+                  >
+                    <Loader2 v-if="analyzingGlobalDiagnostic" class="mr-1.5 size-3.5 animate-spin" />
+                    <Activity v-else class="mr-1.5 size-3.5" />
+                    {{ analyzingGlobalDiagnostic ? '分析中' : showGlobalDiagnosticDetail ? '重新分析' : '分析本机' }}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    :disabled="creatingBackup"
+                    @click="handleCreateLocalBackup"
+                  >
+                    <Loader2 v-if="creatingBackup" class="mr-1.5 size-3.5 animate-spin" />
+                    <Archive v-else class="mr-1.5 size-3.5" />
+                    {{ creatingBackup ? '备份中' : '创建备份' }}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    :disabled="creatingDiagnosticBundle"
+                    @click="handleCreateDiagnosticBundle"
+                  >
+                    <Loader2 v-if="creatingDiagnosticBundle" class="mr-1.5 size-3.5 animate-spin" />
+                    <FileArchive v-else class="mr-1.5 size-3.5" />
+                    {{ creatingDiagnosticBundle ? '生成中' : '生成诊断包' }}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" @click="handleCopyGlobalErrorDiagnostic">
+                    <Copy class="mr-1.5 size-3.5" />
+                    复制诊断
+                  </Button>
                   <Button type="button" variant="outline" size="sm" @click="error = null">
                     关闭
                   </Button>
                 </template>
+                <div
+                  v-if="showGlobalDiagnosticDetail"
+                  class="mt-3 space-y-2 rounded-md border border-destructive/15 bg-destructive/[0.03] px-3 py-2 text-xs leading-5 text-destructive/85"
+                  role="status"
+                >
+                  <p v-if="globalDiagnosticSummary">
+                    本机状态{{ globalDiagnosticStatus ? ` ${globalDiagnosticStatus}` : '' }}：{{ globalDiagnosticSummary }}
+                  </p>
+                  <p v-if="globalDiagnosticError" class="text-destructive/90">本机状态分析失败：{{ globalDiagnosticError }}</p>
+                  <ul v-if="globalDiagnosticActions.length > 0" class="space-y-1">
+                    <li
+                      v-for="action in globalDiagnosticActions"
+                      :key="action"
+                      class="flex gap-1.5"
+                    >
+                      <span aria-hidden="true">-</span>
+                      <span>{{ action }}</span>
+                    </li>
+                  </ul>
+                  <div v-if="globalDiagnosticRepairLinkViews.length > 0" class="flex flex-wrap gap-2">
+                    <Button
+                      v-for="link in globalDiagnosticRepairLinkViews"
+                      :key="link.id"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      :title="link.title"
+                      @click="handleOpenDiagnosticRepair(link)"
+                    >
+                      <component :is="link.icon" class="mr-1.5 size-3.5" />
+                      {{ link.label }}
+                    </Button>
+                  </div>
+                </div>
               </StatePanel>
 
-              <CapabilityHintStrip
-                v-if="showStreamingCapabilities"
-                compact
-                class="chat-composer-wrap__capabilities"
-                :active-capabilities="streamingCapabilitySuggestions"
-              />
+              <div
+                v-if="pendingMemoryDraft"
+                class="memory-draft-notice"
+                role="status"
+              >
+                <span class="memory-draft-notice__icon" aria-hidden="true">
+                  <Brain class="size-3.5" />
+                </span>
+                <div class="memory-draft-notice__body">
+                  <div class="memory-draft-notice__title">
+                    <span>确认后记住</span>
+                    <small>发送后后台整理，可查看/调整</small>
+                  </div>
+                  <p>来源：{{ pendingMemoryDraft.sourceLabel }} · {{ pendingMemoryDraft.preview }}</p>
+                </div>
+                <button
+                  type="button"
+                  class="memory-draft-notice__close"
+                  aria-label="取消这条记忆草稿"
+                  title="取消这条记忆草稿"
+                  @click="cancelPendingMemoryDraft"
+                >
+                  <X class="size-3.5" />
+                </button>
+              </div>
 
               <ChatInput
                 ref="composerInputRef"
-                :disabled="isStreaming"
                 :streaming="isStreaming"
                 :placeholder="inputPlaceholder"
-                :continuation-title="null"
-                :continuation-detail="null"
                 :knowledge-bases="kbStore.list"
                 :base-session-config="activeSessionConfig"
                 @send="handleSend"
                 @stop="abort"
+                @draft-change="handleComposerDraftChange"
               />
             </div>
           </div>
@@ -864,16 +1989,34 @@ const shouldShowContinuationHint = computed(() =>
     >
       <div class="overlay-scroll">
         <div class="overlay-heading">
-          <div class="overlay-heading__eyebrow">对话观测</div>
-          <div class="overlay-heading__title">执行轨迹</div>
+          <div class="overlay-heading__eyebrow">任务进展</div>
+          <div class="overlay-heading__title">任务步骤</div>
         </div>
         <TracePanel
           v-if="activeTraceData"
           :reasoning-events="activeTraceData.reasoningEvents"
           :react-steps="activeTraceData.reactSteps"
+          :tool-summaries="activeTraceData.toolSummaries"
+          :turn-recovery-context="activeTraceData.turnRecoveryContext"
           :streaming="activeTraceData.streaming"
           :trace-id="activeTraceData.traceId"
           hide-header
+        />
+      </div>
+    </OverlayHost>
+
+    <OverlayHost
+      :open="overlays.activeOverlay.value === 'memory'"
+      :show-close="false"
+      @close="closeMemoryPanel"
+    >
+      <div class="overlay-scroll">
+        <MemoryInsightPanel
+          :source="activeMemorySource"
+          :project-id="activeMemoryProjectId"
+          @close="closeMemoryPanel"
+          @updated="handleMemoryUpdated"
+          @deleted="handleMemoryDeleted"
         />
       </div>
     </OverlayHost>
@@ -1000,23 +2143,24 @@ const shouldShowContinuationHint = computed(() =>
   flex-direction: column;
   align-items: center;
   min-height: 100%;
-  padding: 14vh var(--chat-gutter-x-desktop, 24px) 24px;
-  gap: 28px;
+  padding: 13vh var(--chat-gutter-x-desktop, 24px) 24px;
+  gap: 18px;
 }
 
 .chat-empty__gallery {
   width: 100%;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
+  padding: 8px 18px 0;
   animation: fade-slide-in 500ms ease-out both;
-  animation-delay: 160ms;
+  animation-delay: 260ms;
 }
 
 .chat-empty__composer {
   width: 100%;
   max-width: 600px;
   animation: fade-slide-in 500ms ease-out both;
-  animation-delay: 220ms;
+  animation-delay: 180ms;
 }
 
 .chat-empty__error {
@@ -1059,8 +2203,97 @@ const shouldShowContinuationHint = computed(() =>
   margin-bottom: 8px;
 }
 
-.chat-composer-wrap__capabilities {
+.memory-draft-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
   margin-bottom: 8px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid hsl(from var(--border) h s l / 0.62);
+  border-radius: 8px;
+  background: hsl(from var(--background) h s l / 0.94);
+  box-shadow: 0 8px 24px -18px hsl(var(--shadow-color) / 0.2);
+}
+
+.memory-draft-notice__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: hsl(var(--primary) / 0.1);
+  color: var(--primary);
+}
+
+.memory-draft-notice__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.memory-draft-notice__title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--foreground);
+}
+
+.memory-draft-notice__title span {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.memory-draft-notice__title small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-draft-notice__body p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-draft-notice__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.memory-draft-notice__close:hover {
+  background: hsl(from var(--muted) h s l / 0.7);
+  color: var(--foreground);
+}
+
+.memory-draft-notice__close:focus-visible {
+  outline: 2px solid hsl(var(--primary) / 0.32);
+  outline-offset: 2px;
 }
 
 /* 悬浮集群：停止生成 + 回到底部，竖排居中 */

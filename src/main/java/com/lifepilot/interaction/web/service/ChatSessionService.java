@@ -3,6 +3,8 @@ package com.lifepilot.interaction.web.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.TranscriptCompactionBoundaryResolver;
+import com.lifepilot.agent.learning.extraction.MemoryChangeSummarySupport;
+import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
 import com.lifepilot.conversation.transcript.SessionTranscriptRepository;
@@ -13,10 +15,19 @@ import com.lifepilot.interaction.web.model.*;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
+import com.lifepilot.knowledge.repository.KnowledgeBaseRepository;
+import com.lifepilot.memory.governance.lifecycle.InvalidationKind;
+import com.lifepilot.memory.governance.lifecycle.SourceType;
+import com.lifepilot.memory.governance.lifecycle.events.SourceInvalidated;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
+import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.project.service.ProjectService;
 import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +59,16 @@ public class ChatSessionService {
     private final GenerationRouter generationRouter;
     @Nullable
     private final ChatTurnService chatTurnService;
+    @Nullable
+    private final MemoryExtractionCandidateRepository memoryExtractionCandidateRepository;
+    @Nullable
+    private final InjectionRecordRepository injectionRecordRepository;
+    @Nullable
+    private final SemanticMemory semanticMemory;
+    @Nullable
+    private final KnowledgeBaseRepository knowledgeBaseRepository;
+    @Nullable
+    private final ProjectContextResolver projectContextResolver;
     /**
      * 项目服务。创建项目会话时用于查询项目默认 KB 并自动关联到 session，
      * 让项目内的对话自动带上项目知识库的 RAG 检索。
@@ -57,6 +78,8 @@ public class ChatSessionService {
 
     @Nullable
     private final com.lifepilot.conversation.artifact.SessionArtifactRepository sessionArtifactRepository;
+    @Nullable
+    private final ApplicationEventPublisher eventPublisher;
 
     public ChatSessionService(ChatSessionRepository sessionRepository,
                               SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
@@ -68,8 +91,14 @@ public class ChatSessionService {
                               @Nullable TranscriptCompactionBoundaryResolver compactionBoundaryResolver,
                               @Nullable GenerationRouter generationRouter,
                               @Nullable ChatTurnService chatTurnService,
+                              @Nullable MemoryExtractionCandidateRepository memoryExtractionCandidateRepository,
+                              @Nullable InjectionRecordRepository injectionRecordRepository,
+                              @Nullable SemanticMemory semanticMemory,
+                              @Nullable KnowledgeBaseRepository knowledgeBaseRepository,
+                              @Nullable ProjectContextResolver projectContextResolver,
                               @Nullable ProjectService projectService,
-                              @Nullable com.lifepilot.conversation.artifact.SessionArtifactRepository sessionArtifactRepository) {
+                              @Nullable com.lifepilot.conversation.artifact.SessionArtifactRepository sessionArtifactRepository,
+                              @Nullable ApplicationEventPublisher eventPublisher) {
         this.sessionRepository = sessionRepository;
         this.sessionKnowledgeBaseRepository = sessionKnowledgeBaseRepository;
         this.attachmentRepository = attachmentRepository;
@@ -80,8 +109,14 @@ public class ChatSessionService {
         this.compactionBoundaryResolver = compactionBoundaryResolver;
         this.generationRouter = generationRouter;
         this.chatTurnService = chatTurnService;
+        this.memoryExtractionCandidateRepository = memoryExtractionCandidateRepository;
+        this.injectionRecordRepository = injectionRecordRepository;
+        this.semanticMemory = semanticMemory;
+        this.knowledgeBaseRepository = knowledgeBaseRepository;
+        this.projectContextResolver = projectContextResolver;
         this.projectService = projectService;
         this.sessionArtifactRepository = sessionArtifactRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -205,17 +240,44 @@ public class ChatSessionService {
     @Transactional
     public void deleteSession(String id) {
         requireWebSession(id);
+        cleanupSessionSidecarRecords(id);
         sessionRepository.deleteById(id);
+        publishSessionInvalidated(id, InvalidationKind.DELETED);
         log.info("删除会话: id={}", id);
     }
 
     @Transactional
     public void clearSessionMessages(String id) {
         requireWebSession(id);
+        cleanupSessionSidecarRecords(id);
         transcriptRepository.deleteBySessionId(id);
         attachmentRepository.deleteBySessionId(id);
+        if (sessionArtifactRepository != null) {
+            sessionArtifactRepository.deleteBySessionId(id);
+        }
         sessionRepository.clearMessages(id);
+        publishSessionInvalidated(id, InvalidationKind.CONTENT_CHANGED);
         log.info("清空会话消息: id={}", id);
+    }
+
+    private void cleanupSessionSidecarRecords(String sessionId) {
+        int memoryExtractionRows = memoryExtractionCandidateRepository != null
+                ? memoryExtractionCandidateRepository.deleteBySessionId(sessionId)
+                : 0;
+        int injectionRows = injectionRecordRepository != null
+                ? injectionRecordRepository.deleteBySessionId(sessionId)
+                : 0;
+        if (memoryExtractionRows > 0 || injectionRows > 0) {
+            log.info("清理会话辅助记录: sessionId={}, memoryExtractionRows={}, injectionRows={}",
+                    sessionId, memoryExtractionRows, injectionRows);
+        }
+    }
+
+    private void publishSessionInvalidated(String sessionId, InvalidationKind kind) {
+        if (eventPublisher == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new SourceInvalidated(SourceType.SESSION, sessionId, kind));
     }
 
     @Transactional
@@ -224,8 +286,8 @@ public class ChatSessionService {
     }
 
     public List<MessageInfo> getSessionMessages(String id) {
-        requireWebSession(id);
-        var messages = withAttachments(loadTranscriptMessages(id));
+        ChatSession session = requireWebSession(id);
+        var messages = withAttachments(loadTranscriptMessages(session));
         return withArtifactRefs(id, messages);
     }
 
@@ -321,20 +383,52 @@ public class ChatSessionService {
         }
     }
 
-    private List<MessageInfo> loadTranscriptMessages(String sessionId) {
+    @Transactional
+    public void recordKnowledgeSettlement(String entryId, KnowledgeSettlementRequest request) {
+        if (entryId == null || entryId.isBlank()) {
+            throw new IllegalArgumentException("消息 ID 不能为空");
+        }
+        String knowledgeBaseId = normalizeRequired(request != null ? request.knowledgeBaseId() : null, "资料库 ID 不能为空");
+        String knowledgeBaseName = normalizeRequired(request != null ? request.knowledgeBaseName() : null, "资料库名称不能为空");
+        String sourceType = normalizeOptional(request.sourceType());
+        String artifactId = normalizeOptional(request.artifactId());
+        String fileName = normalizeOptional(request.fileName());
+
+        Map<String, Object> settlement = new LinkedHashMap<>();
+        settlement.put("knowledgeBaseId", knowledgeBaseId);
+        settlement.put("knowledgeBaseName", knowledgeBaseName);
+        settlement.put("sourceType", sourceType != null ? sourceType : "MESSAGE_TEXT");
+        if (artifactId != null) {
+            settlement.put("artifactId", artifactId);
+        }
+        if (fileName != null) {
+            settlement.put("fileName", fileName);
+        }
+        settlement.put("savedAt", java.time.Instant.now().toString());
+
+        boolean updated = transcriptRepository.appendKnowledgeSettlement(entryId, settlement);
+        if (!updated) {
+            throw new IllegalArgumentException("消息不存在: entryId=" + entryId);
+        }
+        log.info("记录消息资料库沉淀: entryId={}, knowledgeBaseId={}, sourceType={}",
+                entryId, knowledgeBaseId, settlement.get("sourceType"));
+    }
+
+    private List<MessageInfo> loadTranscriptMessages(ChatSession session) {
         Map<String, ChatTurnRecord> turnsByTurnId = new HashMap<>();
         if (chatTurnService != null) {
-            for (ChatTurnRecord turn : chatTurnService.findBySessionId(sessionId)) {
+            for (ChatTurnRecord turn : chatTurnService.findBySessionId(session.id())) {
                 turnsByTurnId.put(turn.turnId(), turn);
             }
         }
-        return transcriptRepository.findUserConversationRowsBySessionId(sessionId).stream()
-                .map(row -> toMessageInfo(row, turnsByTurnId))
+        return transcriptRepository.findUserConversationRowsBySessionId(session.id()).stream()
+                .map(row -> toMessageInfo(row, turnsByTurnId, session.projectId()))
                 .toList();
     }
 
     private MessageInfo toMessageInfo(SessionTranscriptRepository.TranscriptMessageViewRow row,
-                                      Map<String, ChatTurnRecord> turnsByTurnId) {
+                                      Map<String, ChatTurnRecord> turnsByTurnId,
+                                      @Nullable String sessionProjectId) {
         var tree = A2uiPayloadSupport.deserializeStoredTree(row.a2uiComponentsJson(), objectMapper);
         ChatTurnRecord turn = row.turnId() != null ? turnsByTurnId.get(row.turnId()) : null;
         var rowCompletionMode = parseCompletionMode(row.completionMode());
@@ -351,16 +445,144 @@ public class ChatSessionService {
                 row.reasoningSummary(),
                 row.traceId(),
                 null,
+                resolveSingleTurnOverride(row, turn),
+                resolveSources(row),
+                resolveMemoryChanges(row, sessionProjectId),
+                deserializeToolSummaries(row.toolsSummaryJson()),
                 deserializeReactSteps(row.reactStepsJson()),
                 effectiveCompletionMode,
                 resolveMessageResumedFromTraceId(row, turn, currentAttemptMessage),
                 effectiveTurnStatus,
                 resolveMessageErrorMessage(turn, currentAttemptMessage),
+                deserializeTaskRecovery(row.taskRecoveryJson()),
+                resolveTurnRecoveryContext(row, turn, currentAttemptMessage),
+                deserializeExecutionConstraints(row.executionConstraintsJson()),
                 row.reasoningContent(),
                 row.reasoningDurationMs(),
+                row.knowledgeSettlements(),
                 null
         );
     }
+
+    @Nullable
+    private List<Map<String, Object>> resolveSources(SessionTranscriptRepository.TranscriptMessageViewRow row) {
+        if (row.role() == null || !"assistant".equalsIgnoreCase(row.role())) {
+            return null;
+        }
+        var sources = new ArrayList<Map<String, Object>>();
+        sources.addAll(resolveKnowledgeSources(row.sessionId()));
+        sources.addAll(resolveMemorySources(row.entryId()));
+        return sources.isEmpty() ? null : Collections.unmodifiableList(sources);
+    }
+
+    private List<Map<String, Object>> resolveKnowledgeSources(@Nullable String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
+        try {
+            var kbIds = sessionKnowledgeBaseRepository.findKnowledgeBaseIdsBySessionId(sessionId);
+            if (kbIds == null || kbIds.isEmpty()) {
+                return List.of();
+            }
+            var sources = new ArrayList<Map<String, Object>>();
+            for (String kbId : kbIds) {
+                if (kbId == null || kbId.isBlank()) {
+                    continue;
+                }
+                var source = new LinkedHashMap<String, Object>();
+                source.put("type", "knowledgeBase");
+                source.put("id", kbId);
+                source.put("name", resolveKnowledgeBaseName(kbId));
+                sources.add(Collections.unmodifiableMap(source));
+            }
+            return Collections.unmodifiableList(sources);
+        } catch (Exception e) {
+            log.debug("读取历史消息知识库来源失败: sessionId={}, error={}", sessionId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String resolveKnowledgeBaseName(String kbId) {
+        if (knowledgeBaseRepository == null) {
+            return kbId;
+        }
+        try {
+            return knowledgeBaseRepository.findById(kbId)
+                    .map(kb -> kb.name() != null && !kb.name().isBlank() ? kb.name() : kbId)
+                    .orElse(kbId);
+        } catch (Exception e) {
+            log.debug("读取历史消息知识库名称失败: kbId={}, error={}", kbId, e.getMessage());
+            return kbId;
+        }
+    }
+
+    private List<Map<String, Object>> resolveMemorySources(@Nullable String assistantEntryId) {
+        if (assistantEntryId == null || assistantEntryId.isBlank()
+                || injectionRecordRepository == null || semanticMemory == null) {
+            return List.of();
+        }
+        try {
+            var entityIds = injectionRecordRepository.findEntityIdsBySourceEntryId(assistantEntryId);
+            if (entityIds.isEmpty()) {
+                return List.of();
+            }
+            var sources = new ArrayList<Map<String, Object>>();
+            for (String entityId : entityIds) {
+                if (entityId == null || entityId.isBlank()) {
+                    continue;
+                }
+                semanticMemory.findById(entityId)
+                        .map(MemorySourceSummarySupport::toMemorySource)
+                        .ifPresent(sources::add);
+            }
+            return Collections.unmodifiableList(sources);
+        } catch (Exception e) {
+            log.debug("读取历史消息记忆来源失败: entryId={}, error={}", assistantEntryId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    @Nullable
+    private List<Map<String, Object>> resolveMemoryChanges(SessionTranscriptRepository.TranscriptMessageViewRow row,
+                                                           @Nullable String sessionProjectId) {
+        if (memoryExtractionCandidateRepository == null || row.turnId() == null || row.turnId().isBlank()
+                || row.role() == null || !"assistant".equalsIgnoreCase(row.role())) {
+            return null;
+        }
+        try {
+            var targetSpaces = targetSpacesForSessionMemoryChanges(sessionProjectId);
+            var changes = targetSpaces != null
+                    ? MemoryChangeSummarySupport.buildAppliedMemoryChangeSummaries(
+                            memoryExtractionCandidateRepository,
+                            row.turnId(),
+                            targetSpaces.spaceIds(),
+                            targetSpaces.includeDefaultSpace(),
+                            5)
+                    : MemoryChangeSummarySupport.buildAppliedMemoryChangeSummaries(
+                            memoryExtractionCandidateRepository,
+                            row.turnId(),
+                            5);
+            return changes.isEmpty() ? null : changes;
+        } catch (Exception e) {
+            log.debug("读取历史消息记忆沉淀失败: turnId={}, error={}", row.turnId(), e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    private TurnChangeTargetSpaces targetSpacesForSessionMemoryChanges(@Nullable String sessionProjectId) {
+        if (projectContextResolver == null) {
+            return null;
+        }
+        String projectId = sessionProjectId != null && !sessionProjectId.isBlank() ? sessionProjectId : null;
+        ProjectContext ctx = projectContextResolver.resolve(projectId);
+        if (ctx.isolated()) {
+            return new TurnChangeTargetSpaces(List.of(ctx.projectSpaceId()), false);
+        }
+        return new TurnChangeTargetSpaces(List.of(ctx.personalSpaceId(), ctx.experienceSpaceId()), true);
+    }
+
+    private record TurnChangeTargetSpaces(List<String> spaceIds, boolean includeDefaultSpace) {}
 
     @Nullable
     private ChatTurnStatus resolveMessageTurnStatus(@Nullable ChatTurnRecord turn,
@@ -375,6 +597,30 @@ public class ChatSessionService {
     @Nullable
     private String resolveMessageErrorMessage(@Nullable ChatTurnRecord turn, boolean currentAttemptMessage) {
         return currentAttemptMessage && turn != null ? turn.lastErrorMessage() : null;
+    }
+
+    @Nullable
+    private Map<String, Object> resolveTurnRecoveryContext(SessionTranscriptRepository.TranscriptMessageViewRow row,
+                                                           @Nullable ChatTurnRecord turn,
+                                                           boolean currentAttemptMessage) {
+        if (!currentAttemptMessage || turn == null || row.role() == null
+                || !"assistant".equalsIgnoreCase(row.role())) {
+            return null;
+        }
+        if (turn.lastAction() != com.lifepilot.interaction.web.model.ChatTurnAction.RESUME
+                && turn.lastAction() != com.lifepilot.interaction.web.model.ChatTurnAction.RESTART) {
+            return null;
+        }
+        return deserializeTurnRecoveryContext(turn.requestPayloadJson());
+    }
+
+    @Nullable
+    private SessionConfigOverride resolveSingleTurnOverride(SessionTranscriptRepository.TranscriptMessageViewRow row,
+                                                           @Nullable ChatTurnRecord turn) {
+        if (turn == null || row.role() == null || !"user".equalsIgnoreCase(row.role())) {
+            return null;
+        }
+        return deserializeSingleTurnOverride(turn.requestPayloadJson());
     }
 
     @Nullable
@@ -456,13 +702,21 @@ public class ChatSessionService {
                     msg.reasoningSummary(),
                     msg.traceId(),
                     attachments,
+                    msg.singleTurnOverride(),
+                    msg.sources(),
+                    msg.memoryChanges(),
+                    msg.toolsSummary(),
                     msg.reactSteps(),
                     msg.completionMode(),
                     msg.resumedFromTraceId(),
                     msg.turnStatus(),
                     msg.errorMessage(),
+                    msg.taskRecovery(),
+                    msg.turnRecoveryContext(),
+                    msg.executionConstraints(),
                     msg.reasoningContent(),
                     msg.reasoningDurationMs(),
+                    msg.knowledgeSettlements(),
                     msg.artifactRefs()
             );
         }).toList();
@@ -507,9 +761,11 @@ public class ChatSessionService {
             return new MessageInfo(
                     msg.id(), msg.turnId(), msg.role(), msg.content(), msg.a2uiComponents(),
                     msg.timestamp(), msg.reasoningSummary(), msg.traceId(), msg.attachments(),
-                    msg.reactSteps(), msg.completionMode(), msg.resumedFromTraceId(),
-                    msg.turnStatus(), msg.errorMessage(), msg.reasoningContent(),
-                    msg.reasoningDurationMs(), refs
+                    msg.singleTurnOverride(),
+                    msg.sources(),
+                    msg.memoryChanges(), msg.toolsSummary(), msg.reactSteps(), msg.completionMode(), msg.resumedFromTraceId(),
+                    msg.turnStatus(), msg.errorMessage(), msg.taskRecovery(), msg.turnRecoveryContext(), msg.executionConstraints(), msg.reasoningContent(),
+                    msg.reasoningDurationMs(), msg.knowledgeSettlements(), refs
             );
         }).toList();
     }
@@ -624,6 +880,106 @@ public class ChatSessionService {
         }
     }
 
+    @Nullable
+    private List<Map<String, Object>> deserializeToolSummaries(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(
+                    json,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class)
+            );
+        } catch (Exception e) {
+            log.warn("tools_summary_json 反序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    private Map<String, Object> deserializeTaskRecovery(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(
+                    json,
+                    objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class)
+            );
+        } catch (Exception e) {
+            log.warn("task_recovery_json 反序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    private Map<String, Object> deserializeExecutionConstraints(@Nullable String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(
+                    json,
+                    objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class)
+            );
+        } catch (Exception e) {
+            log.warn("execution_constraints_json 反序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> deserializeTurnRecoveryContext(@Nullable String requestPayloadJson) {
+        if (requestPayloadJson == null || requestPayloadJson.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> payload = objectMapper.readValue(
+                    requestPayloadJson,
+                    objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class)
+            );
+            Object recoveryContext = payload.get("lastRecoveryContext");
+            if (!(recoveryContext instanceof Map<?, ?> raw)) {
+                return null;
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (var entry : raw.entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) {
+                    continue;
+                }
+                result.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return result.isEmpty() ? null : Map.copyOf(result);
+        } catch (Exception e) {
+            log.debug("turn 恢复上下文反序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    @SuppressWarnings("unchecked")
+    private SessionConfigOverride deserializeSingleTurnOverride(@Nullable String requestPayloadJson) {
+        if (requestPayloadJson == null || requestPayloadJson.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> payload = objectMapper.readValue(
+                    requestPayloadJson,
+                    objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class)
+            );
+            Object overrideValue = payload.get("singleTurnOverride");
+            if (!(overrideValue instanceof Map<?, ?> raw) || raw.isEmpty()) {
+                return null;
+            }
+            SessionConfigOverride override = objectMapper.convertValue(raw, SessionConfigOverride.class);
+            return override == null || override.isEmpty() ? null : override;
+        } catch (Exception e) {
+            log.debug("单轮会话覆盖反序列化失败: error={}", e.getMessage());
+            return null;
+        }
+    }
+
     private ChatSession requireWebSession(String id) {
         if (!isWebSessionId(id)) {
             throw new IllegalArgumentException("\u4ec5\u652f\u6301\u8bbf\u95ee Web \u4f1a\u8bdd: id=" + id);
@@ -663,6 +1019,22 @@ public class ChatSessionService {
                 session.lastMessageAt(),
                 session.projectId()
         );
+    }
+
+    private String normalizeRequired(@Nullable String value, String message) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
+    }
+
+    @Nullable
+    private String normalizeOptional(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.strip();
     }
 
     private SessionCompactionStatusInfo buildCompactionStatus(String sessionId, Map<String, Object> sessionConfig) {

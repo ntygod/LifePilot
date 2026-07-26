@@ -4,16 +4,16 @@ import { useRoute } from 'vue-router'
 import {
   ArrowUp,
   AtSign,
-  CornerDownLeft,
+  BrainCircuit,
   FileAudio2,
   FileText,
   FileVideo,
+  EyeOff,
   Image,
   LibraryBig,
   Mic,
   Paperclip,
   Search,
-  Sparkles,
   Square,
   X,
 } from 'lucide-vue-next'
@@ -32,8 +32,6 @@ const props = defineProps<{
   disabled?: boolean
   streaming?: boolean
   placeholder?: string
-  continuationTitle?: string | null
-  continuationDetail?: string | null
   knowledgeBases?: KnowledgeBase[]
   baseSessionConfig?: SessionConfig
 }>()
@@ -47,6 +45,11 @@ const emit = defineEmits<{
     singleTurnOverride?: SessionConfigOverride | null
   }]
   stop: []
+  'draft-change': [{
+    content: string
+    hasAttachments: boolean
+    contextCount: number
+  }]
 }>()
 
 const chatStore = useChatStore()
@@ -54,11 +57,35 @@ const route = useRoute()
 const input = ref('')
 const textareaRef = ref<{ $el?: HTMLElement; focus?: () => void } | null>(null)
 const maxLength = 4000
+type ContextKind = 'knowledge-base' | 'memory'
+type MemoryContextMode = 'focused' | 'off'
+interface ComposerContext {
+  id: string
+  name: string
+  description?: string | null
+  kind: ContextKind
+  memoryMode?: MemoryContextMode
+}
+const MEMORY_FOCUSED_CONTEXT_ID = '__zhiwei_memory_focused__'
+const MEMORY_OFF_CONTEXT_ID = '__zhiwei_memory_off__'
+const MEMORY_CONTEXT_OPTIONS: ComposerContext[] = [{
+  id: MEMORY_FOCUSED_CONTEXT_ID,
+  name: '我的记忆',
+  description: '偏好、事实和经验',
+  kind: 'memory',
+  memoryMode: 'focused',
+}, {
+  id: MEMORY_OFF_CONTEXT_ID,
+  name: '本轮不用记忆',
+  description: '只按当前消息回答',
+  kind: 'memory',
+  memoryMode: 'off',
+}]
 
 const PLACEHOLDERS = [
   '想聊点什么？',
   '有什么我能帮到你的？',
-  '试试 @ 引用知识库...',
+  '试试 @ 引用记忆或知识库...',
   '可以直接粘贴图片或文件',
   '输入问题，或贴一段内容...',
 ]
@@ -77,12 +104,7 @@ const sendPulsing = ref(false)
 const voiceError = ref<string | null>(null)
 const manualContextPickerOpen = ref(false)
 const manualContextQuery = ref('')
-const selectedContexts = ref<Array<{
-  id: string
-  name: string
-  description?: string | null
-  kind: 'knowledge-base'
-}>>([])
+const selectedContexts = ref<ComposerContext[]>([])
 
 // 语音录音
 const {
@@ -103,6 +125,9 @@ const showWhisperConfirm = ref(false)
 
 /** 麦克风按钮点击：检测语音能力，不可用则 Tauri 端弹下载确认，Web 端提示 */
 async function handleMicClick() {
+  if (props.streaming) {
+    return
+  }
   if (!whisperAvailable.value) {
     await checkWhisper()
     if (!whisperAvailable.value) {
@@ -146,6 +171,7 @@ watch(mentionQuery, (query) => {
   }
 })
 const allContextOptions = computed(() => [
+  ...MEMORY_CONTEXT_OPTIONS,
   ...(props.knowledgeBases ?? []).map(knowledgeBase => ({
     id: knowledgeBase.id,
     name: knowledgeBase.name,
@@ -167,24 +193,53 @@ const filteredContextOptions = computed(() => {
       || (option.description?.toLowerCase().includes(query) ?? false)
   })
 })
-const filteredKnowledgeBases = computed(() => filteredContextOptions.value.filter(option => option.kind === 'knowledge-base'))
 const pickerTitle = computed(() => (
   manualContextPickerOpen.value
     ? '引用上下文'
     : `@ ${mentionQuery.value ?? ''}`.trim()
 ))
 const selectedContextCount = computed(() => selectedContexts.value.length)
+const selectedMemoryMode = computed(() =>
+  selectedContexts.value.find(option => option.kind === 'memory')?.memoryMode,
+)
+const activeContextCount = computed(() =>
+  selectedContexts.value.filter(option => option.kind !== 'memory' || option.memoryMode !== 'off').length,
+)
 const contextPickerDescription = computed(() => (
   selectedContextCount.value > 0
     ? `已选 ${selectedContextCount.value} 项，仅对当前消息生效。`
     : '仅对当前消息生效。'
 ))
+const selectedContextSummary = computed(() => (
+  selectedContextCount.value === 0
+    ? ''
+    : selectedMemoryMode.value === 'off' && activeContextCount.value === 0
+      ? '本轮不使用长期记忆 · 发送后清空'
+      : selectedMemoryMode.value === 'off'
+        ? `本轮使用 ${activeContextCount.value} 个上下文 · 不用长期记忆 · 发送后清空`
+        : `本轮使用 ${selectedContextCount.value} 个上下文 · 发送后清空`
+))
+
+watch(
+  [input, () => attachments.value.length, selectedContextCount],
+  ([content, attachmentCount, contextCount]) => {
+    emit('draft-change', {
+      content,
+      hasAttachments: attachmentCount > 0,
+      contextCount,
+    })
+  },
+)
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
     if (mentionQuery.value !== null && filteredContextOptions.value.length > 0) {
       event.preventDefault()
       selectContext(filteredContextOptions.value[0])
+      return
+    }
+    if (props.streaming) {
+      event.preventDefault()
       return
     }
     event.preventDefault()
@@ -229,7 +284,7 @@ function handlePaste(event: ClipboardEvent) {
 
 async function submit() {
   const content = input.value.trim()
-  if ((!content && attachments.value.length === 0) || sendDisabled.value) return
+  if (props.streaming || (!content && attachments.value.length === 0) || sendDisabled.value) return
 
   let attachmentIds: string[] | undefined
   let uploadedAttachments: ChatAttachment[] | undefined
@@ -342,9 +397,13 @@ function selectContext(option: {
   id: string
   name: string
   description?: string | null
-  kind: 'knowledge-base'
+  kind: ContextKind
+  memoryMode?: MemoryContextMode
 }) {
   if (!selectedContexts.value.some(selected => selected.kind === option.kind && selected.id === option.id)) {
+    if (option.kind === 'memory') {
+      selectedContexts.value = selectedContexts.value.filter(selected => selected.kind !== 'memory')
+    }
     selectedContexts.value.push(option)
   }
   if (mentionQuery.value !== null) {
@@ -354,7 +413,7 @@ function selectContext(option: {
   manualContextQuery.value = ''
 }
 
-function removeContext(kind: 'knowledge-base', id: string) {
+function removeContext(kind: ContextKind, id: string) {
   selectedContexts.value = selectedContexts.value.filter(option => !(option.kind === kind && option.id === id))
 }
 
@@ -367,20 +426,27 @@ function removeTrailingMention() {
 }
 
 function buildSingleTurnOverride(): SessionConfigOverride | undefined {
-  // 仅当用户临时勾选了 @ 上下文（当前为知识库）时才构造 override；
+  // 仅当用户临时勾选了 @ 上下文时才构造 override；
   // 没勾时返回 undefined，让后端走会话持久化配置。
   if (selectedContexts.value.length === 0) {
     return undefined
   }
 
-  const baseKbIds = props.baseSessionConfig?.knowledgeBaseIds ?? []
   const extraKbIds = selectedContexts.value
     .filter(option => option.kind === 'knowledge-base')
     .map(option => option.id)
+  const memoryMode = selectedContexts.value.find(option => option.kind === 'memory')?.memoryMode
+  const override: SessionConfigOverride = {}
 
-  return {
-    knowledgeBaseIds: mergeIds(baseKbIds, extraKbIds),
+  if (extraKbIds.length > 0) {
+    const baseKbIds = props.baseSessionConfig?.knowledgeBaseIds ?? []
+    override.knowledgeBaseIds = mergeIds(baseKbIds, extraKbIds)
   }
+  if (memoryMode) {
+    override.memoryContextMode = memoryMode
+  }
+
+  return Object.keys(override).length > 0 ? override : undefined
 }
 
 function mergeIds(baseIds: string[], extraIds: string[]) {
@@ -399,12 +465,15 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function getContextIcon(_kind: 'knowledge-base') {
+function getContextOptionIcon(option: ComposerContext) {
+  if (option.memoryMode === 'off') return EyeOff
+  if (option.kind === 'memory') return BrainCircuit
   return LibraryBig
 }
 
-function getContextKindLabel(_kind: 'knowledge-base') {
-  return '知识库'
+function getContextKindLabel(option: ComposerContext) {
+  if (option.memoryMode === 'off') return '关闭记忆'
+  return option.kind === 'memory' ? '记忆' : '知识库'
 }
 
 function getFileIcon(file: File) {
@@ -463,7 +532,7 @@ defineExpose({
   input,
   isUploading,
   getFileIcon,
-  /** 把外部文本填入输入框 —— 用于 PromptGallery 点击卡片 → 灌入 prompt */
+  /** 把外部文本填入输入框 —— 用于 PromptGallery 点击建议 → 灌入 prompt */
   setContent(text: string) {
     input.value = text
   },
@@ -484,41 +553,44 @@ defineExpose({
 <template>
   <div class="bg-transparent">
     <div class="mx-auto max-w-[1180px] space-y-3">
-      <TransitionGroup
+      <div
         v-if="selectedContexts.length > 0"
-        name="context-chip"
-        tag="div"
-        class="flex flex-wrap gap-2"
+        class="context-active-strip"
+        aria-label="本轮上下文"
       >
-        <div
-          v-for="context in selectedContexts"
-          :key="`${context.kind}:${context.id}`"
-          class="context-chip-card inline-flex items-center gap-2.5 px-3 py-2 text-xs"
-        >
-          <span
-            class="context-chip-icon bg-primary/12 text-primary"
-          >
-            <component :is="getContextIcon(context.kind)" class="size-3.5" />
-          </span>
-          <div class="min-w-0">
-            <div class="text-[10px] font-semibold text-muted-foreground">
-              {{ getContextKindLabel(context.kind) }}
-            </div>
-            <div class="max-w-[220px] truncate text-xs font-medium text-foreground">
-              {{ context.name }}
-            </div>
-          </div>
-          <button
-            type="button"
-            class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-destructive"
-            :aria-label="`移除上下文：${context.name}`"
-            :title="`移除上下文：${context.name}`"
-            @click="removeContext(context.kind, context.id)"
-          >
-            <X class="size-3" />
-          </button>
+        <div class="context-active-strip__meta">
+          <AtSign aria-hidden="true" />
+          <span>{{ selectedContextSummary }}</span>
         </div>
-      </TransitionGroup>
+        <TransitionGroup
+          name="context-chip"
+          tag="div"
+          class="context-chip-list"
+        >
+          <div
+            v-for="context in selectedContexts"
+            :key="`${context.kind}:${context.id}`"
+            class="context-chip"
+            :class="{ 'context-chip--off': context.memoryMode === 'off' }"
+            :data-context-mode="context.memoryMode ?? context.kind"
+          >
+            <component :is="getContextOptionIcon(context)" class="context-chip__icon" aria-hidden="true" />
+            <span class="context-chip__name">
+              {{ context.name }}
+            </span>
+            <span class="sr-only">{{ getContextKindLabel(context) }}</span>
+            <button
+              type="button"
+              class="context-chip__remove"
+              :aria-label="`移除上下文：${context.name}`"
+              :title="`移除上下文：${context.name}`"
+              @click="removeContext(context.kind, context.id)"
+            >
+              <X class="size-3" />
+            </button>
+          </div>
+        </TransitionGroup>
+      </div>
 
       <div v-if="attachments.length > 0" class="flex flex-wrap gap-2">
         <div
@@ -552,15 +624,21 @@ defineExpose({
       >
         <div
           v-if="showContextPicker"
-          class="rounded-2xl border border-border/60 bg-card p-sm shadow-[0_4px_16px_-6px_hsl(var(--shadow-color)/0.1)]"
+          class="context-picker-panel p-sm"
         >
+          <div class="context-picker-heading">
+            <div class="context-picker-title">{{ pickerTitle }}</div>
+            <div class="context-picker-description">{{ contextPickerDescription }}</div>
+          </div>
+
           <!-- 搜索框 -->
           <div class="mb-sm">
             <div class="relative">
               <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 v-model="manualContextQuery"
-                placeholder="搜索知识库..."
+                aria-label="搜索上下文"
+                placeholder="搜索记忆或知识库..."
                 class="h-8 rounded-xl bg-background/60 pl-8 text-xs"
               />
             </div>
@@ -569,27 +647,28 @@ defineExpose({
           <!-- 列表 -->
           <div class="max-h-[240px] space-y-0.5 overflow-y-auto scrollbar-thin">
             <button
-              v-for="option in filteredKnowledgeBases"
+              v-for="option in filteredContextOptions"
               :key="`${option.kind}:${option.id}`"
               type="button"
-              class="flex w-full items-center gap-sm rounded-xl px-sm py-xs text-left transition-colors hover:bg-accent/50"
+              class="context-option-row"
+              :aria-label="`引用上下文：${option.name}`"
               @click="selectContext(option)"
             >
               <component
-                :is="LibraryBig"
+                :is="getContextOptionIcon(option)"
                 class="size-4 shrink-0 text-muted-foreground"
               />
               <span class="truncate text-sm text-foreground">{{ option.name }}</span>
               <span class="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                知识库
+                {{ getContextKindLabel(option) }}
               </span>
             </button>
 
             <div
-              v-if="filteredKnowledgeBases.length === 0"
+              v-if="filteredContextOptions.length === 0"
               class="px-sm py-md text-center text-xs text-muted-foreground"
             >
-              {{ manualContextQuery ? '没有匹配结果' : '还没有知识库' }}
+              {{ manualContextQuery ? '没有匹配结果' : '还没有可引用的上下文' }}
             </div>
           </div>
 
@@ -618,29 +697,6 @@ defineExpose({
         @dragleave="handleDragLeave"
         @drop.prevent="handleDrop"
       >
-        <div
-          v-if="continuationTitle"
-          class="chat-composer-continuation flex items-start gap-3 border-b border-border/60 px-4 py-3"
-        >
-          <div class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-background/92 text-primary">
-            <CornerDownLeft class="size-3.5" />
-          </div>
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <span class="rounded-full bg-background/92 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-primary">
-                接续中
-              </span>
-              <span class="text-sm font-medium text-foreground">{{ continuationTitle }}</span>
-            </div>
-            <p
-              v-if="continuationDetail"
-              class="mt-1 text-xs leading-5 text-muted-foreground"
-            >
-              {{ continuationDetail }}
-            </p>
-          </div>
-        </div>
-
         <!-- 输入区 -->
         <div class="relative px-4 pb-1 pt-2">
           <Textarea
@@ -735,7 +791,7 @@ defineExpose({
               <button
                 v-if="voiceSupported"
                 type="button"
-                :disabled="disabled || isUploading || voiceSending"
+                :disabled="disabled || streaming || isUploading || voiceSending"
                 class="flex size-8 items-center justify-center rounded-[10px] text-muted-foreground/60 transition-all duration-150 hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
                 aria-label="语音输入"
                 title="语音输入"
@@ -814,90 +870,157 @@ defineExpose({
 </template>
 
 <style scoped>
-.context-chip-card {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid hsl(from var(--border) h s l / 0.58);
-  border-radius: 1rem;
-  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.92), hsl(from var(--background) h s l / 0.8));
-  box-shadow:
-    0 8px 14px -20px hsl(var(--shadow-color) / 0.08),
-    inset 0 1px 0 hsl(from var(--card) h s l / 0.68);
+.context-active-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  padding: 0 0.25rem;
 }
 
-.context-chip-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 2px;
-  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.72), hsl(from var(--primary) h s l / 0.08));
-}
-
-.context-chip-icon {
+.context-active-strip__meta {
   display: inline-flex;
-  height: 2rem;
-  width: 2rem;
-  flex-shrink: 0;
+  min-height: 1.75rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+  color: hsl(from var(--muted-foreground) h s l / 0.82);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.context-active-strip__meta svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: hsl(from var(--primary) h s l / 0.78);
+}
+
+.context-chip-list {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 14rem;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.context-chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(16rem, 100%);
+  min-height: 1.9rem;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid hsl(from var(--border) h s l / 0.56);
+  border-radius: 999px;
+  background: hsl(from var(--card) h s l / 0.7);
+  padding: 0.1rem 0.2rem 0.1rem 0.55rem;
+  color: var(--foreground);
+  font-size: 0.76rem;
+}
+
+.context-chip__icon {
+  width: 0.82rem;
+  height: 0.82rem;
+  flex: 0 0 auto;
+  color: hsl(from var(--primary) h s l / 0.82);
+}
+
+.context-chip--off {
+  background: hsl(from var(--muted) h s l / 0.58);
+  color: hsl(from var(--muted-foreground) h s l / 0.94);
+}
+
+.context-chip--off .context-chip__icon {
+  color: hsl(from var(--muted-foreground) h s l / 0.82);
+}
+
+.context-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-chip__remove {
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: 0.9rem;
-  border: 1px solid hsl(from var(--border) h s l / 0.42);
-  background: hsl(from var(--card) h s l / 0.78);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(from var(--muted-foreground) h s l / 0.8);
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease-fluid),
+    color 160ms var(--ease-fluid);
+}
+
+.context-chip__remove:hover {
+  background: hsl(from var(--muted) h s l / 0.82);
+  color: var(--destructive);
+}
+
+.context-chip__remove:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .context-picker-panel {
   position: relative;
   overflow: hidden;
+  border: 1px solid hsl(from var(--border) h s l / 0.62);
+  border-radius: 1.1rem;
+  background: var(--card);
+  box-shadow: 0 8px 22px -18px hsl(var(--shadow-color) / 0.16);
 }
 
-.chat-context-panel {
-  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.94), hsl(from var(--card) h s l / 0.9));
+.context-picker-heading {
+  margin-bottom: 0.75rem;
+  padding: 0 0.1rem;
 }
 
-.context-picker-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(90deg, hsl(from var(--primary) h s l / 0.16), transparent 24%);
-  opacity: 0.7;
+.context-picker-title {
+  color: var(--foreground);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
-.context-option-card {
-  position: relative;
+.context-picker-description {
+  margin-top: 0.1rem;
+  color: hsl(from var(--muted-foreground) h s l / 0.78);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.context-option-row {
   display: flex;
   width: 100%;
-  align-items: flex-start;
-  justify-content: space-between;
+  min-height: 2.25rem;
+  align-items: center;
   gap: 0.75rem;
-  overflow: hidden;
-  border: 1px solid hsl(from var(--border) h s l / 0.46);
-  border-radius: 1rem;
-  background: linear-gradient(180deg, hsl(from var(--background) h s l / 0.72), hsl(from var(--background) h s l / 0.58));
-  padding: 0.75rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.38rem 0.55rem;
   text-align: left;
   transition:
-    transform 180ms var(--ease-fluid),
-    border-color 180ms var(--ease-fluid),
-    background-color 180ms var(--ease-fluid),
-    box-shadow 180ms var(--ease-fluid);
+    background-color 160ms var(--ease-fluid),
+    color 160ms var(--ease-fluid);
 }
 
-.context-option-card:hover {
-  transform: translateY(-1px);
-  border-color: hsl(from var(--primary) h s l / 0.24);
-  background: linear-gradient(180deg, hsl(from var(--card) h s l / 0.94), hsl(from var(--background) h s l / 0.84));
-  box-shadow: 0 10px 16px -20px hsl(var(--shadow-color) / 0.08);
+.context-option-row:hover {
+  background: hsl(from var(--accent) h s l / 0.5);
 }
 
-.context-option-icon {
-  display: inline-flex;
-  height: 2rem;
-  width: 2rem;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.9rem;
+.context-option-row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .chat-send-ready {
@@ -907,10 +1030,6 @@ defineExpose({
 .chat-composer-shell {
   position: relative;
   background: var(--card);
-}
-
-.chat-composer-continuation {
-  background: linear-gradient(180deg, hsl(from var(--primary) h s l / 0.05), transparent);
 }
 
 .context-chip-enter-active,
@@ -977,4 +1096,5 @@ defineExpose({
     box-shadow: 0 14px 24px -14px hsl(var(--shadow-color) / 0.24);
   }
 }
+
 </style>

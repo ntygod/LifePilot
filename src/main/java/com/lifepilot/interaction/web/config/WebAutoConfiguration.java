@@ -115,7 +115,7 @@ public class WebAutoConfiguration {
     }
 
     /**
-     * 注册 A2UI 组件树捕获桥接器，在 ui.emit 工具执行器和编排器之间传递组件树用于持久化。
+     * 注册 A2UI 组件树捕获桥接器，在 ui.render 工具执行器和编排器之间传递组件树用于持久化。
      *
      * @return UiEmitTreeCapture 实例
      */
@@ -126,7 +126,7 @@ public class WebAutoConfiguration {
     }
 
     /**
-     * 在 ApplicationReadyEvent 中注册 ui.emit 工具到 DynamicToolRegistry。
+     * 在 ApplicationReadyEvent 中注册 ui.render 工具到 DynamicToolRegistry。
      *
      * <p>与 MetaAutoConfiguration.registerTools() 使用相同的 HIGHEST_PRECEDENCE 优先级，
      * 确保在 SkillAutoConfiguration 加载 Skill（校验 suggested-tools）之前完成注册。</p>
@@ -145,7 +145,7 @@ public class WebAutoConfiguration {
 
         var tool = new UiEmitToolProvider(sseManager, a2uiProperties.maxComponentsPerTree(), treeCapture).buildTool();
         toolRegistry.registerBuiltinTool(tool);
-        log.info("注册 ui.emit 内置工具: maxComponentsPerTree={}", a2uiProperties.maxComponentsPerTree());
+        log.info("注册 ui.render 内置工具: maxComponentsPerTree={}", a2uiProperties.maxComponentsPerTree());
     }
 
     // 注意：ChatController、SettingsController、KnowledgeBaseController、SkillController、

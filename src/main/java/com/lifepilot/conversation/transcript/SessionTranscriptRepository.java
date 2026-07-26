@@ -65,6 +65,9 @@ public class SessionTranscriptRepository {
             @Nullable String reasoningSummary,
             @Nullable String a2uiComponentsJson,
             @Nullable String reactStepsJson,
+            @Nullable String toolsSummaryJson,
+            @Nullable String taskRecoveryJson,
+            @Nullable String executionConstraintsJson,
             @Nullable String completionMode,
             @Nullable String resumedFromTraceId,
             @Nullable String turnId,
@@ -72,6 +75,7 @@ public class SessionTranscriptRepository {
             boolean visibleToModel,
             boolean visibleToUser,
             Instant createdAt,
+            @Nullable List<Map<String, Object>> knowledgeSettlements,
             @Nullable String reasoningContent,
             @Nullable Long reasoningDurationMs
     ) {
@@ -99,6 +103,60 @@ public class SessionTranscriptRepository {
                                      @Nullable CompletionMode completionMode,
                                      @Nullable String resumedFromTraceId,
                                      Instant createdAt) {
+        return appendMessageEntry(sessionId, role, content, reasoningSummary, turnId, traceId,
+                a2uiComponentsJson, reactStepsJson, null, null, null,
+                completionMode, resumedFromTraceId, createdAt);
+    }
+
+    public String appendMessageEntry(String sessionId,
+                                     String role,
+                                     String content,
+                                     @Nullable String reasoningSummary,
+                                     @Nullable String turnId,
+                                     @Nullable String traceId,
+                                     @Nullable String a2uiComponentsJson,
+                                     @Nullable String reactStepsJson,
+                                     @Nullable String taskRecoveryJson,
+                                     @Nullable CompletionMode completionMode,
+                                     @Nullable String resumedFromTraceId,
+                                     Instant createdAt) {
+        return appendMessageEntry(sessionId, role, content, reasoningSummary, turnId, traceId,
+                a2uiComponentsJson, reactStepsJson, null, taskRecoveryJson, null,
+                completionMode, resumedFromTraceId, createdAt);
+    }
+
+    public String appendMessageEntry(String sessionId,
+                                     String role,
+                                     String content,
+                                     @Nullable String reasoningSummary,
+                                     @Nullable String turnId,
+                                     @Nullable String traceId,
+                                     @Nullable String a2uiComponentsJson,
+                                     @Nullable String reactStepsJson,
+                                     @Nullable String toolsSummaryJson,
+                                     @Nullable String taskRecoveryJson,
+                                     @Nullable CompletionMode completionMode,
+                                     @Nullable String resumedFromTraceId,
+                                     Instant createdAt) {
+        return appendMessageEntry(sessionId, role, content, reasoningSummary, turnId, traceId,
+                a2uiComponentsJson, reactStepsJson, toolsSummaryJson, taskRecoveryJson, null,
+                completionMode, resumedFromTraceId, createdAt);
+    }
+
+    public String appendMessageEntry(String sessionId,
+                                     String role,
+                                     String content,
+                                     @Nullable String reasoningSummary,
+                                     @Nullable String turnId,
+                                     @Nullable String traceId,
+                                     @Nullable String a2uiComponentsJson,
+                                     @Nullable String reactStepsJson,
+                                     @Nullable String toolsSummaryJson,
+                                     @Nullable String taskRecoveryJson,
+                                     @Nullable String executionConstraintsJson,
+                                     @Nullable CompletionMode completionMode,
+                                     @Nullable String resumedFromTraceId,
+                                     Instant createdAt) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("content", content);
         if (reasoningSummary != null && !reasoningSummary.isBlank()) {
@@ -109,6 +167,15 @@ public class SessionTranscriptRepository {
         }
         if (reactStepsJson != null && !reactStepsJson.isBlank()) {
             payload.put("reactStepsJson", reactStepsJson);
+        }
+        if (toolsSummaryJson != null && !toolsSummaryJson.isBlank()) {
+            payload.put("toolsSummaryJson", toolsSummaryJson);
+        }
+        if (taskRecoveryJson != null && !taskRecoveryJson.isBlank()) {
+            payload.put("taskRecoveryJson", taskRecoveryJson);
+        }
+        if (executionConstraintsJson != null && !executionConstraintsJson.isBlank()) {
+            payload.put("executionConstraintsJson", executionConstraintsJson);
         }
         if (completionMode != null) {
             payload.put("completionMode", completionMode.name());
@@ -140,7 +207,8 @@ public class SessionTranscriptRepository {
                                      @Nullable String resumedFromTraceId,
                                      Instant createdAt) {
         return appendMessageEntry(sessionId, role, content, reasoningSummary, null, traceId,
-                a2uiComponentsJson, reactStepsJson, completionMode, resumedFromTraceId, createdAt);
+                a2uiComponentsJson, reactStepsJson, null, null, null,
+                completionMode, resumedFromTraceId, createdAt);
     }
 
     public void updateVisibility(String entryId, boolean visibleToModel, boolean visibleToUser) {
@@ -153,6 +221,55 @@ public class SessionTranscriptRepository {
                 visibleToUser ? 1 : 0,
                 entryId
         );
+    }
+
+    public void updateMessageContent(String entryId, String content) {
+        findById(entryId).ifPresent(row -> {
+            Map<String, Object> payload = new LinkedHashMap<>(deserializePayload(row.payloadJson()));
+            payload.put("content", content);
+            jdbcTemplate.update("""
+                    UPDATE session_transcript_entries
+                    SET payload_json = ?, token_estimate = ?
+                    WHERE id = ?
+                    """,
+                    serializePayload(payload),
+                    estimatePayloadTokens(payload),
+                    entryId
+            );
+        });
+    }
+
+    public boolean appendKnowledgeSettlement(String entryId, Map<String, Object> settlement) {
+        var row = findById(entryId);
+        if (row.isEmpty()) {
+            return false;
+        }
+
+        Map<String, Object> normalizedSettlement = normalizeMap(settlement);
+        if (normalizedSettlement.isEmpty()) {
+            return false;
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>(deserializePayload(row.get().payloadJson()));
+        var settlements = new java.util.ArrayList<Map<String, Object>>();
+        List<Map<String, Object>> existingSettlements = mapListValue(payload.get("knowledgeSettlements"));
+        if (existingSettlements != null) {
+            settlements.addAll(existingSettlements);
+        }
+        settlements.removeIf(existing -> sameKnowledgeSettlement(existing, normalizedSettlement));
+        settlements.add(normalizedSettlement);
+        payload.put("knowledgeSettlements", settlements);
+
+        jdbcTemplate.update("""
+                UPDATE session_transcript_entries
+                SET payload_json = ?, token_estimate = ?
+                WHERE id = ?
+                """,
+                serializePayload(payload),
+                estimatePayloadTokens(payload),
+                entryId
+        );
+        return true;
     }
 
     public String appendEntry(String sessionId,
@@ -447,6 +564,9 @@ public class SessionTranscriptRepository {
                 stringValue(payload.get("reasoningSummary")),
                 stringValue(payload.get("a2uiComponentsJson")),
                 stringValue(payload.get("reactStepsJson")),
+                stringValue(payload.get("toolsSummaryJson")),
+                stringValue(payload.get("taskRecoveryJson")),
+                stringValue(payload.get("executionConstraintsJson")),
                 stringValue(payload.get("completionMode")),
                 stringValue(payload.get("resumedFromTraceId")),
                 row.turnId(),
@@ -454,6 +574,7 @@ public class SessionTranscriptRepository {
                 row.visibleToModel(),
                 row.visibleToUser(),
                 row.createdAt(),
+                mapListValue(payload.get("knowledgeSettlements")),
                 // ChatTurnService.buildAssistantPayload 写 snake_case "reasoning_content"
                 // 与 LLM 协议字段名对齐，反序列化时按同一 key 读出
                 stringValue(payload.get("reasoning_content")),
@@ -497,6 +618,44 @@ public class SessionTranscriptRepository {
         }
         String text = value.toString();
         return text.isBlank() ? null : text;
+    }
+
+    @Nullable
+    private List<Map<String, Object>> mapListValue(@Nullable Object value) {
+        if (!(value instanceof List<?> items) || items.isEmpty()) {
+            return null;
+        }
+        var result = new java.util.ArrayList<Map<String, Object>>();
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> raw) || raw.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> normalized = normalizeMap(raw);
+            if (!normalized.isEmpty()) {
+                result.add(Map.copyOf(normalized));
+            }
+        }
+        return result.isEmpty() ? null : List.copyOf(result);
+    }
+
+    private Map<String, Object> normalizeMap(@Nullable Map<?, ?> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        for (var entry : raw.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            normalized.put(entry.getKey().toString(), entry.getValue());
+        }
+        return normalized;
+    }
+
+    private boolean sameKnowledgeSettlement(Map<String, Object> existing, Map<String, Object> candidate) {
+        return Objects.equals(stringValue(existing.get("knowledgeBaseId")), stringValue(candidate.get("knowledgeBaseId")))
+                && Objects.equals(stringValue(existing.get("sourceType")), stringValue(candidate.get("sourceType")))
+                && Objects.equals(stringValue(existing.get("artifactId")), stringValue(candidate.get("artifactId")));
     }
 
     private boolean booleanValue(@Nullable Object value) {

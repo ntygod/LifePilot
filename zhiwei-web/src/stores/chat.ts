@@ -15,6 +15,11 @@ export interface PendingFirstSend {
   singleTurnOverride?: SessionConfigOverride | null
 }
 
+interface StartNewSessionOptions {
+  /** 首轮消息已乐观入列时，激活新会话不要清空当前消息。 */
+  preserveCurrentMessages?: boolean
+}
+
 export const useChatStore = defineStore('chat', () => {
   // 会话列表
   const sessions = ref<ChatSession[]>([])
@@ -44,7 +49,8 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 加载指定会话的历史消息。 */
   async function loadMessages(sessionId: string) {
-    messages.value = await chatApi.getSessionMessages(sessionId)
+    const historyMessages = await chatApi.getSessionMessages(sessionId)
+    messages.value = mergeLoadedMessages(historyMessages, messages.value)
   }
 
   /** 向当前消息列表追加一条消息。 */
@@ -84,10 +90,15 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /** 开始新对话，立即创建并激活一个新会话。可选传入 projectId 继承项目上下文。 */
-  async function startNewSession(title?: string, projectId?: string | null): Promise<ChatSession> {
+  async function startNewSession(
+    title?: string,
+    projectId?: string | null,
+    options: StartNewSessionOptions = {},
+  ): Promise<ChatSession> {
     const session = await createSession(title, projectId)
     // 新建会话没有历史消息，跳过 watch 中的 loadMessages 避免竞态覆盖
     skipNextLoad = true
+    preserveMessagesOnNextActivation = options.preserveCurrentMessages === true
     activeSessionId.value = session.id
     return session
   }
@@ -140,10 +151,26 @@ export const useChatStore = defineStore('chat', () => {
 
   // 新建会话时跳过 loadMessages 的竞态守卫
   let skipNextLoad = false
+  let preserveMessagesOnNextActivation = false
+
+  function mergeLoadedMessages(historyMessages: Message[], localMessages: Message[]) {
+    if (localMessages.length === 0) {
+      return historyMessages
+    }
+    const merged = new Map<string, Message>()
+    historyMessages.forEach(message => merged.set(message.id, message))
+    localMessages.forEach(message => merged.set(message.id, message))
+    return Array.from(merged.values())
+  }
 
   // 切换会话时清空本地消息，并重新加载对应历史。
   watch(activeSessionId, async (newId) => {
-    messages.value = []
+    const preserveMessages = preserveMessagesOnNextActivation
+    preserveMessagesOnNextActivation = false
+    const hasPendingLocalMessages = messages.value.some(message => message.status === 'pending')
+    if (!preserveMessages && !isStreaming.value && !hasPendingLocalMessages) {
+      messages.value = []
+    }
     streamingContent.value = ''
     if (newId && !skipNextLoad) {
       await loadMessages(newId)

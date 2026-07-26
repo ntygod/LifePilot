@@ -19,6 +19,7 @@ import java.util.List;
  * @param maxSteps             单轮最大步数
  * @param maxDurationSeconds   单轮最大执行时长（秒）
  * @param knowledgeBaseIds     单轮临时生效的知识库 ID 列表（覆盖而非追加）
+ * @param memoryContextMode    单轮记忆上下文模式：auto / focused / off
  * @author zsg
  * @since 2026-05-08
  */
@@ -27,12 +28,14 @@ public record SessionConfigOverride(
         @Nullable Double temperature,
         @Nullable Integer maxSteps,
         @Nullable Integer maxDurationSeconds,
-        @Nullable List<String> knowledgeBaseIds
+        @Nullable List<String> knowledgeBaseIds,
+        @Nullable String memoryContextMode
 ) {
     public SessionConfigOverride {
         knowledgeBaseIds = (knowledgeBaseIds == null || knowledgeBaseIds.isEmpty())
                 ? null
                 : List.copyOf(knowledgeBaseIds);
+        memoryContextMode = normalizeMemoryContextMode(memoryContextMode);
     }
 
     /** 任何字段非空都视为有效覆盖。 */
@@ -41,6 +44,19 @@ public record SessionConfigOverride(
                 && temperature == null
                 && maxSteps == null
                 && maxDurationSeconds == null
-                && knowledgeBaseIds == null;
+                && knowledgeBaseIds == null
+                && memoryContextMode == null;
+    }
+
+    @Nullable
+    private static String normalizeMemoryContextMode(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String normalized = raw.trim().toLowerCase();
+        return switch (normalized) {
+            case "auto", "focused", "off" -> normalized;
+            default -> null;
+        };
     }
 }

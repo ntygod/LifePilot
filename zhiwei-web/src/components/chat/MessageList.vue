@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, PermissionApprovalRequest } from '@/types'
+import type { A2uiComponent, Message, ReasoningEvent, ReactStepDto, PermissionApprovalRequest, SourceSummary, ToolRecoveryAction } from '@/types'
 import MessageBubble from './MessageBubble.vue'
 import { motion } from 'motion-v'
 
 const MotionDiv = motion.div
+interface SavedKnowledgeMessage {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+}
+
+interface ArtifactKnowledgeSavedPayload {
+  artifactId: string
+  fileName: string
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+}
 
 const props = defineProps<{
   messages: Message[]
@@ -24,6 +35,21 @@ const props = defineProps<{
   streamingArtifactRefs?: import('@/api/artifacts').ArtifactRefPayload[]
   /** 文本搜索关键字，用于高亮匹配内容。 */
   query?: string
+  /** 从记忆来源或外部入口跳转过来的目标轮次。 */
+  focusedTurnId?: string | null
+  /** 从记忆来源或外部入口跳转过来的目标消息条目。 */
+  focusedEntryId?: string | null
+  /** 当前会话所属项目，用于把消息内的记忆入口限定到项目上下文。 */
+  projectId?: string | null
+  /** 能力修复后返回当前对话所需的会话 ID。 */
+  recoveryReturnSessionId?: string | null
+  /** 当前对话里明确的产物沉淀目标资料库；为空时产物卡片不显示“存资料”。 */
+  artifactKnowledgeBaseId?: string | null
+  artifactKnowledgeBaseName?: string | null
+  persistArtifactKnowledgeSettlement?: (message: Message, payload: ArtifactKnowledgeSavedPayload) => Promise<void> | void
+  savingKnowledgeMessageId?: string | null
+  savedKnowledgeMessages?: Record<string, SavedKnowledgeMessage>
+  saveKnowledgeErrors?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -33,10 +59,15 @@ const emit = defineEmits<{
   (e: 'dislike', message: Message, feedback?: string): void
   (e: 'fork', message: Message): void
   (e: 'regenerate', message: Message): void
-  (e: 'resume', message: Message): void
-  (e: 'restart', message: Message): void
-  (e: 'copy', content: string): void
+  (e: 'resume', message: Message, action?: ToolRecoveryAction): void
+  (e: 'restart', message: Message, action?: ToolRecoveryAction): void
+  (e: 'copy', content: string, success: boolean): void
+  (e: 'remember', message: Message): void
+  (e: 'save-knowledge', message: Message): void
+  (e: 'save-artifact-knowledge', message: Message, payload: ArtifactKnowledgeSavedPayload): void
+  (e: 'follow-up', prompt: string): void
   (e: 'show-trace', messageId: string): void
+  (e: 'inspect-memory', source: SourceSummary): void
   (e: 'permission-approval-resolve', requestId: string, resolution: 'approved' | 'rejected' | 'expired', subjectType?: string): void
 }>()
 
@@ -179,6 +210,31 @@ function highlight(text: string): string {
   const reg = new RegExp(escaped, 'gi')
   return text.replace(reg, match => `<mark class="bg-yellow-200/70 dark:bg-yellow-500/40">${match}</mark>`)
 }
+
+function isFocusedMessage(message: Message) {
+  const entryId = props.focusedEntryId?.trim()
+  if (entryId && message.id === entryId) return true
+
+  const turnId = props.focusedTurnId?.trim()
+  return Boolean(turnId && message.turnId === turnId)
+}
+
+function savedKnowledgeFor(message: Message): SavedKnowledgeMessage | null {
+  const saved = props.savedKnowledgeMessages?.[message.id]
+    ?? message.knowledgeSettlements?.find(settlement => settlement.knowledgeBaseId?.trim())
+  const targetId = props.artifactKnowledgeBaseId?.trim()
+  if (!saved || !targetId || saved.knowledgeBaseId !== targetId) {
+    return null
+  }
+  return {
+    knowledgeBaseId: saved.knowledgeBaseId,
+    knowledgeBaseName: saved.knowledgeBaseName,
+  }
+}
+
+function forwardArtifactKnowledgeSaved(message: Message, payload: ArtifactKnowledgeSavedPayload) {
+  emit('save-artifact-knowledge', message, payload)
+}
 </script>
 
 <template>
@@ -197,7 +253,10 @@ function highlight(text: string): string {
         :initial="getMotionInitial(msg)"
         :animate="{ y: 0, x: 0, opacity: 1, scale: 1 }"
         :transition="getMotionTransition(msg)"
-        class="w-full"
+        class="message-list__item w-full"
+        :class="{ 'message-list__item--focused': isFocusedMessage(msg) }"
+        :data-entry-id="msg.id"
+        :data-turn-id="msg.turnId || undefined"
       >
         <MessageBubble
           :message="{
@@ -215,16 +274,30 @@ function highlight(text: string): string {
           :streaming-permission-approvals="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovals : undefined"
           :streaming-permission-approval-resolutions="(isStreaming && index === mergedMessages.length - 1 && msg.role === 'assistant') ? streamingPermissionApprovalResolutions : undefined"
           :is-last-assistant="msg.id === lastAssistantId"
+          :project-id="projectId"
+          :recovery-return-session-id="recoveryReturnSessionId"
+          :artifact-knowledge-base-id="artifactKnowledgeBaseId"
+          :artifact-knowledge-base-name="artifactKnowledgeBaseName"
+          :persist-artifact-knowledge-settlement="persistArtifactKnowledgeSettlement"
+          :saving-to-knowledge="savingKnowledgeMessageId === msg.id"
+          :saved-knowledge-base-id="savedKnowledgeFor(msg)?.knowledgeBaseId ?? null"
+          :saved-knowledge-base-name="savedKnowledgeFor(msg)?.knowledgeBaseName ?? null"
+          :save-knowledge-error="saveKnowledgeErrors?.[msg.id] ?? null"
           @retry="(m: Message) => emit('retry', m)"
           @edit="(m: Message, c: string) => emit('edit', m, c)"
           @like="(m: Message) => emit('like', m)"
           @dislike="(m: Message, f?: string) => emit('dislike', m, f)"
           @fork="(m: Message) => emit('fork', m)"
           @regenerate="(m: Message) => emit('regenerate', m)"
-          @resume="(m: Message) => emit('resume', m)"
-          @restart="(m: Message) => emit('restart', m)"
-          @copy="(c: string) => emit('copy', c)"
+          @resume="(m: Message, action?: ToolRecoveryAction) => emit('resume', m, action)"
+          @restart="(m: Message, action?: ToolRecoveryAction) => emit('restart', m, action)"
+          @copy="(c: string, success: boolean) => emit('copy', c, success)"
+          @remember="(m: Message) => emit('remember', m)"
+          @save-knowledge="(m: Message) => emit('save-knowledge', m)"
+          @save-artifact-knowledge="forwardArtifactKnowledgeSaved"
+          @follow-up="(prompt: string) => emit('follow-up', prompt)"
           @show-trace="(id: string) => emit('show-trace', id)"
+          @inspect-memory="(source: SourceSummary) => emit('inspect-memory', source)"
           @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
         />
       </MotionDiv>
@@ -245,9 +318,49 @@ function highlight(text: string): string {
         :streaming-a2ui-components="streamingA2uiComponents"
         :streaming-permission-approvals="streamingPermissionApprovals"
         :streaming-permission-approval-resolutions="streamingPermissionApprovalResolutions"
+        :project-id="projectId"
+        :recovery-return-session-id="recoveryReturnSessionId"
+        :artifact-knowledge-base-id="null"
+        :artifact-knowledge-base-name="null"
+        :saving-to-knowledge="savingKnowledgeMessageId === 'streaming'"
+        @follow-up="(prompt: string) => emit('follow-up', prompt)"
         @show-trace="(id: string) => emit('show-trace', id)"
+        @inspect-memory="(source: SourceSummary) => emit('inspect-memory', source)"
         @permission-approval-resolve="(requestId: string, r: 'approved' | 'rejected' | 'expired', subjectType?: string) => emit('permission-approval-resolve', requestId, r, subjectType)"
       />
     </MotionDiv>
   </div>
 </template>
+
+<style scoped>
+.message-list__item {
+  border-radius: 12px;
+  scroll-margin: 96px;
+  transition:
+    background-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.message-list__item--focused {
+  animation: message-source-focus 2200ms ease-out both;
+  box-shadow: 0 0 0 1px hsl(from var(--primary) h s l / 0.22);
+  background: hsl(from var(--primary) h s l / 0.04);
+}
+
+@keyframes message-source-focus {
+  0% {
+    background: hsl(from var(--primary) h s l / 0.12);
+    box-shadow: 0 0 0 1px hsl(from var(--primary) h s l / 0.34);
+  }
+  100% {
+    background: hsl(from var(--primary) h s l / 0.04);
+    box-shadow: 0 0 0 1px hsl(from var(--primary) h s l / 0.22);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-list__item--focused {
+    animation: none;
+  }
+}
+</style>

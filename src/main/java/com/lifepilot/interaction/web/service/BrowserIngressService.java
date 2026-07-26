@@ -136,7 +136,8 @@ public class BrowserIngressService {
                         resolved.preferredProvider(),
                         resolved.turnId(),
                         resolved.action(),
-                        resolved.singleTurnOverride()))
+                        resolved.singleTurnOverride(),
+                        resolved.turnRecoveryContext()))
                 .timestamp(Instant.now())
                 .traceHeaders(buildTraceHeaders(deliveryMode))
                 .build();
@@ -154,7 +155,7 @@ public class BrowserIngressService {
                 .userId(DEFAULT_WEB_USER)
                 .sessionId(request.sessionId())
                 .content(content)
-                .channelMetadata(buildWebMetadata(httpRequest, DeliveryMode.SYNC, null, null, null, null))
+                .channelMetadata(buildWebMetadata(httpRequest, DeliveryMode.SYNC, null, null, null, null, null))
                 .timestamp(Instant.now())
                 .traceHeaders(buildTraceHeaders(DeliveryMode.SYNC))
                 .build();
@@ -162,15 +163,16 @@ public class BrowserIngressService {
 
     private ChannelMetadata.WebMetadata buildWebMetadata(@Nullable HttpServletRequest httpRequest,
                                                          DeliveryMode deliveryMode,
-                                                         @Nullable String preferredProvider,
-                                                         @Nullable String turnId,
-                                                         @Nullable com.lifepilot.interaction.web.model.ChatTurnAction action,
-                                                         @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride) {
+                                                          @Nullable String preferredProvider,
+                                                          @Nullable String turnId,
+                                                          @Nullable com.lifepilot.interaction.web.model.ChatTurnAction action,
+                                                          @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride,
+                                                          @Nullable Map<String, Object> turnRecoveryContext) {
         if (httpRequest == null) {
             return new ChannelMetadata.WebMetadata(
                     "unknown", "unknown", null,
                     deliveryMode == DeliveryMode.SSE_STREAM,
-                    preferredProvider, turnId, action, singleTurnOverride);
+                    preferredProvider, turnId, action, singleTurnOverride, turnRecoveryContext);
         }
         var userAgent = httpRequest.getHeader("User-Agent");
         return new ChannelMetadata.WebMetadata(
@@ -181,7 +183,8 @@ public class BrowserIngressService {
                 preferredProvider,
                 turnId,
                 action,
-                singleTurnOverride
+                singleTurnOverride,
+                turnRecoveryContext
         );
     }
 

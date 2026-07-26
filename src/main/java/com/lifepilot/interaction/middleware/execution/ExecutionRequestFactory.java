@@ -19,6 +19,7 @@ import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -32,6 +33,49 @@ import java.util.Map;
 public final class ExecutionRequestFactory {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionRequestFactory.class);
+    private static final int CONTROL_PREFIX_CHARS = 96;
+    private static final List<String> NO_TOOL_CONTROL_PHRASES = List.of(
+            "不用工具",
+            "不要用工具",
+            "不要调用工具",
+            "别调用工具",
+            "不调用工具",
+            "不要使用工具",
+            "别使用工具",
+            "无需工具",
+            "no tools",
+            "without tools",
+            "skip tools"
+    );
+    private static final List<String> DIRECT_ANSWER_CONTROL_PHRASES = List.of(
+            "直接回答",
+            "请直接回答",
+            "请你直接回答",
+            "只回答",
+            "只要答案",
+            "answer directly",
+            "direct answer"
+    );
+    private static final List<String> NO_WEB_CONTROL_PHRASES = List.of(
+            "不要联网",
+            "不联网",
+            "不用联网",
+            "别联网",
+            "不要上网",
+            "不用上网",
+            "不要搜索网页",
+            "不用搜索网页",
+            "不要查网上",
+            "只用本地",
+            "只用已有资料",
+            "offline",
+            "no web",
+            "without web",
+            "no internet",
+            "without internet",
+            "do not search"
+    );
+    private static final List<String> NO_WEB_TOOL_IDS = List.of("web", "browser");
 
     private final AgentConfigProperties agentConfigProperties;
     private final ChatSessionRepository chatSessionRepository;
@@ -56,6 +100,8 @@ public final class ExecutionRequestFactory {
         com.lifepilot.interaction.web.model.SessionConfigOverride override = extractSingleTurnOverride(message);
         ChatTurnAction action = resolveTurnAction(message);
         InteractionSource interactionSource = resolveInteractionSource(message);
+        AgentTaskMode taskMode = resolveTaskMode(message.contentAsText(), action);
+        List<String> disabledToolIds = resolveDisabledToolIds(message.contentAsText());
         return new AgentRequest(
                 message.contentAsText(),
                 message.sessionId(),
@@ -63,24 +109,105 @@ public final class ExecutionRequestFactory {
                 message.userId(),
                 resolveTurnId(message),
                 action,
-                AgentTaskMode.AUTO,
+                taskMode,
                 null,
                 resolveSessionBudget(sessionConfig, override),
                 null,
                 0,
                 resolvePreferredProvider(message, sessionConfig, override),
                 null,
+                disabledToolIds,
                 buildMediaContents(message),
                 resolveTemperature(sessionConfig, override),
                 action.toResumePolicy(),
-                override != null ? override.knowledgeBaseIds() : null
+                override != null ? override.knowledgeBaseIds() : null,
+                override != null ? override.memoryContextMode() : null,
+                extractTurnRecoveryContext(message)
         );
+    }
+
+    private AgentTaskMode resolveTaskMode(String content, ChatTurnAction action) {
+        if (action != ChatTurnAction.SEND) {
+            return AgentTaskMode.AUTO;
+        }
+        String controlSegment = leadingControlSegment(content);
+        if (controlSegment.isBlank()) {
+            return AgentTaskMode.AUTO;
+        }
+        String lowerControl = controlSegment.toLowerCase(Locale.ROOT);
+        boolean noTools = NO_TOOL_CONTROL_PHRASES.stream().anyMatch(lowerControl::contains);
+        boolean directAnswer = DIRECT_ANSWER_CONTROL_PHRASES.stream().anyMatch(lowerControl::contains);
+        if (noTools || directAnswer) {
+            log.debug("本轮按用户显式控制切换为纯回答模式: noTools={}, directAnswer={}", noTools, directAnswer);
+            return AgentTaskMode.ANSWER;
+        }
+        return AgentTaskMode.AUTO;
+    }
+
+    @Nullable
+    private List<String> resolveDisabledToolIds(String content) {
+        String controlSegment = leadingControlSegment(content);
+        if (controlSegment.isBlank()) {
+            return null;
+        }
+        String lowerControl = controlSegment.toLowerCase(Locale.ROOT);
+        boolean noWeb = NO_WEB_CONTROL_PHRASES.stream().anyMatch(lowerControl::contains);
+        if (!noWeb) {
+            return null;
+        }
+        log.debug("本轮按用户显式控制禁用联网工具: disabledToolIds={}", NO_WEB_TOOL_IDS);
+        return NO_WEB_TOOL_IDS;
+    }
+
+    private String leadingControlSegment(@Nullable String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        String normalized = content.strip();
+        String prefix = firstCodePoints(normalized, CONTROL_PREFIX_CHARS);
+        int firstLineEnd = prefix.indexOf('\n');
+        String firstLine = firstLineEnd >= 0 ? prefix.substring(0, firstLineEnd) : prefix;
+        int delimiter = firstContentDelimiter(firstLine);
+        String segment = delimiter >= 0 ? firstLine.substring(0, delimiter) : firstLine;
+        return segment.strip();
+    }
+
+    private String firstCodePoints(String value, int count) {
+        if (count <= 0 || value.isEmpty()) {
+            return "";
+        }
+        int end = 0;
+        int remaining = count;
+        while (end < value.length() && remaining > 0) {
+            end += Character.charCount(value.codePointAt(end));
+            remaining--;
+        }
+        return value.substring(0, end);
+    }
+
+    private int firstContentDelimiter(String value) {
+        int delimiter = -1;
+        for (String candidate : List.of("：", ":", "\n\n")) {
+            int index = value.indexOf(candidate);
+            if (index >= 0 && (delimiter < 0 || index < delimiter)) {
+                delimiter = index;
+            }
+        }
+        return delimiter;
     }
 
     @Nullable
     private com.lifepilot.interaction.web.model.SessionConfigOverride extractSingleTurnOverride(GatewayMessage message) {
         if (message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMetadata) {
             return webMetadata.singleTurnOverride();
+        }
+        return null;
+    }
+
+    @Nullable
+    private Map<String, Object> extractTurnRecoveryContext(GatewayMessage message) {
+        if (message.channelMetadata() instanceof ChannelMetadata.WebMetadata webMetadata) {
+            return webMetadata.turnRecoveryContext();
         }
         return null;
     }

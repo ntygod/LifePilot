@@ -71,6 +71,16 @@ export type OutputContentRole = 'FINAL' | 'PROGRESS' | 'SUSPEND_PROMPT' | 'BLOCK
 export type ChatTurnAction = 'SEND' | 'RETRY' | 'RESUME' | 'RESTART'
 
 export type ChatTurnStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'DEGRADED' | 'SUSPENDED' | 'CANCELLED'
+export type MemoryChangeStatus = 'checking' | 'settled' | 'checked-empty' | 'failed' | 'disabled'
+
+export interface KnowledgeSettlement {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  sourceType?: 'MESSAGE_TEXT' | 'ARTIFACT' | string
+  artifactId?: string
+  fileName?: string
+  savedAt?: string
+}
 
 /** 消息 */
 export interface Message {
@@ -120,10 +130,26 @@ export interface Message {
   modelId?: string
   /** 首选 Provider ID */
   preferredProviderId?: string
+  /** 本轮临时上下文/模型覆盖，用于解释用户发送时选择的上下文策略 */
+  singleTurnOverride?: SessionConfigOverride | null
   /** 来源列表：知识库 / 工具调用结果 */
   sources?: SourceSummary[]
+  /** 本轮对话沉淀的记忆 */
+  memoryChanges?: SourceSummary[]
+  /** 已沉淀到资料库的消息/产物记录 */
+  knowledgeSettlements?: KnowledgeSettlement[]
+  /** 本轮记忆沉淀后台状态，仅用于当前对话页的轻量反馈 */
+  memoryChangeStatus?: MemoryChangeStatus
+  /** 本轮记忆沉淀状态原因，用于解释失败或跳过 */
+  memoryChangeReason?: string
   /** 工具调用摘要 */
   toolsSummary?: ToolCallSummary[]
+  /** 任务恢复摘要 */
+  taskRecovery?: TaskRecoverySummary
+  /** 当前轮次恢复上下文 */
+  turnRecoveryContext?: TurnRecoveryContext
+  /** 本轮执行约束摘要，例如禁用联网、指定记忆模式等 */
+  executionConstraints?: ExecutionConstraintSummary
   /** ReAct 步骤列表（toolsSummary 的详细版本） */
   reactSteps?: ReactStepDto[]
   /** 是否折叠 */
@@ -233,6 +259,7 @@ export interface SessionConfigOverride {
   maxSteps?: number | null
   maxDurationSeconds?: number | null
   knowledgeBaseIds?: string[] | null
+  memoryContextMode?: 'auto' | 'focused' | 'off' | null
 }
 
 /** 推理过程事件类型：对应后端 pushReactStepEvent */
@@ -256,22 +283,6 @@ export interface ReasoningEvent {
   toolName?: string
   createdAt: string
   extra?: Record<string, any>
-}
-
-/** Agent 本轮预发现能力 */
-export interface CapabilitySuggestion {
-  id: string
-  label: string
-  reason: string
-  kind?: 'tool' | 'skill'
-  outputs?: Array<'text' | 'file' | 'a2ui' | 'memory' | 'notification' | 'task'>
-}
-
-/** 能力预发现 SSE 事件 */
-export interface SseCapabilitySuggestedEvent {
-  traceId?: string
-  turnId?: string
-  tools: CapabilitySuggestion[]
 }
 
 // ===== ReactStep 类型定义（对应后端 ReactStepSerializer） =====
@@ -302,8 +313,15 @@ export interface ToolCallStep extends ReactStepBase {
   toolId: string
   /** 工具名称（可选） */
   toolName?: string
+  callId?: string
   inputSummary: string
+  /** 工具输入详情，供断点恢复使用 */
+  inputDetail?: string
   latencyMs: number
+  /** 被执行主体标签，例如「技能」 */
+  subjectLabel?: string
+  /** 被执行主体名称列表，例如加载的 Skill 名称 */
+  subjectNames?: string[]
 }
 
 /** 工具观察步骤 */
@@ -312,9 +330,14 @@ export interface ObservationStep extends ReactStepBase {
   toolId: string
   /** 工具名称（可选） */
   toolName?: string
+  callId?: string
   success: boolean
   outputSummary: string
   tokensUsed: number
+  /** 被执行主体标签，例如「技能」 */
+  subjectLabel?: string
+  /** 被执行主体名称列表，例如加载的 Skill 名称 */
+  subjectNames?: string[]
   /** 文件工具成功时提取的生成文件绝对路径 */
   generatedFilePath?: string
   /** Shell / 代码执行的工作目录 */
@@ -389,8 +412,18 @@ export interface SseDoneEvent {
   attachments?: ChatAttachment[]
   /** sources（知识库 / 工具） */
   sources?: SourceSummary[]
+  /** 本轮对话沉淀的记忆 */
+  memoryChanges?: SourceSummary[]
+  /** 本轮工具产出的文件/图片产物引用 */
+  artifactRefs?: import('@/api/artifacts').ArtifactRefPayload[]
   /** toolsSummary */
   toolsSummary?: ToolCallSummary[]
+  /** taskRecovery */
+  taskRecovery?: TaskRecoverySummary
+  /** 当前轮次恢复上下文 */
+  turnRecoveryContext?: TurnRecoveryContext
+  /** 本轮执行约束摘要 */
+  executionConstraints?: ExecutionConstraintSummary
   /** reactSteps */
   reactSteps?: ReactStepDto[]
 }
@@ -418,6 +451,8 @@ export interface SseAgentSuspendedEvent {
   terminationReason?: string
   content?: string
   suspendedAt?: string
+  taskRecovery?: TaskRecoverySummary
+  executionConstraints?: ExecutionConstraintSummary
   /** 挂起超时秒数（BrowserTakeover 等场景由后端下发，前端为空时采用本地默认值） */
   timeoutSeconds?: number
 }
@@ -515,27 +550,193 @@ export interface ChatResponse {
   resumedFromTraceId?: string
   turnStatus?: ChatTurnStatus
   sources?: SourceSummary[]
+  toolsSummary?: ToolCallSummary[]
+  taskRecovery?: TaskRecoverySummary
+  executionConstraints?: ExecutionConstraintSummary
+}
+
+export interface ExecutionConstraintSummary {
+  disabledTools?: ExecutionConstraintTool[]
+  knowledgeBaseIds?: string[]
+  memoryContextMode?: ExecutionConstraintMemoryMode
+}
+
+export interface ExecutionConstraintTool {
+  id: string
+  label: string
+  reason?: string
+}
+
+export interface ExecutionConstraintMemoryMode {
+  mode: 'focused' | 'off' | string
+  label: string
+  reason?: string
 }
 
 /** 来源摘要：知识库 / 文档 / 工具 / 工作流 */
 export interface SourceSummary {
-  type: 'knowledgeBase' | 'document' | 'tool' | 'workflow'
+  type: 'knowledgeBase' | 'memory' | 'document' | 'tool' | 'workflow'
   id: string
   name: string
   extra?: Record<string, unknown>
 }
 
+export type MemoryTurnChangeBackendStatus = 'PENDING' | 'SETTLED' | 'CHECKED_EMPTY' | 'FAILED' | 'DISABLED'
+
+export interface MemoryTurnChangesInfo {
+  status: MemoryTurnChangeBackendStatus
+  reason?: string | null
+  changes: SourceSummary[]
+}
+
+/** 任务恢复摘要 */
+export interface TaskRecoverySummary {
+  status: 'SUSPENDED' | 'DEGRADED'
+  title: string
+  detail: string
+  actionLabel?: string
+  canResume: boolean
+  canRestart: boolean
+  reasonType?: string
+  reasonSourceId?: string
+  resumeMode?: 'manual' | 'user_reply' | 'external' | 'scheduled' | 'browser'
+  /** 任务中断时的可恢复断点 */
+  checkpoint?: TaskRecoveryCheckpoint
+  /** 面向用户的下一步恢复计划 */
+  nextActions?: string[]
+}
+
+export interface MissingCapability {
+  kind?: 'TOOL' | 'SKILL' | string
+  id: string
+  source?: string
+  reason?: string
+  skillName?: string
+}
+
+export interface TaskRecoveryCheckpoint {
+  kind?: 'TOOL_FAILURE' | 'SUSPEND'
+  recoveryActionId?: string
+  recoveryActionLabel?: string
+  recoveryActionMode?: 'resume' | 'restart' | string
+  recoveryActionDescription?: string
+  callId?: string
+  toolId?: string
+  toolName?: string
+  executionKind?: ToolExecutionKind
+  action?: string
+  failureCategory?: ToolFailureCategory
+  interrupted?: boolean
+  subjectLabel?: string
+  subjectNames?: string[]
+  inputSummary?: string
+  inputDetail?: string
+  outputSummary?: string
+  outputDetail?: string
+  workingDirectory?: string
+  generatedFilePath?: string
+  artifactRefs?: import('@/api/artifacts').ArtifactRefPayload[]
+  missingCapabilities?: MissingCapability[]
+  inputStepIndex?: number
+  outputStepIndex?: number
+}
+
+export interface TurnRecoveryContext {
+  action?: 'RESUME' | 'RESTART' | string
+  resumeInput?: string
+  sourceTraceId?: string
+  assistantEntryId?: string
+  title?: string
+  detail?: string
+  resumeStrategy?: string
+  checkpoint?: TaskRecoveryCheckpoint
+  nextActions?: string[]
+  capturedAt?: string
+}
+
+export type ToolExecutionKind = 'TOOL' | 'SKILL'
+export type ToolExecutionStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+export type ToolFailureCategory =
+  | 'CAPABILITY'
+  | 'COMMAND'
+  | 'FILE'
+  | 'BROWSER'
+  | 'NETWORK'
+  | 'MEMORY'
+  | 'SKILL'
+  | 'KNOWLEDGE'
+  | 'WORKFLOW'
+  | 'INTEGRATION'
+  | 'AGENT'
+  | 'MODEL'
+  | 'REPOSITORY'
+  | 'UNKNOWN'
+
+export interface ToolRecoveryAction {
+  id: string
+  label: string
+  description?: string
+  mode?: 'resume' | 'restart' | 'retry' | 'manual'
+  category?: ToolFailureCategory
+  callId?: string
+  toolId?: string
+  toolName?: string
+  executionKind?: ToolExecutionKind
+  action?: string
+  interrupted?: boolean
+  subjectLabel?: string
+  subjectNames?: string[]
+  inputSummary?: string
+  inputDetail?: string
+  outputSummary?: string
+  outputDetail?: string
+  workingDirectory?: string
+  generatedFilePath?: string
+  artifactRefs?: import('@/api/artifacts').ArtifactRefPayload[]
+  missingCapabilities?: MissingCapability[]
+  recoveryHint?: string
+  /** 点击恢复时带回后端的下一步计划 */
+  nextActions?: string[]
+}
+
 /** 工具调用摘要 */
 export interface ToolCallSummary {
   toolId: string
+  /** 模型返回的工具调用 ID，用于恢复时精确定位同一轮内的具体调用 */
+  callId?: string
+  /** 工具显示名 */
+  toolName?: string
+  /** 执行主体类型：普通工具或 Skill */
+  executionKind?: ToolExecutionKind
+  /** 执行状态，优先于旧的 success / hasMoreSteps 推断 */
+  status?: ToolExecutionStatus
   action?: string
   success: boolean
   latencyMs: number
   hasMoreSteps?: boolean
+  /** 已开始但最终没有收到观察结果，通常表示本轮在工具/技能步骤中断 */
+  interrupted?: boolean
+  /** 失败类别，帮助前端给出一致的恢复语义 */
+  failureCategory?: ToolFailureCategory
+  recoveryActions?: ToolRecoveryAction[]
+  subjectLabel?: string
+  subjectNames?: string[]
   /** 输入摘要 */
   inputSummary?: string
+  /** 输入详情，失败恢复时用于保留具体参数 */
+  inputDetail?: string
   /** 输出摘要 */
   outputSummary?: string
+  /** 失败或调试场景的详细输出 */
+  outputDetail?: string
+  /** Shell / 代码执行时的工作目录 */
+  workingDirectory?: string
+  /** 文件工具生成的文件路径 */
+  generatedFilePath?: string
+  artifactRefs?: import('@/api/artifacts').ArtifactRefPayload[]
+  missingCapabilities?: MissingCapability[]
+  /** 失败后的恢复提示 */
+  recoveryHint?: string
   /** 工具原始输出（可能是 JSON 字符串或已反序列化对象），用于特化卡片渲染 */
   output?: unknown
 }
@@ -545,6 +746,107 @@ export interface ErrorResponse {
   code: number
   message: string
   timestamp: string
+}
+
+/** 本地诊断检查项 */
+export interface DiagnosticCheck {
+  id: string
+  label: string
+  status: 'OK' | 'WARN' | 'ERROR' | string
+  detail: string
+  metadata: Record<string, unknown>
+}
+
+/** 本地诊断报告 */
+export interface DiagnosticReport {
+  generatedAt: string
+  status: 'OK' | 'WARN' | 'ERROR' | string
+  summary: string
+  app: Record<string, unknown>
+  runtime: Record<string, unknown>
+  counts: Record<string, unknown>
+  checks: DiagnosticCheck[]
+  hints: string[]
+}
+
+/** 本地诊断包导出结果 */
+export interface DiagnosticBundleInfo {
+  createdAt: string
+  fileName: string
+  path: string
+  sizeBytes: number
+  includedFileCount: number
+}
+
+/** 本地数据备份结果 */
+export interface LocalBackupInfo {
+  createdAt: string
+  fileName: string
+  path: string
+  sizeBytes: number
+  includedFileCount: number
+}
+
+/** 本地备份文件 */
+export interface LocalBackupFileInfo {
+  modifiedAt: string
+  fileName: string
+  path: string
+  sizeBytes: number
+}
+
+/** 本地备份包清单 */
+export interface LocalBackupManifestInfo {
+  formatVersion: string
+  createdAt: string
+  sourceHome: string
+  includedFileCount: number
+  excludedTopLevelDirs: string[]
+}
+
+/** 本地备份恢复前预检 */
+export interface LocalBackupRestorePlanInfo {
+  restoreMode: string
+  manualRestoreOnly: boolean
+  includedTopLevelItems: string[]
+  excludedTopLevelDirs: string[]
+  targetHome: string
+  currentHomeHasData: boolean
+  currentHomeFileCount: number
+  backupSourceHome: string
+  backupIncludedFileCount: number
+  restoreStagingDirectory: string
+  backupSizeBytes: number
+  estimatedRestoreBytes: number
+  targetUsableBytes: number
+  restoreSpaceStatus: 'OK' | 'WARN' | 'UNKNOWN' | string
+  warnings: string[]
+  requiredSteps: string[]
+}
+
+/** 本地备份恢复准备结果 */
+export interface LocalBackupRestorePreparationInfo {
+  preparedAt: string
+  fileName: string
+  restoreDirectory: string
+  extractedFileCount: number
+  extractedBytes: number
+  warnings: string[]
+  nextSteps: string[]
+}
+
+/** 本地备份校验结果 */
+export interface LocalBackupValidationInfo {
+  fileName: string
+  path: string
+  status: 'OK' | 'WARN' | 'ERROR' | string
+  detail: string
+  sizeBytes: number
+  entryCount: number
+  manifestPresent: boolean
+  manifest?: LocalBackupManifestInfo | null
+  problems: string[]
+  restorePlan?: LocalBackupRestorePlanInfo | null
 }
 
 /** 会话配置：温度/最大 tokens/知识库绑定 */
@@ -1790,6 +2092,7 @@ export interface EntityProvenance {
   sourceReference: string | null
   sourceConversationId: string | null
   sourceSessionId: string | null
+  sourceSessionTitle?: string | null
   sourceTurnId: string | null
   sourceEntryId: string | null
   sourceDocumentId: string | null
@@ -1801,6 +2104,9 @@ export interface EntityProvenance {
   trustScore: number
   evidenceExcerpt: string | null
   confidence: number
+  status: 'VALID' | 'STALE' | string
+  invalidatedAt: string | null
+  revalidationStatus: 'PENDING' | 'PROMPTED' | 'RESOLVED' | string | null
   createdAt: string
 }
 
@@ -1816,6 +2122,7 @@ export interface MemoryProvenanceSummary {
   sourceReference: string | null
   sourceConversationId: string | null
   sourceSessionId: string | null
+  sourceSessionTitle?: string | null
   sourceTurnId: string | null
   sourceEntryId: string | null
   sourceDocumentId: string | null
@@ -1827,11 +2134,15 @@ export interface MemoryProvenanceSummary {
   trustScore: number
   evidenceExcerpt: string | null
   confidence: number
+  status: 'VALID' | 'STALE' | string
+  invalidatedAt: string | null
+  revalidationStatus: 'PENDING' | 'PROMPTED' | 'RESOLVED' | string | null
   createdAt: string
 }
 
 /** 实体来源筛选参数 */
 export interface EntityProvenanceParams {
+  projectId?: string | null
   originType?: string
   sourceKnowledgeBaseId?: string
   sourceDocumentId?: string
@@ -1853,6 +2164,7 @@ export interface EntityCreateRequest {
 
 /** 实体更新请求 */
 export interface EntityUpdateRequest {
+  name?: string
   description?: string
   properties?: Record<string, unknown>
   importanceScore?: number
@@ -1862,6 +2174,7 @@ export interface EntityUpdateRequest {
 export interface EntityListParams {
   page?: number
   size?: number
+  projectId?: string | null
   type?: string
   q?: string
   spaceId?: string

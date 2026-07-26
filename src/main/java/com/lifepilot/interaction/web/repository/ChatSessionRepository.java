@@ -6,6 +6,8 @@ import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +45,30 @@ public class ChatSessionRepository {
         return sessionStoreRepository.findWebSessions().stream()
                 .map(this::mapRow)
                 .toList();
+    }
+
+    /**
+     * 批量读取会话标题，供来源解释把会话 ID 转成用户可识别的标题。
+     */
+    public Map<String, String> findTitlesByIds(Collection<String> ids) {
+        Map<String, String> titles = new LinkedHashMap<>();
+        if (ids == null || ids.isEmpty()) {
+            return titles;
+        }
+        for (String id : ids) {
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            String cleanId = id.trim();
+            if (titles.containsKey(cleanId)) {
+                continue;
+            }
+            findById(cleanId)
+                    .map(ChatSession::title)
+                    .filter(title -> title != null && !title.isBlank())
+                    .ifPresent(title -> titles.put(cleanId, title));
+        }
+        return titles;
     }
 
     public List<ChatSession> findByConditions(String q,

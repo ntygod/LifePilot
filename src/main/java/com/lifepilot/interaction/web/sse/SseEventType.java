@@ -98,9 +98,6 @@ public final class SseEventType {
     /** 媒体数据事件（图片/音频等大体积二进制数据） */
     public static final String MEDIA = "media";
 
-    /** Agent 预发现能力事件 */
-    public static final String CAPABILITY_SUGGESTED = "capability-suggested";
-
     // 文件产物模块事件类型
     /**
      * 文件产物引用事件 — 工具产生文件后立即推送 ArtifactRef，前端立即渲染产物卡片。

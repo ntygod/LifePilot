@@ -3,13 +3,13 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 /**
  * 对话页 overlay 状态集中管理。
  *
- * <p>包含 trace / settings / info / tasks 四种可切换 overlay，加 Esc 键全局关闭。
+ * <p>包含 trace / memory / settings / info / tasks 五种可切换 overlay，加 Esc 键全局关闭。
  * 任意时刻最多打开一个 overlay（互斥语义）；打开新的会自动关闭旧的。</p>
  *
  * @author zsg
  * @since 2026-05-08
  */
-export type OverlayId = 'trace' | 'settings' | 'info' | 'tasks' | null
+export type OverlayId = 'trace' | 'memory' | 'settings' | 'info' | 'tasks' | null
 
 export function useChatOverlays() {
   const activeOverlay = ref<OverlayId>(null)
@@ -19,6 +19,10 @@ export function useChatOverlays() {
   function openTrace(messageIdOrStreaming: string) {
     traceTargetId.value = messageIdOrStreaming
     activeOverlay.value = 'trace'
+  }
+
+  function openMemory() {
+    activeOverlay.value = 'memory'
   }
 
   function openSettings() {
@@ -56,6 +60,7 @@ export function useChatOverlays() {
     activeOverlay,
     traceTargetId,
     openTrace,
+    openMemory,
     openSettings,
     openInfo,
     openTasks,

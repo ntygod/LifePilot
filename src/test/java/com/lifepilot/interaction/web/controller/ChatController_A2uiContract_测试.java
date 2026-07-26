@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -83,12 +84,25 @@ class ChatController_A2uiContract_测试 {
     }
 
     @Test
-    void 非流式消息接口_返回标准ChatResponse并包含A2ui组件() throws Exception {
+    void 非流式消息接口_返回标准ChatResponse并包含A2ui组件和恢复摘要() throws Exception {
         var components = List.of(
                 new A2uiComponent("card-1", "Card", Map.of("title", "待办面板"), List.of("btn-1"), null),
                 new A2uiComponent("btn-1", "Button", Map.of("label", "刷新"), List.of(),
                         new A2uiSignal("panel.refresh", Map.of("section", "todos")))
         );
+        var toolsSummary = List.<Map<String, Object>>of(Map.of(
+                "toolId", "skill.load",
+                "toolName", "加载 Skill",
+                "executionKind", "SKILL",
+                "status", "FAILED",
+                "failureCategory", "SKILL"));
+        var taskRecovery = Map.<String, Object>of(
+                "status", "DEGRADED",
+                "title", "技能加载没有完成",
+                "detail", "可以检查技能名称或依赖后继续。",
+                "canResume", true,
+                "canRestart", true,
+                "resumeMode", "manual");
         when(browserIngressService.buildChatMessage(any(), any(), eq(DeliveryMode.SYNC)))
                 .thenReturn(mock(GatewayMessage.class));
         when(channelIngressService.submitSync(any())).thenReturn(
@@ -99,7 +113,9 @@ class ChatController_A2uiContract_测试 {
                                 "traceId", "trace-1",
                                 "turnId", "turn-1",
                                 "completionMode", CompletionMode.NORMAL.name(),
-                                "a2uiComponents", components
+                                "a2uiComponents", components,
+                                "toolsSummary", toolsSummary,
+                                "taskRecovery", taskRecovery
                         ))
                         .latency(Duration.ofMillis(8))
                         .statusCode(200)
@@ -119,7 +135,11 @@ class ChatController_A2uiContract_测试 {
                 .andExpect(jsonPath("$.content").value("这是当前面板"))
                 .andExpect(jsonPath("$.traceId").value("trace-1"))
                 .andExpect(jsonPath("$.a2uiComponents[0].type").value("Card"))
-                .andExpect(jsonPath("$.a2uiComponents[1].signal.name").value("panel.refresh"));
+                .andExpect(jsonPath("$.a2uiComponents[1].signal.name").value("panel.refresh"))
+                .andExpect(jsonPath("$.toolsSummary[0].toolId").value("skill.load"))
+                .andExpect(jsonPath("$.toolsSummary[0].executionKind").value("SKILL"))
+                .andExpect(jsonPath("$.taskRecovery.status").value("DEGRADED"))
+                .andExpect(jsonPath("$.taskRecovery.title").value("技能加载没有完成"));
     }
 
     @Test
@@ -200,6 +220,8 @@ class ChatController_A2uiContract_测试 {
                         null,
                         null,
                         null,
+                        null,
+                        null,
                         null
                 )
         ));
@@ -210,5 +232,29 @@ class ChatController_A2uiContract_测试 {
                 .andExpect(jsonPath("$[0].traceId").value("trace-1"))
                 .andExpect(jsonPath("$[0].a2uiComponents[0].type").value("Card"))
                 .andExpect(jsonPath("$[0].a2uiComponents[1].signal.name").value("panel.refresh"));
+    }
+
+    @Test
+    void 资料库沉淀接口_记录消息已存入目标资料库() throws Exception {
+        mockMvc.perform(post("/api/chat/entries/assistant-1/knowledge-settlements")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "knowledgeBaseId": "kb-product",
+                                  "knowledgeBaseName": "产品资料",
+                                  "sourceType": "ARTIFACT",
+                                  "artifactId": "artifact-report",
+                                  "fileName": "report.md"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+
+        verify(chatSessionService).recordKnowledgeSettlement(eq("assistant-1"), argThat(request ->
+                "kb-product".equals(request.knowledgeBaseId())
+                        && "产品资料".equals(request.knowledgeBaseName())
+                        && "ARTIFACT".equals(request.sourceType())
+                        && "artifact-report".equals(request.artifactId())
+                        && "report.md".equals(request.fileName())
+        ));
     }
 }

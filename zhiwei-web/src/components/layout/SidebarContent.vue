@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useNotificationStream } from '@/composables/useNotificationStream'
 import { useChatStore } from '@/stores/chat'
+import { logger } from '@/utils/logger'
 
 const MotionDiv = motion.div
 
@@ -130,7 +131,11 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
 ] as const
 
 onMounted(async () => {
-  await chatStore.loadSessions()
+  try {
+    await chatStore.loadSessions()
+  } catch (error) {
+    logger.warn('加载侧栏会话列表失败:', error)
+  }
   syncExpandedGroups()
 })
 

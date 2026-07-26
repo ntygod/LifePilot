@@ -1,21 +1,31 @@
-import { computed, ref } from 'vue'
+import { computed, getCurrentInstance, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useA2uiStore } from '@/stores/a2ui'
-import { chatApi, browserTakeoverApi } from '@/api/client'
+import { chatApi, browserTakeoverApi, memoryApi } from '@/api/client'
+import { buildArtifactDownloadUrl, type ArtifactRefPayload } from '@/api/artifacts'
 import { SSE_EVENT_TYPES } from '@/constants/sseEvents'
 import { logger } from '@/utils/logger'
+import {
+  buildToolRecoveryActions,
+  buildToolRecoveryPlan,
+  resolveToolAction,
+  resolveToolExecutionKind,
+  resolveToolFailureCategory,
+  resolveToolRecoveryHint,
+} from '@/utils/toolExecution'
+import { isUserReplyRecovery, resolveRecoverableTaskStatus } from '@/utils/taskRecovery'
 import type {
   A2uiComponent,
-  CapabilitySuggestion,
   ChatAttachment,
   ChatTurnAction,
   ChatTurnStatus,
+  MemoryChangeStatus,
   ReasoningEvent,
   ReactStepDto,
   SessionConfigOverride,
   SseAgentSuspendedEvent,
-  SseCapabilitySuggestedEvent,
   SseDoneEvent,
   SseErrorEvent,
   SseMediaEvent,
@@ -23,25 +33,42 @@ import type {
   TokenUsage,
   PermissionApprovalRequest,
   SessionConfig,
+  SourceSummary,
+  ToolRecoveryAction,
+  ToolCallSummary,
 } from '@/types'
 
 type ExecuteTurnOptions = {
   content?: string
+  visibleContent?: string | null
   attachmentIds?: string[]
   attachments?: ChatAttachment[]
   /** 单轮临时覆盖的会话配置（模型 / KB / 温度 / 预算）。仅影响本轮 Agent 执行，不污染持久化 config。 */
   singleTurnOverride?: SessionConfigOverride | null
   userMessageId?: string | null
+  /** 内部恢复/重启说明只发给后端执行，不覆盖对话里原始用户消息。 */
+  preserveUserMessageContent?: boolean
+  /** 点击恢复按钮时携带的结构化断点动作，由后端统一转成恢复上下文。 */
+  recoveryAction?: ToolRecoveryAction | null
 }
+
+type InterruptedCompletionState = Partial<Pick<SseDoneEvent, 'turnStatus' | 'completionMode' | 'taskRecovery'>>
 
 const TOKEN_FLUSH_INTERVAL_MS = 40
 const TOKEN_FLUSH_CHAR_THRESHOLD = 160
+const MEMORY_CHANGE_REFRESH_DELAYS_MS = [600, 1800, 3600, 7200, 12000] as const
+const MEMORY_CHANGE_EMPTY_VISIBLE_MS = 2400
+const MEMORY_STATUS_EXPLICIT_PATTERN = /(记住|记下|帮我记|记到(长期)?记忆|记进(长期)?记忆|写入(长期)?记忆|存(到|进)(长期)?记忆|加入(长期)?记忆|沉淀(到|为)?(长期)?记忆|长期记忆|偏好|习惯|我的设置|我的要求|不要忘|以后.*(默认|都|请|记得|叫我|称呼|用|不要)|我.*(喜欢|希望|更喜欢|不喜欢)|remember|memorize|preference|habit|keep in mind)/
+const MEMORY_STATUS_PROFILE_PATTERN = /(我的(名字|昵称|生日|邮箱|电话|手机号|微信|城市|地址|公司|职业|岗位|工作|项目|要求|偏好)|我(叫|来自|住在|负责|主要做|目前做)|my name is|call me|my birthday|my email|i work|i live)/
+const MEMORY_STATUS_CONTEXT_PATTERN = /(这个(应用|产品|项目)|本项目|当前项目|项目背景|产品定位|应用定位|核心定位|阶段重点|长期目标|目标是|需求是|约束是|原则是|边界是|我正在|我们正在|最近在做|当前在做|后续.*(都|默认|优先|保持)|之后.*(都|默认|优先|保持)|workflow|roadmap|requirement|constraint)/
 
 export function useChat() {
   const chatStore = useChatStore()
   const a2uiStore = useA2uiStore()
   // 懒创建会话时读 URL query.projectId，实现「项目详情页 → 新建对话」的项目上下文继承
-  const route = useRoute()
+  const route = getCurrentInstance()
+    ? useRoute()
+    : ({ query: {} } as Pick<RouteLocationNormalizedLoaded, 'query'>)
 
   const isStreaming = ref(false)
   const error = ref<string | null>(null)
@@ -65,7 +92,6 @@ export function useChat() {
   // 首个 reasoning delta 到达时间戳；用于流结束时计算思考时长
   let reasoningStartedAt: number | null = null
   const streamingReactSteps = ref<ReactStepDto[]>([])
-  const capabilitySuggestions = ref<CapabilitySuggestion[]>([])
   const streamingMedia = ref<SseMediaEvent[]>([])
   const streamingArtifactRefs = ref<import('@/api/artifacts').ArtifactRefPayload[]>([])
   const pendingPermissionApprovals = ref<Map<string, PermissionApprovalRequest>>(new Map())
@@ -83,9 +109,19 @@ export function useChat() {
   let abortController: AbortController | null = null
   let currentTurnId: string | null = null
   let currentUserMessageId: string | null = null
+  let currentTurnProjectId: string | null = null
+  let currentMemoryChangeStatusVisible = false
   let currentExecutionSeq = 0
   let pendingStreamingText = ''
   let pendingStreamingFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+  const activeSessionProjectId = computed(() => {
+    const sessionId = chatStore.activeSessionId
+    const sessionProjectId = sessionId
+      ? chatStore.sessions.find(session => session.id === sessionId)?.projectId
+      : null
+    return normalizeProjectId(sessionProjectId) ?? normalizeProjectId(route.query.projectId)
+  })
 
   function flushStreamingText() {
     if (pendingStreamingFlushTimer !== null) {
@@ -142,6 +178,7 @@ export function useChat() {
         attachmentIds,
         attachments,
         singleTurnOverride,
+        recoveryAction: buildAutoResumeRecoveryAction(suspendedTurn),
       })
       return
     }
@@ -169,30 +206,35 @@ export function useChat() {
       return
     }
 
-    if (!chatStore.activeSessionId) {
-      // 懒创建：用户发第一条消息时才在后端建会话，避免空会话堆积
-      // 若 URL 携带 projectId（来自项目详情页「开始新对话」），把会话归入该项目
-      const projectIdFromQuery = typeof route.query.projectId === 'string'
-        ? route.query.projectId
-        : null
-      try {
-        await chatStore.startNewSession(undefined, projectIdFromQuery)
-      } catch (e) {
-        error.value = '创建会话失败，请重试'
-        return
-      }
-    }
-
-
-    const userMessageId = prepareTurnMessages(turnId, action, content, options.attachments, options.userMessageId)
+    const userMessageId = prepareTurnMessages(
+      turnId,
+      action,
+      content,
+      options.visibleContent,
+      options.attachments,
+      options.singleTurnOverride ?? null,
+      options.userMessageId,
+      options.preserveUserMessageContent === true,
+    )
     currentTurnId = turnId
     currentUserMessageId = userMessageId
+    currentTurnProjectId = null
+    currentMemoryChangeStatusVisible = shouldSurfaceMemoryChangeStatus(options.visibleContent ?? content)
 
-    resetStreamingState(content)
+    resetStreamingState(options.visibleContent ?? content)
     abortController = new AbortController()
 
     try {
-      const stream = await chatApi.sendMessageStream(
+      if (!chatStore.activeSessionId) {
+        const projectIdFromQuery = normalizeProjectId(route.query.projectId)
+        try {
+          await chatStore.startNewSession(undefined, projectIdFromQuery, { preserveCurrentMessages: true })
+        } catch {
+          throw new Error('创建会话失败，请重试')
+        }
+      }
+      currentTurnProjectId = activeSessionProjectId.value
+      const baseStreamArgs = [
         content,
         chatStore.activeSessionId ?? undefined,
         options.attachmentIds,
@@ -200,7 +242,12 @@ export function useChat() {
         action,
         abortController.signal,
         options.singleTurnOverride ?? null,
-      )
+      ] as const
+      const stream = options.recoveryAction !== undefined
+        ? await chatApi.sendMessageStream(...baseStreamArgs, options.visibleContent, options.recoveryAction)
+        : options.visibleContent !== undefined
+          ? await chatApi.sendMessageStream(...baseStreamArgs, options.visibleContent)
+          : await chatApi.sendMessageStream(...baseStreamArgs)
       await parseSseStream(stream)
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') {
@@ -225,6 +272,8 @@ export function useChat() {
         abortController = null
         currentTurnId = null
         currentUserMessageId = null
+        currentTurnProjectId = null
+        currentMemoryChangeStatusVisible = false
       }
     }
   }
@@ -233,18 +282,24 @@ export function useChat() {
     turnId: string,
     action: ChatTurnAction,
     content: string,
+    visibleContent?: string | null,
     attachments?: ChatAttachment[],
+    singleTurnOverride?: SessionConfigOverride | null,
     explicitUserMessageId?: string | null,
+    preserveUserMessageContent = false,
   ) {
+    const messageContent = visibleContent ?? content
     const shouldAppendResumeMessage = action === 'RESUME'
       && !explicitUserMessageId
-      && (content.trim().length > 0 || (attachments?.length ?? 0) > 0)
+      && (messageContent.trim().length > 0 || (attachments?.length ?? 0) > 0)
 
     const existingUserMessage = explicitUserMessageId
       ? chatStore.messages.find(message => message.id === explicitUserMessageId)
       : findUserMessageByTurnId(turnId)
+    const shouldPreserveExistingUserContent = !!explicitUserMessageId
+      && (action === 'RESUME' || preserveUserMessageContent)
 
-    if (action === 'RETRY' || action === 'RESTART') {
+    if (action === 'RETRY' || action === 'RESTART' || (action === 'RESUME' && shouldPreserveExistingUserContent)) {
       chatStore.messages = chatStore.messages.filter(message =>
         !(message.role === 'assistant' && message.turnId === turnId),
       )
@@ -256,18 +311,20 @@ export function useChat() {
         id: userMessageId,
         turnId,
         role: 'user',
-        content,
+        content: messageContent,
         timestamp: Date.now(),
         status: 'pending',
         turnStatus: 'PENDING',
         attachments,
+        singleTurnOverride: singleTurnOverride ?? undefined,
       })
       return userMessageId
     }
 
     chatStore.updateMessage(existingUserMessage.id, {
-      content: content || existingUserMessage.content,
+      content: shouldPreserveExistingUserContent ? existingUserMessage.content : (messageContent || existingUserMessage.content),
       attachments: attachments ?? existingUserMessage.attachments,
+      singleTurnOverride: singleTurnOverride ?? existingUserMessage.singleTurnOverride,
       status: 'pending',
       turnStatus: 'PENDING',
       errorMessage: undefined,
@@ -291,7 +348,6 @@ export function useChat() {
     reasoningDurationMs.value = 0
     reasoningStartedAt = null
     streamingReactSteps.value = []
-    capabilitySuggestions.value = []
     streamingMedia.value = []
     streamingArtifactRefs.value = []
     pendingPermissionApprovals.value = new Map()
@@ -468,15 +524,10 @@ export function useChat() {
           streamingMedia.value.push(event)
           break
         }
-        case SSE_EVENT_TYPES.CAPABILITY_SUGGESTED: {
-          const event: SseCapabilitySuggestedEvent = JSON.parse(data)
-          capabilitySuggestions.value = Array.isArray(event.tools) ? event.tools : []
-          break
-        }
         case SSE_EVENT_TYPES.ARTIFACT_REF: {
-          const ref: import('@/api/artifacts').ArtifactRefPayload = JSON.parse(data)
+          const ref = normalizeArtifactRef(JSON.parse(data))
           // 后端按工具调用顺序推送，前端按 artifactId 去重防重复
-          if (!streamingArtifactRefs.value.some(x => x.artifactId === ref.artifactId)) {
+          if (ref && !streamingArtifactRefs.value.some(x => x.artifactId === ref.artifactId)) {
             streamingArtifactRefs.value.push(ref)
           }
           break
@@ -499,7 +550,15 @@ export function useChat() {
           const attachments = buildStreamingAttachments(event.contents, event.attachments)
           const finalReasoningContent = reasoningBuffer.value
           const finalReasoningDurationMs = reasoningDurationMs.value
-          if (event.turnStatus === 'CANCELLED' && !finalContent && attachments.length === 0) {
+          const shouldCheckMemoryChanges = shouldRefreshMemoryChanges(event, turnId)
+          const finalArtifactRefs = mergeArtifactRefs(streamingArtifactRefs.value, event.artifactRefs)
+          const recoverableTaskStatus = resolveRecoverableTaskStatus(event)
+          const effectiveTurnStatus = event.turnStatus ?? recoverableTaskStatus ?? undefined
+          const effectiveCompletionMode = event.completionMode ?? recoverableTaskStatus ?? undefined
+          const memoryChangeStatus: MemoryChangeStatus | undefined = event.memoryChanges?.length
+            ? 'settled'
+            : (shouldCheckMemoryChanges && currentMemoryChangeStatusVisible ? 'checking' : undefined)
+          if (effectiveTurnStatus === 'CANCELLED' && !finalContent && attachments.length === 0) {
             if (currentUserMessageId) {
               chatStore.updateMessage(currentUserMessageId, {
                 status: 'success',
@@ -527,18 +586,23 @@ export function useChat() {
               : (a2uiStore.components.length > 0 ? [...a2uiStore.components] : undefined),
             timestamp: event.timestamp ?? Date.now(),
             traceId: event.traceId,
-            completionMode: event.completionMode,
+            completionMode: effectiveCompletionMode,
             resumedFromTraceId: event.resumedFromTraceId,
-            turnStatus: event.turnStatus,
+            turnStatus: effectiveTurnStatus,
             attachments: attachments.length > 0 ? attachments : undefined,
-            artifactRefs: streamingArtifactRefs.value.length > 0
-              ? [...streamingArtifactRefs.value]
+            artifactRefs: finalArtifactRefs.length > 0
+              ? finalArtifactRefs
               : undefined,
             tokenUsage: event.tokenUsage,
             modelId: event.tokenUsage?.modelId,
             sources: event.sources,
+            memoryChanges: event.memoryChanges,
+            memoryChangeStatus,
             toolsSummary: event.toolsSummary,
-            errorMessage: isInterruptedCompletion(event.turnStatus, event.completionMode)
+            taskRecovery: event.taskRecovery,
+            turnRecoveryContext: event.turnRecoveryContext,
+            executionConstraints: event.executionConstraints,
+            errorMessage: isInterruptedCompletion(event)
               ? event.terminationReason
               : undefined,
             reactSteps: event.reactSteps?.length
@@ -553,6 +617,10 @@ export function useChat() {
           }
 
           chatStore.upsertMessage(assistantMessage)
+          if (shouldCheckMemoryChanges) {
+            const projectIdForMemoryRefresh = currentTurnProjectId ?? activeSessionProjectId.value
+            scheduleMemoryChangeRefresh(assistantMessage.id, turnId, projectIdForMemoryRefresh)
+          }
 
           if (event.tokenUsage) {
             lastTokenUsage.value = event.tokenUsage
@@ -571,7 +639,7 @@ export function useChat() {
               status: 'success',
               traceId: event.traceId,
               turnId,
-              turnStatus: event.turnStatus ?? 'SUCCESS',
+              turnStatus: effectiveTurnStatus ?? 'SUCCESS',
               errorMessage: undefined,
             })
           }
@@ -596,6 +664,8 @@ export function useChat() {
             terminationReason: suspendReasonDetail,
             suspendReasonType: event.reasonType,
             suspendReasonSourceId: event.reasonSourceId,
+            taskRecovery: event.taskRecovery,
+            executionConstraints: event.executionConstraints,
             content: suspendedContent,
             allowWithoutProgress: true,
           })
@@ -670,7 +740,7 @@ export function useChat() {
       return streamedContent || eventText
     }
 
-    if (!isInterruptedCompletion(event.turnStatus, event.completionMode)) {
+    if (!isInterruptedCompletion(event)) {
       return eventText || streamedContent
     }
 
@@ -685,7 +755,7 @@ export function useChat() {
     if (streamedContent) {
       return appendTerminalNotice(
         streamedContent,
-        buildInterruptedNotice(resolveInterruptedStatus(event.turnStatus, event.completionMode), event.terminationReason),
+        buildInterruptedNotice(resolveInterruptedStatus(event), event.terminationReason),
       )
     }
 
@@ -755,6 +825,8 @@ export function useChat() {
     terminationReason?: string
     suspendReasonType?: string
     suspendReasonSourceId?: string
+    taskRecovery?: SseDoneEvent['taskRecovery']
+    executionConstraints?: SseDoneEvent['executionConstraints']
     content: string
     allowWithoutProgress?: boolean
   }) {
@@ -799,6 +871,8 @@ export function useChat() {
       errorMessage: options.terminationReason,
       suspendReasonType: options.suspendReasonType,
       suspendReasonSourceId: options.suspendReasonSourceId,
+      taskRecovery: options.taskRecovery,
+      executionConstraints: options.executionConstraints,
     })
 
     if (currentUserMessageId) {
@@ -929,29 +1003,23 @@ export function useChat() {
   }
 
   function isInterruptedCompletion(
-    turnStatus?: ChatTurnStatus,
-    completionMode?: SseDoneEvent['completionMode'],
+    state?: InterruptedCompletionState | null,
   ) {
-    return turnStatus === 'DEGRADED'
-      || turnStatus === 'SUSPENDED'
-      || turnStatus === 'CANCELLED'
-      || completionMode === 'DEGRADED'
-      || completionMode === 'SUSPENDED'
+    return state?.turnStatus === 'CANCELLED'
+      || resolveRecoverableTaskStatus(state) !== null
   }
 
   function resolveInterruptedStatus(
-    turnStatus?: ChatTurnStatus,
-    completionMode?: SseDoneEvent['completionMode'],
+    state?: InterruptedCompletionState | null,
   ): ChatTurnStatus | 'DEGRADED' | 'SUSPENDED' | 'FAILED' | 'CANCELLED' {
+    const recoverableStatus = resolveRecoverableTaskStatus(state)
+    const turnStatus = state?.turnStatus
     if (turnStatus === 'DEGRADED' || turnStatus === 'SUSPENDED'
       || turnStatus === 'FAILED' || turnStatus === 'CANCELLED') {
       return turnStatus
     }
-    if (completionMode === 'SUSPENDED') {
-      return 'SUSPENDED'
-    }
-    if (completionMode === 'DEGRADED') {
-      return 'DEGRADED'
+    if (recoverableStatus) {
+      return recoverableStatus
     }
     return 'DEGRADED'
   }
@@ -994,39 +1062,173 @@ export function useChat() {
   }
 
   function buildReactStepFromEvent(event: ReasoningEvent, index: number): ReactStepDto | null {
+    const extra = event.extra ?? {}
+    const stepIndex = readExtraNumber(extra, 'stepIndex', 'step_index') ?? readExtraNumber(extra, 'index') ?? index
     switch (event.type) {
       case 'PROGRESS':
-        return { type: 'PROGRESS', index, content: event.description ?? event.title }
+        return { type: 'PROGRESS', index: stepIndex, content: event.description ?? event.title }
       case 'THOUGHT':
-        return { type: 'THOUGHT', index, content: event.description ?? event.title }
+        return { type: 'THOUGHT', index: stepIndex, content: event.description ?? event.title }
       case 'TOOL_CALL':
         return {
           type: 'TOOL_CALL',
-          index,
-          toolId: (event.extra?.toolId as string) ?? event.toolName ?? 'unknown',
-          toolName: event.toolName ?? undefined,
-          inputSummary: event.description ?? '',
-          latencyMs: 0,
+          index: stepIndex,
+          toolId: readExtraString(extra, 'toolId', 'tool_id') ?? event.toolName ?? 'unknown',
+          toolName: readExtraString(extra, 'toolName', 'tool_name') ?? event.toolName ?? undefined,
+          callId: readExtraString(extra, 'callId', 'call_id') ?? undefined,
+          inputSummary: readExtraString(extra, 'inputSummary', 'input_summary') ?? event.description ?? '',
+          inputDetail: readExtraString(extra, 'inputDetail', 'input_detail') ?? undefined,
+          latencyMs: readExtraNumber(extra, 'latencyMs', 'latency_ms') ?? 0,
+          subjectLabel: readExtraString(extra, 'subjectLabel', 'subject_label') ?? undefined,
+          subjectNames: readExtraStringArray(extra, 'subjectNames', 'subject_names') ?? undefined,
         }
       case 'OBSERVATION':
         return {
           type: 'OBSERVATION',
-          index,
-          toolId: (event.extra?.toolId as string) ?? event.toolName ?? 'unknown',
-          toolName: event.toolName ?? undefined,
-          success: !event.title.includes('失败'),
-          outputSummary: event.description ?? '',
-          tokensUsed: 0,
+          index: stepIndex,
+          toolId: readExtraString(extra, 'toolId', 'tool_id') ?? event.toolName ?? 'unknown',
+          toolName: readExtraString(extra, 'toolName', 'tool_name') ?? event.toolName ?? undefined,
+          callId: readExtraString(extra, 'callId', 'call_id') ?? undefined,
+          success: readExtraBoolean(extra, 'success') ?? !event.title.includes('失败'),
+          outputSummary: readExtraString(extra, 'outputSummary', 'output_summary') ?? event.description ?? '',
+          tokensUsed: readExtraNumber(extra, 'tokensUsed', 'tokens_used') ?? 0,
+          subjectLabel: readExtraString(extra, 'subjectLabel', 'subject_label') ?? undefined,
+          subjectNames: readExtraStringArray(extra, 'subjectNames', 'subject_names') ?? undefined,
+          generatedFilePath: readExtraString(extra, 'generatedFilePath', 'generated_file_path') ?? undefined,
+          workingDirectory: readExtraString(extra, 'workingDirectory', 'working_directory') ?? undefined,
+          outputDetail: readExtraString(extra, 'outputDetail', 'output_detail') ?? undefined,
+          output: extra.output,
         }
       case 'ANSWER':
-        return { type: 'ANSWER', index, content: event.description ?? event.title }
+        return { type: 'ANSWER', index: stepIndex, content: event.description ?? event.title }
       case 'SUSPEND':
-        return { type: 'SUSPEND', index, reason: event.description ?? event.title, suspendedAt: event.createdAt }
+        return { type: 'SUSPEND', index: stepIndex, reason: event.description ?? event.title, suspendedAt: event.createdAt }
       case 'RESUME':
-        return { type: 'RESUME', index, resumedAt: event.createdAt, suspendDurationMs: 0 }
+        return { type: 'RESUME', index: stepIndex, resumedAt: event.createdAt, suspendDurationMs: 0 }
       default:
         return null
     }
+  }
+
+  function readExtraString(extra: Record<string, any>, ...keys: string[]) {
+    for (const key of keys) {
+      const value = extra[key]
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim()
+      }
+    }
+    return null
+  }
+
+  function mergeArtifactRefs(
+    ...groups: Array<Array<ArtifactRefPayload | Partial<ArtifactRefPayload>> | undefined>
+  ): ArtifactRefPayload[] {
+    const merged = new Map<string, ArtifactRefPayload>()
+    for (const group of groups) {
+      for (const raw of group ?? []) {
+        const ref = normalizeArtifactRef(raw)
+        if (ref && !merged.has(ref.artifactId)) {
+          merged.set(ref.artifactId, ref)
+        }
+      }
+    }
+    return Array.from(merged.values())
+  }
+
+  function normalizeArtifactRef(raw: unknown): ArtifactRefPayload | null {
+    if (!raw || typeof raw !== 'object') {
+      return null
+    }
+    const ref = raw as Record<string, unknown>
+    const artifactId = readArtifactRefText(ref, 'artifactId', 'artifact_id', 'id')
+    if (!artifactId) {
+      return null
+    }
+    const typeText = readArtifactRefText(ref, 'type')
+    const mimeType = readArtifactRefText(
+      ref,
+      'mimeType',
+      'mime_type',
+      'contentType',
+      'content_type',
+      'mediaType',
+      'media_type',
+    ) ?? (typeText?.includes('/') ? typeText : undefined)
+      ?? 'application/octet-stream'
+    const kindText = readArtifactRefText(ref, 'kind') ?? (typeText && !typeText.includes('/') ? typeText : null)
+    return {
+      artifactId,
+      fileName: readArtifactRefText(ref, 'fileName', 'file_name', 'filename', 'name') ?? artifactId,
+      mimeType,
+      kind: isImageArtifact(kindText, mimeType) ? 'IMAGE' : 'FILE',
+      size: readArtifactRefSize(ref.size) ?? 0,
+      downloadUrl: readArtifactRefText(ref, 'downloadUrl', 'download_url', 'url')
+        ?? buildArtifactDownloadUrl(artifactId),
+    }
+  }
+
+  function readArtifactRefText(ref: Record<string, unknown>, ...keys: string[]): string | null {
+    for (const key of keys) {
+      const value = ref[key]
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim()
+      }
+    }
+    return null
+  }
+
+  function readArtifactRefSize(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return value
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value.trim())
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        return parsed
+      }
+    }
+    return null
+  }
+
+  function isImageArtifact(kindText: string | null, mimeType: string): boolean {
+    if (kindText) {
+      const normalized = kindText.trim().toUpperCase()
+      if (normalized === 'IMAGE') {
+        return true
+      }
+      if (normalized === 'FILE') {
+        return false
+      }
+    }
+    return mimeType.toLowerCase().startsWith('image/')
+  }
+
+  function readExtraNumber(extra: Record<string, any>, ...keys: string[]) {
+    for (const key of keys) {
+      const value = extra[key]
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value
+      }
+    }
+    return null
+  }
+
+  function readExtraBoolean(extra: Record<string, any>, key: string) {
+    const value = extra[key]
+    return typeof value === 'boolean' ? value : null
+  }
+
+  function readExtraStringArray(extra: Record<string, any>, ...keys: string[]) {
+    for (const key of keys) {
+      const value = extra[key]
+      if (!Array.isArray(value)) continue
+      const items = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .map(item => item.trim())
+      if (items.length > 0) {
+        return items
+      }
+    }
+    return null
   }
 
   function mapReasoningStatus(event: ReasoningEvent) {
@@ -1070,12 +1272,167 @@ export function useChat() {
       if (message.role !== 'assistant') {
         continue
       }
-      if (message.turnStatus === 'SUSPENDED' || message.completionMode === 'SUSPENDED') {
-        return message
+      if (
+        message.turnStatus === 'SUSPENDED'
+        || message.completionMode === 'SUSPENDED'
+        || message.taskRecovery?.status === 'SUSPENDED'
+      ) {
+        return shouldAutoResumeSuspendedMessage(message) ? message : null
       }
       break
     }
     return null
+  }
+
+  function buildAutoResumeRecoveryAction(message: {
+    taskRecovery?: SseDoneEvent['taskRecovery']
+    toolsSummary?: ToolCallSummary[]
+    artifactRefs?: ArtifactRefPayload[]
+  }): ToolRecoveryAction | undefined {
+    const recovery = message.taskRecovery
+    const failedTool = findFirstFailedToolSummary(message.toolsSummary)
+    const toolAction = failedTool ? buildToolSummaryRecoveryAction(failedTool) : undefined
+    const artifactRefs = compactRecoveryArtifactRefs(
+      recovery?.checkpoint?.artifactRefs,
+      toolAction?.artifactRefs,
+      message.artifactRefs,
+    )
+    if (!recovery) {
+      return toolAction
+        ? {
+            ...toolAction,
+            id: 'task-recovery-user-reply',
+            mode: 'resume',
+            ...(artifactRefs ? { artifactRefs } : {}),
+          }
+        : undefined
+    }
+    const checkpoint = recovery.checkpoint
+    const awaitingUserReply = isUserReplyRecovery(recovery)
+    const recoveryLabel = awaitingUserReply && recovery.actionLabel === '等待'
+      ? '补充后继续'
+      : recovery.actionLabel
+    return {
+      id: 'task-recovery-user-reply',
+      label: recoveryLabel ?? toolAction?.label ?? '补充后继续',
+      mode: 'resume',
+      category: checkpoint?.failureCategory ?? toolAction?.category,
+      toolId: checkpoint?.toolId ?? toolAction?.toolId,
+      callId: checkpoint?.callId ?? toolAction?.callId,
+      toolName: checkpoint?.toolName ?? toolAction?.toolName,
+      executionKind: checkpoint?.executionKind ?? toolAction?.executionKind,
+      action: checkpoint?.action ?? toolAction?.action,
+      interrupted: checkpoint?.interrupted ?? toolAction?.interrupted,
+      subjectLabel: checkpoint?.subjectLabel ?? toolAction?.subjectLabel,
+      subjectNames: checkpoint?.subjectNames ?? toolAction?.subjectNames,
+      inputSummary: checkpoint?.inputSummary ?? toolAction?.inputSummary,
+      inputDetail: checkpoint?.inputDetail ?? toolAction?.inputDetail,
+      outputSummary: checkpoint?.outputSummary ?? toolAction?.outputSummary,
+      outputDetail: checkpoint?.outputDetail ?? toolAction?.outputDetail,
+      workingDirectory: checkpoint?.workingDirectory ?? toolAction?.workingDirectory,
+      generatedFilePath: checkpoint?.generatedFilePath ?? toolAction?.generatedFilePath,
+      ...(artifactRefs ? { artifactRefs } : {}),
+      missingCapabilities: checkpoint?.missingCapabilities ?? toolAction?.missingCapabilities,
+      recoveryHint: recovery.detail ?? toolAction?.recoveryHint,
+      nextActions: recovery.nextActions?.filter(Boolean).slice(0, 3) ?? toolAction?.nextActions,
+    }
+  }
+
+  function findFirstFailedToolSummary(tools?: ToolCallSummary[]): ToolCallSummary | undefined {
+    return tools?.find(tool => tool.status === 'FAILED' || tool.success === false)
+  }
+
+  function buildToolSummaryRecoveryAction(tool: ToolCallSummary): ToolRecoveryAction {
+    const fallbackAction = buildToolRecoveryActions(tool.toolId, tool)
+      .find(action => action.mode !== 'restart')
+    const action = tool.recoveryActions?.find(item => item.mode !== 'restart')
+      ?? tool.recoveryActions?.[0]
+      ?? fallbackAction
+    const failureText = [tool.outputSummary, tool.outputDetail].filter(Boolean).join(' ')
+    const category = action?.category ?? tool.failureCategory ?? resolveToolFailureCategory(tool.toolId, failureText)
+    const executionKind = action?.executionKind ?? tool.executionKind ?? resolveToolExecutionKind(tool.toolId)
+    const artifactRefs = compactRecoveryArtifactRefs(action?.artifactRefs, tool.artifactRefs)
+    return {
+      id: action?.id ?? 'resume',
+      label: action?.label ?? '补充后继续',
+      description: action?.description,
+      mode: 'resume',
+      category,
+      toolId: action?.toolId ?? tool.toolId,
+      callId: action?.callId ?? tool.callId,
+      toolName: action?.toolName ?? tool.toolName,
+      executionKind,
+      action: action?.action ?? tool.action ?? resolveToolAction(tool.toolId),
+      interrupted: action?.interrupted ?? tool.interrupted,
+      subjectLabel: action?.subjectLabel ?? tool.subjectLabel,
+      subjectNames: action?.subjectNames ?? tool.subjectNames,
+      inputSummary: action?.inputSummary ?? tool.inputSummary,
+      inputDetail: action?.inputDetail ?? tool.inputDetail,
+      outputSummary: action?.outputSummary ?? tool.outputSummary,
+      outputDetail: action?.outputDetail ?? tool.outputDetail,
+      workingDirectory: action?.workingDirectory ?? tool.workingDirectory,
+      generatedFilePath: action?.generatedFilePath ?? tool.generatedFilePath,
+      ...(artifactRefs ? { artifactRefs } : {}),
+      missingCapabilities: action?.missingCapabilities ?? tool.missingCapabilities,
+      recoveryHint: action?.recoveryHint ?? tool.recoveryHint ?? resolveToolRecoveryHint(tool.toolId, failureText),
+      nextActions: action?.nextActions ?? buildToolRecoveryPlan({
+        toolId: tool.toolId,
+        failureCategory: category,
+        executionKind,
+        subjectNames: tool.subjectNames,
+      }).slice(0, 3),
+    }
+  }
+
+  function compactRecoveryArtifactRefs(
+    ...groups: Array<Array<ArtifactRefPayload | Partial<ArtifactRefPayload>> | undefined | null>
+  ): ArtifactRefPayload[] | undefined {
+    const refs = mergeArtifactRefs(...groups.map(group => group ?? undefined)).slice(0, 8)
+    return refs.length > 0 ? refs : undefined
+  }
+
+  function shouldAutoResumeSuspendedMessage(message: {
+    taskRecovery?: SseDoneEvent['taskRecovery']
+    suspendReasonType?: string
+    suspendReasonSourceId?: string
+    content?: string
+    errorMessage?: string
+  }) {
+    const recovery = message.taskRecovery
+    const resumeMode = recovery?.resumeMode
+    if (resumeMode) {
+      return isUserReplyRecovery(recovery)
+    }
+
+    const reasonSourceId = recovery?.reasonSourceId ?? message.suspendReasonSourceId
+    if (reasonSourceId === '__await_user_input__') {
+      return true
+    }
+
+    const reasonType = message.taskRecovery?.reasonType ?? message.suspendReasonType
+    if (hasUserReplyResumeHint(message)) {
+      return true
+    }
+    if (reasonType === 'ExternalDataWait') {
+      return false
+    }
+    return false
+  }
+
+  function hasUserReplyResumeHint(message: {
+    taskRecovery?: SseDoneEvent['taskRecovery']
+    content?: string
+    errorMessage?: string
+  }) {
+    const text = [
+      message.taskRecovery?.title,
+      message.taskRecovery?.detail,
+      message.content,
+      message.errorMessage,
+    ]
+      .filter(Boolean)
+      .join(' ')
+    return /(等待你补充|等你补充|请补充|还缺|直接回复|回复后.*继续|补充后.*继续|发送后.*继续|提供.*后.*继续)/.test(text)
   }
 
   function abort() {
@@ -1147,6 +1504,145 @@ export function useChat() {
     return result
   }
 
+  function scheduleMemoryChangeRefresh(messageId: string, turnId?: string, projectId?: string | null) {
+    if (!turnId) return
+    let resolved = false
+    for (const [index, delay] of MEMORY_CHANGE_REFRESH_DELAYS_MS.entries()) {
+      window.setTimeout(async () => {
+        if (resolved) return
+        try {
+          const statusInfo = await memoryApi.getTurnMemoryChangesStatus(turnId, projectId)
+          const changes = statusInfo.changes ?? []
+          const message = chatStore.messages.find(item => item.id === messageId)
+          if (!message) {
+            resolved = true
+            return
+          }
+          if (changes.length > 0 || statusInfo.status === 'SETTLED') {
+            const merged = mergeMemoryChanges(message.memoryChanges ?? [], changes)
+            chatStore.updateMessage(messageId, {
+              memoryChanges: merged.length > 0 ? merged : undefined,
+              memoryChangeStatus: merged.length > 0 ? 'settled' : undefined,
+              memoryChangeReason: undefined,
+            })
+            resolved = true
+            return
+          }
+          if (statusInfo.status === 'CHECKED_EMPTY') {
+            if (message.memoryChangeStatus === 'checking') {
+              chatStore.updateMessage(messageId, {
+                memoryChangeStatus: 'checked-empty',
+                memoryChangeReason: statusInfo.reason ?? undefined,
+              })
+              scheduleMemoryChangeEmptyClear(messageId)
+            }
+            resolved = true
+            return
+          }
+          if (statusInfo.status === 'FAILED') {
+            if (message.memoryChangeStatus === 'checking') {
+              chatStore.updateMessage(messageId, {
+                memoryChangeStatus: 'failed',
+                memoryChangeReason: statusInfo.reason ?? undefined,
+              })
+            }
+            resolved = true
+            return
+          }
+          if (statusInfo.status === 'DISABLED') {
+            if (message.memoryChangeStatus === 'checking') {
+              chatStore.updateMessage(messageId, {
+                memoryChangeStatus: 'disabled',
+                memoryChangeReason: statusInfo.reason ?? undefined,
+              })
+            }
+            resolved = true
+            return
+          }
+          if (index === MEMORY_CHANGE_REFRESH_DELAYS_MS.length - 1
+            && message.memoryChangeStatus === 'checking') {
+            chatStore.updateMessage(messageId, {
+              memoryChangeStatus: 'failed',
+              memoryChangeReason: 'memory_status_timeout',
+            })
+            resolved = true
+          }
+        } catch (err) {
+          logger.debug('刷新轮次记忆沉淀失败:', err)
+          if (index === MEMORY_CHANGE_REFRESH_DELAYS_MS.length - 1) {
+            const message = chatStore.messages.find(item => item.id === messageId)
+            if (message?.memoryChangeStatus === 'checking') {
+              chatStore.updateMessage(messageId, {
+                memoryChangeStatus: 'failed',
+                memoryChangeReason: 'memory_status_refresh_failed',
+              })
+            }
+            resolved = true
+          }
+        }
+      }, delay)
+    }
+  }
+
+  function clearTransientMemoryChangeStatus(messageId: string) {
+    const message = chatStore.messages.find(item => item.id === messageId)
+    if (message?.memoryChangeStatus === 'checking' && !message.memoryChanges?.length) {
+      chatStore.updateMessage(messageId, {
+        memoryChangeStatus: undefined,
+        memoryChangeReason: undefined,
+      })
+    }
+  }
+
+  function scheduleMemoryChangeEmptyClear(messageId: string) {
+    window.setTimeout(() => {
+      const message = chatStore.messages.find(item => item.id === messageId)
+      if (message?.memoryChangeStatus === 'checked-empty' && !message.memoryChanges?.length) {
+        chatStore.updateMessage(messageId, {
+          memoryChangeStatus: undefined,
+          memoryChangeReason: undefined,
+        })
+      }
+    }, MEMORY_CHANGE_EMPTY_VISIBLE_MS)
+  }
+
+  function shouldRefreshMemoryChanges(event: SseDoneEvent, turnId?: string) {
+    return !!turnId
+      && !(event.memoryChanges?.length)
+      && !isInterruptedCompletion(event)
+      && event.contentRole !== 'PROGRESS'
+  }
+
+  function shouldSurfaceMemoryChangeStatus(content: string) {
+    const text = content.trim().toLowerCase()
+    if (!text) return false
+    return MEMORY_STATUS_EXPLICIT_PATTERN.test(text)
+      || MEMORY_STATUS_PROFILE_PATTERN.test(text)
+      || isLikelyReusableContext(text)
+  }
+
+  function isLikelyReusableContext(text: string) {
+    return text.length >= 16 && MEMORY_STATUS_CONTEXT_PATTERN.test(text)
+  }
+
+  function mergeMemoryChanges(existing: SourceSummary[], incoming: SourceSummary[]) {
+    const result = [...existing]
+    const seen = new Set(existing.map(item => item.id))
+    for (const item of incoming) {
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+      result.push(item)
+    }
+    return result
+  }
+
+  function normalizeProjectId(value: unknown) {
+    if (Array.isArray(value)) {
+      return normalizeProjectId(value[0])
+    }
+    return typeof value === 'string' && value.trim() ? value.trim() : null
+  }
+
   return {
     sendMessage,
     executeTurn,
@@ -1162,7 +1658,6 @@ export function useChat() {
     isReasoningActive,
     reasoningDurationMs,
     streamingReactSteps,
-    capabilitySuggestions,
     streamingMedia,
     streamingArtifactRefs,
     streamingA2uiComponents: a2uiStore.components,

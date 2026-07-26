@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { AlertTriangle, ArrowUpRight, FileText, SlidersHorizontal, Wrench } from 'lucide-vue-next'
 import { useToolStore } from '@/stores/tool'
 import SearchBar from '@/components/common/SearchBar.vue'
@@ -13,9 +13,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 
 const router = useRouter()
+const route = useRoute()
 const toolStore = useToolStore()
 
-const searchQuery = ref('')
+function routeQueryText(key: string) {
+  const value = route.query[key]
+  const text = Array.isArray(value) ? value[0] : value
+  return typeof text === 'string' ? text.trim() : ''
+}
+
+function routeSearchQuery() {
+  return routeQueryText('query') || routeQueryText('q')
+}
+
+const searchQuery = ref(routeSearchQuery())
 const sourceFilter = ref('all')
 const riskFilter = ref('all')
 const showFilters = ref(false)
@@ -82,6 +93,16 @@ function clearFilters() {
 onMounted(() => {
   void toolStore.fetchTools()
 })
+
+watch(
+  () => [route.query.query, route.query.q],
+  () => {
+    const next = routeSearchQuery()
+    if (next !== searchQuery.value) {
+      searchQuery.value = next
+    }
+  },
+)
 </script>
 
 <template>

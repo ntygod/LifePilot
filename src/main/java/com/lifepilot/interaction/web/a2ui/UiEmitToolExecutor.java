@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * ui.emit 工具执行器 — 接收 LLM 工具调用传入的 A2UI 组件树，校验后通过 SSE 推送到前端。
+ * ui.render 工具执行器 — 接收 LLM 工具调用传入的 A2UI 组件树，校验后通过 SSE 推送到前端。
  *
  * <p>执行流程：</p>
  * <ol>
@@ -57,7 +57,7 @@ public class UiEmitToolExecutor implements ToolExecutor {
         // 1. 提取上下文字段
         var streamIdOpt = input.getContextValue(ToolContextKeys.STREAM_ID, String.class);
         if (streamIdOpt.isEmpty() || streamIdOpt.get().isBlank()) {
-            log.warn("ui.emit 缺少 streamId，无法推送 UI 事件");
+            log.warn("ui.render 缺少 streamId，无法推送 UI 事件");
             return ToolResult.error("缺少必需上下文字段: streamId");
         }
         String streamId = streamIdOpt.get();
@@ -69,7 +69,7 @@ public class UiEmitToolExecutor implements ToolExecutor {
         try {
             rawComponents = (List<Map<String, Object>>) input.getParam("components", List.class);
         } catch (IllegalArgumentException e) {
-            log.warn("ui.emit 参数错误: {}", e.getMessage());
+            log.warn("ui.render 参数错误: {}", e.getMessage());
             return ToolResult.error("参数错误: " + e.getMessage());
         }
 
@@ -82,7 +82,7 @@ public class UiEmitToolExecutor implements ToolExecutor {
         try {
             components = convertComponents(rawComponents);
         } catch (Exception e) {
-            log.warn("ui.emit 组件转换失败: {}", e.getMessage());
+            log.warn("ui.render 组件转换失败: {}", e.getMessage());
             return ToolResult.error("组件格式错误: " + e.getMessage());
         }
 
@@ -92,7 +92,7 @@ public class UiEmitToolExecutor implements ToolExecutor {
 
         if (!validationResult.valid()) {
             String errors = String.join("; ", validationResult.errors());
-            log.warn("ui.emit 组件树校验失败: streamId={}, errors={}", streamId, errors);
+            log.warn("ui.render 组件树校验失败: streamId={}, errors={}", streamId, errors);
             return ToolResult.error("组件树校验失败: " + errors);
         }
 
@@ -113,7 +113,7 @@ public class UiEmitToolExecutor implements ToolExecutor {
         treeCapture.capture(streamId, finalTree);
 
         int count = finalTree.components().size();
-        log.info("ui.emit 已推送 {} 个组件: streamId={}, sessionId={}, turnId={}",
+        log.info("ui.render 已推送 {} 个组件: streamId={}, sessionId={}, turnId={}",
                 count, streamId, sessionId, turnId);
 
         return ToolResult.success(Map.of(

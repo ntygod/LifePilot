@@ -11,6 +11,8 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Check, ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-vue-next'
 import type { ReactStepDto, ToolCallStep, ObservationStep } from '@/types'
+import { isInternalCapabilityId } from '@/utils/liveCapabilities'
+import { normalizeTurnStatusText } from '@/utils/turnPhase'
 
 /** 将原始输出（可能是 JSON）转为人类可读的详情文本 */
 function humanizeDetail(raw: string | undefined, isError: boolean): string | null {
@@ -41,11 +43,13 @@ const props = defineProps<{
 
 // ─── 数据 ───
 
-const hasToolCalls = computed(() => props.steps.some(s => s.type === 'TOOL_CALL'))
+const visibleSteps = computed(() => props.steps.filter(isVisibleStep))
+
+const hasToolCalls = computed(() => visibleSteps.value.some(s => s.type === 'TOOL_CALL'))
 
 /** 耗时 */
 const totalMs = computed(() =>
-  props.steps.reduce((sum, s) => sum + (s.type === 'TOOL_CALL' ? (s as ToolCallStep).latencyMs : 0), 0),
+  visibleSteps.value.reduce((sum, s) => sum + (s.type === 'TOOL_CALL' ? (s as ToolCallStep).latencyMs : 0), 0),
 )
 const durationSeconds = computed(() => {
   const s = Math.round(totalMs.value / 1000)
@@ -65,7 +69,7 @@ const stages = computed<Stage[]>(() => {
   const map = new Map<string, Stage>()
   const order: string[] = []
 
-  for (const step of props.steps) {
+  for (const step of visibleSteps.value) {
     if (step.type === 'TOOL_CALL') {
       const tc = step as ToolCallStep
       const name = tc.toolName || tc.toolId
@@ -101,8 +105,12 @@ const stages = computed<Stage[]>(() => {
 })
 
 const latestProgress = computed(() => {
-  for (let i = props.steps.length - 1; i >= 0; i--) {
-    if (props.steps[i].type === 'PROGRESS') return (props.steps[i] as { content: string }).content
+  for (let i = visibleSteps.value.length - 1; i >= 0; i--) {
+    const step = visibleSteps.value[i]
+    if (step.type === 'PROGRESS') {
+      const normalized = normalizeTurnStatusText((step as { content: string }).content)
+      if (normalized) return normalized
+    }
   }
   return null
 })
@@ -122,7 +130,7 @@ const toolSummaryParts = computed(() =>
 // ─── 显示控制 ───
 
 const shouldShow = computed(() => {
-  if (props.streaming) return props.steps.length > 0
+  if (props.streaming) return visibleSteps.value.length > 0
   return hasToolCalls.value
 })
 
@@ -137,6 +145,28 @@ function toggleGroup(name: string) {
 
 function stageRunningLabel(s: Stage) {
   return s.count <= 1 ? `${s.name}…` : `${s.name}（已执行 ${s.count} 次）…`
+}
+
+function isVisibleTool(toolId?: string | null, toolName?: string | null) {
+  const id = toolId?.trim()
+  if (id) return !isInternalCapabilityId(id)
+  const name = toolName?.trim()
+  return !!name && !isInternalCapabilityId(name)
+}
+
+function isVisibleStep(step: ReactStepDto) {
+  if (step.type === 'TOOL_CALL') {
+    const tc = step as ToolCallStep
+    return isVisibleTool(tc.toolId, tc.toolName)
+  }
+  if (step.type === 'OBSERVATION') {
+    const obs = step as ObservationStep
+    return isVisibleTool(obs.toolId, obs.toolName)
+  }
+  if (step.type === 'PROGRESS') {
+    return !!normalizeTurnStatusText((step as { content: string }).content)
+  }
+  return true
 }
 </script>
 

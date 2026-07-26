@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
+  ArrowLeft,
   ArrowRight,
   BellRing,
   BookOpen,
@@ -77,6 +78,7 @@ interface InsightAction {
   icon: Component
 }
 
+const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
 const memoryStore = useMemoryStore()
@@ -86,6 +88,57 @@ const toolStore = useToolStore()
 
 const loading = ref(true)
 const loadError = ref<string | null>(null)
+
+function routeQueryText(key: string) {
+  const value = route.query[key]
+  const text = Array.isArray(value) ? value[0] : value
+  return typeof text === 'string' ? text.trim() : ''
+}
+
+function routeQueryList(key: string) {
+  const value = route.query[key]
+  const values = Array.isArray(value) ? value : [value]
+  return Array.from(new Set(
+    values
+      .flatMap(item => typeof item === 'string' ? item.split(',') : [])
+      .map(item => item.trim())
+      .filter(Boolean),
+  ))
+}
+
+const recoveryReturnSessionId = computed(() => routeQueryText('returnSessionId'))
+const recoveryReturnTurnId = computed(() => routeQueryText('returnTurnId'))
+const recoveryReturnEntryId = computed(() => routeQueryText('returnEntryId'))
+const showRecoveryReturn = computed(() =>
+  routeQueryText('from') === 'task-recovery' && Boolean(recoveryReturnSessionId.value),
+)
+const focusedMissingCapabilities = computed(() => routeQueryList('missing'))
+const focusedSkillName = computed(() => routeQueryText('skill'))
+const showCapabilityFocus = computed(() =>
+  ['capability-warning', 'task-recovery'].includes(routeQueryText('from'))
+  && (focusedMissingCapabilities.value.length > 0 || Boolean(focusedSkillName.value)),
+)
+const focusedMissingCapabilitiesLabel = computed(() =>
+  focusedMissingCapabilities.value.length > 0
+    ? focusedMissingCapabilities.value.join('、')
+    : '建议能力',
+)
+const capabilityFocusTitle = computed(() =>
+  focusedSkillName.value
+    ? `技能 ${focusedSkillName.value} 的能力缺口`
+    : '刚才对话发现能力缺口',
+)
+const capabilityFocusDescription = computed(() =>
+  focusedMissingCapabilities.value.length > 0
+    ? `这次对话发现 ${focusedMissingCapabilitiesLabel.value} 当前不可用。先确认工具是否注册、启用，再检查 Skill suggestedTools 是否引用了旧名称。`
+    : '这次对话发现某个 Skill 的建议能力不可用。先确认缺失工具是否可用，再检查 Skill suggestedTools。',
+)
+const capabilityFocusPrompt = computed(() => {
+  const skillScope = focusedSkillName.value
+    ? `技能 ${focusedSkillName.value}`
+    : '刚才使用的 Skill'
+  return `请检查${skillScope}的 suggestedTools：当前缺少 ${focusedMissingCapabilitiesLabel.value}。帮我判断是需要修复缺失工具能力，还是调整 Skill 引用，并给出修复步骤。`
+})
 
 const capabilities: CapabilityCard[] = [
   {
@@ -362,6 +415,27 @@ function capabilityLabel(id: CapabilityId) {
   return capabilityById.value.get(id)?.title ?? id
 }
 
+function returnToRecoveredConversation() {
+  if (!recoveryReturnSessionId.value) return
+  const query = {
+    ...(recoveryReturnTurnId.value ? { turnId: recoveryReturnTurnId.value } : {}),
+    ...(recoveryReturnEntryId.value ? { entryId: recoveryReturnEntryId.value } : {}),
+  }
+  void router.push({
+    name: 'conversationDetail',
+    params: { sessionId: recoveryReturnSessionId.value },
+    ...(Object.keys(query).length > 0 ? { query } : {}),
+  })
+}
+
+function openFocusedToolDirectory() {
+  const missing = focusedMissingCapabilities.value[0]
+  const query = missing
+    ? `?query=${encodeURIComponent(missing)}`
+    : ''
+  navigateTo(`/tools${query}`)
+}
+
 onMounted(() => {
   void loadOverview()
 })
@@ -387,6 +461,63 @@ onMounted(() => {
             </Button>
           </div>
         </header>
+
+        <section
+          v-if="showRecoveryReturn"
+          class="flex flex-col gap-md rounded-lg border border-primary/20 bg-primary/[0.04] p-md sm:flex-row sm:items-center sm:justify-between"
+          aria-label="任务恢复返回入口"
+        >
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-foreground">修复后回到刚才任务</div>
+            <p class="mt-xs text-sm leading-6 text-muted-foreground">
+              能力修复完成后，回到原对话继续当前断点。
+            </p>
+          </div>
+          <Button type="button" variant="outline" class="w-fit shrink-0" @click="returnToRecoveredConversation">
+            <ArrowLeft class="size-4" />
+            回到对话
+          </Button>
+        </section>
+
+        <section
+          v-if="showCapabilityFocus"
+          class="flex flex-col gap-md rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-md sm:flex-row sm:items-start sm:justify-between"
+          aria-label="对话发现的能力缺口"
+        >
+          <div class="flex min-w-0 gap-md">
+            <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/70 text-amber-700">
+              <Wrench class="size-4" />
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold text-foreground">{{ capabilityFocusTitle }}</div>
+              <p class="mt-xs text-sm leading-6 text-muted-foreground">
+                {{ capabilityFocusDescription }}
+              </p>
+              <div class="mt-sm flex flex-wrap gap-xs">
+                <Badge
+                  v-for="item in focusedMissingCapabilities"
+                  :key="item"
+                  variant="outline"
+                >
+                  缺少 {{ item }}
+                </Badge>
+                <Badge v-if="focusedSkillName" variant="secondary">
+                  Skill {{ focusedSkillName }}
+                </Badge>
+              </div>
+            </div>
+          </div>
+          <div class="flex shrink-0 flex-wrap gap-sm sm:justify-end">
+            <Button type="button" variant="outline" class="w-fit" @click="openFocusedToolDirectory">
+              <Wrench class="size-4" />
+              打开工具目录
+            </Button>
+            <Button type="button" class="w-fit" @click="startPrompt(capabilityFocusPrompt)">
+              <MessageSquare class="size-4" />
+              带入对话检查
+            </Button>
+          </div>
+        </section>
 
         <section class="rounded-lg border border-border/50 bg-card/70 p-lg">
           <div class="flex flex-col gap-md sm:flex-row sm:items-start sm:justify-between">

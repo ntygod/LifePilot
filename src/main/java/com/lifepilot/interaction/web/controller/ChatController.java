@@ -247,6 +247,15 @@ public class ChatController {
                 if (chatResponse.a2uiComponents() != null && !chatResponse.a2uiComponents().isEmpty()) {
                     doneDataBuilder.put("a2uiComponents", chatResponse.a2uiComponents());
                 }
+                if (chatResponse.toolsSummary() != null && !chatResponse.toolsSummary().isEmpty()) {
+                    doneDataBuilder.put("toolsSummary", chatResponse.toolsSummary());
+                }
+                if (chatResponse.taskRecovery() != null && !chatResponse.taskRecovery().isEmpty()) {
+                    doneDataBuilder.put("taskRecovery", chatResponse.taskRecovery());
+                }
+                if (chatResponse.executionConstraints() != null && !chatResponse.executionConstraints().isEmpty()) {
+                    doneDataBuilder.put("executionConstraints", chatResponse.executionConstraints());
+                }
                 doneDataBuilder.put("timestamp", Instant.now().toEpochMilli());
                 var doneEvent = SseEmitter.event()
                         .name(SseEventType.DONE)
@@ -783,6 +792,34 @@ public class ChatController {
         }
     }
 
+    /**
+     * 记录消息/产物已沉淀到资料库。
+     *
+     * <p>该接口只在资料库上传成功后写入 transcript 元数据，避免刷新历史会话时丢失
+     * “已存入资料库”的可解释状态。</p>
+     *
+     * @param entryId transcript 条目 ID
+     * @param request 沉淀目标与来源
+     * @return 204 No Content
+     */
+    @PostMapping("/entries/{entryId}/knowledge-settlements")
+    public ResponseEntity<?> recordKnowledgeSettlement(
+            @PathVariable String entryId,
+            @RequestBody KnowledgeSettlementRequest request) {
+        try {
+            sessionService.recordKnowledgeSettlement(entryId, request);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            log.warn("记录资料库沉淀失败: entryId={}, error={}", entryId, e.getMessage());
+            return ResponseEntity.badRequest().body(
+                    new ErrorResponse(400, e.getMessage(), Instant.now()));
+        } catch (Exception e) {
+            log.error("记录资料库沉淀时发生错误: entryId={}", entryId, e);
+            return ResponseEntity.internalServerError().body(
+                    new ErrorResponse(500, "记录资料库沉淀失败: " + e.getMessage(), Instant.now()));
+        }
+    }
+
     // ── 内部辅助方法 ──────────────────────────────────────────
 
     /**
@@ -938,6 +975,18 @@ public class ChatController {
         String resumedFromTraceId = response.metadata() != null
                 ? (String) response.metadata().get("resumedFromTraceId")
                 : null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> executionConstraints = response.metadata() != null
+                ? (Map<String, Object>) response.metadata().get("executionConstraints")
+                : null;
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> toolsSummary = response.metadata() != null
+                ? (List<Map<String, Object>>) response.metadata().get("toolsSummary")
+                : null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> taskRecovery = response.metadata() != null
+                ? (Map<String, Object>) response.metadata().get("taskRecovery")
+                : null;
         return new ChatResponse(
                 response.responseId(),
                 turnId,
@@ -949,7 +998,10 @@ public class ChatController {
                 completionMode,
                 completionReason,
                 resumedFromTraceId,
-                turnStatus
+                turnStatus,
+                toolsSummary,
+                taskRecovery,
+                executionConstraints
         );
     }
 

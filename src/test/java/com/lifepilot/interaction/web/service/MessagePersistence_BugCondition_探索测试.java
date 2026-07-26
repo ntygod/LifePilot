@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -175,6 +176,44 @@ class MessagePersistence_BugCondition_探索测试 {
 
         feedbackRepository.saveForEntry(assistantEntryId, sessionId, "like", "有帮助");
         assertThat(feedbackRepository.findByEntryId(assistantEntryId)).hasSize(1);
+    }
+
+    @Test
+    void 资料库沉淀标记写入TranscriptPayload并可随历史消息读回() {
+        String sessionId = createSession();
+
+        String assistantEntryId = transcriptStore.appendAssistantMessage(
+                sessionId,
+                "报告已经生成。",
+                null,
+                "trace-knowledge-settlement",
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        boolean updated = transcriptRepository.appendKnowledgeSettlement(assistantEntryId, Map.of(
+                "knowledgeBaseId", "kb-product",
+                "knowledgeBaseName", "产品资料",
+                "sourceType", "ARTIFACT",
+                "artifactId", "artifact-report",
+                "fileName", "report.md",
+                "savedAt", "2026-07-07T04:00:00Z"
+        ));
+
+        assertThat(updated).isTrue();
+
+        var rows = transcriptRepository.findUserConversationRowsBySessionId(sessionId);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst().knowledgeSettlements()).hasSize(1);
+        assertThat(rows.getFirst().knowledgeSettlements().getFirst())
+                .containsEntry("knowledgeBaseId", "kb-product")
+                .containsEntry("knowledgeBaseName", "产品资料")
+                .containsEntry("sourceType", "ARTIFACT")
+                .containsEntry("artifactId", "artifact-report")
+                .containsEntry("fileName", "report.md");
     }
 
     private String createSession() {

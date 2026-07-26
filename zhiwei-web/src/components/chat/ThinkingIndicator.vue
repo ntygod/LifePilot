@@ -2,8 +2,8 @@
 /**
  * 思维链指示器 — 消息内联最小显示
  *
- * 流式：脉动点 + 最新状态文字（如"正在搜索网络…"）
- * 完成：可点击的"已完成思考 · Xs >"，点击打开侧边轨迹面板
+ * 流式：脉动点 + 自然任务进展（如"正在查资料…"）
+ * 完成：可点击的"查看任务步骤 · Xs >"，点击打开任务步骤面板
  *
  * @author zsg
  * @since 2026-04-11
@@ -11,6 +11,9 @@
 import { computed } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 import type { ReasoningEvent, ReactStepDto, ToolCallStep } from '@/types'
+import { isInternalCapabilityId } from '@/utils/liveCapabilities'
+import { normalizeTurnStatusText } from '@/utils/turnPhase'
+import { resolveToolFailureCategory } from '@/utils/toolExecution'
 
 const props = defineProps<{
   reasoningEvents?: ReasoningEvent[]
@@ -24,28 +27,102 @@ const emit = defineEmits<{
 
 const hasToolCalls = computed(() => {
   if (props.reasoningEvents?.length) {
-    return props.reasoningEvents.some(e => e.type === 'TOOL_CALL')
+    return props.reasoningEvents.some(e =>
+      e.type === 'TOOL_CALL' && isVisibleToolCall(readToolId(e), e.toolName || e.title),
+    )
   }
   if (props.reactSteps?.length) {
-    return props.reactSteps.some(s => s.type === 'TOOL_CALL')
+    return props.reactSteps.some(s =>
+      s.type === 'TOOL_CALL' && isVisibleToolCall((s as ToolCallStep).toolId, (s as ToolCallStep).toolName),
+    )
   }
   return false
 })
 
+const hasVisibleStreamingSignal = computed(() => {
+  if (props.reasoningEvents?.some(e =>
+    (e.type === 'TOOL_CALL' && isVisibleToolCall(readToolId(e), e.toolName || e.title))
+    || (e.type === 'PROGRESS' && !!normalizeTurnStatusText(e.description)),
+  )) {
+    return true
+  }
+  return props.reactSteps?.some(s =>
+    (s.type === 'TOOL_CALL' && isVisibleToolCall((s as ToolCallStep).toolId, (s as ToolCallStep).toolName))
+    || (s.type === 'PROGRESS' && !!normalizeTurnStatusText((s as { content?: string }).content)),
+  ) ?? false
+})
+
 const shouldShow = computed(() => {
   if (props.streaming) {
-    return (props.reasoningEvents?.length ?? 0) > 0 || (props.reactSteps?.length ?? 0) > 0
+    return hasVisibleStreamingSignal.value
   }
   return hasToolCalls.value
 })
+
+function naturalToolStatus(toolId?: string, toolName?: string) {
+  const key = `${toolId ?? ''} ${toolName ?? ''}`.toLowerCase()
+  if (key.includes('skill')) return '正在准备相关技能…'
+  if (key.includes('capability') || key.includes('能力')) return '正在准备执行…'
+  if (toolId) {
+    switch (resolveToolFailureCategory(toolId)) {
+      case 'CAPABILITY':
+        return '正在准备执行…'
+      case 'KNOWLEDGE':
+        return '正在整理资料…'
+      case 'WORKFLOW':
+        return '正在推进流程…'
+      case 'INTEGRATION':
+        return '正在连接工具服务…'
+      case 'AGENT':
+        return '正在协作处理…'
+      case 'MODEL':
+        return '正在整理回答…'
+      case 'REPOSITORY':
+        return '正在处理仓库…'
+      default:
+        break
+    }
+  }
+  if (key.includes('web.') || key.includes('search') || key.includes('fetch') || key.includes('搜索')) {
+    return '正在查资料…'
+  }
+  if (key.includes('browser') || key.includes('浏览器')) return '正在查看页面…'
+  if (key.includes('file.') || key.includes('文件') || key.includes('write') || key.includes('edit')) {
+    return '正在整理文件…'
+  }
+  if (key.includes('shell') || key.includes('code') || key.includes('命令') || key.includes('测试')) {
+    return '正在执行验证…'
+  }
+  if (key.includes('memory') || key.includes('记忆')) return '正在处理记忆…'
+  return '正在推进任务…'
+}
+
+function readToolId(event: ReasoningEvent) {
+  const value = event.extra?.toolId ?? event.extra?.tool_id ?? event.extra?.name
+  return typeof value === 'string' ? value : undefined
+}
+
+function isVisibleToolCall(toolId?: string, toolName?: string) {
+  const id = toolId?.trim()
+  if (id) {
+    return !isInternalCapabilityId(id)
+  }
+  const name = toolName?.trim()
+  return !!name && !isInternalCapabilityId(name)
+}
 
 /** 流式阶段显示的最新状态文字 */
 const latestStatus = computed(() => {
   if (props.reasoningEvents?.length) {
     for (let i = props.reasoningEvents.length - 1; i >= 0; i--) {
       const e = props.reasoningEvents[i]
-      if (e.type === 'TOOL_CALL' && e.toolName) return `正在${e.toolName}…`
-      if (e.type === 'PROGRESS' && e.description) return e.description
+      if (e.type === 'TOOL_CALL' && isVisibleToolCall(readToolId(e), e.toolName || e.title)) {
+        return naturalToolStatus(readToolId(e), e.toolName || e.title)
+      }
+      if (e.type === 'PROGRESS' && e.description) {
+        const status = normalizeTurnStatusText(e.description)
+        if (status) return status
+      }
     }
   }
   if (props.reactSteps?.length) {
@@ -53,9 +130,14 @@ const latestStatus = computed(() => {
       const s = props.reactSteps[i]
       if (s.type === 'TOOL_CALL') {
         const tc = s as ToolCallStep
-        return `正在${tc.toolName || tc.toolId}…`
+        if (isVisibleToolCall(tc.toolId, tc.toolName)) {
+          return naturalToolStatus(tc.toolId, tc.toolName)
+        }
       }
-      if (s.type === 'PROGRESS') return (s as { content: string }).content
+      if (s.type === 'PROGRESS') {
+        const status = normalizeTurnStatusText((s as { content?: string }).content)
+        if (status) return status
+      }
     }
   }
   return '正在思考…'
@@ -81,16 +163,28 @@ const durationLabel = computed(() => {
 
 <template>
   <div v-if="shouldShow" class="mt-1.5">
-    <!-- 流式：脉动点 + 状态文字，可点击打开轨迹面板 -->
-    <button v-if="streaming" type="button" class="thinking-status" @click="emit('show-trace')">
+    <!-- 流式：脉动点 + 状态文字，可点击打开任务步骤面板 -->
+    <button
+      v-if="streaming"
+      type="button"
+      class="thinking-status"
+      aria-label="查看任务步骤"
+      @click="emit('show-trace')"
+    >
       <span class="thinking-dot" />
       <span>{{ latestStatus }}</span>
       <ChevronRight class="size-3 opacity-40" />
     </button>
 
     <!-- 完成：可点击触发器 -->
-    <button v-else type="button" class="thinking-status thinking-status-done" @click="emit('show-trace')">
-      <span>已完成思考</span>
+    <button
+      v-else
+      type="button"
+      class="thinking-status thinking-status-done"
+      aria-label="查看任务步骤"
+      @click="emit('show-trace')"
+    >
+      <span>查看任务步骤</span>
       <span v-if="durationLabel" class="thinking-status-meta">· {{ durationLabel }}</span>
       <ChevronRight class="size-3 opacity-40" />
     </button>

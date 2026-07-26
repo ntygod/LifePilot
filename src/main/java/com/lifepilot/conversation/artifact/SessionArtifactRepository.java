@@ -140,6 +140,10 @@ public class SessionArtifactRepository {
         );
     }
 
+    public int deleteBySessionId(String sessionId) {
+        return jdbcTemplate.update("DELETE FROM session_artifacts WHERE session_id = ?", sessionId);
+    }
+
     public Map<String, Object> readPayload(String artifactId) {
         return findById(artifactId)
                 .map(SessionArtifactRow::payloadJson)

@@ -3,6 +3,9 @@ import { flushPromises, shallowMount } from '@vue/test-utils'
 import CapabilityCenterView from './CapabilityCenterView.vue'
 
 const mocks = vi.hoisted(() => ({
+  route: {
+    query: {} as Record<string, string>,
+  },
   routerPush: vi.fn(),
   chatStore: {
     activeSessionId: 'session-old' as string | null,
@@ -38,6 +41,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-router', () => ({
+  useRoute: () => mocks.route,
   useRouter: () => ({
     push: mocks.routerPush,
   }),
@@ -82,6 +86,7 @@ function mountView() {
 }
 
 beforeEach(() => {
+  mocks.route.query = {}
   mocks.routerPush.mockReset()
   mocks.chatStore.activeSessionId = 'session-old'
   mocks.chatStore.pendingFirstMessage = null
@@ -137,6 +142,71 @@ describe('CapabilityCenterView', () => {
     expect(mocks.chatStore.activeSessionId).toBeNull()
     expect(mocks.chatStore.pendingFirstMessage).toBeNull()
     expect(mocks.chatStore.pendingDraftMessage).toContain('审计你对我的理解')
+    expect(mocks.routerPush).toHaveBeenCalledWith({ name: 'newConversation' })
+  })
+
+  it('从任务恢复进入时显示回到原对话入口', async () => {
+    mocks.route.query = {
+      from: 'task-recovery',
+      returnSessionId: 'session-recovery',
+      returnTurnId: 'turn-capability',
+      returnEntryId: 'assistant-capability',
+      missing: 'web.search',
+      skill: 'research',
+    }
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('修复后回到刚才任务')
+    expect(wrapper.text()).toContain('能力修复完成后，回到原对话继续当前断点。')
+    expect(wrapper.text()).toContain('技能 research 的能力缺口')
+    expect(wrapper.text()).toContain('缺少 web.search')
+    expect(wrapper.text()).toContain('Skill research')
+
+    const button = wrapper.findAll('button').find(item => item.text().includes('回到对话'))
+    expect(button).toBeTruthy()
+    await button!.trigger('click')
+
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'conversationDetail',
+      params: { sessionId: 'session-recovery' },
+      query: {
+        turnId: 'turn-capability',
+        entryId: 'assistant-capability',
+      },
+    })
+  })
+
+  it('从对话能力缺口进入时展示定位修复入口', async () => {
+    mocks.route.query = {
+      from: 'capability-warning',
+      missing: 'web.search,file.read',
+      skill: 'research',
+    }
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('技能 research 的能力缺口')
+    expect(wrapper.text()).toContain('这次对话发现 web.search、file.read 当前不可用')
+    expect(wrapper.text()).toContain('缺少 web.search')
+    expect(wrapper.text()).toContain('缺少 file.read')
+    expect(wrapper.text()).toContain('Skill research')
+
+    const toolButton = wrapper.findAll('button').find(item => item.text().includes('打开工具目录'))
+    expect(toolButton).toBeTruthy()
+    await toolButton!.trigger('click')
+
+    expect(mocks.routerPush).toHaveBeenCalledWith('/tools?query=web.search')
+
+    const chatButton = wrapper.findAll('button').find(item => item.text().includes('带入对话检查'))
+    expect(chatButton).toBeTruthy()
+    await chatButton!.trigger('click')
+
+    expect(mocks.chatStore.activeSessionId).toBeNull()
+    expect(mocks.chatStore.pendingDraftMessage).toContain('技能 research')
+    expect(mocks.chatStore.pendingDraftMessage).toContain('web.search、file.read')
     expect(mocks.routerPush).toHaveBeenCalledWith({ name: 'newConversation' })
   })
 })
