@@ -62,17 +62,29 @@ npm run build
 # 1. 后端 JAR
 mvn clean package -DskipTests
 
-# 2. 前端
-cd zhiwei-web && npm run build
+# 2. 进入前端目录
+cd zhiwei-web
 
-# 3. 本地桌面端启动验证（需要 Rust 工具链）
-cd zhiwei-web && npx tauri build
+# 3. 前端
+npm run build
+
+# 4. 准备内嵌 Java 运行时（默认使用 JAVA_HOME 指向的 JDK 22+）
+npm run tauri:prepare:jre
+
+# 如 JAVA_HOME 不是 JDK 22+，可以显式指定
+npm run tauri:prepare:jre -- --from C:\Java\jdk-22 --force
+
+# 5. 本地桌面端启动验证（会先检查 Rust / Tauri CLI / 内嵌 Java 22 / resources 配置）
+npm run tauri:build:windows
 ```
 
 ### 发布前 Checklist
 
 - [ ] 版本号 4 处已同步
-- [ ] 本地 `npx tauri build` 可以成功打包
+- [ ] `npm run tauri:prepare:jre` 已生成 `src-tauri/resources/jre`
+- [ ] 本地 `npm run tauri:build:windows` 可以成功打包
+- [ ] preflight 未报告 Rust、Tauri CLI、内嵌 Java 22 或 `resources/**/*` 风险
+- [ ] `src-tauri/resources/jre` 已随安装包打入，安装包不依赖用户本机 Java
 - [ ] 安装包可正常安装并启动
 - [ ] 首次引导向导（SetupWizard）流程正常
 - [ ] 后端健康检查通过，对话功能可用
