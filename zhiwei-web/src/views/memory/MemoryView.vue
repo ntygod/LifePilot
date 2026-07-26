@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Search,
@@ -40,6 +40,7 @@ const LONG_MEMORY_SCOPES = new Set(['USER_PROFILE', 'USER_FACT', 'AGENT_EXPERIEN
 const store = useMemoryStore()
 const route = useRoute()
 const VALID_TABS = new Set(['entities', 'relations', 'conversations', 'templates', 'preferences', 'forgetting-logs'])
+const activeProjectId = computed(() => normalizeQueryValue(route.query.projectId))
 
 // 搜索状态
 const searchQuery = ref('')
@@ -81,7 +82,8 @@ async function handleSearch() {
   }
   searching.value = true
   try {
-    const response = await store.search(q)
+    const projectId = activeProjectId.value
+    const response = projectId ? await store.search(q, undefined, projectId) : await store.search(q)
     if (Array.isArray(response)) {
       searchResults.value = response
       searchMeta.value = null
@@ -98,6 +100,13 @@ function clearSearch() {
   searchQuery.value = ''
   searchResults.value = []
   searchMeta.value = null
+}
+
+function normalizeQueryValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0].trim() : ''
+  }
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function openSearchResult(item: MemorySearchResult) {
@@ -155,6 +164,11 @@ function formatRelevanceScore(score?: number | null) {
             title="记忆数据"
             :description="store.statsLoading ? '加载统计中...' : store.stats ? `${store.stats.entityCount} 个实体，${store.stats.relationCount} 个关系，${store.stats.conversationCount} 条对话，${store.stats.templateCount} 个模板，${store.stats.preferenceCount} 条偏好` : '浏览、搜索和管理记忆系统中的实体、关系、对话、模板和偏好数据。'"
           >
+            <template v-if="activeProjectId" #meta>
+              <Badge variant="outline" class="max-w-full break-all">
+                项目上下文: {{ activeProjectId }}
+              </Badge>
+            </template>
             <template #actions>
               <Button
                 variant="outline"

@@ -2,17 +2,21 @@ package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.ApiResponse;
 import com.lifepilot.interaction.web.model.*;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
 import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.agent.learning.consolidation.EntityDeduplicator;
 import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.extraction.MemoryChangeSummarySupport;
+import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.governance.lifecycle.feedback.RevalidationQueueRepository;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
@@ -41,7 +45,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.UriUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -52,7 +58,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * 记忆管理 REST Controller — 暴露记忆系统的查询、搜索和管理 API。
  *
- * <p>所有端点在记忆系统未启用时返回 503 Service Unavailable。</p>
+ * <p>多数管理端点在记忆系统未启用时返回 503 Service Unavailable；主对话轮次状态接口会返回
+ * {@code DISABLED}，用于解释本轮没有沉淀记忆。</p>
  *
  * @author zsg
  * @since 2026-03-13
@@ -75,8 +82,11 @@ public class MemoryController {
     private final @Nullable UserProfileConsolidator userProfileConsolidator;
     private final ForgettingLogRepository forgettingLogRepository;
     private final MemoryProvenanceRepository provenanceRepository;
+    private final @Nullable ChatSessionRepository chatSessionRepository;
     private final ProjectContextResolver projectContextResolver;
     private final MemoryAccessPolicy memoryAccessPolicy;
+    private final @Nullable MemoryExtractionCandidateRepository memoryExtractionCandidateRepository;
+    private final @Nullable RevalidationQueueRepository revalidationQueueRepository;
     private final @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier;
     private final @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService;
     private final AtomicBoolean consolidating = new AtomicBoolean(false);
@@ -93,8 +103,11 @@ public class MemoryController {
                             @Nullable UserProfileConsolidator userProfileConsolidator,
                             ForgettingLogRepository forgettingLogRepository,
                             MemoryProvenanceRepository provenanceRepository,
+                            @Nullable ChatSessionRepository chatSessionRepository,
                             ProjectContextResolver projectContextResolver,
                             MemoryAccessPolicy memoryAccessPolicy,
+                            @Nullable MemoryExtractionCandidateRepository memoryExtractionCandidateRepository,
+                            @Nullable RevalidationQueueRepository revalidationQueueRepository,
                             @Nullable com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier remApplier,
                             @Nullable com.lifepilot.memory.consumption.attention.MemoryAttentionService memoryAttentionService) {
         this.semanticMemory = semanticMemory;
@@ -107,8 +120,11 @@ public class MemoryController {
         this.userProfileConsolidator = userProfileConsolidator;
         this.forgettingLogRepository = forgettingLogRepository;
         this.provenanceRepository = provenanceRepository;
+        this.chatSessionRepository = chatSessionRepository;
         this.projectContextResolver = Objects.requireNonNull(projectContextResolver, "projectContextResolver");
         this.memoryAccessPolicy = Objects.requireNonNull(memoryAccessPolicy, "memoryAccessPolicy");
+        this.memoryExtractionCandidateRepository = memoryExtractionCandidateRepository;
+        this.revalidationQueueRepository = revalidationQueueRepository;
         this.remApplier = remApplier;
         this.memoryAttentionService = memoryAttentionService;
     }
@@ -281,6 +297,58 @@ public class MemoryController {
                 "qualityFilteredCount", qualityFilteredCount,
                 "truncatedCount", truncatedCount,
                 "filteredOutCount", qualityFilteredCount + truncatedCount));
+    }
+
+    /**
+     * 查询某轮对话已经沉淀到 L3 的记忆变更。
+     *
+     * <p>主对话在 DONE 后用它补齐后台记忆抽取结果；只返回已经落库且能点击编辑的实体。</p>
+     */
+    @GetMapping("/turns/{turnId}/changes")
+    public ApiResponse<List<Map<String, Object>>> getTurnMemoryChanges(
+            @PathVariable String turnId,
+            @RequestParam(required = false) @Nullable String projectId) {
+        requireMemoryEnabled();
+        String cleanTurnId = requireCleanPathText(turnId, "turnId");
+        if (memoryExtractionCandidateRepository == null) {
+            return ApiResponse.ok(List.of());
+        }
+        return ApiResponse.ok(buildTurnMemoryChanges(cleanTurnId, projectId));
+    }
+
+    /**
+     * 查询某轮对话记忆沉淀的可见状态。
+     *
+     * <p>主对话用它区分“仍在后台处理”“已检查但无新增”“已沉淀”“抽取失败”和“记忆未启用”，
+     * 避免只靠轮询空列表猜测结果。</p>
+     */
+    @GetMapping("/turns/{turnId}/changes/status")
+    public ApiResponse<MemoryTurnChangesInfo> getTurnMemoryChangesStatus(
+            @PathVariable String turnId,
+            @RequestParam(required = false) @Nullable String projectId) {
+        String cleanTurnId = requireCleanPathText(turnId, "turnId");
+        if (semanticMemory == null) {
+            return ApiResponse.ok(new MemoryTurnChangesInfo("DISABLED", "memory_system_disabled", List.of()));
+        }
+        if (memoryExtractionCandidateRepository == null) {
+            return ApiResponse.ok(new MemoryTurnChangesInfo("DISABLED", "memory_repository_unavailable", List.of()));
+        }
+        var changes = buildTurnMemoryChanges(cleanTurnId, projectId);
+        if (!changes.isEmpty()) {
+            return ApiResponse.ok(new MemoryTurnChangesInfo("SETTLED", null, changes));
+        }
+        var extractionStatus = memoryExtractionCandidateRepository.findTurnExtractionStatus(cleanTurnId);
+        if (extractionStatus.isEmpty()) {
+            return ApiResponse.ok(new MemoryTurnChangesInfo("PENDING", null, List.of()));
+        }
+        var status = extractionStatus.get();
+        String visibleStatus = switch (status.status()) {
+            case "COMPLETED" -> "CHECKED_EMPTY";
+            case "FAILED" -> "FAILED";
+            case "RUNNING" -> "PENDING";
+            default -> "PENDING";
+        };
+        return ApiResponse.ok(new MemoryTurnChangesInfo(visibleStatus, status.reason(), List.of()));
     }
 
     // ========== Req 2: L3 语义记忆实体管理 ==========
@@ -509,6 +577,26 @@ public class MemoryController {
     }
 
     /**
+     * 人工确认实体仍有效，关闭该实体下未完成的来源再验证任务。
+     */
+    @PostMapping("/entities/{id}/revalidation/resolve")
+    public ApiResponse<Map<String, Object>> resolveEntityRevalidation(
+            @PathVariable String id,
+            @RequestParam(required = false) @Nullable String projectId) {
+        requireMemoryEnabled();
+        String entityId = requireCleanText(id, "id");
+        var projectContext = resolveProjectContextForRequest(projectId);
+        findReadableEntity(entityId, projectContext)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "实体不存在: " + entityId));
+        if (revalidationQueueRepository == null) {
+            return ApiResponse.ok(Map.of("resolvedCount", 0, "status", "UNAVAILABLE"));
+        }
+        int resolvedCount = SqliteBusyRetry.execute(() -> revalidationQueueRepository.markResolvedByEntityId(entityId));
+        log.info("人工确认记忆复核: entityId={}, resolvedCount={}", entityId, resolvedCount);
+        return ApiResponse.ok(Map.of("resolvedCount", resolvedCount, "status", "RESOLVED"));
+    }
+
+    /**
      * 最近来源摘要。
      */
     @GetMapping("/provenances/recent")
@@ -653,6 +741,7 @@ public class MemoryController {
         }
 
         // 合并更新字段
+        String name = request.name() != null ? requireCleanText(request.name(), "实体名称") : existing.name();
         String description = request.description() != null ? request.description() : existing.description();
         Map<String, Object> properties = request.properties() != null ? request.properties() : existing.properties();
         float importance = request.importanceScore() != null ? request.importanceScore() : existing.importanceScore();
@@ -664,7 +753,7 @@ public class MemoryController {
         var updated = new TemporalEntity(
                 existing.id(),
                 existing.type(),
-                existing.name(),
+                name,
                 description,
                 properties,
                 existing.version(),
@@ -1199,6 +1288,29 @@ public class MemoryController {
         return projectContextResolver.resolve(requireCleanText(projectId, "projectId"));
     }
 
+    private TurnChangeTargetSpaces targetSpacesForTurnChanges(ProjectContext ctx) {
+        if (ctx.isolated()) {
+            return new TurnChangeTargetSpaces(List.of(ctx.projectSpaceId()), false);
+        }
+        return new TurnChangeTargetSpaces(List.of(ctx.personalSpaceId(), ctx.experienceSpaceId()), true);
+    }
+
+    private List<Map<String, Object>> buildTurnMemoryChanges(String cleanTurnId, @Nullable String projectId) {
+        if (memoryExtractionCandidateRepository == null) {
+            return List.of();
+        }
+        var projectContext = resolveProjectContextForRequest(projectId);
+        var targetSpaces = targetSpacesForTurnChanges(projectContext);
+        return MemoryChangeSummarySupport.buildAppliedMemoryChangeSummaries(
+                memoryExtractionCandidateRepository,
+                cleanTurnId,
+                targetSpaces.spaceIds(),
+                targetSpaces.includeDefaultSpace(),
+                5);
+    }
+
+    private record TurnChangeTargetSpaces(List<String> spaceIds, boolean includeDefaultSpace) {}
+
     private MemoryReadFilter toProjectReadFilter(ProjectContext ctx, Set<MemoryScope> scopes) {
         return memoryAccessPolicy.buildProjectReadFilter(ctx, scopes);
     }
@@ -1266,6 +1378,7 @@ public class MemoryController {
                                                           EntityUpdateRequest request,
                                                           ProjectContext projectContext) {
         var now = Instant.now();
+        String name = request.name() != null ? requireCleanText(request.name(), "实体名称") : baseEntity.name();
         String description = request.description() != null ? request.description() : baseEntity.description();
         Map<String, Object> properties = request.properties() != null ? request.properties() : baseEntity.properties();
         float importance = request.importanceScore() != null ? request.importanceScore() : baseEntity.importanceScore();
@@ -1275,7 +1388,7 @@ public class MemoryController {
         var overlay = new TemporalEntity(
                 null,
                 baseEntity.type(),
-                baseEntity.name(),
+                name,
                 description,
                 properties,
                 1,
@@ -1377,12 +1490,16 @@ public class MemoryController {
         Map<String, String> documentNames = provenanceRepository.loadDocumentNames(
                 items.stream().map(EntityProvenanceDto::sourceDocumentId).toList()
         );
+        Map<String, String> sessionTitles = loadSessionTitles(
+                items.stream().map(EntityProvenanceDto::sourceSessionId).toList()
+        );
         return items.stream()
                 .map(item -> new EntityProvenanceDto(
                         item.originType(),
                         item.sourceReference(),
                         item.sourceConversationId(),
                         item.sourceSessionId(),
+                        firstPresent(lookupName(sessionTitles, item.sourceSessionId()), item.sourceSessionTitle()),
                         item.sourceTurnId(),
                         item.sourceEntryId(),
                         item.sourceDocumentId(),
@@ -1394,6 +1511,9 @@ public class MemoryController {
                         item.trustScore(),
                         item.evidenceExcerpt(),
                         item.confidence(),
+                        item.status(),
+                        item.invalidatedAt(),
+                        item.revalidationStatus(),
                         item.createdAt()
                 ))
                 .toList();
@@ -1409,6 +1529,9 @@ public class MemoryController {
         Map<String, String> documentNames = provenanceRepository.loadDocumentNames(
                 items.stream().map(MemoryProvenanceSummaryDto::sourceDocumentId).toList()
         );
+        Map<String, String> sessionTitles = loadSessionTitles(
+                items.stream().map(MemoryProvenanceSummaryDto::sourceSessionId).toList()
+        );
         return items.stream()
                 .map(item -> new MemoryProvenanceSummaryDto(
                         item.entityId(),
@@ -1421,6 +1544,7 @@ public class MemoryController {
                         item.sourceReference(),
                         item.sourceConversationId(),
                         item.sourceSessionId(),
+                        firstPresent(lookupName(sessionTitles, item.sourceSessionId()), item.sourceSessionTitle()),
                         item.sourceTurnId(),
                         item.sourceEntryId(),
                         item.sourceDocumentId(),
@@ -1432,9 +1556,20 @@ public class MemoryController {
                         item.trustScore(),
                         item.evidenceExcerpt(),
                         item.confidence(),
+                        item.status(),
+                        item.invalidatedAt(),
+                        item.revalidationStatus(),
                         item.createdAt()
                 ))
                 .toList();
+    }
+
+    private Map<String, String> loadSessionTitles(Collection<String> ids) {
+        if (chatSessionRepository == null) {
+            return Map.of();
+        }
+        Map<String, String> titles = chatSessionRepository.findTitlesByIds(ids);
+        return titles != null ? titles : Map.of();
     }
 
     @Nullable
@@ -1443,6 +1578,17 @@ public class MemoryController {
             return null;
         }
         return names.get(id);
+    }
+
+    @Nullable
+    private String firstPresent(@Nullable String first, @Nullable String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return null;
     }
 
     @Nullable
@@ -1456,6 +1602,14 @@ public class MemoryController {
         }
         requireNoBoundaryWhitespace(value, field);
         return value;
+    }
+
+    private String requireCleanPathText(String value, String field) {
+        try {
+            return requireCleanText(UriUtils.decode(value, StandardCharsets.UTF_8), field);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + "格式无效", e);
+        }
     }
 
     @Nullable

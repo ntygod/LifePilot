@@ -57,23 +57,37 @@ public class MemoryProvenanceRepository {
                                                            @Nullable String sourceDocumentId) {
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
-        conditions.add("entity_id = ?");
+        conditions.add("p.entity_id = ?");
         params.add(requireCleanText(entityId, "entityId"));
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId);
+        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId, "p");
         String sql = """
-                SELECT origin_type, source_reference, source_conversation_id, source_session_id,
-                       source_turn_id, source_entry_id, source_document_id, source_knowledge_base_id,
-                       evidence_kind, trust_level, trust_score, evidence_excerpt,
-                       confidence, created_at
-                FROM memory_entity_provenances
+                SELECT p.origin_type,
+                       p.source_reference,
+                       p.source_conversation_id,
+                       p.source_session_id,
+                       p.source_turn_id,
+                       p.source_entry_id,
+                       p.source_document_id,
+                       p.source_knowledge_base_id,
+                       p.evidence_kind,
+                       p.trust_level,
+                       p.trust_score,
+                       p.evidence_excerpt,
+                       p.confidence,
+                       p.status,
+                       p.invalidated_at,
+                       %s AS revalidation_status,
+                       p.created_at
+                FROM memory_entity_provenances p
                 WHERE %s
-                ORDER BY created_at DESC
-                """.formatted(String.join(" AND ", conditions));
+                ORDER BY p.created_at DESC
+                """.formatted(revalidationStatusExpression("p"), String.join(" AND ", conditions));
         return jdbcTemplate.query(sql, (rs, rowNum) -> new EntityProvenanceDto(
                 rs.getString("origin_type"),
                 rs.getString("source_reference"),
                 rs.getString("source_conversation_id"),
                 rs.getString("source_session_id"),
+                null,
                 rs.getString("source_turn_id"),
                 rs.getString("source_entry_id"),
                 rs.getString("source_document_id"),
@@ -85,6 +99,9 @@ public class MemoryProvenanceRepository {
                 rs.getFloat("trust_score"),
                 rs.getString("evidence_excerpt"),
                 rs.getFloat("confidence"),
+                rs.getString("status"),
+                parseNullableInstant(rs.getString("invalidated_at")),
+                rs.getString("revalidation_status"),
                 Instant.parse(rs.getString("created_at"))
         ), params.toArray());
     }
@@ -107,7 +124,7 @@ public class MemoryProvenanceRepository {
         requirePositive(limit, "limit");
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
-        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId);
+        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId, "p");
         String whereClause = conditions.isEmpty() ? "" : "WHERE " + String.join(" AND ", conditions);
         params.add(limit);
         String sql = """
@@ -129,13 +146,16 @@ public class MemoryProvenanceRepository {
                        p.trust_score,
                        p.evidence_excerpt,
                        p.confidence,
+                       p.status,
+                       p.invalidated_at,
+                       %s AS revalidation_status,
                        p.created_at
                 FROM memory_entity_provenances p
                 JOIN temporal_entities te ON te.id = p.entity_id AND te.is_current = 1
                 %s
                 ORDER BY p.created_at DESC
                 LIMIT ?
-                """.formatted(whereClause);
+                """.formatted(revalidationStatusExpression("p"), whereClause);
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
             String entityType = requireCleanText(rs.getString("entity_type"), "entityType");
             String entityTypeLabel = entityTypeLabel(entityType);
@@ -150,6 +170,7 @@ public class MemoryProvenanceRepository {
                     rs.getString("source_reference"),
                     rs.getString("source_conversation_id"),
                     rs.getString("source_session_id"),
+                    null,
                     rs.getString("source_turn_id"),
                     rs.getString("source_entry_id"),
                     rs.getString("source_document_id"),
@@ -161,6 +182,9 @@ public class MemoryProvenanceRepository {
                     rs.getFloat("trust_score"),
                     rs.getString("evidence_excerpt"),
                     rs.getFloat("confidence"),
+                    rs.getString("status"),
+                    parseNullableInstant(rs.getString("invalidated_at")),
+                    rs.getString("revalidation_status"),
                     Instant.parse(rs.getString("created_at"))
             );
         }, params.toArray());
@@ -349,6 +373,11 @@ public class MemoryProvenanceRepository {
         };
     }
 
+    @Nullable
+    private Instant parseNullableInstant(@Nullable String value) {
+        return value == null || value.isBlank() ? null : Instant.parse(value);
+    }
+
     // ========== 内部辅助 ==========
 
     /**
@@ -359,18 +388,59 @@ public class MemoryProvenanceRepository {
                                           @Nullable String originType,
                                           @Nullable String sourceKnowledgeBaseId,
                                           @Nullable String sourceDocumentId) {
+        appendProvenanceFilters(conditions, params, originType, sourceKnowledgeBaseId, sourceDocumentId, null);
+    }
+
+    /**
+     * 追加来源过滤条件到 SQL WHERE 子句。
+     */
+    private void appendProvenanceFilters(List<String> conditions,
+                                          List<Object> params,
+                                          @Nullable String originType,
+                                          @Nullable String sourceKnowledgeBaseId,
+                                          @Nullable String sourceDocumentId,
+                                          @Nullable String alias) {
+        String prefix = alias == null || alias.isBlank() ? "" : alias + ".";
         if (originType != null) {
-            conditions.add("origin_type = ?");
+            conditions.add(prefix + "origin_type = ?");
             params.add(requireCleanText(originType, "originType"));
         }
         if (sourceKnowledgeBaseId != null) {
-            conditions.add("source_knowledge_base_id = ?");
+            conditions.add(prefix + "source_knowledge_base_id = ?");
             params.add(requireCleanText(sourceKnowledgeBaseId, "sourceKnowledgeBaseId"));
         }
         if (sourceDocumentId != null) {
-            conditions.add("source_document_id = ?");
+            conditions.add(prefix + "source_document_id = ?");
             params.add(requireCleanText(sourceDocumentId, "sourceDocumentId"));
         }
+    }
+
+    private static String revalidationStatusExpression(String provenanceAlias) {
+        return """
+                (
+                    SELECT rq.status
+                    FROM memory_revalidation_queue rq
+                    WHERE rq.entity_id = %1$s.entity_id
+                      AND (
+                          (%1$s.source_document_id IS NOT NULL
+                              AND rq.source_type = 'DOCUMENT'
+                              AND rq.source_id = %1$s.source_document_id)
+                          OR (%1$s.source_knowledge_base_id IS NOT NULL
+                              AND rq.source_type = 'KNOWLEDGE_BASE'
+                              AND rq.source_id = %1$s.source_knowledge_base_id)
+                          OR (%1$s.source_conversation_id IS NOT NULL
+                              AND rq.source_type = 'SESSION'
+                              AND rq.source_id = %1$s.source_conversation_id)
+                      )
+                    ORDER BY CASE rq.status
+                        WHEN 'PENDING' THEN 0
+                        WHEN 'PROMPTED' THEN 1
+                        WHEN 'RESOLVED' THEN 2
+                        ELSE 3
+                    END, rq.created_at DESC
+                    LIMIT 1
+                )
+                """.formatted(provenanceAlias);
     }
 
     /**

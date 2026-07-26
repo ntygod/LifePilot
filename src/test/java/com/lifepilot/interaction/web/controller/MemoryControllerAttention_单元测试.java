@@ -54,8 +54,8 @@ class MemoryControllerAttention_单元测试 {
     private MemoryController controller(SemanticMemory sm, MemoryAttentionService svc) {
         return new MemoryController(
                 sm, null, null, null, null, null, null, null,
-                forgettingLogRepository, provenanceRepository, projectContextResolver,
-                new MemoryAccessPolicy(), null, svc);
+                forgettingLogRepository, provenanceRepository, null, projectContextResolver,
+                new MemoryAccessPolicy(), null, null, null, svc);
     }
 
     @Test

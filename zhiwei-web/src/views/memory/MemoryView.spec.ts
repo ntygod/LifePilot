@@ -146,4 +146,19 @@ describe('MemoryView 搜索结果展示', () => {
     expect(mocks.store.activeTab).toBe('entities')
     expect(mocks.store.entityDetailRequest?.id).toBe('entity-1')
   })
+
+  it('项目上下文内搜索记忆时会传递 projectId 并展示范围提示', async () => {
+    mocks.route.query = { projectId: 'project-1' }
+    const wrapper = mountView()
+    const input = wrapper.get('input')
+
+    await input.setValue('林夜')
+    const searchButton = wrapper.findAll('button').find((button) => button.text() === '搜索')
+    expect(searchButton).toBeTruthy()
+    await searchButton!.trigger('click')
+    await flushPromises()
+
+    expect(mocks.search).toHaveBeenCalledWith('林夜', undefined, 'project-1')
+    expect(wrapper.text()).toContain('项目上下文: project-1')
+  })
 })

@@ -66,10 +66,11 @@ export const useMemoryStore = defineStore('memory', () => {
    *
    * @param query 搜索关键词
    * @param topK 返回结果数量，默认 10
+   * @param projectId 项目 ID；传入时仅搜索该项目可见记忆
    * @returns 搜索结果列表
    */
-  async function search(query: string, topK?: number): Promise<MemorySearchResponse> {
-    return memoryApi.search(query, topK)
+  async function search(query: string, topK?: number, projectId?: string | null): Promise<MemorySearchResponse> {
+    return memoryApi.search(query, topK, projectId)
   }
 
   /**

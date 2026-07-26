@@ -21,6 +21,7 @@ public record MemoryProvenanceSummaryDto(
         @Nullable String sourceReference,
         @Nullable String sourceConversationId,
         @Nullable String sourceSessionId,
+        @Nullable String sourceSessionTitle,
         @Nullable String sourceTurnId,
         @Nullable String sourceEntryId,
         @Nullable String sourceDocumentId,
@@ -32,5 +33,8 @@ public record MemoryProvenanceSummaryDto(
         float trustScore,
         @Nullable String evidenceExcerpt,
         float confidence,
+        String status,
+        @Nullable Instant invalidatedAt,
+        @Nullable String revalidationStatus,
         Instant createdAt
 ) {}
