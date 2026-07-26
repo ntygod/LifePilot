@@ -34,6 +34,23 @@ public class AgentConfigProperties {
     private ExecutionRetryConfig executionRetry = new ExecutionRetryConfig();
     private DebugConfig debug = new DebugConfig();
     private TaskConfig task = new TaskConfig();
+    private CapabilityDiscoveryConfig capabilityDiscovery = new CapabilityDiscoveryConfig();
+
+    public void setCapabilityDiscovery(CapabilityDiscoveryConfig capabilityDiscovery) {
+        this.capabilityDiscovery = capabilityDiscovery != null ? capabilityDiscovery : new CapabilityDiscoveryConfig();
+    }
+
+    /** 主对话能力预发现配置。 */
+    @Setter
+    @Getter
+    public static class CapabilityDiscoveryConfig {
+        /** 是否启用规则化能力预发现；关闭后主对话不做工具/能力预判。 */
+        private boolean enabled = true;
+        /** 只读取用户控制语义前缀的最大字符数。 */
+        private int controlPrefixChars = 96;
+        /** 超长输入用于能力预发现的头尾探针最大字符数。 */
+        private int planningProbeMaxChars = 320;
+    }
 
     /** ReAct 循环配置（替代原 LoopConfig）。 */
     public static class LoopConfig {
@@ -44,6 +61,10 @@ public class AgentConfigProperties {
         private int maxEarlyStopRejects = 2;
         /** 单个工具波次允许的最大并发数。 */
         private int maxParallelToolCalls = 4;
+        /** 工具执行后程序经验记录的后台任务上限，0 表示跳过该增强。 */
+        private int maxPendingToolExperienceRecords = 4;
+        /** 工具执行后程序经验记录的后台超时时间（毫秒），0 表示不限制。 */
+        private long toolExperienceRecordTimeoutMs = 1200;
         /** LLM 调用场景标识。 */
         private String llmScene = "agent_react";
         /** 默认 temperature（会话未配置时使用）。 */
@@ -57,6 +78,10 @@ public class AgentConfigProperties {
         public void setMaxEarlyStopRejects(int maxEarlyStopRejects) { this.maxEarlyStopRejects = maxEarlyStopRejects; }
         public int getMaxParallelToolCalls() { return maxParallelToolCalls; }
         public void setMaxParallelToolCalls(int maxParallelToolCalls) { this.maxParallelToolCalls = maxParallelToolCalls; }
+        public int getMaxPendingToolExperienceRecords() { return maxPendingToolExperienceRecords; }
+        public void setMaxPendingToolExperienceRecords(int maxPendingToolExperienceRecords) { this.maxPendingToolExperienceRecords = maxPendingToolExperienceRecords; }
+        public long getToolExperienceRecordTimeoutMs() { return toolExperienceRecordTimeoutMs; }
+        public void setToolExperienceRecordTimeoutMs(long toolExperienceRecordTimeoutMs) { this.toolExperienceRecordTimeoutMs = toolExperienceRecordTimeoutMs; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
         public double getDefaultTemperature() { return defaultTemperature; }
@@ -103,6 +128,13 @@ public class AgentConfigProperties {
         private int maxContextTokens = 2000000;
         @Setter
         private int outputReservedTokens = 8192;
+        /**
+         * 决策增强信号在上下文组装中的最大等待时间。
+         *
+         * <p>该信号只用于后台增强，不应拖慢主对话；为 0 时不等待、不注入，只做后台热身。</p>
+         */
+        @Setter
+        private long decisionSignalTimeoutMs = 0;
         /** Token 分配比例。 */
         private TokenAllocation tokenAllocation = new TokenAllocation();
         private SliceConfig slice = new SliceConfig();
@@ -162,6 +194,14 @@ public class AgentConfigProperties {
             private int recentToolResultLimit = 4;
             private int failedToolResultLimit = 2;
             private int toolResultPreviewChars = 240;
+            /**
+             * 历史降级工具集 —— 这些工具的<strong>非当回合</strong>成功 Observation 在组装
+             * ReAct 消息时降级为结构化摘要，避免完整正文（如网页抓取全文）在多轮里反复重发。
+             *
+             * <p>当回合（模型本次首见）仍保留完整正文；只有进入历史后才摘要化。默认仅
+             * {@code web.fetch}：它的正文体量最大且模型消费一次即可。</p>
+             */
+            private java.util.List<String> historicalCompactToolIds = java.util.List.of("web.fetch");
         }
 
         @Setter

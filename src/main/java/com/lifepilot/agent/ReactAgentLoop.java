@@ -143,7 +143,9 @@ public class ReactAgentLoop implements CallbackHelper {
                 intentMatcher,
                 config.getLoop().getMaxParallelToolCalls(),
                 multimodalRouter,
-                workspaceService
+                workspaceService,
+                config.getLoop().getMaxPendingToolExperienceRecords(),
+                Duration.ofMillis(config.getLoop().getToolExperienceRecordTimeoutMs())
         );
         this.compactionEngine = compactionEngine;
         this.traceRecorder = traceRecorder;
@@ -360,7 +362,7 @@ public class ReactAgentLoop implements CallbackHelper {
             CancellationToken cancellationToken,
             AgentLoopContext loopContext) {
 
-        state = enrichCapabilities(state, loopContext);
+        state = enrichCapabilities(state);
 
         int maxIterations = config.getLoop().getMaxIterations();
         int maxConsecutiveFailures = config.getLoop().getMaxConsecutiveFailures();
@@ -648,44 +650,15 @@ public class ReactAgentLoop implements CallbackHelper {
         return state;
     }
 
-    private ReactAgentState enrichCapabilities(ReactAgentState state, AgentLoopContext loopContext) {
+    private ReactAgentState enrichCapabilities(ReactAgentState state) {
         if (capabilityPlanner == null) {
             return state;
         }
         try {
-            var suggestions = capabilityPlanner.suggest(state);
-            if (suggestions.isEmpty()) {
-                return state;
-            }
-            Set<String> toolIds = suggestions.stream()
-                    .filter(ConversationCapabilityPlanner.SuggestedCapability::isTool)
-                    .map(ConversationCapabilityPlanner.SuggestedCapability::id)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-            ReactAgentState enriched = toolIds.isEmpty() ? state : state.withDiscoveredToolIds(toolIds);
-            pushCapabilitySuggestionEvent(enriched, suggestions, loopContext);
-            return enriched;
+            return capabilityPlanner.enrich(state);
         } catch (Exception e) {
             log.debug("能力预发现失败，按原状态继续: traceId={}, error={}", state.traceId(), e.getMessage());
             return state;
-        }
-    }
-
-    private void pushCapabilitySuggestionEvent(
-            ReactAgentState state,
-            List<ConversationCapabilityPlanner.SuggestedCapability> suggestions,
-            AgentLoopContext loopContext) {
-        if (capabilityPlanner == null
-                || loopContext.getSseManager() == null
-                || loopContext.getStreamId() == null
-                || suggestions.isEmpty()) {
-            return;
-        }
-        var payload = capabilityPlanner.toEvent(state, suggestions);
-        if (loopContext.getEventBuffer() != null) {
-            loopContext.getEventBuffer().offer(SseEventType.CAPABILITY_SUGGESTED, payload);
-        } else {
-            loopContext.getSseManager().sendEvent(
-                    loopContext.getStreamId(), SseEventType.CAPABILITY_SUGGESTED, payload);
         }
     }
 
@@ -1671,8 +1644,13 @@ public class ReactAgentLoop implements CallbackHelper {
             };
         };
 
-        var extra = new HashMap<String, Object>();
+        var extra = new LinkedHashMap<String, Object>();
         extra.put("stepIndex", stepIndex);
+        ReactStepSerializer.serializeStep(step, stepIndex).forEach((key, value) -> {
+            if (!"type".equals(key) && !"index".equals(key)) {
+                extra.put(key, value);
+            }
+        });
         // info[4] 存在时为 toolId（技术标识），传入 extra 供前端调试使用
         if (info.length > 4 && info[4] != null) {
             extra.put("toolId", info[4]);

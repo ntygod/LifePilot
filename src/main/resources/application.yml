@@ -61,8 +61,25 @@ lifepilot:
     enabled: true
     decision-signal-enabled: true
     min-experience-confidence: 0.6
+    # 主对话链路不等待经验/意图匹配；匹配在后台完成，命中后用于后续轮次增强。
+    experience-match-timeout-ms: 0
+    # 即便误把 timeout 调大，前台也只允许极短等待，慢结果转为后台复用。
+    experience-match-foreground-wait-cap-ms: 80
+    # 后台经验匹配也必须有短等待，超时后放弃本轮结果并尝试中断，避免慢意图识别重复堆积。
+    experience-match-background-timeout-ms: 1200
+    # 只对明显任务型输入启动后台经验匹配，闲聊/短补充不触发意图任务。
+    experience-match-trigger: task-like
+    experience-match-min-goal-chars: 6
+    # 超长输入只抽头尾作为意图探针，避免把整段资料送进后台匹配器。
+    experience-match-max-goal-chars: 240
+    experience-match-max-pending: 1
+    # 后台命中的经验只在短时间内复用给明显相关的后续输入，避免主对话阻塞和陈旧注入。
+    experience-match-recent-ttl-seconds: 300
+    experience-match-recent-max: 8
     environment-cache-ttl-seconds: 60
     tool-health-window-size: 20
+    # 可用工具过多时跳过决策信号里的健康扫描，避免主对话启动阶段做大范围能力核查。
+    tool-health-signal-max-tools: 32
   # ===== 主动引擎配置 =====
   initiative:
     enabled: true  # 已启用：信号→Thinker→ThoughtPool→Gatekeeper→ConversationInitiator
@@ -89,6 +106,12 @@ lifepilot:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
     enabled: true
+    capability-discovery:
+      enabled: true
+      # 主对话只做规则化快路径，不调用 LLM；关闭后完全跳过工具/能力预判。
+      control-prefix-chars: 96
+      # 超长输入只抽头尾探针，避免把整段资料用于能力预发现。
+      planning-probe-max-chars: 320
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
       log-llm-prompts: false
@@ -97,6 +120,10 @@ lifepilot:
       max-iterations: 45
       max-consecutive-failures: 3
       max-parallel-tool-calls: 4
+      # 工具执行后的程序经验沉淀只做后台增强；达到上限时跳过，避免拖慢主对话。
+      max-pending-tool-experience-records: 4
+      # 单个工具经验后台探针也要短寿命；超时释放后台名额，不影响当前回复。
+      tool-experience-record-timeout-ms: 1200
       llm-scene: agent_react
       default-temperature: 0.7
       # reflect-after-iterations: 5    # 开始周期性回顾的迭代阈值
@@ -110,6 +137,8 @@ lifepilot:
     context:
       max-context-tokens: 2000000
       output-reserved-tokens: 8192
+      # 决策增强不占用主对话等待时间；仅在后台热身，后续相关输入可复用。
+      decision-signal-timeout-ms: 0
     suspend:
       # 挂起记录最大保留时长
       max-age: 24h
@@ -416,6 +445,11 @@ lifepilot:
       topic-switch-threshold: 0.3
       # 图遍历/联想的关系最低可信分门控（relation-quality-gate）；0.0=不过滤，NULL 历史边恒放行
       min-relation-trust: 0.0
+      # L4 程序记忆意图匹配默认关闭；需要程序模板探针时再开启，且只做后台增强，不阻塞主检索链路。
+      intent-match-enabled: false
+      intent-match-min-query-chars: 6
+      intent-match-max-query-chars: 160
+      intent-match-max-pending: 1
       # 记忆精排配置（retrieval.reranker）
       reranker:
         enabled: true

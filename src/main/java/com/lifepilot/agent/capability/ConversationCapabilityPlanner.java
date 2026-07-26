@@ -2,14 +2,11 @@ package com.lifepilot.agent.capability;
 
 import com.lifepilot.agent.model.AgentTaskMode;
 import com.lifepilot.agent.model.ReactAgentState;
-import com.lifepilot.skill.install.SkillInstallationRepository;
-import com.lifepilot.skill.model.SkillDefinition;
-import com.lifepilot.skill.registry.SkillRegistry;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,11 +15,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 对话能力预发现器。
+ * 对话工具预发现器。
  *
  * <p>在 ReAct 首轮前根据用户目标的强信号词，把少量相关工具预加入
- * {@link ReactAgentState#discoveredToolIds()}，让主对话能自然看到后端能力。
- * Skill 建议只用于前端轻提示，不直接注入工具，也不替代 LLM 的决策。</p>
+ * {@link ReactAgentState#discoveredToolIds()}，帮助 Agent 更快获得可执行工具。
+ * 预发现只服务内部执行，不向主对话推送预测性能力提示。</p>
  *
  * @author zsg
  * @since 2026-07-02
@@ -30,67 +27,181 @@ import java.util.Set;
 public class ConversationCapabilityPlanner {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationCapabilityPlanner.class);
+    public static final int DEFAULT_CONTROL_PREFIX_CHARS = 96;
+    public static final int DEFAULT_PLANNING_PROBE_MAX_CHARS = 320;
 
     private static final Map<String, CapabilityMeta> CAPABILITY_META = buildCapabilityMeta();
-    private static final Map<String, CapabilityMeta> SKILL_META = buildSkillMeta();
+    private static final List<String> PRE_DISCOVERY_OPT_OUT_PHRASES = List.of(
+            "跳过意图识别",
+            "不要做意图识别",
+            "不用意图识别",
+            "别做意图识别",
+            "不做意图识别",
+            "别分析意图",
+            "不要分析意图",
+            "不分析意图",
+            "无需分析意图",
+            "跳过能力预发现",
+            "跳过能力核查",
+            "不要预发现工具",
+            "不要预判能力",
+            "别预判能力",
+            "不用预判能力",
+            "不做能力预判",
+            "别做能力预判",
+            "无需能力核查",
+            "不用判断",
+            "不要判断",
+            "别判断",
+            "无需判断",
+            "不用工具",
+            "不要用工具",
+            "不要调用工具",
+            "别调用工具",
+            "不调用工具",
+            "不要使用工具",
+            "别使用工具",
+            "直接回答",
+            "直接处理",
+            "直接做",
+            "直接开始",
+            "直接执行",
+            "直接帮我",
+            "skip intent",
+            "skip tools",
+            "no tools",
+            "without tools",
+            "direct answer",
+            "answer directly",
+            "just do it",
+            "do it directly"
+    );
+    private static final List<String> WEB_ACCESS_OPT_OUT_PHRASES = List.of(
+            "不要联网",
+            "不联网",
+            "不用联网",
+            "别联网",
+            "不要上网",
+            "不用上网",
+            "不要搜索网页",
+            "不用搜索网页",
+            "不要搜索",
+            "不用搜索",
+            "不要查网上",
+            "不要联网检索",
+            "不用联网检索",
+            "别联网检索",
+            "不要查资料",
+            "不用查资料",
+            "别查资料",
+            "只用本地",
+            "只用已有资料",
+            "只根据我给的资料",
+            "只根据我给的材料",
+            "只根据我给的内容",
+            "只根据上传资料",
+            "只根据上传附件",
+            "只根据附件",
+            "只根据原文",
+            "仅根据我给的资料",
+            "仅根据我给的材料",
+            "仅根据我给的内容",
+            "仅根据上传资料",
+            "仅根据上传附件",
+            "仅根据附件",
+            "仅根据原文",
+            "只看我给的资料",
+            "只看我给的材料",
+            "只看附件",
+            "仅使用本地资料",
+            "offline",
+            "no web",
+            "without web",
+            "no internet",
+            "without internet",
+            "do not search"
+    );
+    private static final List<String> SOURCE_MATERIAL_MARKERS = List.of(
+            "下面资料",
+            "以下资料",
+            "下面材料",
+            "以下材料",
+            "下面内容",
+            "以下内容",
+            "这段资料",
+            "这段材料",
+            "这段内容",
+            "这段文本",
+            "下面文本",
+            "以下文本",
+            "我贴的资料",
+            "我贴的内容",
+            "我给的资料",
+            "我给的材料",
+            "我给的内容",
+            "我发的资料",
+            "我发的材料",
+            "我发的内容",
+            "上传的资料",
+            "上传资料",
+            "上传的附件",
+            "上传附件",
+            "附件内容",
+            "附件里",
+            "原文"
+    );
+    private static final List<String> EXTERNAL_LOOKUP_MARKERS = List.of(
+            "联网",
+            "上网",
+            "搜索",
+            "查网上",
+            "网页",
+            "官网",
+            "链接",
+            "url",
+            "http://",
+            "https://",
+            "核对来源",
+            "核实来源",
+            "核验来源",
+            "核对出处",
+            "核实出处",
+            "查证"
+    );
 
     private final DynamicToolRegistry toolRegistry;
-    @Nullable
-    private final SkillRegistry skillRegistry;
-    @Nullable
-    private final SkillInstallationRepository skillInstallationRepository;
+    private final boolean enabled;
+    private final int controlPrefixChars;
+    private final int planningProbeMaxChars;
 
     public ConversationCapabilityPlanner(DynamicToolRegistry toolRegistry) {
-        this(toolRegistry, null, null);
+        this(toolRegistry, true, DEFAULT_CONTROL_PREFIX_CHARS, DEFAULT_PLANNING_PROBE_MAX_CHARS);
     }
 
     public ConversationCapabilityPlanner(DynamicToolRegistry toolRegistry,
-                                         @Nullable SkillRegistry skillRegistry,
-                                         @Nullable SkillInstallationRepository skillInstallationRepository) {
+                                         boolean enabled,
+                                         int controlPrefixChars,
+                                         int planningProbeMaxChars) {
+        if (controlPrefixChars <= 0) {
+            throw new IllegalArgumentException("能力预发现控制前缀字符数必须大于 0");
+        }
+        if (planningProbeMaxChars < 20) {
+            throw new IllegalArgumentException("能力预发现探针最大字符数不能小于 20");
+        }
         this.toolRegistry = toolRegistry;
-        this.skillRegistry = skillRegistry;
-        this.skillInstallationRepository = skillInstallationRepository;
+        this.enabled = enabled;
+        this.controlPrefixChars = controlPrefixChars;
+        this.planningProbeMaxChars = planningProbeMaxChars;
     }
 
     /**
-     * 供前端轻量展示的能力建议。
+     * 内部工具预发现建议。
      *
-     * @param id     工具或 Skill ID
-     * @param label  用户可读名称
+     * @param id     工具 ID
+     * @param label  可读名称
      * @param reason 触发原因
-     * @param kind   建议类型：tool / skill
-     * @param outputs Skill v3 输出形态；工具建议为空
      */
-    public record SuggestedCapability(String id, String label, String reason, String kind, List<String> outputs) {
-
-        public SuggestedCapability(String id, String label, String reason, String kind) {
-            this(id, label, reason, kind, List.of());
-        }
-
-        public SuggestedCapability {
-            kind = (kind == null || kind.isBlank()) ? "tool" : kind;
-            outputs = outputs == null ? List.of() : List.copyOf(outputs);
-        }
-
-        public boolean isTool() {
-            return "tool".equals(kind);
-        }
-    }
-
-    /**
-     * SSE payload：本轮预发现的能力。
-     *
-     * @param traceId Trace ID
-     * @param turnId  Turn ID
-     * @param tools   建议能力列表
-     */
-    public record CapabilitySuggestionEvent(String traceId,
-                                            @Nullable String turnId,
-                                            List<SuggestedCapability> tools) {
-        public CapabilitySuggestionEvent {
-            tools = tools != null ? List.copyOf(tools) : List.of();
-        }
-    }
+    public record SuggestedCapability(String id, String label, String reason) {}
 
     /**
      * 将保守匹配到的能力工具合并进当前状态。
@@ -104,7 +215,6 @@ public class ConversationCapabilityPlanner {
             return state;
         }
         Set<String> toolIds = suggestions.stream()
-                .filter(SuggestedCapability::isTool)
                 .map(SuggestedCapability::id)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         if (toolIds.isEmpty()) {
@@ -115,59 +225,51 @@ public class ConversationCapabilityPlanner {
     }
 
     /**
-     * 生成本轮对话的能力建议。只返回当前已注册且尚未暴露的工具。
+     * 生成本轮对话的内部工具建议。只返回当前已注册且尚未暴露的工具。
      *
      * @param state 当前 Agent 状态
      * @return 能力建议列表
      */
     public List<SuggestedCapability> suggest(ReactAgentState state) {
-        if (state == null || state.taskMode() == AgentTaskMode.ANSWER) {
+        if (!enabled || state == null || state.taskMode() == AgentTaskMode.ANSWER) {
             return List.of();
         }
         if (state.allowedToolIds() != null && !state.allowedToolIds().isEmpty()) {
             return List.of();
         }
         Set<String> plannedToolIds = planToolIds(state.goal());
-        Set<String> plannedSkillIds = planSkillIds(state.goal());
         if (plannedToolIds.isEmpty()) {
-            if (plannedSkillIds.isEmpty()) {
-                return List.of();
-            }
+            return List.of();
         }
         Set<String> alreadyVisible = state.discoveredToolIds() != null
                 ? state.discoveredToolIds()
                 : Set.of();
+        Set<String> disabledToolIds = state.disabledToolIds() != null
+                ? Set.copyOf(state.disabledToolIds())
+                : Set.of();
         var suggestions = new java.util.ArrayList<SuggestedCapability>();
         for (String toolId : plannedToolIds) {
-            if (alreadyVisible.contains(toolId) || toolRegistry.resolve(toolId).isEmpty()) {
+            if (alreadyVisible.contains(toolId)
+                    || isToolDisabled(toolId, disabledToolIds)
+                    || toolRegistry.resolve(toolId).isEmpty()) {
                 continue;
             }
             CapabilityMeta meta = CAPABILITY_META.getOrDefault(toolId,
                     new CapabilityMeta(toolId, "已识别到相关能力"));
-            suggestions.add(new SuggestedCapability(toolId, meta.label(), meta.reason(), "tool"));
-        }
-        for (String skillId : plannedSkillIds) {
-            SkillDefinition skill = findAvailableSkill(skillId);
-            if (skill == null) {
-                continue;
-            }
-            CapabilityMeta meta = SKILL_META.getOrDefault(skillId,
-                    new CapabilityMeta(skillId, "检测到相关任务策略"));
-            suggestions.add(new SuggestedCapability(
-                    skillId, meta.label(), meta.reason(), "skill", skill.zhiweiMeta().outputs()));
+            suggestions.add(new SuggestedCapability(toolId, meta.label(), meta.reason()));
         }
         return List.copyOf(suggestions);
     }
 
-    /**
-     * 构建 SSE payload。
-     *
-     * @param state       当前状态
-     * @param suggestions 建议能力
-     * @return SSE payload
-     */
-    public CapabilitySuggestionEvent toEvent(ReactAgentState state, List<SuggestedCapability> suggestions) {
-        return new CapabilitySuggestionEvent(state.traceId(), state.turnId(), suggestions);
+    private boolean isToolDisabled(String toolId, Set<String> disabledToolIds) {
+        if (disabledToolIds.isEmpty()) {
+            return false;
+        }
+        if (disabledToolIds.contains(toolId)) {
+            return true;
+        }
+        return disabledToolIds.stream()
+                .anyMatch(disabledId -> toolId.startsWith(disabledId + "."));
     }
 
     private static Map<String, CapabilityMeta> buildCapabilityMeta() {
@@ -191,24 +293,6 @@ public class ConversationCapabilityPlanner {
         return Map.copyOf(map);
     }
 
-    private static Map<String, CapabilityMeta> buildSkillMeta() {
-        var map = new LinkedHashMap<String, CapabilityMeta>();
-        map.put("code-assistant", new CapabilityMeta("编码代理", "检测到复杂开发或审查任务"));
-        map.put("browser-automation", new CapabilityMeta("浏览器自动化", "检测到网页交互或截图任务"));
-        map.put("daily-manager", new CapabilityMeta("日常管理", "检测到规划、回顾或跨任务协调"));
-        map.put("research-assistant", new CapabilityMeta("调研策略", "检测到多源调研或事实核查"));
-        map.put("data-analyst", new CapabilityMeta("数据分析", "检测到表格、统计或可视化任务"));
-        map.put("content-creator", new CapabilityMeta("内容创作", "检测到写作、改写或成稿任务"));
-        map.put("summarizer", new CapabilityMeta("摘要整理", "检测到长文、会议或资料压缩任务"));
-        map.put("api-debugger", new CapabilityMeta("接口调试", "检测到 API、curl 或响应排查任务"));
-        map.put("log-analyzer", new CapabilityMeta("日志分析", "检测到日志、报错或堆栈排查"));
-        map.put("healthcheck", new CapabilityMeta("健康诊断", "检测到系统资源或服务检查任务"));
-        map.put("file-organizer", new CapabilityMeta("文件整理", "检测到重命名、归档或清理任务"));
-        map.put("cron-scheduler", new CapabilityMeta("定时任务", "检测到提醒、周期或定时执行"));
-        map.put("a2ui", new CapabilityMeta("交互界面", "检测到需要按钮、表单或可操作结果"));
-        return Map.copyOf(map);
-    }
-
     private record CapabilityMeta(String label, String reason) {}
 
     /**
@@ -218,10 +302,19 @@ public class ConversationCapabilityPlanner {
      * @return 候选工具 ID 集合
      */
     public Set<String> planToolIds(String goal) {
+        if (!enabled) {
+            return Set.of();
+        }
         if (goal == null || goal.isBlank()) {
             return Set.of();
         }
-        String text = goal.toLowerCase(Locale.ROOT);
+        String normalizedGoal = goal.strip();
+        String controlSegment = leadingControlSegment(normalizedGoal);
+        if (shouldSkipPreDiscovery(controlSegment)) {
+            return Set.of();
+        }
+        String probe = buildPlanningProbe(normalizedGoal, controlSegment);
+        String text = probe.toLowerCase(Locale.ROOT);
         var result = new LinkedHashSet<String>();
 
         if (containsAny(text, "git", "仓库", "工作区状态", "diff", "log", "blame", "提交历史", "差异")) {
@@ -256,8 +349,7 @@ public class ConversationCapabilityPlanner {
                 "页面操作", "填写网页", "浏览器自动化")) {
             result.add("browser");
         }
-        if (containsAny(text, "最新", "今天", "新闻", "联网查", "网上查", "搜索网页",
-                "官网", "网页内容", "http://", "https://", "url")) {
+        if (!shouldAvoidWebAccess(controlSegment) && shouldPlanWebAccess(text)) {
             result.add("web.search");
             result.add("web.fetch");
         }
@@ -278,95 +370,163 @@ public class ConversationCapabilityPlanner {
             result.add("notify");
         }
 
-        return Set.copyOf(result);
+        return Collections.unmodifiableSet(result);
     }
 
-    /**
-     * 按用户目标规划候选 Skill ID。仅用于轻量提示，真正加载仍由 Agent 决策。
-     *
-     * @param goal 用户目标
-     * @return 候选 Skill ID 集合
-     */
-    public Set<String> planSkillIds(String goal) {
-        if (goal == null || goal.isBlank()) {
-            return Set.of();
+    private String buildPlanningProbe(String normalizedGoal, String controlSegment) {
+        if (shouldUseControlSegmentOnly(normalizedGoal, controlSegment)) {
+            return controlSegment;
         }
-        String text = goal.toLowerCase(Locale.ROOT);
-        var result = new LinkedHashSet<String>();
-
-        if (containsAny(text, "codex", "claude code", "gemini", "多文件", "重构", "修 bug",
-                "修复 bug", "代码审查", "pr 审查", "并行任务", "后台 agent")) {
-            result.add("code-assistant");
+        if (normalizedGoal.length() <= planningProbeMaxChars) {
+            return normalizedGoal;
         }
-        if (containsAny(text, "打开网页", "浏览器", "点击页面", "网页登录", "验证码",
-                "页面操作", "填写网页", "网页截图", "浏览器自动化")) {
-            result.add("browser-automation");
-        }
-        if (containsAny(text, "计划", "优先级", "日报", "周报", "月报", "做到哪",
-                "进度回顾", "跨 skill", "跨领域协作", "安排一下")) {
-            result.add("daily-manager");
-        }
-        if (containsAny(text, "调研", "竞品", "事实核查", "真的吗", "趋势", "行业动态",
-                "对比分析", "技术选型", "多源", "来源")) {
-            result.add("research-assistant");
-        }
-        if (containsAny(text, "csv", "excel", "xlsx", "数据分析", "pandas", "统计",
-                "图表", "可视化")) {
-            result.add("data-analyst");
-        }
-        if (containsAny(text, "写文章", "写报告", "改写", "润色", "文案", "成稿",
-                "邮件", "博客")) {
-            result.add("content-creator");
-        }
-        if (containsAny(text, "总结", "摘要", "会议纪要", "长文", "提炼", "压缩")) {
-            result.add("summarizer");
-        }
-        if (containsAny(text, "api", "接口", "curl", "graphql", "http", "响应码",
-                "mock")) {
-            result.add("api-debugger");
-        }
-        if (containsAny(text, "日志", "报错", "堆栈", "stack trace", "异常排查")) {
-            result.add("log-analyzer");
-        }
-        if (containsAny(text, "健康检查", "cpu", "内存", "磁盘", "端口", "服务状态")) {
-            result.add("healthcheck");
-        }
-        if (containsAny(text, "整理文件", "重命名", "归档", "重复文件", "清理文件")) {
-            result.add("file-organizer");
-        }
-        if (containsAny(text, "提醒我", "定时", "每天", "每周", "周期性", "计划任务")) {
-            result.add("cron-scheduler");
-        }
-        if (containsAny(text, "可交互", "交互组件", "按钮", "表单", "选择项", "待办列表")) {
-            result.add("a2ui");
-        }
-
-        return Set.copyOf(result);
+        String marker = "\n...\n";
+        int available = Math.max(2, planningProbeMaxChars - marker.length());
+        int headChars = Math.max(1, available * 2 / 3);
+        int tailChars = Math.max(1, available - headChars);
+        String head = firstCodePoints(normalizedGoal, headChars).stripTrailing();
+        String tail = lastCodePoints(normalizedGoal, tailChars).stripLeading();
+        String compacted = (head + marker + tail).strip();
+        log.debug("能力预发现: 用户输入过长，仅使用头尾意图探针: originalLength={}, probeLength={}",
+                normalizedGoal.length(), compacted.length());
+        return compacted;
     }
 
-    private SkillDefinition findAvailableSkill(String skillId) {
-        if (skillRegistry == null) {
-            return null;
+    private boolean shouldUseControlSegmentOnly(String normalizedGoal, String controlSegment) {
+        if (controlSegment.isBlank() || controlSegment.equals(normalizedGoal)) {
+            return false;
         }
-        var skillOpt = skillRegistry.find(skillId);
-        if (skillOpt.isEmpty()) {
-            return null;
+        String lowerControl = controlSegment.toLowerCase(Locale.ROOT);
+        boolean sourceMaterialTask = containsAny(lowerControl, SOURCE_MATERIAL_MARKERS);
+        if (!sourceMaterialTask) {
+            return false;
         }
-        if (skillInstallationRepository == null) {
-            return skillOpt.get();
+        return !containsAny(lowerControl, EXTERNAL_LOOKUP_MARKERS);
+    }
+
+    private String firstCodePoints(String value, int count) {
+        if (count <= 0 || value.isEmpty()) {
+            return "";
         }
-        try {
-            boolean enabled = skillInstallationRepository.findByName(skillId)
-                    .map(com.lifepilot.skill.install.SkillInstallation::enabled)
-                    .orElse(true);
-            return enabled ? skillOpt.get() : null;
-        } catch (Exception e) {
-            log.debug("检查 Skill 可用性失败，跳过能力提示: skillId={}, error={}", skillId, e.getMessage());
-            return null;
+        int end = 0;
+        int remaining = count;
+        while (end < value.length() && remaining > 0) {
+            end += Character.charCount(value.codePointAt(end));
+            remaining--;
         }
+        return value.substring(0, end);
+    }
+
+    private String lastCodePoints(String value, int count) {
+        if (count <= 0 || value.isEmpty()) {
+            return "";
+        }
+        int start = value.length();
+        int remaining = count;
+        while (start > 0 && remaining > 0) {
+            int codePoint = value.codePointBefore(start);
+            start -= Character.charCount(codePoint);
+            remaining--;
+        }
+        return value.substring(start);
     }
 
     private boolean containsAny(String text, String... terms) {
         return List.of(terms).stream().anyMatch(text::contains);
+    }
+
+    private boolean containsAny(String text, List<String> terms) {
+        return terms.stream().anyMatch(text::contains);
+    }
+
+    private boolean shouldPlanWebAccess(String text) {
+        if (containsAny(text, "联网查", "网上查", "搜索网页", "官网", "网页内容",
+                "http://", "https://", "url")) {
+            return true;
+        }
+        if (containsAny(text, "最新", "新闻", "资讯", "实时", "现在的", "当前的")) {
+            return true;
+        }
+        if (!containsAny(text, "今天", "今日", "昨天", "明天", "本周", "这个月")) {
+            return false;
+        }
+        return containsAny(text, "查", "搜", "调研", "新闻", "资讯", "动态", "行情", "官网", "网页");
+    }
+
+    private boolean shouldSkipPreDiscovery(String controlSegment) {
+        controlSegment = controlSegment.toLowerCase(Locale.ROOT);
+        if (controlSegment.isBlank()) {
+            return false;
+        }
+        for (String phrase : PRE_DISCOVERY_OPT_OUT_PHRASES) {
+            if (isDirectAnswerPhrase(phrase)) {
+                if (isDirectAnswerCommand(controlSegment, phrase)) {
+                    return true;
+                }
+                continue;
+            }
+            if (controlSegment.contains(phrase)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean shouldAvoidWebAccess(String controlSegment) {
+        controlSegment = controlSegment.toLowerCase(Locale.ROOT);
+        if (controlSegment.isBlank()) {
+            return false;
+        }
+        for (String phrase : WEB_ACCESS_OPT_OUT_PHRASES) {
+            if (controlSegment.contains(phrase)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isDirectAnswerPhrase(String phrase) {
+        return phrase.equals("直接回答")
+                || phrase.equals("直接处理")
+                || phrase.equals("直接做")
+                || phrase.equals("直接开始")
+                || phrase.equals("直接执行")
+                || phrase.equals("直接帮我")
+                || phrase.equals("direct answer")
+                || phrase.equals("answer directly")
+                || phrase.equals("just do it")
+                || phrase.equals("do it directly");
+    }
+
+    private boolean isDirectAnswerCommand(String controlSegment, String phrase) {
+        String segment = controlSegment.strip();
+        return segment.startsWith(phrase)
+                || segment.startsWith("请" + phrase)
+                || segment.startsWith("请你" + phrase)
+                || segment.startsWith("你" + phrase)
+                || segment.startsWith("这次" + phrase)
+                || segment.startsWith("本次" + phrase)
+                || segment.startsWith("please " + phrase);
+    }
+
+    private String leadingControlSegment(String goal) {
+        String normalized = goal.strip();
+        String prefix = firstCodePoints(normalized, controlPrefixChars);
+        int firstLineEnd = prefix.indexOf('\n');
+        String firstLine = firstLineEnd >= 0 ? prefix.substring(0, firstLineEnd) : prefix;
+        int delimiter = firstContentDelimiter(firstLine);
+        String segment = delimiter >= 0 ? firstLine.substring(0, delimiter) : firstLine;
+        return segment.strip();
+    }
+
+    private int firstContentDelimiter(String value) {
+        int delimiter = -1;
+        for (String candidate : List.of("：", ":", "\n\n")) {
+            int index = value.indexOf(candidate);
+            if (index >= 0 && (delimiter < 0 || index < delimiter)) {
+                delimiter = index;
+            }
+        }
+        return delimiter;
     }
 }

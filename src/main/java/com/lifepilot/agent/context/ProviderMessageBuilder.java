@@ -83,6 +83,21 @@ public class ProviderMessageBuilder {
     }
 
     /**
+     * 当回合边界 = 最后一个 {@link ReactStep.ToolCall} 的下标。位于其后的 Observation
+     * 是模型本次调用首次消费的"当回合"结果，需保留完整正文；之前的均为历史，可按工具降级。
+     *
+     * @return 最后一个 ToolCall 的下标；无 ToolCall 时返回 -1（则全部按历史处理）
+     */
+    private static int lastToolCallIndex(List<ReactStep> steps) {
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            if (steps.get(i) instanceof ReactStep.ToolCall) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
      * 将 ReactStep 列表转换为 LLM 消息列表，把同一次 LLM 调用产生的 {@code Thought + ToolCall}
      * 合并为单条 {@link AssistantMessage}（content + tool_calls 共存）。
      *
@@ -100,11 +115,13 @@ public class ProviderMessageBuilder {
     private void convertStepsToMessages(List<ReactStep> steps,
                                         List<Message> out,
                                         @Nullable String sessionId) {
+        int lastToolCallIndex = lastToolCallIndex(steps);
         var pendingToolCalls = new ArrayList<AssistantMessage.ToolCall>();
         String pendingThoughtText = null;
         String pendingReasoning = null;
 
-        for (ReactStep step : steps) {
+        for (int i = 0; i < steps.size(); i++) {
+            ReactStep step = steps.get(i);
             if (step instanceof ReactStep.Thought thought) {
                 // Thought 暂存，等待紧随的 ToolCall 一起合并；理论上 Thought 后必跟 ToolCall
                 // （ReactAgentLoop 仅在 hasToolCalls 时生成 Thought step）
@@ -139,7 +156,8 @@ public class ProviderMessageBuilder {
             pendingThoughtText = null;
             pendingReasoning = null;
 
-            Message message = toMessage(step, sessionId);
+            // 当回合边界：位于最后一个 ToolCall 之后的 Observation 为模型本次首见，保留完整正文
+            Message message = toMessage(step, sessionId, i > lastToolCallIndex);
             if (message != null) {
                 out.add(message);
             }
@@ -322,7 +340,7 @@ public class ProviderMessageBuilder {
     }
 
     @Nullable
-    private Message toMessage(ReactStep step, @Nullable String sessionId) {
+    private Message toMessage(ReactStep step, @Nullable String sessionId, boolean currentRound) {
         return switch (step) {
             case ReactStep.Progress ignored -> null;
             case ReactStep.Thought thought -> new AssistantMessage(thought.content());
@@ -332,7 +350,7 @@ public class ProviderMessageBuilder {
                 // Skill 指南已提升到系统提示词，对话历史中用摘要替代原文避免重复
                 String content = isPromotedSkillResult(observation)
                         ? buildSkillLoadSummary(observation.output())
-                        : formatObservationForPrompt(observation, sessionId);
+                        : formatObservationForPrompt(observation, sessionId, currentRound);
                 yield ToolResponseMessage.builder()
                         .responses(List.of(new ToolResponseMessage.ToolResponse(
                                 observation.callId() != null ? observation.callId() : observation.toolId(),
@@ -394,8 +412,13 @@ public class ProviderMessageBuilder {
         return "Skill 指南已加载";
     }
 
+    /** 历史 web.fetch 等被降级的正文追加提示，防止模型误以为没拿全而反复重复抓取。 */
+    private static final String HISTORICAL_COMPACT_HINT =
+            "\n（完整正文已在前序轮次提供，请基于已有信息作答，勿重复抓取该 URL）";
+
     private String formatObservationForPrompt(ReactStep.Observation observation,
-                                              @Nullable String sessionId) {
+                                              @Nullable String sessionId,
+                                              boolean currentRound) {
         String body;
         if (shouldUseObservationPreview(observation)) {
             String preview = pruningEngine.formatCurrentObservationPreview(
@@ -410,6 +433,10 @@ public class ProviderMessageBuilder {
             // LLM 理解错误根因。截断后单条工具失败 result 在多轮 history 里占用 token
             // 从动辄 1-3KB 降到 ~600 字，避免 ReAct 多轮工具失败把 prompt 撑爆。
             body = truncateFailureOutput(observation.output());
+        } else if (!currentRound && pruningEngine.shouldCompactHistoricalOutput(observation.toolId())) {
+            // 历史成功大输出（默认 web.fetch）—— 正文已在当回合被模型消费，降级为结构化摘要，
+            // 避免完整正文在后续多轮 ReAct 里反复重发（实测这是 prompt token 单调膨胀的主因）。
+            body = compactHistoricalOutput(observation);
         } else {
             body = observation.output();
         }
@@ -459,6 +486,21 @@ public class ProviderMessageBuilder {
      */
     private boolean shouldUseObservationPreview(ReactStep.Observation observation) {
         return "web.search".equals(observation.toolId());
+    }
+
+    /**
+     * 把历史成功 Observation 降级为结构化摘要（复用 {@link SessionPruningEngine} 的
+     * web.fetch/web.search 专用摘要器），并追加防重复抓取提示。
+     *
+     * <p>摘要为空（无法识别的 payload）时安全兜底为原文，避免信息全丢。</p>
+     */
+    private String compactHistoricalOutput(ReactStep.Observation observation) {
+        String preview = pruningEngine.formatCurrentObservationPreview(
+                observation.toolId(), observation.success(), observation.output());
+        if (preview == null || preview.isBlank()) {
+            return observation.output();
+        }
+        return preview + HISTORICAL_COMPACT_HINT;
     }
 
     private AssistantMessage buildAssistantToolCallMessage(List<AssistantMessage.ToolCall> toolCalls,

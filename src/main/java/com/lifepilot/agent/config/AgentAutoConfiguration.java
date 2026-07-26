@@ -8,6 +8,7 @@ import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
 import com.lifepilot.agent.checkpoint.SqliteAgentCheckpointStore;
 import com.lifepilot.agent.context.*;
 import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
+import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
 import com.lifepilot.agent.learning.experience.*;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
@@ -294,19 +295,29 @@ public class AgentAutoConfiguration {
             ObjectMapper objectMapper,
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-            @Autowired(required = false) AttachmentRepository attachmentRepository) {
+            @Autowired(required = false) AttachmentRepository attachmentRepository,
+            @Autowired(required = false) InjectionRecordRepository injectionRecordRepository,
+            @Autowired(required = false) SemanticMemory semanticMemory,
+            @Autowired(required = false) MemoryExtractionCandidateRepository memoryExtractionCandidateRepository) {
         return new StreamingEventHandler(
-                objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository, attachmentRepository);
+                objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository, attachmentRepository,
+                injectionRecordRepository, semanticMemory, memoryExtractionCandidateRepository);
     }
 
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(DynamicToolRegistry.class)
+    @ConditionalOnProperty(prefix = "lifepilot.agent.capability-discovery", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
     public ConversationCapabilityPlanner conversationCapabilityPlanner(
             DynamicToolRegistry toolRegistry,
-            @Autowired(required = false) SkillRegistry skillRegistry,
-            @Autowired(required = false) SkillInstallationRepository skillInstallationRepository) {
-        return new ConversationCapabilityPlanner(toolRegistry, skillRegistry, skillInstallationRepository);
+            AgentConfigProperties config) {
+        var discovery = config.getCapabilityDiscovery();
+        return new ConversationCapabilityPlanner(
+                toolRegistry,
+                discovery.isEnabled(),
+                discovery.getControlPrefixChars(),
+                discovery.getPlanningProbeMaxChars());
     }
 
     @Bean
