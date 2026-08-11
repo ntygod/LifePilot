@@ -5,6 +5,7 @@ import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,7 +80,7 @@ public class AssociationCandidateApplier {
             }
             var now = Instant.now();
             float relTrust = MemoryQualityPolicy.trustScoreFor(
-                    MemoryEvidenceKind.DERIVED, Math.max(0.0f, Math.min(1.0f, c.confidence())));
+                    MemoryEvidenceKind.DERIVED, c.confidence());
             var relation = new TemporalRelation(
                     UUID.randomUUID().toString(),
                     c.sourceEntityId(),
@@ -90,17 +91,14 @@ public class AssociationCandidateApplier {
                     now,
                     null,
                     "rem:" + c.seedEntityId(),
-                    now)
-                    .withQuality(MemoryEvidenceKind.DERIVED,
-                            MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DERIVED, relTrust),
-                            relTrust);
-            try {
-                SqliteBusyRetry.run(() -> semanticMemory.addRelation(relation));
-                applied++;
-            } catch (Exception e) {
-                skippedMissingEntity++;
-                log.warn("REM 落库: 关系写入失败，跳过, type={}, error={}", relationType, e.getMessage());
-            }
+                    now,
+                    MemoryEvidenceKind.DERIVED,
+                    MemoryQualityPolicy.trustLevelFor(MemoryEvidenceKind.DERIVED, relTrust),
+                    relTrust);
+            SqliteBusyRetry.run(() -> semanticMemory.addRelation(
+                    relation,
+                    MemoryWriteContext.consolidation("rem:" + c.seedEntityId())));
+            applied++;
         }
         var result = new ApplyResult(candidates.size(), applied,
                 skippedLowConfidence, skippedMissingEntity, skippedDuplicate);

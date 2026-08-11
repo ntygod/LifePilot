@@ -41,7 +41,7 @@ public class BuiltinToolSearchProvider {
         return BuiltinTool.builder()
                 .id("tool.search")
                 .name("搜索工具")
-                .description("用关键词在工具注册表中搜索未直接暴露的 Java/MCP 工具，返回可在下一轮调用的工具 ID 和输入 Schema。")
+                .description("用关键词在工具能力目录中搜索未直接暴露的 Java/MCP 工具，返回可在下一轮调用的工具 ID 和输入 Schema。")
                 .tags(List.of("搜索", "工具", "发现", "查找", "tools", "search"))
                 .category(ToolCategory.INTROSPECTION)
                 .riskLevel(RiskLevel.LOW)

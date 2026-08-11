@@ -61,12 +61,28 @@ lifepilot:
     enabled: true
     decision-signal-enabled: true
     min-experience-confidence: 0.6
-    capability-cache-ttl-seconds: 60
+    # 主对话链路不等待经验/意图匹配；匹配在后台完成，命中后用于后续轮次增强。
+    experience-match-timeout-ms: 0
+    # 即便误把 timeout 调大，前台也只允许极短等待，慢结果转为后台复用。
+    experience-match-foreground-wait-cap-ms: 80
+    # 后台经验匹配也必须有短等待，超时后放弃本轮结果并尝试中断，避免慢意图识别重复堆积。
+    experience-match-background-timeout-ms: 1200
+    # 只对明显任务型输入启动后台经验匹配，闲聊/短补充不触发意图任务。
+    experience-match-trigger: task-like
+    experience-match-min-goal-chars: 6
+    # 超长输入只抽头尾作为意图探针，避免把整段资料送进后台匹配器。
+    experience-match-max-goal-chars: 240
+    experience-match-max-pending: 1
+    # 后台命中的经验只在短时间内复用给明显相关的后续输入，避免主对话阻塞和陈旧注入。
+    experience-match-recent-ttl-seconds: 300
+    experience-match-recent-max: 8
+    environment-cache-ttl-seconds: 60
     tool-health-window-size: 20
+    # 可用工具过多时跳过决策信号里的健康扫描，避免主对话启动阶段做大范围能力核查。
+    tool-health-signal-max-tools: 32
   # ===== 主动引擎配置 =====
   initiative:
-    enabled: true  # 已启用：思考链路（信号→Thinker→ThoughtPool→Gatekeeper）已验证；
-                   # 表达/执行（ConversationInitiator/ActionExecutor）尚未接线，不会自主对外发消息
+    enabled: true  # 已启用：信号→Thinker→ThoughtPool→Gatekeeper→ConversationInitiator
     max-active-thoughts: 20
     brewing-ttl-hours: 72
     ready-ttl-hours: 48
@@ -90,14 +106,24 @@ lifepilot:
     # ===== Agent 引擎配置 =====
     # AgentLoop 核心控制循环，依赖 LLM Router；LLM 未配置时 AgentLoop 不创建，Web UI 仍可访问
     enabled: true
+    capability-discovery:
+      enabled: true
+      # 主对话只做规则化快路径，不调用 LLM；关闭后完全跳过工具/能力预判。
+      control-prefix-chars: 96
+      # 超长输入只抽头尾探针，避免把整段资料用于能力预发现。
+      planning-probe-max-chars: 320
     debug:
       # 打印每次调用 LLM 时发送的完整提示词（可能包含隐私/密钥），仅建议本地/受控环境开启
-      log-llm-prompts: true
+      log-llm-prompts: false
     loop:
       # ReAct 循环配置
       max-iterations: 45
       max-consecutive-failures: 3
       max-parallel-tool-calls: 4
+      # 工具执行后的程序经验沉淀只做后台增强；达到上限时跳过，避免拖慢主对话。
+      max-pending-tool-experience-records: 4
+      # 单个工具经验后台探针也要短寿命；超时释放后台名额，不影响当前回复。
+      tool-experience-record-timeout-ms: 1200
       llm-scene: agent_react
       default-temperature: 0.7
       # reflect-after-iterations: 5    # 开始周期性回顾的迭代阈值
@@ -111,6 +137,8 @@ lifepilot:
     context:
       max-context-tokens: 2000000
       output-reserved-tokens: 8192
+      # 决策增强不占用主对话等待时间；仅在后台热身，后续相关输入可复用。
+      decision-signal-timeout-ms: 0
     suspend:
       # 挂起记录最大保留时长
       max-age: 24h
@@ -132,12 +160,8 @@ lifepilot:
       max-recent-turns: 10
       cleanup-interval-ms: 300000
     task:
-      # ===== 自主任务配置（Cron + Heartbeat 双轨） =====
+      # ===== 自主任务配置（Cron 定时；主动性由事件驱动的 InitiativeEngine 承担，不再轮询） =====
       enabled: true
-      heartbeat-enabled: true
-      proactive-reminder-enabled: false
-      heartbeat-interval-seconds: 1800
-      heartbeat-file: "${zhiwei.home}/HEARTBEAT.md"
       execution-timeout-seconds: 300
       # active-hours-start: "08:00"
       # active-hours-end: "22:00"
@@ -157,135 +181,6 @@ lifepilot:
         enabled: false
         max-parallel-workers: 5
         worker-budget-ratio: 0.7
-  a2a:
-    enabled: true
-    server:
-      enabled: true
-      api-key: ${LIFEPILOT_A2A_API_KEY:}
-      agent-name: ZhiWei
-      agent-description: 个人助手
-      agent-version: 1.0.0
-      protocol-version: 0.2.5
-      streaming-enabled: true
-      sse-timeout-seconds: 120
-    client:
-      enabled: true
-      remote-agents: []
-      connect-timeout-seconds: 10
-      read-timeout-seconds: 60
-      card-cache-ttl-minutes: 30
-      remote-agent-keys: {}
-      circuit-breaker-failure-threshold: 3
-      circuit-breaker-reset-timeout-seconds: 60
-      circuit-breaker-half-open-max-attempts: 1
-    task:
-      ttl-minutes: 60
-      max-history-length: 50
-    # ===== 学习层配置（绑定 lifepilot.agent.learning.*；consolidation-decoupling 从 lifepilot.memory.* 迁入）=====
-    learning:
-      consolidation:
-        # 每日定时阶段（偏好同步 + 经验合并 + 经验提升）
-        cron: "0 0 3 * * *"
-        trigger-mode: CRON
-        # 用户画像巩固防抖窗口（对话结束事件后等待此窗口再触发）
-        profile-debounce-minutes: 30
-        # 空闲触发 REM 联想
-        idle-threshold-minutes: 30
-        idle-cooldown-minutes: 60
-        lookback-days: 7
-        high-frequency-threshold: 3
-        importance-boost-step: 0.1
-        importance-boost-max: 0.3
-        cluster-similarity-threshold: 0.85
-        min-cluster-size: 2
-        max-templates-per-run: 10
-        min-execution-steps: 2
-        # 实体去重（EntityDeduplicator 自调度）
-        dedup-cron: "0 30 4 * * *"
-        dedup-similarity-threshold: 0.90
-        max-dedup-per-run: 50
-        short-name-threshold: 2
-        experience-promote-min-importance: 0.8
-        experience-promote-min-access-count: 3
-        user-profile-llm-timeout-seconds: 120
-      forgetting:
-        cron: "0 0 4 * * SUN"
-        max-retention-days: 365
-        lru-threshold-days: 90
-        priority-decay-rate: 0.02
-        priority-decay-threshold: 0.2
-        reflection-summary-min-importance: 0.3
-        reflection-summary-max-importance: 0.8
-        max-forget-per-run: 100
-        privacy-aware-boost: 0.3
-        protection-threshold: 0.9
-        protected-types:
-          - PREFERENCE
-          - HABIT
-          - GOAL
-      extraction:
-        timeout-seconds: 60
-        max-entities-per-extraction: 10
-        min-extraction-confidence: 0.3
-        max-entity-name-length: 100
-        min-description-length: 2
-        existing-entity-summary-limit: 50
-        # 对话期关系抽取（memory-graph-deepening）：实体写入后追加抽取实体间关系写入 memory_relations
-        relation-extraction-enabled: true
-        relation-timeout-seconds: 60
-      # REM 式联想巩固配置（agent.learning.rem）
-      rem:
-        enabled: true
-        seed-limit: 10
-        neighbor-limit: 5
-        seed-types:
-          - GOAL
-          - TOPIC
-          - PROJECT
-        min-confidence: 0.65
-        llm-timeout-seconds: 60
-        deduplication-window-hours: 24
-        # REM 候选落库应用器（memory-graph-deepening）：文件候选 → memory_relations 主库
-        apply-enabled: true
-        apply-min-confidence: 0.75
-      # 经验总结配置（agent.learning.experience；模块拆分前误置于 lifepilot.memory.experience）
-      experience:
-        enabled: true
-        max-input-tokens: 4000
-        dedup-similarity-threshold: 0.90
-        max-retention-days: 90
-        llm-timeout-seconds: 120
-        min-tool-success-ratio: 0.3
-        effectiveness:
-          success-ratio-threshold: 0.5
-          positive-boost: 0.05
-          negative-decay: 0.03
-          eviction-threshold: 0.1
-        contrastive:
-          enabled: true
-          similarity-threshold: 0.80
-          initial-importance: 0.7
-          llm-timeout-seconds: 120
-        isolation:
-          cross-context-retrieval: false
-        merge:
-          enabled: true
-          similarity-threshold: 0.85
-          max-merges-per-run: 10
-          llm-timeout-seconds: 30
-        subtask:
-          enabled: true
-          min-tool-sequence: 3
-          initial-importance: 0.4
-          max-input-tokens: 2000
-          llm-timeout-seconds: 120
-      # 反馈闭环配置（agent.learning.feedback；模块拆分前误置于 lifepilot.memory.feedback）
-      feedback:
-        like-boost: 0.1
-        dislike-penalty: 0.05
-        expiration-cron: "0 0 * * * *"
-        negative-threshold-count: 3
-        negative-threshold-score: -1.0
   llm:
     # ===== LLM 路由配置 =====
     # 生成与向量服务都从 model_services 表加载，通过 Web UI 的“模型与路由”页面统一管理
@@ -417,6 +312,11 @@ lifepilot:
       topic-switch-threshold: 0.3
       # 图遍历/联想的关系最低可信分门控（relation-quality-gate）；0.0=不过滤，NULL 历史边恒放行
       min-relation-trust: 0.0
+      # L4 程序记忆意图匹配默认关闭；需要程序模板探针时再开启，且只做后台增强，不阻塞主检索链路。
+      intent-match-enabled: false
+      intent-match-min-query-chars: 6
+      intent-match-max-query-chars: 160
+      intent-match-max-pending: 1
       # 记忆精排配置（retrieval.reranker）
       reranker:
         enabled: true
@@ -697,9 +597,14 @@ lifepilot:
       # CORS 跨域配置：开发环境（5173）、Docker 部署（80/同源）和 Tauri 桌面端
       allowed-origins:
         - "http://localhost:5173"
+        - "http://127.0.0.1:5173"
+        - "http://localhost:5174"
+        - "http://127.0.0.1:5174"
         - "http://localhost:1420"
+        - "http://127.0.0.1:1420"
         - "http://localhost:80"
         - "http://localhost"
+        - "http://127.0.0.1"
         - "tauri://localhost"
         - "https://tauri.localhost"
         - "http://tauri.localhost"
@@ -833,8 +738,10 @@ lifepilot:
       # 单个工作流最大并发实例数
       max-instances-per-workflow: 3
   sandbox:
-    # 沙箱总开关
-    enabled: true
+    # 沙箱总开关。默认关闭：代码执行属开发者能力，与「本地个人助手」定位无关，
+    # 且大厂编码 Agent 在此项上更强。关闭后 PythonRuntimeManager 不注册，
+    # code 与 kernel 工具一并跳过（见 InfraToolProvider 的降级分支）。
+    enabled: false
     # 沙箱类型：process / docker
     booter: process
     # 支持的语言列表
@@ -998,7 +905,8 @@ lifepilot:
         takeover:
           timeout-seconds: 300        # 人工接管挂起等待超时（秒），5 分钟
       git:
-        enabled: true
+        # 默认关闭：git 操作属开发者能力，零预置技能依赖
+        enabled: false
         timeout-seconds: 30
         max-diff-lines: 500
         max-log-entries: 50

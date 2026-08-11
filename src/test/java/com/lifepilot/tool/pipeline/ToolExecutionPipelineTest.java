@@ -26,6 +26,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -161,7 +164,8 @@ class ToolExecutionPipelineTest {
     }
 
     @Test
-    void 执行超时_返回错误() {
+    void 执行超时_返回错误() throws InterruptedException {
+        var interrupted = new CountDownLatch(1);
         BuiltinTool tool = BuiltinTool.builder()
                 .id("test.slow").name("Slow").description("慢工具")
                 .inputSchema(JsonSchema.empty()).outputSchema(JsonSchema.empty())
@@ -173,6 +177,7 @@ class ToolExecutionPipelineTest {
                     try {
                         Thread.sleep(5000);
                     } catch (InterruptedException e) {
+                        interrupted.countDown();
                         Thread.currentThread().interrupt();
                     }
                     return ToolResult.success(Map.of());
@@ -183,6 +188,53 @@ class ToolExecutionPipelineTest {
         ToolResult result = pipeline.execute("test.slow", Map.of(), "trace-1", null);
         assertFalse(result.ok());
         assertTrue(result.error().contains("超时"));
+        assertTrue(interrupted.await(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void 浏览器工具超时错误不自动重试() {
+        var callCount = new AtomicInteger();
+        BuiltinTool tool = BuiltinTool.builder()
+                .id("browser").name("Browser").description("浏览器")
+                .inputSchema(JsonSchema.empty()).outputSchema(JsonSchema.empty())
+                .riskLevel(RiskLevel.LOW).idempotent(false)
+                .executionSemantics(com.lifepilot.tool.semantics.ToolExecutionSemantics.generic())
+                .budget(ToolBudget.of(Duration.ofSeconds(5), 2, Integer.MAX_VALUE))
+                .tags(List.of("browser"))
+                .executor(input -> {
+                    callCount.incrementAndGet();
+                    return ToolResult.error("执行超时: 30秒");
+                })
+                .build();
+        registry.registerBuiltinTool(tool);
+
+        ToolResult result = pipeline.execute("browser", Map.of(), "trace-1", null);
+
+        assertFalse(result.ok());
+        assertEquals(1, callCount.get());
+        assertEquals(0, result.meta().retryCount());
+    }
+
+    @Test
+    void code工具缺少action时默认补为exec() {
+        JsonSchema schema = JsonSchema.of(Map.of(
+                "type", "object",
+                "required", List.of("action", "code"),
+                "properties", Map.of(
+                        "action", Map.of("type", "string"),
+                        "code", Map.of("type", "string")
+                )
+        ));
+        registerTool("code", schema, input -> ToolResult.success(Map.of(
+                "action", input.getParam("action", String.class),
+                "code", input.getParam("code", String.class)
+        )));
+
+        ToolResult result = pipeline.execute("code", Map.of("code", "print(1)"), "trace-1", null);
+
+        assertTrue(result.ok());
+        assertEquals("exec", result.getData("action"));
+        assertEquals("print(1)", result.getData("code"));
     }
 
     private void registerTool(String id, JsonSchema inputSchema,

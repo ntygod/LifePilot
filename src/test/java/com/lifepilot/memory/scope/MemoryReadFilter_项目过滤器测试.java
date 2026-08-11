@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,9 +67,9 @@ class MemoryReadFilter_项目过滤器测试 {
     }
 
     @Test
-    void 五参重载_scopes传null等同不限定scope() {
+    void 五参重载_不限定scope时显式传空集合() {
         MemoryReadFilter f = MemoryReadFilter.buildForProject(
-                null, "ms-personal", "ms-experience", false, null);
+                null, "ms-personal", "ms-experience", false, Set.of());
         assertEquals(2, f.spaceIds().size());
         assertFalse(f.restrictsScopes());
     }
@@ -82,74 +83,29 @@ class MemoryReadFilter_项目过滤器测试 {
         assertEquals(2, f.spaceIds().size());
     }
 
-    // ==================== fromProjectContextOrFallback ====================
-
     @Test
-    void fallback_ctx不存在_空scope_返回all() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                false, null, null, null, false, Set.of());
-        assertTrue(f.isUnrestricted());
+    void 读取过滤器不接受空白spaceId() {
+        assertThatThrownBy(() -> MemoryReadFilter.of(Set.of("ms-personal", " "), Set.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("spaceId 不能为空");
     }
 
     @Test
-    void fallback_ctx不存在_null_scope_返回all() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                false, null, null, null, false, null);
-        assertTrue(f.isUnrestricted());
+    void 读取过滤器不接受null集合() {
+        assertThatThrownBy(() -> new MemoryReadFilter(null, Set.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("记忆读取空间集合不能为空");
+        assertThatThrownBy(() -> new MemoryReadFilter(Set.of(), null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("记忆读取 scope 集合不能为空");
     }
 
     @Test
-    void fallback_ctx不存在_AGENT_EXPERIENCE_scope_等同agentExperience() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                false, null, null, null, false, Set.of(MemoryScope.AGENT_EXPERIENCE));
-        assertEquals(MemoryReadFilter.agentExperience(), f);
-        assertEquals(Set.of(MemoryScope.AGENT_EXPERIENCE), f.scopes());
-        assertFalse(f.restrictsSpaces());
+    void 项目过滤器不接受空白主账户空间() {
+        assertThatThrownBy(() -> MemoryReadFilter.buildForProject(
+                null, " ", "ms-experience", false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("personalSpaceId 不能为空");
     }
 
-    @Test
-    void fallback_ctx不存在_USER_PROFILE_scope_等同userProfile() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                false, null, null, null, false, Set.of(MemoryScope.USER_PROFILE));
-        assertEquals(MemoryReadFilter.userProfile(), f);
-    }
-
-    @Test
-    void fallback_ctx不存在_USER_PROFILE和USER_FACT_等同userMemory() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                false, null, null, null, false,
-                Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT));
-        assertEquals(MemoryReadFilter.userMemory(), f);
-    }
-
-    @Test
-    void fallback_ctx不存在_其他scope组合_仅限scope空spaces() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                false, null, null, null, false, Set.of(MemoryScope.USER_FACT));
-        assertEquals(Set.of(MemoryScope.USER_FACT), f.scopes());
-        assertFalse(f.restrictsSpaces());
-    }
-
-    @Test
-    void fromProjectContext_ctx存在_隔离项目_含三space并限定scope() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                true, "sp-proj", "sp-personal", "sp-experience", true,
-                Set.of(MemoryScope.USER_PROFILE));
-        assertEquals(3, f.spaceIds().size());
-        assertTrue(f.spaceIds().contains("sp-proj"));
-        assertTrue(f.spaceIds().contains("sp-personal"));
-        assertTrue(f.spaceIds().contains("sp-experience"));
-        assertEquals(Set.of(MemoryScope.USER_PROFILE), f.scopes());
-    }
-
-    @Test
-    void fromProjectContext_ctx存在_主账户对话_忽略null项目space() {
-        MemoryReadFilter f = MemoryReadFilter.fromProjectContextOrFallback(
-                true, null, "sp-personal", "sp-experience", false,
-                Set.of(MemoryScope.AGENT_EXPERIENCE));
-        assertEquals(2, f.spaceIds().size());
-        assertTrue(f.spaceIds().contains("sp-personal"));
-        assertTrue(f.spaceIds().contains("sp-experience"));
-        assertEquals(Set.of(MemoryScope.AGENT_EXPERIENCE), f.scopes());
-    }
 }

@@ -9,6 +9,8 @@ import {
   RotateCcw,
   ArrowUpRight,
   SlidersHorizontal,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-vue-next'
 import { memoryApi } from '@/api/client'
 import { logger } from '@/utils/logger'
@@ -125,6 +127,7 @@ const EVIDENCE_KIND_LABELS: Record<string, string> = {
 const HOT_DIGEST_SCOPES = new Set(['USER_PROFILE', 'USER_FACT', 'AGENT_EXPERIENCE'])
 const PROMPT_CONSUMABLE_TRUST_LEVELS = new Set(['VERIFIED', 'EXPLICIT', 'DERIVED'])
 const RETRIEVABLE_LIFECYCLE_STATES = new Set(['ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED'])
+const COMPACT_EXCERPT_MAX_LENGTH = 56
 
 // ── 筛选状态 ──
 const filterQ = ref('')
@@ -155,6 +158,8 @@ const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE))
 // ── 详情面板状态 ──
 const detailOpen = ref(false)
 const detailLoading = ref(false)
+const detailError = ref<string | null>(null)
+const detailRequestedEntityId = ref('')
 const detailEntity = ref<EntityDetail | null>(null)
 const detailTab = ref('info')
 const provenanceItems = ref<EntityProvenance[]>([])
@@ -163,6 +168,16 @@ const provenanceOriginType = ref<string>('')
 const provenanceKnowledgeBaseId = ref('')
 const provenanceDocumentId = ref('')
 const loadedProvenanceKey = ref('')
+const resolvingRevalidation = ref(false)
+const memoryExplanationRows = computed(() => {
+  const entity = detailEntity.value
+  if (!entity) return []
+  return [
+    { label: '回答影响', value: formatAnswerImpact(entity) },
+    { label: '证据依据', value: formatEvidenceExplanation(entity) },
+    { label: '来源状态', value: formatSourceExplanation(entity) },
+  ]
+})
 
 // 版本历史
 const historyItems = ref<EntityDetail[]>([])
@@ -171,6 +186,19 @@ const historyLoading = ref(false)
 // 关联实体
 const relatedItems = ref<EntitySummary[]>([])
 const relatedLoading = ref(false)
+
+const detailSheetDescription = computed(() => {
+  if (detailEntity.value) {
+    return `${detailEntity.value.typeLabel || '实体'} · v${detailEntity.value.version || 0}`
+  }
+  if (detailLoading.value) {
+    return '正在加载记忆详情'
+  }
+  if (detailError.value) {
+    return '未能加载这条记忆'
+  }
+  return '查看记忆详情'
+})
 
 // ── 新建对话框 ──
 const createOpen = ref(false)
@@ -232,6 +260,7 @@ const store = useMemoryStore()
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUiStore()
+const activeProjectId = computed(() => normalizeQueryValue(route.query.projectId))
 const activeAdvancedFilters = computed(() => [
   filterType.value ? `类型: ${ENTITY_TYPES.find(type => type.value === filterType.value)?.label || filterType.value}` : null,
   filterSpaceId.value.trim() ? `空间: ${filterSpaceId.value.trim()}` : null,
@@ -253,6 +282,7 @@ async function loadEntities() {
       sortBy: filterSortBy.value,
       order: filterOrder.value,
     }
+    if (projectIdForRequest()) params.projectId = projectIdForRequest()
     if (filterQ.value.trim()) params.q = filterQ.value.trim()
     if (filterType.value) params.type = filterType.value
     if (filterSpaceId.value.trim()) params.spaceId = filterSpaceId.value.trim()
@@ -290,6 +320,10 @@ function normalizeQueryValue(value: unknown) {
     return typeof value[0] === 'string' ? value[0].trim() : ''
   }
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function projectIdForRequest() {
+  return activeProjectId.value || undefined
 }
 
 function syncListFiltersFromRoute() {
@@ -339,8 +373,10 @@ async function openDetail(entity: EntitySummary) {
 }
 
 async function openDetailById(entityId: string) {
+  detailRequestedEntityId.value = entityId
   detailOpen.value = true
   detailLoading.value = true
+  detailError.value = null
   detailTab.value = 'info'
   detailEntity.value = null
   historyItems.value = []
@@ -350,22 +386,29 @@ async function openDetailById(entityId: string) {
   provenanceKnowledgeBaseId.value = ''
   provenanceDocumentId.value = ''
   loadedProvenanceKey.value = ''
+  resolvingRevalidation.value = false
 
   try {
-    detailEntity.value = await memoryApi.getEntity(entityId)
+    detailEntity.value = await memoryApi.getEntity(entityId, projectIdForRequest())
     void fetchProvenances(true)
   } catch (e: any) {
     logger.error('加载实体详情失败:', e)
+    detailError.value = e?.message || '加载记忆详情失败，请稍后重试。'
   } finally {
     detailLoading.value = false
   }
+}
+
+function retryDetailLoad() {
+  if (!detailRequestedEntityId.value) return
+  void openDetailById(detailRequestedEntityId.value)
 }
 
 async function loadHistory() {
   if (!detailEntity.value || historyItems.value.length > 0) return
   historyLoading.value = true
   try {
-    historyItems.value = await memoryApi.getEntityHistory(detailEntity.value.id)
+    historyItems.value = await memoryApi.getEntityHistory(detailEntity.value.id, projectIdForRequest())
   } catch (e: any) {
     logger.error('加载版本历史失败:', e)
   } finally {
@@ -377,7 +420,7 @@ async function loadRelated() {
   if (!detailEntity.value || relatedItems.value.length > 0) return
   relatedLoading.value = true
   try {
-    relatedItems.value = await memoryApi.getRelatedEntities(detailEntity.value.id)
+    relatedItems.value = await memoryApi.getRelatedEntities(detailEntity.value.id, 2, projectIdForRequest())
   } catch (e: any) {
     logger.error('加载关联实体失败:', e)
   } finally {
@@ -404,6 +447,21 @@ async function fetchProvenances(force: boolean) {
   }
 }
 
+async function resolveEntityRevalidation() {
+  if (!detailEntity.value || resolvingRevalidation.value) return
+  resolvingRevalidation.value = true
+  try {
+    await memoryApi.resolveEntityRevalidation(detailEntity.value.id, projectIdForRequest())
+    await fetchProvenances(true)
+    uiStore.showToast('success', '已确认这条记忆仍有效')
+  } catch (e: any) {
+    logger.error('确认记忆复核失败:', e)
+    uiStore.showToast('error', e?.message || '确认失败')
+  } finally {
+    resolvingRevalidation.value = false
+  }
+}
+
 function handleDetailTabChange(tab: string | number) {
   const nextTab = String(tab)
   detailTab.value = nextTab
@@ -425,7 +483,7 @@ async function handleCreate() {
     // 解析属性 JSON
     const props = JSON.parse(createPropsText.value || '{}')
     createForm.value.properties = props
-    await memoryApi.createEntity(createForm.value)
+    await memoryApi.createEntity(createForm.value, projectIdForRequest())
     createOpen.value = false
     loadEntities()
   } catch (e: any) {
@@ -455,7 +513,7 @@ async function handleEdit() {
   try {
     const props = JSON.parse(editPropsText.value || '{}')
     editForm.value.properties = props
-    const updated = await memoryApi.updateEntity(editEntityId.value, editForm.value)
+    const updated = await memoryApi.updateEntity(editEntityId.value, editForm.value, projectIdForRequest())
     editOpen.value = false
     detailEntity.value = updated
     detailOpen.value = true
@@ -489,7 +547,7 @@ function openArchive(id: string, name: string) {
 async function handleArchive() {
   archiving.value = true
   try {
-    await memoryApi.deleteEntity(archiveEntityId.value)
+    await memoryApi.deleteEntity(archiveEntityId.value, projectIdForRequest())
     archiveOpen.value = false
     detailEntity.value = null
     uiStore.showToast('success', '实体已归档')
@@ -626,8 +684,67 @@ function formatConsumptionBoundary(item: {
   return '冷召回'
 }
 
+function formatAnswerImpact(item: {
+  memoryScope?: string | null
+  spaceId?: string | null
+  lifecycleState?: string | null
+  trustLevel?: string | null
+}) {
+  if (isKnowledgeBaseMemory(item)) {
+    return '作为资料库或项目里的领域事实参与相关问题，不写入个人偏好。'
+  }
+  if (item.memoryScope === 'USER_PROFILE') {
+    return '作为长期偏好影响默认表达方式、取舍和后续建议。'
+  }
+  if (item.memoryScope === 'USER_FACT') {
+    return '作为关于你的事实背景参与回答，帮助知微减少重复确认。'
+  }
+  if (item.memoryScope === 'AGENT_EXPERIENCE') {
+    return '作为做事经验影响任务拆解、工具选择和恢复策略。'
+  }
+  return `${formatConsumptionBoundary(item)}参与相关问题回答。`
+}
+
+function formatEvidenceExplanation(entity: EntityDetail) {
+  const base = `${formatEvidenceKind(entity.evidenceKind)} · ${formatTrustLevel(entity.trustLevel)} · 可信度 ${formatPercentScore(entity.trustScore)}`
+  const evidence = entity.evidenceCount > 0 ? ` · ${entity.evidenceCount} 份证据` : ' · 暂无证据计数'
+  const confidence = typeof entity.extractionConfidence === 'number'
+    ? ` · 抽取置信度 ${formatPercentScore(entity.extractionConfidence)}`
+    : ''
+  return `${base}${evidence}${confidence}`
+}
+
+function formatSourceExplanation(entity: EntityDetail) {
+  if (provenanceLoading.value && provenanceItems.value.length === 0) {
+    return '正在读取来源明细。'
+  }
+  const primary = provenanceItems.value[0]
+  if (primary) {
+    const sourceName = buildPrimarySourceName(primary)
+    const excerpt = primary.evidenceExcerpt ? `：“${compactText(primary.evidenceExcerpt, COMPACT_EXCERPT_MAX_LENGTH)}”` : ''
+    const status = needsRevalidationReview(primary) ? '待复核' : formatProvenanceStatus(primary)
+    return `${formatOriginType(primary.originType)}${sourceName ? ` · ${sourceName}` : ''} · ${status}${excerpt}`
+  }
+  if (entity.sourceConversationId) {
+    return `来自对话 ${entity.sourceConversationId}，暂无更细来源片段。`
+  }
+  return '暂无来源明细。'
+}
+
+function buildPrimarySourceName(item: EntityProvenance) {
+  return item.sourceDocumentName
+    || item.sourceKnowledgeBaseName
+    || item.sourceSessionTitle
+    || item.sourceSessionId
+    || item.sourceConversationId
+    || item.sourceReference
+    || item.sourceEntryId
+    || ''
+}
+
 function buildProvenanceParams(): EntityProvenanceParams {
   const params: EntityProvenanceParams = {}
+  if (projectIdForRequest()) params.projectId = projectIdForRequest()
   if (provenanceOriginType.value) params.originType = provenanceOriginType.value
   if (provenanceKnowledgeBaseId.value.trim()) params.sourceKnowledgeBaseId = provenanceKnowledgeBaseId.value.trim()
   if (provenanceDocumentId.value.trim()) params.sourceDocumentId = provenanceDocumentId.value.trim()
@@ -670,6 +787,12 @@ function formatSourceEntryLabel(item: EntityProvenance) {
   return isKnowledgeBaseProvenance(item) ? 'Chunk ID' : '消息 ID'
 }
 
+function compactText(value: string, maxLength: number) {
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, Math.max(1, maxLength - 1))}…`
+}
+
 function buildProvenanceDetails(item: EntityProvenance) {
   const details: Array<{ label: string; value: string | null }> = [
     {
@@ -680,6 +803,7 @@ function buildProvenanceDetails(item: EntityProvenance) {
     },
     { label: '对话 ID', value: item.sourceConversationId },
     { label: '会话 ID', value: item.sourceSessionId },
+    { label: '会话标题', value: item.sourceSessionTitle ?? null },
     { label: 'Turn ID', value: item.sourceTurnId },
     { label: formatSourceEntryLabel(item), value: item.sourceEntryId },
     { label: '知识库', value: buildNamedReference(item.sourceKnowledgeBaseName, item.sourceKnowledgeBaseId) },
@@ -688,12 +812,63 @@ function buildProvenanceDetails(item: EntityProvenance) {
   return details.filter((entry): entry is { label: string; value: string } => Boolean(entry.value))
 }
 
+function isStaleProvenance(item: EntityProvenance) {
+  return (item.status || '').toUpperCase() === 'STALE' || Boolean(item.invalidatedAt)
+}
+
+function revalidationStatus(item: EntityProvenance) {
+  return (item.revalidationStatus || '').toUpperCase()
+}
+
+function isResolvedRevalidation(item: EntityProvenance) {
+  return revalidationStatus(item) === 'RESOLVED'
+}
+
+function needsRevalidationReview(item: EntityProvenance) {
+  return isStaleProvenance(item) && !isResolvedRevalidation(item)
+}
+
+function formatProvenanceStatus(item: EntityProvenance) {
+  if (needsRevalidationReview(item)) return '需复核'
+  if (isStaleProvenance(item)) return '已复核'
+  return '有效'
+}
+
+function provenanceInvalidationText(item: EntityProvenance) {
+  if (!isStaleProvenance(item)) return ''
+  const invalidatedAt = item.invalidatedAt ? `，${formatDate(item.invalidatedAt)}` : ''
+  if (isResolvedRevalidation(item)) {
+    return `来源曾变更或不可完整追溯${invalidatedAt}，你已确认这条记忆当前仍有效。`
+  }
+  return `来源已变更或不可完整追溯${invalidatedAt}，后续使用这条记忆时需要复核。`
+}
+
 function canOpenKnowledgeBase(item: EntityProvenance) {
   return Boolean(item.sourceKnowledgeBaseId)
 }
 
 function canOpenDocument(item: EntityProvenance) {
   return Boolean(item.sourceKnowledgeBaseId && item.sourceDocumentId)
+}
+
+function canOpenConversation(item: EntityProvenance) {
+  return Boolean(item.sourceSessionId)
+}
+
+function provenanceConversationQuery(item: EntityProvenance) {
+  const query: Record<string, string> = {}
+  if (item.sourceTurnId) query.turnId = item.sourceTurnId
+  if (item.sourceEntryId) query.entryId = item.sourceEntryId
+  return query
+}
+
+function openConversation(item: EntityProvenance) {
+  if (!item.sourceSessionId) return
+  void router.push({
+    name: 'conversationDetail',
+    params: { sessionId: item.sourceSessionId },
+    query: provenanceConversationQuery(item),
+  })
 }
 
 function openKnowledgeBase(item: EntityProvenance) {
@@ -1007,7 +1182,7 @@ function openDocument(item: EntityProvenance) {
         <SheetHeader>
           <SheetTitle>{{ detailEntity?.name || '实体详情' }}</SheetTitle>
           <SheetDescription>
-            {{ detailEntity?.typeLabel || '' }} · v{{ detailEntity?.version || 0 }}
+            {{ detailSheetDescription }}
           </SheetDescription>
         </SheetHeader>
 
@@ -1017,6 +1192,27 @@ function openDocument(item: EntityProvenance) {
           <Skeleton class="h-4 w-full" />
           <Skeleton class="h-4 w-3/4" />
           <Skeleton class="h-20 w-full" />
+        </div>
+
+        <!-- 详情错误状态 -->
+        <div v-else-if="detailError" class="mt-6 rounded-md border border-destructive/20 bg-destructive/5 p-4">
+          <div class="flex gap-3">
+            <AlertTriangle class="mt-0.5 size-4 shrink-0 text-destructive" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-foreground">这条记忆暂时打不开</p>
+              <p class="mt-1 text-sm text-muted-foreground">{{ detailError }}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="mt-4"
+                @click="retryDetailLoad"
+              >
+                <RotateCcw class="mr-1.5 size-3.5" />
+                重试
+              </Button>
+            </div>
+          </div>
         </div>
 
         <!-- 详情内容 -->
@@ -1046,6 +1242,23 @@ function openDocument(item: EntityProvenance) {
             <Badge variant="secondary">{{ formatTrustLevel(detailEntity.trustLevel) }}</Badge>
             <Badge variant="outline">{{ formatEvidenceKind(detailEntity.evidenceKind) }}</Badge>
           </div>
+
+          <section
+            class="rounded-md border border-border/60 bg-muted/30 p-3"
+            aria-label="记忆解释"
+          >
+            <h3 class="text-sm font-medium text-foreground">为什么知微会用这条记忆</h3>
+            <dl class="mt-3 grid gap-2 text-sm">
+              <div
+                v-for="row in memoryExplanationRows"
+                :key="row.label"
+                class="grid gap-1 sm:grid-cols-[5rem_minmax(0,1fr)] sm:items-start"
+              >
+                <dt class="text-muted-foreground">{{ row.label }}</dt>
+                <dd class="leading-5 text-foreground">{{ row.value }}</dd>
+              </div>
+            </dl>
+          </section>
 
           <!-- Tab 切换：基本信息 / 版本历史 / 关联实体 -->
           <Tabs :model-value="detailTab" @update:model-value="handleDetailTabChange">
@@ -1250,11 +1463,25 @@ function openDocument(item: EntityProvenance) {
                       <Badge variant="outline">{{ formatOriginType(item.originType) }}</Badge>
                       <Badge variant="secondary">{{ formatTrustLevel(item.trustLevel) }}</Badge>
                       <Badge variant="outline">{{ formatEvidenceKind(item.evidenceKind) }}</Badge>
+                      <Badge :variant="needsRevalidationReview(item) ? 'destructive' : 'outline'">
+                        {{ formatProvenanceStatus(item) }}
+                      </Badge>
                       <span class="text-xs text-muted-foreground">
                         可信 {{ formatPercentScore(item.trustScore) }} · 置信度 {{ formatPercentScore(item.confidence) }}
                       </span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
+                      <Button
+                        v-if="canOpenConversation(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="open-provenance-conversation"
+                        @click="openConversation(item)"
+                      >
+                        <ArrowUpRight class="size-3.5" />
+                        查看原对话
+                      </Button>
                       <Button
                         v-if="canOpenKnowledgeBase(item)"
                         size="sm"
@@ -1277,8 +1504,33 @@ function openDocument(item: EntityProvenance) {
                         <ArrowUpRight class="size-3.5" />
                         查看文档
                       </Button>
+                      <Button
+                        v-if="needsRevalidationReview(item)"
+                        size="sm"
+                        variant="outline"
+                        class="h-7 px-2 text-xs"
+                        data-test="resolve-entity-revalidation"
+                        :disabled="resolvingRevalidation"
+                        @click="resolveEntityRevalidation"
+                      >
+                        <CheckCircle2 class="size-3.5" />
+                        {{ resolvingRevalidation ? '确认中' : '确认有效' }}
+                      </Button>
                       <span class="text-xs text-muted-foreground">{{ formatDate(item.createdAt) }}</span>
                     </div>
+                  </div>
+                  <div
+                    v-if="provenanceInvalidationText(item)"
+                    :class="[
+                      'mt-3 flex items-start gap-2 text-xs leading-5',
+                      isResolvedRevalidation(item) ? 'text-muted-foreground' : 'text-destructive',
+                    ]"
+                  >
+                    <component
+                      :is="isResolvedRevalidation(item) ? CheckCircle2 : AlertTriangle"
+                      class="mt-0.5 size-3.5 shrink-0"
+                    />
+                    <span>{{ provenanceInvalidationText(item) }}</span>
                   </div>
                   <div class="mt-3 grid gap-2 text-sm">
                     <div

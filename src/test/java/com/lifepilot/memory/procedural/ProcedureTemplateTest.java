@@ -1,10 +1,13 @@
 package com.lifepilot.memory.procedural;
 
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
+import com.lifepilot.memory.store.procedural.TemplateStep;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,8 +25,7 @@ class ProcedureTemplateTest {
         return new ProcedureTemplate(
                 "tpl-001", "测试模板", "测试描述", "安排会议",
                 List.of(), Map.of(), successRate, useCount, lastUsedAt,
-                List.of("trace-1"), Instant.now(), Instant.now()
-        ,
+                List.of("trace-1"), Instant.now(), Instant.now(),
                 null, null);
     }
 
@@ -73,17 +75,27 @@ class ProcedureTemplateTest {
 
     @Test
     void compactConstructor_集合字段不可变() {
+        var step = new TemplateStep(1, "tool-1", "execute", Map.of(), "步骤", false);
+        var steps = new ArrayList<>(List.of(step));
+        var variables = new HashMap<String, String>();
+        variables.put("name", "张三");
+        var sourceTraceIds = new ArrayList<>(List.of("trace-1"));
+
         var tpl = new ProcedureTemplate(
                 "tpl-002", "模板", "描述", "意图",
-                null, null, 0.5f, 1, null, null,
-                Instant.now(), Instant.now()
-        ,
+                steps, variables, 0.5f, 1, null, sourceTraceIds,
+                Instant.now(), Instant.now(),
                 null, null);
-        assertNotNull(tpl.steps());
-        assertTrue(tpl.steps().isEmpty());
-        assertNotNull(tpl.variables());
-        assertTrue(tpl.variables().isEmpty());
-        assertNotNull(tpl.sourceTraceIds());
-        assertTrue(tpl.sourceTraceIds().isEmpty());
+
+        steps.clear();
+        variables.clear();
+        sourceTraceIds.clear();
+
+        assertEquals(1, tpl.steps().size());
+        assertEquals("张三", tpl.variables().get("name"));
+        assertEquals(List.of("trace-1"), tpl.sourceTraceIds());
+        assertThrows(UnsupportedOperationException.class, () -> tpl.steps().add(step));
+        assertThrows(UnsupportedOperationException.class, () -> tpl.variables().put("new", "value"));
+        assertThrows(UnsupportedOperationException.class, () -> tpl.sourceTraceIds().add("trace-2"));
     }
 }

@@ -28,7 +28,7 @@
   - 没有离线回归通道，**每次改动无法客观比较"是不是变好了"**
   - 写入侧很强，**读消费侧的联想与证据链不够"活"**（新事实不会带动邻居更新；图扩展偏弱）
   - 对"时间让事实失真"的处理是被动的（依赖用户再次提及）
-- **主动引擎**已有三级门控 + 8 个行为插件 + 信任阶梯 + LinUCB，但实际体验差的根因不在框架，而在：
+- **主动引擎**已有三级门控 + 行为插件 + 信任阶梯 + LinUCB，但实际体验差的根因不在框架，而在：
   - 心跳唤醒不区分**任务边界 vs 任务中**，打扰时机错位是第一大体验杀手
   - 已落库的 candidate/delivery/feedback/policy 快照**从未回流成训练信号**
   - Gate 3 LLM 直接评分，**缺结构化推理**；缺**用户当前是否处于 focus 状态**的判据
@@ -222,14 +222,13 @@
 - **依赖**：P-P0-2（需要高质量回放样本作为 few-shot）
 
 #### P-P1-6 行为插件缺少分层激活（记忆-行为对齐）
-> **状态**：与 P-P1-4 / P-P1-5 / C-P1-2 在 `proactive-timing-cot` 分支一并落地。`BehaviorLayer` 4 档 + 8 个行为插件按归属 override；`BehaviorActivationPolicy` 按 ctx 过滤，默认关闭避免回归。
-- **问题**：8 个行为插件并列执行 detect，每次心跳都要全部跑一遍 Gate 2，成本高且激活无结构。
+> **状态**：与 P-P1-4 / P-P1-5 / C-P1-2 在 `proactive-timing-cot` 分支一并落地。当前已收敛为 3 档行为层，删除无真实触发源的占位行为。
+- **问题**：行为插件并列执行 detect，每次心跳都要全部跑一遍 Gate 2，成本高且激活无结构。
 - **现状证据**：`ProactiveEngine` 按顺序遍历所有 `ProactiveBehavior.detect()`
 - **方向**：按依赖的记忆层分三组，每组共享激活门：
-  - **事实驱动**（FollowUp / Insight）：触发条件 = L3 相关实体 staleness / 新证据
-  - **经验驱动**（ContextPrep / TaskExecution）：触发条件 = HotDigest.EXPERIENCE 命中
+  - **事实驱动**（FollowUp / Insight / MemoryAttention）：触发条件 = L3 相关实体 staleness / 新证据 / 注意力项
   - **习惯驱动**（Reminder / Report）：触发条件 = L4 PreferenceRule 时间/频率
-  - ClipboardBehavior / InfoSupplementBehavior 独立保留
+  - ClipboardBehavior 独立保留
 - **预估**：M（~1 周）
 - **依赖**：无；但与 M-P1-3/5 协同效果更好
 
@@ -266,10 +265,10 @@
 - **预估**：S（~3 天）
 
 ### C-P1-2 L4 PreferenceRule 的 Proactive 专属规则未分类
-> **状态**：与 P-P1-4/5/6 在 `proactive-timing-cot` 分支一并落地。代码实际已经使用 `proactive-*` 前缀；新增 `ProactivePreferenceGuard` 静态工具固化约定，DecisionGate / ProactiveMemoryBridge / ProactiveEngine 的既有 `proactive-*` 过滤器保留。
+> **状态**：与 P-P1-4/5/6 在 `proactive-timing-cot` 分支一并落地。主动引擎调用点统一使用 `proactive-*` 前缀，DecisionGate / ProactiveMemoryBridge / ProactiveEngine 的既有过滤口径保留。
 - **问题**：L4 `PreferenceRule.category` 目前是自由字符串。主动引擎的"主题偏好 / 频次偏好 / 时段偏好"和记忆模块的"饮食偏好 / 购物偏好"混在一起。
 - **方向**：
-  - 区分 `proactive_*` 前缀
+  - 区分 `proactive-*` 前缀
   - 主动引擎只消费 `proactive_*` 和用户画像偏好；非 proactive 类偏好不参与打扰决策
 - **预估**：S（~3 天）
 - **依赖**：P-P1-6（分层激活会用到）

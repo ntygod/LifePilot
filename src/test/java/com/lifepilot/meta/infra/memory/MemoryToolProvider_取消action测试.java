@@ -1,8 +1,10 @@
 package com.lifepilot.meta.infra.memory;
 
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
@@ -14,6 +16,8 @@ import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.tool.model.ToolInput;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,9 +26,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -51,12 +56,28 @@ class MemoryToolProvider_取消action测试 {
     private HybridRetriever hybridRetriever;
     private SemanticMemory semanticMemory;
     private DynamicToolRegistry registry;
+    private Map<String, TemporalEntity> entities;
 
     @BeforeEach
     void 初始化() {
         hybridRetriever = mock(HybridRetriever.class);
         semanticMemory = mock(SemanticMemory.class);
+        entities = new HashMap<>();
         registry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
+        var projectContextResolver = mock(ProjectContextResolver.class);
+        when(projectContextResolver.resolve(null))
+                .thenReturn(ProjectContext.personal("space-personal", "space-experience"));
+        when(semanticMemory.findByIds(any(Collection.class), any(MemoryReadFilter.class)))
+                .thenAnswer(inv -> {
+                    Collection<String> ids = inv.getArgument(0);
+                    Map<String, TemporalEntity> result = new HashMap<>();
+                    for (String id : ids) {
+                        if (entities.containsKey(id)) {
+                            result.put(id, entities.get(id));
+                        }
+                    }
+                    return result;
+                });
 
         var provider = new MemoryToolProvider(
                 hybridRetriever,
@@ -65,7 +86,10 @@ class MemoryToolProvider_取消action测试 {
                 mock(DocumentRetriever.class),
                 mock(SessionKnowledgeBaseRepository.class),
                 mock(SessionKnowledgeScopeResolver.class),
-                new MemoryRetrievalProperties()
+                new MemoryRetrievalProperties(),
+                projectContextResolver,
+                mock(ChatSessionRepository.class),
+                new MemoryAccessPolicy()
         );
         provider.registerTools(registry);
     }
@@ -78,13 +102,12 @@ class MemoryToolProvider_取消action测试 {
 
         // 混合检索返回三条命中，其中 TOPIC 应被类型过滤掉
         when(hybridRetriever.retrieve(
-                eq("定时任务"), anyInt(), any(RetrievalWeights.class), eq(MemoryReadFilter.all())))
+                eq("定时任务"), anyInt(), any(RetrievalWeights.class), any(MemoryReadFilter.class)))
                 .thenReturn(List.of(
                         构造结果(goal, 0.92f),
                         构造结果(experience, 0.81f),
                         构造结果(unrelated, 0.70f)));
-        when(semanticMemory.findById("goal-diary")).thenReturn(Optional.of(goal));
-        when(semanticMemory.findById("exp-daily")).thenReturn(Optional.of(experience));
+        记忆(goal, experience, unrelated);
 
         var tool = registry.resolve("memory").orElseThrow();
         var result = tool.execute(new ToolInput(
@@ -109,7 +132,7 @@ class MemoryToolProvider_取消action测试 {
     @Test
     void cancel在无命中时应返回友好消息且不调用状态更新() {
         when(hybridRetriever.retrieve(
-                anyString(), anyInt(), any(RetrievalWeights.class), eq(MemoryReadFilter.all())))
+                anyString(), anyInt(), any(RetrievalWeights.class), any(MemoryReadFilter.class)))
                 .thenReturn(List.of());
 
         var tool = registry.resolve("memory").orElseThrow();
@@ -132,11 +155,11 @@ class MemoryToolProvider_取消action测试 {
         var weak = 构造实体("goal-weak", EntityType.GOAL, "弱相关目标");
 
         when(hybridRetriever.retrieve(
-                anyString(), anyInt(), any(RetrievalWeights.class), eq(MemoryReadFilter.all())))
+                anyString(), anyInt(), any(RetrievalWeights.class), any(MemoryReadFilter.class)))
                 .thenReturn(List.of(
                         构造结果(strong, 0.85f),
                         构造结果(weak, 0.30f)));
-        when(semanticMemory.findById("goal-strong")).thenReturn(Optional.of(strong));
+        记忆(strong, weak);
 
         var tool = registry.resolve("memory").orElseThrow();
         var result = tool.execute(new ToolInput(
@@ -162,20 +185,13 @@ class MemoryToolProvider_取消action测试 {
         var g4 = 构造实体("g4", EntityType.GOAL, "目标4");
 
         when(hybridRetriever.retrieve(
-                anyString(), anyInt(), any(RetrievalWeights.class), eq(MemoryReadFilter.all())))
+                anyString(), anyInt(), any(RetrievalWeights.class), any(MemoryReadFilter.class)))
                 .thenReturn(List.of(
                         构造结果(g1, 0.9f),
                         构造结果(g2, 0.85f),
                         构造结果(g3, 0.8f),
                         构造结果(g4, 0.75f)));
-        when(semanticMemory.findById(anyString())).thenAnswer(inv -> {
-            String id = inv.getArgument(0);
-            return switch (id) {
-                case "g1" -> Optional.of(g1);
-                case "g2" -> Optional.of(g2);
-                default -> Optional.empty();
-            };
-        });
+        记忆(g1, g2);
 
         var tool = registry.resolve("memory").orElseThrow();
         var result = tool.execute(new ToolInput(
@@ -202,9 +218,9 @@ class MemoryToolProvider_取消action测试 {
         var topic = 构造实体("topic-1", EntityType.TOPIC, "指定话题");
 
         when(hybridRetriever.retrieve(
-                anyString(), anyInt(), any(RetrievalWeights.class), eq(MemoryReadFilter.all())))
+                anyString(), anyInt(), any(RetrievalWeights.class), any(MemoryReadFilter.class)))
                 .thenReturn(List.of(构造结果(topic, 0.9f)));
-        when(semanticMemory.findById("topic-1")).thenReturn(Optional.of(topic));
+        记忆(topic);
 
         var tool = registry.resolve("memory").orElseThrow();
         var result = tool.execute(new ToolInput(
@@ -222,10 +238,130 @@ class MemoryToolProvider_取消action测试 {
     }
 
     @Test
+    void cancel传入未知entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of("TOPIC", "BROKEN")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes 包含未知实体类型: BROKEN");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+        verify(semanticMemory, never()).updateLifecycleState(anyString(), any(), any(), any());
+    }
+
+    @Test
+    void cancel传入小写entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of("topic")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes 包含未知实体类型: topic");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+        verify(semanticMemory, never()).updateLifecycleState(anyString(), any(), any(), any());
+    }
+
+    @Test
+    void cancel传入空entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of(" ")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes 不能包含空值");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
+    void cancel传入首尾空白entityType时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var result = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题",
+                        "entityTypes", List.of(" TOPIC")),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.error()).contains("cancel entityTypes不能包含首尾空白");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
+    void cancel传入非法maxArchive或minScore时应返回错误() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var badMax = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "maxArchive", 0),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+        var badScore = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "minScore", -0.1),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(badMax.ok()).isFalse();
+        assertThat(badMax.error()).contains("cancel maxArchive 必须大于 0");
+        assertThat(badScore.ok()).isFalse();
+        assertThat(badScore.error()).contains("cancel minScore 必须是非负数");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
+    void cancel传入错误类型参数时应返回错误且不检索() {
+        var tool = registry.resolve("memory").orElseThrow();
+        var badTypes = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "entityTypes", "GOAL"),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+        var badMax = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "maxArchive", "5"),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+        var badScore = tool.execute(new ToolInput(
+                tool.id(),
+                Map.of("action", "cancel", "query", "话题", "minScore", "0.5"),
+                tool.inputSchema(),
+                null,
+                Map.of()));
+
+        assertThat(badTypes.ok()).isFalse();
+        assertThat(badTypes.error()).contains("参数类型不匹配: entityTypes");
+        assertThat(badMax.ok()).isFalse();
+        assertThat(badMax.error()).contains("参数类型不匹配: maxArchive");
+        assertThat(badScore.ok()).isFalse();
+        assertThat(badScore.error()).contains("参数类型不匹配: minScore");
+        verify(hybridRetriever, never()).retrieve(anyString(), anyInt(), any(RetrievalWeights.class), any());
+    }
+
+    @Test
     void cancel带编号精确命中时应绕过默认类型限制() {
         var preference = 构造实体("pref-cancel", EntityType.PREFERENCE,
                 "MT-CANCEL-0507 不提醒下午5点检查记忆抽取日志");
-        when(semanticMemory.findAllCurrent(eq(MemoryReadFilter.all())))
+        when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class)))
                 .thenReturn(List.of(preference));
 
         var tool = registry.resolve("memory").orElseThrow();
@@ -250,7 +386,19 @@ class MemoryToolProvider_取消action测试 {
         return new TemporalEntity(
                 id, type, name, "描述-" + name, Map.of(),
                 1, true, now, null, "session-1",
-                0.8f, 0.5f, 0, null, now, now);
+                0.8f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 
     private RetrievalResult 构造结果(TemporalEntity entity, float score) {
@@ -269,5 +417,11 @@ class MemoryToolProvider_取消action测试 {
                 false,
                 false,
                 false);
+    }
+
+    private void 记忆(TemporalEntity... items) {
+        for (TemporalEntity item : items) {
+            entities.put(item.id(), item);
+        }
     }
 }

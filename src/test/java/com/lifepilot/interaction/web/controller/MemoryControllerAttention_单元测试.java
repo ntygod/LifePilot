@@ -7,6 +7,8 @@ import com.lifepilot.memory.consumption.attention.MemoryAttentionService.Attenti
 import com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionKind;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -36,6 +38,7 @@ class MemoryControllerAttention_单元测试 {
     private MemoryAttentionService attentionService;
     private ForgettingLogRepository forgettingLogRepository;
     private MemoryProvenanceRepository provenanceRepository;
+    private ProjectContextResolver projectContextResolver;
 
     @BeforeEach
     void setUp() {
@@ -43,13 +46,16 @@ class MemoryControllerAttention_单元测试 {
         attentionService = mock(MemoryAttentionService.class);
         forgettingLogRepository = mock(ForgettingLogRepository.class);
         provenanceRepository = mock(MemoryProvenanceRepository.class);
+        projectContextResolver = mock(ProjectContextResolver.class);
+        when(projectContextResolver.resolve(null))
+                .thenReturn(ProjectContext.personal("space-personal", "space-experience"));
     }
 
     private MemoryController controller(SemanticMemory sm, MemoryAttentionService svc) {
         return new MemoryController(
                 sm, null, null, null, null, null, null, null,
-                forgettingLogRepository, provenanceRepository, null,
-                new MemoryAccessPolicy(), null, svc);
+                forgettingLogRepository, provenanceRepository, null, projectContextResolver,
+                new MemoryAccessPolicy(), null, null, null, svc);
     }
 
     @Test

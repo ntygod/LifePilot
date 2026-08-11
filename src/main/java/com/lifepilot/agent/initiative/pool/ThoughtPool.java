@@ -6,8 +6,8 @@ import com.lifepilot.agent.initiative.model.Thought;
 import com.lifepilot.agent.initiative.model.ThoughtState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.lang.Nullable;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -30,50 +30,42 @@ public class ThoughtPool {
     private final int maxActiveThoughts;
     private final Duration brewingTtl;
     private final Duration readyTtl;
-    /** 想法持久化仓库（initiative_thoughts）—— null 时退化为纯内存（测试/未启用持久化）。 */
-    @Nullable
+    /** 想法持久化仓库（initiative_thoughts）。 */
     private final ThoughtRepository repository;
     /** 成熟度演化模型（thought-maturity-evolution）—— 强化、截止升温、停滞衰减的确定性计算。 */
     private final MaturityModel maturityModel;
+    private final Clock clock;
     private final ConcurrentHashMap<String, Thought> thoughts = new ConcurrentHashMap<>();
 
     public ThoughtPool(int maxActiveThoughts, Duration brewingTtl, Duration readyTtl,
-                       @Nullable ThoughtRepository repository,
-                       MaturityModel maturityModel) {
+                       ThoughtRepository repository,
+                       MaturityModel maturityModel,
+                       Clock clock) {
         this.maxActiveThoughts = maxActiveThoughts;
         this.brewingTtl = brewingTtl;
         this.readyTtl = readyTtl;
-        this.repository = repository;
-        this.maturityModel = maturityModel;
+        this.repository = Objects.requireNonNull(repository, "想法持久化仓库不能为空");
+        this.maturityModel = Objects.requireNonNull(maturityModel, "成熟度模型不能为空");
+        this.clock = Objects.requireNonNull(clock, "想法池时钟不能为空");
         loadActiveFromRepository();
     }
 
     /** 启动时从库恢复活跃想法（BREWING/READY），避免重启丢失去重/冷却状态。 */
     private void loadActiveFromRepository() {
-        if (repository == null) return;
-        try {
-            for (var t : repository.findByState(ThoughtState.BREWING)) {
-                thoughts.put(t.id(), t);
-            }
-            for (var t : repository.findByState(ThoughtState.READY)) {
-                thoughts.put(t.id(), t);
-            }
-            if (!thoughts.isEmpty()) {
-                log.info("想法池: 从库恢复活跃想法 {} 个", thoughts.size());
-            }
-        } catch (Exception e) {
-            log.warn("想法池: 从库恢复失败，以空池启动: {}", e.getMessage());
+        for (var t : repository.findByState(ThoughtState.BREWING)) {
+            thoughts.put(t.id(), t);
+        }
+        for (var t : repository.findByState(ThoughtState.READY)) {
+            thoughts.put(t.id(), t);
+        }
+        if (!thoughts.isEmpty()) {
+            log.info("想法池: 从库恢复活跃想法 {} 个", thoughts.size());
         }
     }
 
-    /** 持久化想法（best-effort，失败仅 warn 不阻塞思考）。 */
+    /** 持久化想法。 */
     private void persist(Thought thought) {
-        if (repository == null) return;
-        try {
-            repository.save(thought);
-        } catch (Exception e) {
-            log.warn("想法池: 持久化失败, id={}, error={}", thought.id(), e.getMessage());
-        }
+        repository.save(thought);
     }
 
     /**
@@ -92,9 +84,9 @@ public class ThoughtPool {
             float newConfidence = Math.max(existing.confidence(), thought.confidence());
             var newState = maturityModel.resolveState(newMaturity, existing.state());
             var merged = existing.reinforcedWith(
-                    mergedEvidence, newMaturity, newConfidence, newState, Instant.now());
-            thoughts.put(merged.id(), merged);
+                    mergedEvidence, newMaturity, newConfidence, newState, Instant.now(clock));
             persist(merged);
+            thoughts.put(merged.id(), merged);
             log.debug("想法池: 强化已有想法, intentKey={}, maturity={}->{}, weight={}",
                     thought.intentKey(), existing.maturity(), newMaturity, evidenceWeight);
             return merged;
@@ -109,8 +101,8 @@ public class ThoughtPool {
             return thought.withState(ThoughtState.DISMISSED);
         }
 
-        thoughts.put(thought.id(), thought);
         persist(thought);
+        thoughts.put(thought.id(), thought);
         log.debug("想法池: 新想法入池, id={}, intentKey={}, maturity={}",
                 thought.id(), thought.intentKey(), thought.maturity());
         return thought;
@@ -130,14 +122,27 @@ public class ThoughtPool {
      * 更新想法状态。
      */
     public void transition(String thoughtId, ThoughtState newState) {
-        thoughts.computeIfPresent(thoughtId, (id, thought) -> thought.withState(newState));
-        if (repository != null) {
-            try {
-                repository.updateState(thoughtId, newState);
-            } catch (Exception e) {
-                log.warn("想法池: 状态持久化失败, id={}, error={}", thoughtId, e.getMessage());
-            }
+        Thought existing = thoughts.get(thoughtId);
+        if (existing == null) {
+            return;
         }
+        Thought updated = existing.withState(newState);
+        repository.updateState(thoughtId, newState);
+        thoughts.put(thoughtId, updated);
+    }
+
+    /**
+     * 标记想法已表达，并记录主动对话 session。
+     */
+    public Thought markExpressed(String thoughtId, String conversationId) {
+        Thought existing = thoughts.get(thoughtId);
+        if (existing == null) {
+            throw new IllegalArgumentException("想法不存在: " + thoughtId);
+        }
+        Thought expressed = existing.withExpression(conversationId);
+        repository.markExpressed(thoughtId, conversationId);
+        thoughts.put(thoughtId, expressed);
+        return expressed;
     }
 
     /**
@@ -145,7 +150,7 @@ public class ThoughtPool {
      *
      * @return 清理数量
      */
-    public int cleanup() {
+    public int cleanup(Instant now) {
         int cleaned = 0;
         for (var entry : thoughts.entrySet()) {
             var thought = entry.getValue();
@@ -153,15 +158,9 @@ public class ThoughtPool {
                 // 终态想法保留一段时间后清理（用于冷却期判断）
                 continue;
             }
-            if (thought.isExpired(brewingTtl, readyTtl)) {
+            if (thought.isExpired(brewingTtl, readyTtl, now)) {
+                repository.updateState(entry.getKey(), ThoughtState.DISMISSED);
                 thoughts.put(entry.getKey(), thought.withState(ThoughtState.DISMISSED));
-                if (repository != null) {
-                    try {
-                        repository.updateState(entry.getKey(), ThoughtState.DISMISSED);
-                    } catch (Exception e) {
-                        log.warn("想法池: 清理状态持久化失败, id={}, error={}", entry.getKey(), e.getMessage());
-                    }
-                }
                 cleaned++;
             }
         }
@@ -174,8 +173,8 @@ public class ThoughtPool {
     /**
      * 成熟度演化 —— 对活跃想法按当前时间重算 maturity 并应用状态迁移（thought-maturity-evolution）。
      *
-     * <p>截止临近升温、停滞衰减；跌破淘汰下限的想法迁移为 DISMISSED。变更的想法持久化
-     * （best-effort，失败仅 warn 不阻塞）。单想法计算异常被隔离，不影响其余。</p>
+     * <p>截止临近升温、停滞衰减；跌破淘汰下限的想法迁移为 DISMISSED。单想法计算异常被隔离，
+     * 不影响其余。</p>
      *
      * @param now 当前时间（由调用方传入，保证可复现）
      * @return 发生变更的想法数
@@ -189,8 +188,8 @@ public class ThoughtPool {
                 var result = maturityModel.evolve(thought, now);
                 if (!result.changed()) continue;
                 var evolved = thought.withEvolution(result.maturity(), result.state());
-                thoughts.put(entry.getKey(), evolved);
                 persistEvolution(evolved, thought.state() != result.state());
+                thoughts.put(entry.getKey(), evolved);
                 changed++;
             } catch (Exception e) {
                 log.warn("想法池: 演化计算失败，跳过, id={}, error={}", entry.getKey(), e.getMessage());
@@ -204,14 +203,9 @@ public class ThoughtPool {
 
     /** 持久化演化结果（成熟度/状态/强化时间）；状态变更同时落 updateState。 */
     private void persistEvolution(Thought evolved, boolean stateChanged) {
-        if (repository == null) return;
-        try {
-            repository.save(evolved);
-            if (stateChanged) {
-                repository.updateState(evolved.id(), evolved.state());
-            }
-        } catch (Exception e) {
-            log.warn("想法池: 演化持久化失败, id={}, error={}", evolved.id(), e.getMessage());
+        repository.save(evolved);
+        if (stateChanged) {
+            repository.updateState(evolved.id(), evolved.state());
         }
     }
 

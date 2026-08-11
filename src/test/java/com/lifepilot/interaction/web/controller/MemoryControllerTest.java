@@ -1,9 +1,11 @@
 package com.lifepilot.interaction.web.controller;
 
 import com.lifepilot.interaction.web.model.MemoryProvenanceSummaryDto;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository.EntityMetadata;
 import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
+import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
 import com.lifepilot.memory.episodic.ConversationRecord;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
@@ -12,6 +14,10 @@ import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.memory.retrieval.RetrievalResult;
 import com.lifepilot.memory.retrieval.RetrievalWeights;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.feedback.RevalidationQueueRepository;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryScope;
@@ -65,6 +71,10 @@ class MemoryControllerTest {
     @Mock private ConsolidationPipeline consolidationPipeline;
     @Mock private ForgettingLogRepository forgettingLogRepository;
     @Mock private MemoryProvenanceRepository provenanceRepository;
+    @Mock private ChatSessionRepository chatSessionRepository;
+    @Mock private ProjectContextResolver projectContextResolver;
+    @Mock private MemoryExtractionCandidateRepository candidateRepository;
+    @Mock private RevalidationQueueRepository revalidationQueueRepository;
 
     private MockMvc mockMvc;
 
@@ -72,10 +82,13 @@ class MemoryControllerTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(projectContextResolver.resolve(null))
+                .thenReturn(ProjectContext.personal("space-personal", "space-experience"));
         var controller = new MemoryController(
                 semanticMemory, episodicMemory, proceduralMemory,
                 hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
-                provenanceRepository, null, new MemoryAccessPolicy(), null, null);
+                provenanceRepository, chatSessionRepository, projectContextResolver, new MemoryAccessPolicy(),
+                candidateRepository, revalidationQueueRepository, null, null);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         lenient().when(provenanceRepository.loadEntityMetadata(anyCollection()))
                 .thenReturn(Map.of());
@@ -89,19 +102,38 @@ class MemoryControllerTest {
         return new TemporalEntity(
                 id, type, name, name + " 描述",
                 Map.of(), 1, true, NOW, null, "conv-1",
-                0.9f, 0.5f, 3, NOW, NOW, NOW);
+                0.9f, 0.5f, 3, NOW, NOW, NOW,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        NOW)
+                .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
     }
 
     private static TemporalRelation testRelation(String id, String sourceId, String targetId) {
         return new TemporalRelation(
                 id, sourceId, targetId, "KNOWS", 0.8f,
-                null, NOW, null, "conv-1", NOW);
+                null, NOW, null, "conv-1", NOW,
+                MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f);
     }
 
     private static ConversationRecord testConversation(String id) {
         return new ConversationRecord(
                 id, "session-1", "测试目标", "测试摘要",
                 List.of(), NOW, NOW);
+    }
+
+    private void stubReadable(TemporalEntity entity) {
+        when(semanticMemory.findByIds(eq(List.of(entity.id())), any(MemoryReadFilter.class)))
+                .thenReturn(Map.of(entity.id(), entity));
     }
 
     // ── 记忆系统未启用 ───────────────────────────────────
@@ -115,7 +147,7 @@ class MemoryControllerTest {
         void setUp() {
             var controller = new MemoryController(
                     null, null, null, null, null, null, null, null, forgettingLogRepository,
-                    provenanceRepository, null, new MemoryAccessPolicy(), null, null);
+                    provenanceRepository, null, projectContextResolver, new MemoryAccessPolicy(), null, null, null, null);
             disabledMvc = MockMvcBuilders.standaloneSetup(controller).build();
         }
 
@@ -141,6 +173,15 @@ class MemoryControllerTest {
         void consolidate端点_返回503() throws Exception {
             disabledMvc.perform(post("/api/memories/consolidate"))
                     .andExpect(status().isServiceUnavailable());
+        }
+
+        @Test
+        void 状态接口_返回已跳过而不是503() throws Exception {
+            disabledMvc.perform(get("/api/memories/turns/turn-1/changes/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("DISABLED"))
+                    .andExpect(jsonPath("$.data.reason").value("memory_system_disabled"))
+                    .andExpect(jsonPath("$.data.changes", hasSize(0)));
         }
     }
 
@@ -182,19 +223,24 @@ class MemoryControllerTest {
                     "e1", "PERSON", "张三", "描述", 0.85f,
                     new RetrievalResult.ScoreBreakdown(0.5f, 0.3f, 0.3f, 0.2f, 0.2f, 0.1f, 0.05f, 0.05f, 0f, 0f),
                     "vector+fts", NOW, 0.5f, null, false, false, false);
-            when(hybridRetriever.retrieve(eq("张三"), eq(10), any(RetrievalWeights.class), any()))
+            when(hybridRetriever.retrieve(eq("张三"), eq(30), any(RetrievalWeights.class), any()))
                     .thenReturn(List.of(result));
+            when(semanticMemory.findByIds(anyCollection(), any(MemoryReadFilter.class)))
+                    .thenReturn(Map.of("e1", testEntity("e1", "张三", EntityType.PERSON)));
             when(provenanceRepository.loadEntityMetadata(List.of("e1")))
                     .thenReturn(Map.of("e1", new EntityMetadata("e1", "user:default", "USER_FACT", "REAL")));
 
             mockMvc.perform(get("/api/memories/search").param("q", "张三"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data", hasSize(1)))
-                    .andExpect(jsonPath("$.data[0].entityId").value("e1"))
-                    .andExpect(jsonPath("$.data[0].name").value("张三"))
-                    .andExpect(jsonPath("$.data[0].spaceId").value("user:default"))
-                    .andExpect(jsonPath("$.data[0].memoryScope").value("USER_FACT"))
-                    .andExpect(jsonPath("$.data[0].realityType").value("REAL"));
+                    .andExpect(jsonPath("$.data.count").value(1))
+                    .andExpect(jsonPath("$.data.results", hasSize(1)))
+                    .andExpect(jsonPath("$.data.results[0].entityId").value("e1"))
+                    .andExpect(jsonPath("$.data.results[0].name").value("张三"))
+                    .andExpect(jsonPath("$.data.results[0].spaceId").value("user:default"))
+                    .andExpect(jsonPath("$.data.results[0].memoryScope").value("USER_FACT"))
+                    .andExpect(jsonPath("$.data.results[0].realityType").value("REAL"))
+                    .andExpect(jsonPath("$.data.results[0].evidenceKind").value("USER_EXPLICIT"))
+                    .andExpect(jsonPath("$.data.results[0].trustLevel").value("EXPLICIT"));
         }
 
         @Test
@@ -205,9 +251,9 @@ class MemoryControllerTest {
             var controller = new MemoryController(
                     semanticMemory, episodicMemory, proceduralMemory,
                     hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
-                    provenanceRepository, resolver, new MemoryAccessPolicy(), null, null);
+                    provenanceRepository, null, resolver, new MemoryAccessPolicy(), null, null, null, null);
             var projectMvc = MockMvcBuilders.standaloneSetup(controller).build();
-            when(hybridRetriever.retrieve(eq("咖啡"), eq(10), any(RetrievalWeights.class), any()))
+            when(hybridRetriever.retrieve(eq("咖啡"), eq(30), any(RetrievalWeights.class), any()))
                     .thenReturn(List.of());
 
             projectMvc.perform(get("/api/memories/search")
@@ -216,7 +262,7 @@ class MemoryControllerTest {
                     .andExpect(status().isOk());
 
             ArgumentCaptor<MemoryReadFilter> captor = ArgumentCaptor.forClass(MemoryReadFilter.class);
-            verify(hybridRetriever).retrieve(eq("咖啡"), eq(10), any(RetrievalWeights.class), captor.capture());
+            verify(hybridRetriever).retrieve(eq("咖啡"), eq(30), any(RetrievalWeights.class), captor.capture());
             assertThat(captor.getValue().spaceIds())
                     .containsExactlyInAnyOrder("space-project", "space-personal", "space-experience");
             assertThat(captor.getValue().scopes())
@@ -227,6 +273,197 @@ class MemoryControllerTest {
         void 空关键词_返回400() throws Exception {
             mockMvc.perform(get("/api/memories/search").param("q", ""))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void topK非正数_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/search")
+                            .param("q", "张三")
+                            .param("topK", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void projectId包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/search")
+                            .param("q", "张三")
+                            .param("projectId", " p-1"))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    // ── 轮次记忆变更 ──────────────────────────────────────
+
+    @Nested
+    class 轮次记忆变更 {
+
+        @Test
+        void 返回本轮已经沉淀的记忆摘要() throws Exception {
+            when(candidateRepository.findAppliedMemoryChangesByTurnId(
+                    "turn-1", 5, List.of("space-personal", "space-experience"), true))
+                    .thenReturn(List.of(new MemoryExtractionCandidateRepository.AppliedMemoryChange(
+                            "candidate-1",
+                            null,
+                            "ADD",
+                            "主界面偏好",
+                            "PREFERENCE",
+                            "memory-1",
+                            "用户偏好主界面更轻量。",
+                            0.82f,
+                            "PERSISTENT",
+                            null,
+                            "USER_EXPLICIT",
+                            "EXPLICIT",
+                            0.92f,
+                            "用户说喜欢轻量主界面",
+                            Instant.parse("2026-07-04T00:00:00Z"))));
+
+            mockMvc.perform(get("/api/memories/turns/turn-1/changes"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data", hasSize(1)))
+                    .andExpect(jsonPath("$.data[0].type").value("memory"))
+                    .andExpect(jsonPath("$.data[0].id").value("memory-1"))
+                    .andExpect(jsonPath("$.data[0].name").value("主界面偏好"))
+                    .andExpect(jsonPath("$.data[0].extra.operation").value("ADD"))
+                    .andExpect(jsonPath("$.data[0].extra.operationLabel").value("新增"))
+                    .andExpect(jsonPath("$.data[0].extra.entityType").value("PREFERENCE"))
+                    .andExpect(jsonPath("$.data[0].extra.entityTypeLabel").value("偏好"))
+                    .andExpect(jsonPath("$.data[0].extra.sourceKind").value("personal"))
+                    .andExpect(jsonPath("$.data[0].extra.sourceKindLabel").value("个人上下文"))
+                    .andExpect(jsonPath("$.data[0].extra.description").value("用户偏好主界面更轻量。"))
+                    .andExpect(jsonPath("$.data[0].extra.importanceScore").value(0.82))
+                    .andExpect(jsonPath("$.data[0].extra.temporality").value("PERSISTENT"))
+                    .andExpect(jsonPath("$.data[0].extra.trustLevel").value("EXPLICIT"))
+                    .andExpect(jsonPath("$.data[0].extra.evidenceExcerpt").value("用户说喜欢轻量主界面"));
+        }
+
+        @Test
+        void 状态接口_有沉淀记忆时返回已沉淀() throws Exception {
+            when(candidateRepository.findAppliedMemoryChangesByTurnId(
+                    "turn-1", 5, List.of("space-personal", "space-experience"), true))
+                    .thenReturn(List.of(new MemoryExtractionCandidateRepository.AppliedMemoryChange(
+                            "candidate-1",
+                            null,
+                            "ADD",
+                            "主界面偏好",
+                            "PREFERENCE",
+                            "memory-1",
+                            "用户偏好主界面更轻量。",
+                            0.82f,
+                            "PERSISTENT",
+                            null,
+                            "USER_EXPLICIT",
+                            "EXPLICIT",
+                            0.92f,
+                            "用户说喜欢轻量主界面",
+                            Instant.parse("2026-07-04T00:00:00Z"))));
+
+            mockMvc.perform(get("/api/memories/turns/turn-1/changes/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("SETTLED"))
+                    .andExpect(jsonPath("$.data.changes", hasSize(1)))
+                    .andExpect(jsonPath("$.data.changes[0].id").value("memory-1"));
+        }
+
+        @Test
+        void 状态接口_抽取仍未有终态时返回处理中() throws Exception {
+            when(candidateRepository.findAppliedMemoryChangesByTurnId(
+                    "turn-1", 5, List.of("space-personal", "space-experience"), true))
+                    .thenReturn(List.of());
+            when(candidateRepository.findTurnExtractionStatus("turn-1"))
+                    .thenReturn(Optional.empty());
+
+            mockMvc.perform(get("/api/memories/turns/turn-1/changes/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("PENDING"))
+                    .andExpect(jsonPath("$.data.changes", hasSize(0)));
+        }
+
+        @Test
+        void 状态接口_抽取完成但无变更时返回已检查无新增() throws Exception {
+            when(candidateRepository.findAppliedMemoryChangesByTurnId(
+                    "turn-1", 5, List.of("space-personal", "space-experience"), true))
+                    .thenReturn(List.of());
+            when(candidateRepository.findTurnExtractionStatus("turn-1"))
+                    .thenReturn(Optional.of(turnExtractionStatus("COMPLETED", null)));
+
+            mockMvc.perform(get("/api/memories/turns/turn-1/changes/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("CHECKED_EMPTY"))
+                    .andExpect(jsonPath("$.data.changes", hasSize(0)));
+        }
+
+        @Test
+        void 状态接口_抽取失败时返回失败原因() throws Exception {
+            when(candidateRepository.findAppliedMemoryChangesByTurnId(
+                    "turn-1", 5, List.of("space-personal", "space-experience"), true))
+                    .thenReturn(List.of());
+            when(candidateRepository.findTurnExtractionStatus("turn-1"))
+                    .thenReturn(Optional.of(turnExtractionStatus("FAILED", "llm_timeout")));
+
+            mockMvc.perform(get("/api/memories/turns/turn-1/changes/status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("FAILED"))
+                    .andExpect(jsonPath("$.data.reason").value("llm_timeout"));
+        }
+
+        @Test
+        void 隔离项目_只补齐项目空间内的本轮记忆() throws Exception {
+            when(projectContextResolver.resolve("p-1"))
+                    .thenReturn(new ProjectContext("p-1", "space-project", "space-personal", "space-experience", true));
+            when(candidateRepository.findAppliedMemoryChangesByTurnId(
+                    "turn-1", 5, List.of("space-project"), false))
+                    .thenReturn(List.of(new MemoryExtractionCandidateRepository.AppliedMemoryChange(
+                            "candidate-1",
+                            "space-project",
+                            "ADD",
+                            "项目偏好",
+                            "PREFERENCE",
+                            "memory-1",
+                            "用户偏好当前项目的主界面更轻量。",
+                            0.82f,
+                            "PERSISTENT",
+                            null,
+                            "USER_EXPLICIT",
+                            "EXPLICIT",
+                            0.92f,
+                            "项目里主界面做轻",
+                            Instant.parse("2026-07-04T00:00:00Z"))));
+
+            mockMvc.perform(get("/api/memories/turns/turn-1/changes")
+                            .param("projectId", "p-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data", hasSize(1)))
+                    .andExpect(jsonPath("$.data[0].id").value("memory-1"))
+                    .andExpect(jsonPath("$.data[0].extra.spaceId").value("space-project"))
+                    .andExpect(jsonPath("$.data[0].extra.sourceKind").value("project"))
+                    .andExpect(jsonPath("$.data[0].extra.sourceKindLabel").value("项目上下文"));
+        }
+
+        @Test
+        void projectId包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/turns/turn-1/changes")
+                            .param("projectId", " p-1"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void turnId为空_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/turns/%20/changes"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        private MemoryExtractionCandidateRepository.TurnExtractionStatus turnExtractionStatus(
+                String status,
+                String reason) {
+            return new MemoryExtractionCandidateRepository.TurnExtractionStatus(
+                    "turn-1",
+                    "session-1",
+                    status,
+                    reason,
+                    Instant.parse("2026-07-06T00:00:00Z"),
+                    "RUNNING".equals(status) ? null : Instant.parse("2026-07-06T00:00:01Z"),
+                    Instant.parse("2026-07-06T00:00:01Z"));
         }
     }
 
@@ -282,6 +519,54 @@ class MemoryControllerTest {
         }
 
         @Test
+        void 实体列表_memoryScope包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("memoryScope", " DOMAIN_MEMORY"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_spaceId为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("spaceId", " "))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_timeFrom为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("timeFrom", " "))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_timeTo格式非法_返回400() throws Exception {
+            when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("timeTo", "2026-03-13"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_sortBy无效_返回400() throws Exception {
+            when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("sortBy", "updatedAt"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体列表_order大小写不匹配_返回400() throws Exception {
+            when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("order", "DESC"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         void 实体列表_按来源字段过滤() throws Exception {
             when(semanticMemory.findAllCurrent(any(MemoryReadFilter.class))).thenReturn(List.of(
                     testEntity("e1", "林夜", EntityType.PERSON),
@@ -298,9 +583,15 @@ class MemoryControllerTest {
         }
 
         @Test
+        void 实体列表_来源过滤包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities")
+                            .param("originType", " KNOWLEDGE_BASE_DOCUMENT"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         void 实体详情_存在() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "张三", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
 
             mockMvc.perform(get("/api/memories/entities/e1"))
                     .andExpect(status().isOk())
@@ -310,8 +601,6 @@ class MemoryControllerTest {
 
         @Test
         void 实体详情_不存在_返回404() throws Exception {
-            when(semanticMemory.findById("not-exist")).thenReturn(Optional.empty());
-
             mockMvc.perform(get("/api/memories/entities/not-exist"))
                     .andExpect(status().isNotFound());
         }
@@ -319,18 +608,16 @@ class MemoryControllerTest {
         @Test
         void 归档实体_成功() throws Exception {
             var entity = testEntity("e1", "张三", EntityType.PERSON);
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(entity));
+            stubReadable(entity);
 
             mockMvc.perform(delete("/api/memories/entities/e1"))
                     .andExpect(status().isOk());
 
-            verify(semanticMemory).archive(entity);
+        verify(semanticMemory).archive(entity, ChangeSource.UI_EDIT);
         }
 
         @Test
         void 归档实体_不存在_返回404() throws Exception {
-            when(semanticMemory.findById("not-exist")).thenReturn(Optional.empty());
-
             mockMvc.perform(delete("/api/memories/entities/not-exist"))
                     .andExpect(status().isNotFound());
         }
@@ -356,29 +643,55 @@ class MemoryControllerTest {
         }
 
         @Test
-        void 更新实体_沿用原space和scope写入() throws Exception {
-            var entity = testEntity("e-domain", "林夜", EntityType.PERSON);
-            when(semanticMemory.findById("e-domain")).thenReturn(Optional.of(entity));
-            when(provenanceRepository.loadEntityMetadata(List.of("e-domain")))
-                    .thenReturn(Map.of("e-domain",
-                            new EntityMetadata("e-domain", "domain:kb-1", "DOMAIN_MEMORY", "FICTIONAL")));
+        void 创建实体_name包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(post("/api/memories/entities")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"name":" 张三","type":"PERSON","description":"产品经理","importanceScore":0.7}
+                                    """))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 更新实体_主账户路径使用主账户写入上下文() throws Exception {
+            var entity = testEntity("e-main", "林夜", EntityType.PERSON);
+            stubReadable(entity);
             when(semanticMemory.upsertWithConflictDetection(
                     any(TemporalEntity.class), eq("manual-edit"), any(MemoryWriteContext.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
-            mockMvc.perform(put("/api/memories/entities/e-domain")
+            mockMvc.perform(put("/api/memories/entities/e-main")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"description":"更新后描述","importanceScore":0.9}
+                                    {"name":"林夜偏好","description":"更新后描述","importanceScore":0.9}
                                     """))
                     .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.name").value("林夜偏好"))
                     .andExpect(jsonPath("$.data.description").value("更新后描述"));
 
+            ArgumentCaptor<TemporalEntity> entityCaptor = ArgumentCaptor.forClass(TemporalEntity.class);
             ArgumentCaptor<MemoryWriteContext> captor = ArgumentCaptor.forClass(MemoryWriteContext.class);
             verify(semanticMemory).upsertWithConflictDetection(
-                    any(TemporalEntity.class), eq("manual-edit"), captor.capture());
-            assertThat(captor.getValue().spaceId()).isEqualTo("domain:kb-1");
-            assertThat(captor.getValue().memoryScope()).isEqualTo(MemoryScope.DOMAIN_MEMORY);
+                    entityCaptor.capture(), eq("manual-edit"), captor.capture());
+            assertThat(entityCaptor.getValue().name()).isEqualTo("林夜偏好");
+            assertThat(captor.getValue().spaceId()).isNull();
+            assertThat(captor.getValue().memoryScope()).isNull();
+        }
+
+        @Test
+        void 更新实体_name为空白_返回400() throws Exception {
+            var entity = testEntity("e-main", "林夜", EntityType.PERSON);
+            stubReadable(entity);
+
+            mockMvc.perform(put("/api/memories/entities/e-main")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"name":" "}
+                                    """))
+                    .andExpect(status().isBadRequest());
+
+            verify(semanticMemory, never()).upsertWithConflictDetection(
+                    any(TemporalEntity.class), eq("manual-edit"), any(MemoryWriteContext.class));
         }
 
         @Test
@@ -389,7 +702,7 @@ class MemoryControllerTest {
             var controller = new MemoryController(
                     semanticMemory, episodicMemory, proceduralMemory,
                     hybridRetriever, consolidationPipeline, null, null, null, forgettingLogRepository,
-                    provenanceRepository, resolver, new MemoryAccessPolicy(), null, null);
+                    provenanceRepository, null, resolver, new MemoryAccessPolicy(), null, null, null, null);
             var projectMvc = MockMvcBuilders.standaloneSetup(controller).build();
             var base = testEntity("base-1", "咖啡偏好", EntityType.PREFERENCE);
             var overlay = testEntity("overlay-1", "咖啡偏好", EntityType.PREFERENCE);
@@ -420,14 +733,14 @@ class MemoryControllerTest {
 
         @Test
         void 实体来源明细_返回provenance列表() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "张三", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
             when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "CHAT",
                             "session-1",
                             "conv-1",
                             "session-1",
+                            null,
                             "turn-1",
                             null,
                             null,
@@ -439,23 +752,32 @@ class MemoryControllerTest {
                             0.9f,
                             "张三",
                             0.9f,
+                            "STALE",
+                            NOW,
+                            "PENDING",
                             NOW
                     )));
+            when(chatSessionRepository.findTitlesByIds(anyCollection()))
+                    .thenReturn(Map.of("session-1", "主界面体验讨论"));
 
             mockMvc.perform(get("/api/memories/entities/e1/provenances"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data[0].originType").value("CHAT"))
-                    .andExpect(jsonPath("$.data[0].sourceSessionId").value("session-1"));
+                    .andExpect(jsonPath("$.data[0].sourceSessionId").value("session-1"))
+                    .andExpect(jsonPath("$.data[0].sourceSessionTitle").value("主界面体验讨论"))
+                    .andExpect(jsonPath("$.data[0].status").value("STALE"))
+                    .andExpect(jsonPath("$.data[0].revalidationStatus").value("PENDING"))
+                    .andExpect(jsonPath("$.data[0].invalidatedAt").exists());
         }
 
         @Test
         void 实体来源明细_返回友好名称() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "林夜", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "林夜", EntityType.PERSON));
             when(provenanceRepository.findEntityProvenances(eq("e1"), eq(null), eq(null), eq(null)))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "KNOWLEDGE_BASE_DOCUMENT",
                             "doc-1",
+                            null,
                             null,
                             null,
                             null,
@@ -469,6 +791,9 @@ class MemoryControllerTest {
                             0.93f,
                             "人物设定",
                             0.93f,
+                            "VALID",
+                            null,
+                            null,
                             NOW
                     )));
             when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
@@ -485,13 +810,13 @@ class MemoryControllerTest {
 
         @Test
         void 实体来源明细_按来源字段过滤() throws Exception {
-            when(semanticMemory.findById("e1")).thenReturn(Optional.of(
-                    testEntity("e1", "张三", EntityType.PERSON)));
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
             when(provenanceRepository.findEntityProvenances(
                     eq("e1"), eq("KNOWLEDGE_BASE_DOCUMENT"), eq("kb-1"), eq("doc-1")))
                     .thenReturn(List.of(new com.lifepilot.interaction.web.model.EntityProvenanceDto(
                             "KNOWLEDGE_BASE_DOCUMENT",
                             "人物设定集",
+                            null,
                             null,
                             null,
                             null,
@@ -505,6 +830,9 @@ class MemoryControllerTest {
                             0.95f,
                             "人物设定集",
                             0.95f,
+                            "VALID",
+                            null,
+                            null,
                             NOW
                     )));
             when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
@@ -523,6 +851,28 @@ class MemoryControllerTest {
         }
 
         @Test
+        void 实体来源明细_来源过滤包含首尾空白_返回400() throws Exception {
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
+
+            mockMvc.perform(get("/api/memories/entities/e1/provenances")
+                            .param("sourceDocumentId", " doc-1"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 实体再验证_人工确认后关闭待复核队列() throws Exception {
+            stubReadable(testEntity("e1", "张三", EntityType.PERSON));
+            when(revalidationQueueRepository.markResolvedByEntityId("e1")).thenReturn(2);
+
+            mockMvc.perform(post("/api/memories/entities/e1/revalidation/resolve"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.resolvedCount").value(2))
+                    .andExpect(jsonPath("$.data.status").value("RESOLVED"));
+
+            verify(revalidationQueueRepository).markResolvedByEntityId("e1");
+        }
+
+        @Test
         void 最近来源摘要_返回知识库和文档友好名称() throws Exception {
             when(provenanceRepository.findRecentProvenanceSummaries(
                     eq(null), eq(null), eq(null), eq(5)))
@@ -537,6 +887,7 @@ class MemoryControllerTest {
                             "人物设定手册",
                             null,
                             "session-1",
+                            null,
                             "turn-1",
                             "entry-1",
                             "doc-1",
@@ -548,12 +899,17 @@ class MemoryControllerTest {
                             0.97f,
                             "人物设定手册",
                             0.97f,
+                            "VALID",
+                            null,
+                            null,
                             NOW
                     )));
             when(provenanceRepository.loadKnowledgeBaseNames(anyCollection()))
                     .thenReturn(Map.of("kb-1", "世界观资料库"));
             when(provenanceRepository.loadDocumentNames(anyCollection()))
                     .thenReturn(Map.of("doc-1", "人物设定.md"));
+            when(chatSessionRepository.findTitlesByIds(anyCollection()))
+                    .thenReturn(Map.of("session-1", "小说设定整理"));
 
             mockMvc.perform(get("/api/memories/provenances/recent")
                             .param("limit", "5"))
@@ -564,8 +920,16 @@ class MemoryControllerTest {
                     .andExpect(jsonPath("$.data[0].entityTypeLabel").value("人物"))
                     .andExpect(jsonPath("$.data[0].entityMemoryScope").value("DOMAIN_MEMORY"))
                     .andExpect(jsonPath("$.data[0].sourceSessionId").value("session-1"))
+                    .andExpect(jsonPath("$.data[0].sourceSessionTitle").value("小说设定整理"))
                     .andExpect(jsonPath("$.data[0].sourceKnowledgeBaseName").value("世界观资料库"))
                     .andExpect(jsonPath("$.data[0].sourceDocumentName").value("人物设定.md"));
+        }
+
+        @Test
+        void 最近来源摘要_来源过滤包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/provenances/recent")
+                            .param("sourceKnowledgeBaseId", " kb-1"))
+                    .andExpect(status().isBadRequest());
         }
     }
 
@@ -617,6 +981,13 @@ class MemoryControllerTest {
             mockMvc.perform(delete("/api/memories/conversations/not-exist"))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        void 对话列表_timeFrom为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/conversations")
+                            .param("timeFrom", " "))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     // ── 巩固 ─────────────────────────────────────────────
@@ -643,7 +1014,7 @@ class MemoryControllerTest {
         void 关系列表_附带实体名称() throws Exception {
             var relation = testRelation("r1", "e1", "e2");
             when(semanticMemory.findAllCurrentRelations()).thenReturn(List.of(relation));
-            when(semanticMemory.findByIds(any())).thenReturn(Map.of(
+            when(semanticMemory.findByIds(anyCollection(), any(MemoryReadFilter.class))).thenReturn(Map.of(
                     "e1", testEntity("e1", "张三", EntityType.PERSON),
                     "e2", testEntity("e2", "项目A", EntityType.PROJECT)));
             when(provenanceRepository.loadEntityMetadata(anyCollection()))
@@ -662,6 +1033,59 @@ class MemoryControllerTest {
                     .andExpect(jsonPath("$.data.items[0].targetEntitySpaceId").value("domain:knowledge-base:novel"))
                     .andExpect(jsonPath("$.data.items[0].targetEntityMemoryScope").value("DOMAIN_MEMORY"))
                     .andExpect(jsonPath("$.data.items[0].targetEntityRealityType").value("FICTIONAL"));
+        }
+
+        @Test
+        void 关系列表_relationType包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/relations")
+                            .param("relationType", " KNOWS"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 关联实体_maxDepth非正_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/entities/e1/related")
+                            .param("maxDepth", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 关系列表_relationType大小写必须精确匹配() throws Exception {
+            var relation = testRelation("r1", "e1", "e2");
+            when(semanticMemory.findAllCurrentRelations()).thenReturn(List.of(relation));
+            when(semanticMemory.findByIds(anyCollection(), any(MemoryReadFilter.class))).thenReturn(Map.of());
+            when(provenanceRepository.loadEntityMetadata(anyCollection())).thenReturn(Map.of());
+
+            mockMvc.perform(get("/api/memories/relations")
+                            .param("relationType", "knows"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items", hasSize(0)))
+                    .andExpect(jsonPath("$.data.total").value(0));
+        }
+    }
+
+    @Nested
+    class 过滤参数 {
+
+        @Test
+        void 偏好分类为空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/preferences")
+                            .param("category", " "))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 遗忘日志_timeTo包含首尾空白_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/forgetting-logs")
+                            .param("timeTo", " 2026-03-13T10:00:00Z"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 遗忘日志_timeFrom格式非法_返回400() throws Exception {
+            mockMvc.perform(get("/api/memories/forgetting-logs")
+                            .param("timeFrom", "2026-03-13"))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

@@ -20,6 +20,7 @@ import com.lifepilot.skill.tool.SkillLoadTool;
 import com.lifepilot.skill.tool.SkillLoadToolExecutor;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
 import com.lifepilot.tool.BuiltinTool;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.slf4j.Logger;
@@ -124,9 +125,10 @@ public class SkillAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SkillLoadToolExecutor skillLoadToolExecutor(SkillActivator skillActivator,
-                                                       SkillInstallationRepository installationRepository) {
+                                                       SkillInstallationRepository installationRepository,
+                                                       DynamicToolRegistry toolRegistry) {
         log.info("Skill 系统: 注册 SkillLoadToolExecutor");
-        return new SkillLoadToolExecutor(skillActivator, installationRepository);
+        return new SkillLoadToolExecutor(skillActivator, installationRepository, toolRegistry);
     }
 
     /**
@@ -166,11 +168,10 @@ public class SkillAutoConfiguration {
     public MarkdownSkillLoader markdownSkillLoader(SkillRegistry registry,
                                                    SkillConfigProperties config,
                                                    MarkdownSkillParser parser,
-                                                   SkillDescriptionValidator descriptionValidator,
-                                                   SkillBodyValidator bodyValidator,
+                                                   SkillValidator validator,
                                                    ZhiweiPaths zhiweiPaths) {
         log.info("Skill 系统: 注册 MarkdownSkillLoader, directory={}", zhiweiPaths.home("skills"));
-        return new MarkdownSkillLoader(registry, config, parser, descriptionValidator, bodyValidator, zhiweiPaths);
+        return new MarkdownSkillLoader(registry, config, parser, validator, zhiweiPaths);
     }
 
     @Bean
@@ -256,7 +257,7 @@ public class SkillAutoConfiguration {
                     definitionErrors++;
                 }
             }
-            log.info("ApplicationReady: Skill 终态校验完成（definition 错误 skill={}；未注册工具见上方 WARN）",
+            log.info("ApplicationReady: Skill 终态校验完成（definition 错误 skill={}；未注册工具已降为 DEBUG）",
                     definitionErrors);
         } catch (Exception e) {
             log.warn("ApplicationReady: Skill 终态校验跳过: {}", e.getMessage());

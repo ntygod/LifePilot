@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -136,8 +138,8 @@ public final class ProcessBooter implements SandboxBooter {
             }
 
             // 8. 获取输出（超时后也尝试获取已有输出）
-            byte[] stdoutBytes = stdoutFuture.getNow(new byte[0]);
-            byte[] stderrBytes = stderrFuture.getNow(new byte[0]);
+            byte[] stdoutBytes = awaitCapturedOutput(stdoutFuture, "stdout");
+            byte[] stderrBytes = awaitCapturedOutput(stderrFuture, "stderr");
 
             long durationMs = System.currentTimeMillis() - startTime;
             int maxBytes = config.getMaxOutputBytes();
@@ -219,5 +221,19 @@ public final class ProcessBooter implements SandboxBooter {
     /** 按 OS 选 shell 解释器：Windows 走 {@code cmd}，其余走 {@code bash}。 */
     private static String detectShell() {
         return System.getProperty("os.name").toLowerCase().contains("win") ? "cmd" : "bash";
+    }
+
+    private byte[] awaitCapturedOutput(CompletableFuture<byte[]> future, String streamName)
+            throws InterruptedException {
+        try {
+            return future.get(5, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("读取进程输出超时，返回已截断为空: stream={}", streamName);
+            return new byte[0];
+        } catch (ExecutionException e) {
+            log.warn("读取进程输出失败，返回空输出: stream={}, error={}",
+                    streamName, e.getCause() == null ? e.getMessage() : e.getCause().getMessage());
+            return new byte[0];
+        }
     }
 }

@@ -18,6 +18,8 @@ import com.lifepilot.meta.infra.code.kernel.PersistentKernelManager;
 import com.lifepilot.meta.infra.file.FileToolProvider;
 import com.lifepilot.meta.infra.file.history.FileEditHistory;
 import com.lifepilot.meta.infra.file.history.LintHookExecutor;
+import com.lifepilot.meta.infra.git.GitCommandExecutor;
+import com.lifepilot.meta.infra.git.GitToolProvider;
 import com.lifepilot.meta.infra.shell.BackgroundProcessManager;
 import com.lifepilot.meta.infra.shell.ShellExecToolExecutor;
 import com.lifepilot.meta.infra.shell.ShellToolProvider;
@@ -25,6 +27,7 @@ import com.lifepilot.meta.infra.shell.session.TmuxCommandExecutor;
 import com.lifepilot.meta.infra.attachment.AttachmentToolProvider;
 import com.lifepilot.meta.infra.shell.session.TmuxSessionManager;
 import com.lifepilot.meta.infra.interaction.NotifyToolProvider;
+import com.lifepilot.meta.infra.transcript.TranscriptToolProvider;
 import com.lifepilot.meta.infra.web.SsrfGuard;
 import com.lifepilot.meta.infra.web.WebSearchConfigProvider;
 import com.lifepilot.meta.infra.web.WebToolProvider;
@@ -170,6 +173,22 @@ public class InfraToolProvider {
                 workspaceResolver, gatewayDeliveryProperties);
         totalTools += registerBuiltinTools(toolRegistry, fileToolProvider.buildFileTools());
 
+        // 工具产物附件挂载（file.attach）
+        if (attachmentRepository != null) {
+            var attachmentToolProvider = new AttachmentToolProvider(attachmentRepository, workspaceResolver);
+            totalTools += registerBuiltinTools(toolRegistry, attachmentToolProvider.buildAttachmentTools());
+        } else {
+            log.warn("AttachmentRepository 不可用，跳过附件挂载工具注册");
+        }
+
+        // 当前会话 transcript 原文检索（transcript.search + transcript.get）
+        if (sessionTranscriptRepository != null) {
+            var transcriptToolProvider = new TranscriptToolProvider(sessionTranscriptRepository);
+            totalTools += registerBuiltinTools(toolRegistry, transcriptToolProvider.buildTranscriptTools());
+        } else {
+            log.warn("SessionTranscriptRepository 不可用，跳过 transcript 工具注册");
+        }
+
         // 通知工具
         if (notificationService != null && notificationProperties != null) {
             var notifyToolProvider = new NotifyToolProvider(notificationService, notificationProperties);
@@ -205,7 +224,7 @@ public class InfraToolProvider {
             if (tmuxCmd.isTmuxAvailable()) {
                 tmuxSessionManager = new TmuxSessionManager(tmuxCmd, shellSessionConfig, workspaceResolver);
             } else {
-                log.warn("tmux 不可用，Shell 持久会话能力将不可用");
+                log.info("tmux 不可用，Shell 持久会话能力将不可用，普通 shell.exec 不受影响");
             }
         }
 
@@ -216,6 +235,20 @@ public class InfraToolProvider {
         }
         var shellToolProvider = new ShellToolProvider(shellExecExecutor, backgroundProcessManager, tmuxSessionManager);
         totalTools += registerBuiltinTools(toolRegistry, shellToolProvider.buildShellTools());
+
+        // Git 专用工具（git.query + git.mutate）— 保留 shell.exec 作为兜底，不再复用 shell_exec 伪 ID。
+        var gitConfig = properties.getInfra().getGit();
+        if (gitConfig.isEnabled()) {
+            var gitCommandExecutor = new GitCommandExecutor(gitConfig);
+            if (gitCommandExecutor.isGitAvailable()) {
+                var gitToolProvider = new GitToolProvider(gitCommandExecutor, gitConfig);
+                totalTools += registerBuiltinTools(toolRegistry, gitToolProvider.buildGitTools());
+            } else {
+                log.warn("Git 命令不可用，跳过 Git 工具注册");
+            }
+        } else {
+            log.info("Git 工具已禁用（lifepilot.meta.infra.git.enabled=false）");
+        }
 
         // 代码执行工具 — kernel 与 sandbox 共享同一捆绑 Python 路径
         // 仅在 PythonRuntimeManager 可用（lifepilot.sandbox.enabled=true）时注册 code 与 code：

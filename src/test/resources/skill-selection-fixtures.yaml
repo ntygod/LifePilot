@@ -10,20 +10,10 @@ fixtures:
     expected_top_3: ["daily-manager"]
   - query: "生成周报"
     expected_top_3: ["daily-manager"]
-  - query: "查数据库"
-    expected_top_3: ["database-query"]
-  - query: "写一段 SQL"
-    expected_top_3: ["database-query"]
   - query: "分析 CSV 数据"
     expected_top_3: ["data-analyst"]
   - query: "处理 docx 文档"
     expected_top_3: ["doc-processor"]
-  - query: "写代码"
-    expected_top_3: ["code-assistant"]
-  - query: "修这个 bug"
-    expected_top_3: ["code-assistant"]
-  - query: "调试 API"
-    expected_top_3: ["api-debugger"]
   - query: "调研一下某个主题"
     expected_top_3: ["research-assistant"]
   - query: "总结这篇文章"
@@ -32,16 +22,10 @@ fixtures:
     expected_top_3: ["teaching-assistant"]
   - query: "整理文件"
     expected_top_3: ["file-organizer"]
-  - query: "分析日志"
-    expected_top_3: ["log-analyzer"]
   - query: "创建定时任务"
     expected_top_3: ["cron-scheduler"]
-  - query: "提交 GitHub PR"
-    expected_top_3: ["github-workflow"]
   - query: "发飞书消息"
     expected_top_3: ["feishu"]
-  - query: "查看系统状态"
-    expected_top_3: ["healthcheck"]
   - query: "渲染交互卡片"
     expected_top_3: ["a2ui"]
   - query: "浏览器自动化"

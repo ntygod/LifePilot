@@ -83,19 +83,6 @@ export const useNotificationStore = defineStore('notification', () => {
     sseUnreadCount.value = count
   }
 
-  /** 提交主动提醒反馈。成功返回 true，失败抛异常以便 UI 保持按钮可重试。 */
-  async function submitFeedback(id: string, feedbackType: string): Promise<void> {
-    await notificationApi.submitFeedback(id, feedbackType)
-    const index = notifications.value.findIndex(n => n.id === id)
-    if (index !== -1) {
-      notifications.value[index] = {
-        ...notifications.value[index],
-        readStatus: 'READ',
-        feedbackType,
-      }
-    }
-  }
-
   return {
     notifications,
     loading,
@@ -104,7 +91,6 @@ export const useNotificationStore = defineStore('notification', () => {
     markAsRead,
     markAllAsRead,
     addNotification,
-    setUnreadCount,
-    submitFeedback
+    setUnreadCount
   }
 })

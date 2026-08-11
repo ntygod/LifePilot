@@ -1,17 +1,11 @@
 package com.lifepilot.meta.infra.memory;
 
-import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
-import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
-import com.lifepilot.memory.store.episodic.EpisodicMemory;
-import com.lifepilot.memory.retrieval.HybridRetriever;
-import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.permission.model.PermissionActionType;
 import com.lifepilot.tool.dispatch.ActionDispatchExecutor;
 import com.lifepilot.tool.model.ToolSchedulingMode;
 import com.lifepilot.tool.semantics.ToolExecutionSemantics;
 import com.lifepilot.tool.semantics.ToolScopeResolvers;
-import jakarta.annotation.Nullable;
 
 /**
  * 记忆工具 action 路由执行器。
@@ -24,22 +18,15 @@ import jakarta.annotation.Nullable;
  */
 public class MemoryActionDispatchExecutor extends ActionDispatchExecutor {
 
-    public MemoryActionDispatchExecutor(MemoryToolProvider provider,
-                                        HybridRetriever hybridRetriever,
-                                        SemanticMemory semanticMemory,
-                                        @Nullable EpisodicMemory episodicMemory,
-                                        @Nullable SessionKnowledgeBaseRepository sessionKbRepo,
-                                        @Nullable MemoryRetrievalProperties memoryProperties) {
+    public MemoryActionDispatchExecutor(MemoryToolProvider provider) {
         register("search",
                 RiskLevel.LOW,
                 ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
                 provider::executeSearch);
-        if (episodicMemory != null) {
-            register("recall",
-                    RiskLevel.LOW,
-                    ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
-                    provider::executeRecall);
-        }
+        register("recall",
+                RiskLevel.LOW,
+                ToolExecutionSemantics.generic(ToolSchedulingMode.PARALLEL_SAFE),
+                provider::executeRecall);
         register("create",
                 RiskLevel.LOW,
                 ToolExecutionSemantics.of(
@@ -88,7 +75,7 @@ public class MemoryActionDispatchExecutor extends ActionDispatchExecutor {
                 ToolExecutionSemantics.of(
                         PermissionActionType.WRITE_MEMORY,
                         ToolSchedulingMode.SEQUENTIAL,
-                        ToolScopeResolvers.exactValues("entityIds", "entityId", "new_entity_id")
+                        ToolScopeResolvers.exactValues("entityIds", "entityId", "newEntityId")
                 ),
                 provider::executeSupersede);
         register("tag",

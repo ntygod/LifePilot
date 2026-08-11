@@ -6,15 +6,22 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.experience.ExperienceRecord;
+import com.lifepilot.agent.learning.experience.ExperienceRecordContract;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.SqliteBusyRetry;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,21 +46,21 @@ public class ExperienceMerger {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final AgentLearningProperties.Experience.Merge config;
 
     public ExperienceMerger(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            @Nullable GenerationRouter generationRouter,
+                            GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             AgentLearningProperties AgentLearningProperties) {
-        this.semanticMemory = semanticMemory;
-        this.vectorSearcher = vectorSearcher;
-        this.generationRouter = generationRouter;
-        this.promptRegistry = promptRegistry;
-        this.config = AgentLearningProperties.getExperience().getMerge();
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "vectorSearcher 不能为空");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter 不能为空");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "promptRegistry 不能为空");
+        this.config = Objects.requireNonNull(AgentLearningProperties, "AgentLearningProperties 不能为空")
+                .getExperience().getMerge();
     }
 
     /**
@@ -69,12 +76,8 @@ public class ExperienceMerger {
             log.debug("经验合并: 功能已关闭");
             return new MergeStats(0, 0, 0);
         }
-        if (generationRouter == null) {
-            log.debug("经验合并: GenerationRouter 不可用，跳过");
-            return new MergeStats(0, 0, 0);
-        }
 
-        var allExperiences = semanticMemory.findCurrentByType(EntityType.EXPERIENCE);
+        var allExperiences = requireExperienceList(semanticMemory.findCurrentByType(EntityType.EXPERIENCE));
         if (allExperiences.size() < 2) {
             log.debug("经验合并: 经验数量不足, count={}", allExperiences.size());
             return new MergeStats(0, 0, 0);
@@ -102,22 +105,11 @@ public class ExperienceMerger {
                 continue;
             }
 
-            try {
-                var mergedRecord = callLlmMerge(pair.entityA, pair.entityB);
-                if (mergedRecord == null) {
-                    skipped++;
-                    continue;
-                }
-
-                persistMergedExperience(mergedRecord, pair.entityA, pair.entityB);
-                mergedIds.add(pair.entityA.id());
-                mergedIds.add(pair.entityB.id());
-                merged++;
-            } catch (Exception e) {
-                log.warn("经验合并: 合并失败, entityA={}, entityB={}, error={}",
-                        pair.entityA.id(), pair.entityB.id(), e.getMessage());
-                skipped++;
-            }
+            var mergedRecord = callLlmMerge(pair.entityA, pair.entityB);
+            persistMergedExperience(mergedRecord, pair.entityA, pair.entityB);
+            mergedIds.add(pair.entityA.id());
+            mergedIds.add(pair.entityB.id());
+            merged++;
         }
 
         log.info("经验合并: 完成, candidatesFound={}, merged={}, skipped={}",
@@ -127,14 +119,15 @@ public class ExperienceMerger {
 
     /** 检测合并候选对：相似度 ≥ threshold 且 success 标志相同。 */
     private List<CandidatePair> findCandidatePairs(List<TemporalEntity> experiences) {
+        float threshold = similarityThreshold(config.getSimilarityThreshold(), "经验合并相似度阈值");
         List<CandidatePair> pairs = new ArrayList<>();
         Set<String> seen = new HashSet<>();
 
         for (var entityA : experiences) {
-            boolean successA = Boolean.TRUE.equals(entityA.properties().get("success"));
+            boolean successA = requiredSuccess(entityA);
 
-            var searchResults = vectorSearcher.searchEntities(
-                    entityA.textRepresentation(), 5, config.getSimilarityThreshold());
+            var searchResults = requireVectorResults(vectorSearcher.searchEntities(
+                    entityA.textRepresentation(), 5, threshold));
 
             for (var result : searchResults) {
                 // 排除自身
@@ -154,7 +147,7 @@ public class ExperienceMerger {
                 if (entityB == null) continue;
 
                 // 检查 success 标志相同
-                boolean successB = Boolean.TRUE.equals(entityB.properties().get("success"));
+                boolean successB = requiredSuccess(entityB);
                 if (successA != successB) continue;
 
                 seen.add(pairKey);
@@ -165,37 +158,42 @@ public class ExperienceMerger {
     }
 
     /** 调用 LLM 合并两条经验。 */
-    @Nullable
     private ExperienceRecord callLlmMerge(TemporalEntity entityA, TemporalEntity entityB) {
-        try {
-            var vars = Map.<String, Object>of(
-                    "experienceA_scenario", entityA.name(),
-                    "experienceA_strategy", entityA.description() != null ? entityA.description() : "",
-                    "experienceA_lessons", String.valueOf(entityA.properties().getOrDefault("lessons", List.of())),
-                    "experienceA_tools", String.valueOf(entityA.properties().getOrDefault("toolsUsed", List.of())),
-                    "experienceB_scenario", entityB.name(),
-                    "experienceB_strategy", entityB.description() != null ? entityB.description() : "",
-                    "experienceB_lessons", String.valueOf(entityB.properties().getOrDefault("lessons", List.of())),
-                    "experienceB_tools", String.valueOf(entityB.properties().getOrDefault("toolsUsed", List.of()))
-            );
-            String prompt = promptRegistry.render(PROMPT_KEY, vars);
-            Duration timeout = Duration.ofSeconds(Math.max(1, config.getLlmTimeoutSeconds()));
-            log.debug("经验合并: 发起 JSON 合并调用, timeoutSeconds={}, promptChars={}, entityA={}, entityB={}",
-                    timeout.toSeconds(), prompt.length(), entityA.id(), entityB.id());
-            LlmResponse response = generationRouter.call(
-                    LlmScene.BACKGROUND_ANALYSIS,
-                    prompt,
-                    null,
-                    null,
-                    null,
-                    GenerationCapability.CHAT,
-                    timeout);
-            return JsonOutputParser.parse(response.content(), ExperienceRecord.class);
-        } catch (Exception e) {
-            log.warn("经验合并: JSON 合并失败, entityA={}, entityB={}, errorType={}, error={}",
-                    entityA.id(), entityB.id(), e.getClass().getSimpleName(), e.getMessage());
-            return null;
+        var vars = Map.<String, Object>of(
+                "experienceA_scenario", entityA.name(),
+                "experienceA_strategy", requireNonBlank(entityA.description(), "经验合并实体描述"),
+                "experienceA_lessons", String.valueOf(requiredStringListProperty(entityA, "lessons")),
+                "experienceA_tools", String.valueOf(requiredStringListProperty(entityA, "toolsUsed")),
+                "experienceB_scenario", entityB.name(),
+                "experienceB_strategy", requireNonBlank(entityB.description(), "经验合并实体描述"),
+                "experienceB_lessons", String.valueOf(requiredStringListProperty(entityB, "lessons")),
+                "experienceB_tools", String.valueOf(requiredStringListProperty(entityB, "toolsUsed"))
+        );
+        String prompt = promptRegistry.render(PROMPT_KEY, vars);
+        if (prompt == null || prompt.isBlank()) {
+            throw new IllegalStateException("经验合并 prompt 渲染结果不能为空");
         }
+        Duration timeout = Duration.ofSeconds(positive(config.getLlmTimeoutSeconds(), "经验合并 LLM 超时秒数"));
+        log.debug("经验合并: 发起 JSON 合并调用, timeoutSeconds={}, promptChars={}, entityA={}, entityB={}",
+                timeout.toSeconds(), prompt.length(), entityA.id(), entityB.id());
+        LlmResponse response = generationRouter.call(
+                LlmScene.BACKGROUND_ANALYSIS,
+                prompt,
+                null,
+                null,
+                null,
+                GenerationCapability.CHAT,
+                timeout);
+        if (response == null || response.content() == null || response.content().isBlank()) {
+            throw new IllegalStateException("经验合并 LLM 响应不能为空");
+        }
+        ExperienceRecordContract.validateLlmResponse(response.content(), "经验合并");
+        var record = JsonOutputParser.parse(response.content(), ExperienceRecord.class);
+        if (record == null || record.scenario() == null || record.scenario().isBlank()
+                || record.strategy() == null || record.strategy().isBlank()) {
+            throw new IllegalStateException("经验合并 LLM 响应缺少 scenario 或 strategy");
+        }
+        return record;
     }
 
     /** 持久化合并后的元经验，归档原始经验。 */
@@ -213,10 +211,9 @@ public class ExperienceMerger {
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("scenario", mergedRecord.scenario());
         props.put("strategy", mergedRecord.strategy());
-        props.put("lessons", mergedRecord.lessons() != null ? mergedRecord.lessons() : List.of());
-        props.put("applicableConditions", mergedRecord.applicableConditions() != null
-                ? mergedRecord.applicableConditions() : List.of());
-        props.put("toolsUsed", mergedRecord.toolsUsed() != null ? mergedRecord.toolsUsed() : List.of());
+        props.put("lessons", mergedRecord.lessons());
+        props.put("applicableConditions", mergedRecord.applicableConditions());
+        props.put("toolsUsed", mergedRecord.toolsUsed());
         props.put("success", mergedRecord.success());
         props.put("effectivenessScore", mergedRecord.effectivenessScore());
         props.put("injectionCount", mergedRecord.injectionCount());
@@ -225,6 +222,10 @@ public class ExperienceMerger {
         props.put("mergedFrom", List.of(entityA.id(), entityB.id()));
 
         float importanceScore = Math.max(entityA.importanceScore(), entityB.importanceScore());
+        float extractionConfidence = 0.8f;
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.LLM_SUMMARIZED_EXPERIENCE;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, extractionConfidence);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
 
         var mergedEntity = new TemporalEntity(
                 UUID.randomUUID().toString(),
@@ -237,17 +238,32 @@ public class ExperienceMerger {
                 now,
                 null,
                 null,
-                0.8f,
+                extractionConfidence,
                 importanceScore,
                 0,
                 null,
                 now,
-                now
+                now,
+                LifecycleState.ACTIVE,
+                null,
+                null,
+                Temporality.PERSISTENT,
+                null,
+                false,
+                List.of(),
+                evidenceKind,
+                trustLevel,
+                trustScore,
+                2,
+                null
         );
 
         // 写入合并后的元经验并归档原始经验 — 经验合并属冲突裁决，事件 source=CONFLICT_RESOLVE
         SqliteBusyRetry.run(() -> {
-            semanticMemory.upsertWithConflictDetection(mergedEntity, "experience-merge");
+            semanticMemory.upsertWithConflictDetection(
+                    mergedEntity,
+                    "experience-merge",
+                    MemoryWriteContext.consolidation("experience-merge"));
             semanticMemory.archive(entityA, ChangeSource.CONFLICT_RESOLVE);
             semanticMemory.archive(entityB, ChangeSource.CONFLICT_RESOLVE);
         });
@@ -261,4 +277,103 @@ public class ExperienceMerger {
 
     /** 合并统计。 */
     public record MergeStats(int candidatesFound, int merged, int skipped) {}
+
+    private static List<TemporalEntity> requireExperienceList(List<TemporalEntity> experiences) {
+        if (experiences == null) {
+            throw new IllegalStateException("经验合并: EXPERIENCE 查询返回 null");
+        }
+        for (TemporalEntity experience : experiences) {
+            if (experience == null) {
+                throw new IllegalStateException("经验合并: EXPERIENCE 查询返回 null 实体");
+            }
+            requireCanonicalId(experience.id(), "经验合并实体 ID");
+            if (experience.type() != EntityType.EXPERIENCE) {
+                throw new IllegalStateException("经验合并: 查询结果包含非 EXPERIENCE 实体: " + experience.id());
+            }
+            requireNonBlank(experience.name(), "经验合并实体名称");
+            requireNonBlank(experience.description(), "经验合并实体描述");
+            requiredSuccess(experience);
+            requiredStringListProperty(experience, "lessons");
+            requiredStringListProperty(experience, "toolsUsed");
+        }
+        return experiences;
+    }
+
+    private static List<VectorSearchResult> requireVectorResults(List<VectorSearchResult> results) {
+        if (results == null) {
+            throw new IllegalStateException("经验合并: 向量搜索结果不能为空");
+        }
+        for (VectorSearchResult result : results) {
+            if (result == null) {
+                throw new IllegalStateException("经验合并: 向量搜索结果不能包含 null 元素");
+            }
+            requireCanonicalId(result.entityId(), "经验合并向量候选 ID");
+            if (!Float.isFinite(result.similarity())
+                    || result.similarity() < 0.0f
+                    || result.similarity() > 1.0f) {
+                throw new IllegalStateException("经验合并: 向量相似度必须在 [0,1] 范围内: "
+                        + result.similarity());
+            }
+        }
+        return results;
+    }
+
+    private static boolean requiredSuccess(TemporalEntity entity) {
+        Object success = entity.properties().get("success");
+        if (!(success instanceof Boolean value)) {
+            throw new IllegalStateException("经验合并: EXPERIENCE success 必须是 boolean, entityId="
+                    + entity.id());
+        }
+        return value;
+    }
+
+    private static List<?> requiredStringListProperty(TemporalEntity entity, String key) {
+        Object value = entity.properties().get(key);
+        if (!(value instanceof List<?> list)) {
+            throw new IllegalStateException("经验合并: EXPERIENCE " + key + " 必须是数组, entityId="
+                    + entity.id());
+        }
+        for (Object item : list) {
+            if (!(item instanceof String text) || text.isBlank()) {
+                throw new IllegalStateException("经验合并: EXPERIENCE " + key + " 只能包含非空字符串, entityId="
+                        + entity.id());
+            }
+            if (!text.equals(text.trim())) {
+                throw new IllegalStateException("经验合并: EXPERIENCE " + key + " 不能包含首尾空白, entityId="
+                        + entity.id());
+            }
+        }
+        return list;
+    }
+
+    private static float similarityThreshold(float value, String name) {
+        if (!Float.isFinite(value) || value < 0.0f || value > 1.0f) {
+            throw new IllegalArgumentException(name + "必须在 [0,1] 范围内: " + value);
+        }
+        return value;
+    }
+
+    private static void requireCanonicalId(String value, String label) {
+        requireNonBlank(value, label);
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+    }
+
+    private static String requireNonBlank(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(label + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+        return value;
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
+    }
 }

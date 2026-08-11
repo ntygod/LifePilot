@@ -14,6 +14,7 @@ import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.install.SkillInstaller;
 import com.lifepilot.skill.validation.SkillBodyValidator;
 import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -112,16 +113,22 @@ public class SkillTestSupport {
     }
 
     @Bean
+    SkillValidator skillValidator(SkillDescriptionValidator descriptionValidator,
+                                  SkillBodyValidator bodyValidator,
+                                  DynamicToolRegistry toolRegistry) {
+        return new SkillValidator(descriptionValidator, bodyValidator, toolRegistry);
+    }
+
+    @Bean
     MarkdownSkillParser markdownSkillParser() {
         return new MarkdownSkillParser();
     }
 
     @Bean
     SkillInstaller skillInstaller(MarkdownSkillParser parser,
-                                  SkillDescriptionValidator descriptionValidator,
-                                  SkillBodyValidator bodyValidator,
+                                  SkillValidator validator,
                                   SkillInstallationRepository repository) {
-        return new SkillInstaller(parser, descriptionValidator, bodyValidator, repository);
+        return new SkillInstaller(parser, validator, repository);
     }
 
     @Bean

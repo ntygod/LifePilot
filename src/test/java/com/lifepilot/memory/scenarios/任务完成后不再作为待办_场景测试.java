@@ -1,10 +1,13 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
@@ -16,6 +19,8 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.prompt.PromptRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -88,9 +93,10 @@ class 任务完成后不再作为待办_场景测试 {
         when(vectorSearcher.searchEntities(any(), any(Integer.class), any(Float.class)))
                 .thenReturn(List.of());
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
     }
 
@@ -109,7 +115,10 @@ class 任务完成后不再作为待办_场景测试 {
     void 完成的GOAL应标COMPLETED且不出现在活跃列表() {
         // 1. 用户"加个任务：重构记忆模块"→ 建立 GOAL
         var task = 构造ACTIVE实体(EntityType.GOAL, "重构记忆模块", "拆分 SemanticMemory 的 upsert 路径");
-        var created = semanticMemory.upsertWithConflictDetection(task, "scenario-session-s3");
+        var created = semanticMemory.upsertWithConflictDetection(
+                task,
+                "scenario-session-s3",
+                MemoryWriteContext.conversation("scenario-session-s3"));
         assertThat(created).isNotNull();
         assertThat(created.lifecycleState()).isEqualTo(LifecycleState.ACTIVE);
 
@@ -142,7 +151,10 @@ class 任务完成后不再作为待办_场景测试 {
     @DisplayName("COMPLETED 状态只能走 ARCHIVED 兜底；不可再次 COMPLETED")
     void 重复完成应被状态机拒绝() {
         var task = 构造ACTIVE实体(EntityType.GOAL, "一次性任务", null);
-        var created = semanticMemory.upsertWithConflictDetection(task, "scenario-session-s3");
+        var created = semanticMemory.upsertWithConflictDetection(
+                task,
+                "scenario-session-s3",
+                MemoryWriteContext.conversation("scenario-session-s3"));
 
         semanticMemory.updateLifecycleState(
                 created.id(), LifecycleState.COMPLETED, "user-complete", ChangeSource.TOOL_EXPLICIT);
@@ -179,6 +191,18 @@ class 任务完成后不再作为待办_场景测试 {
                 /* accessCount */ 0,
                 /* lastAccessedAt */ null,
                 /* createdAt */ now,
-                /* updatedAt */ now);
+                /* updatedAt */ now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        /* updatedAt */ now);
     }
 }

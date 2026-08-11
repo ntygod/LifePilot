@@ -9,6 +9,8 @@ import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.project.context.ProjectContext;
 import org.springframework.lang.Nullable;
 
+import java.util.Objects;
+
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -37,15 +39,15 @@ public class MemoryAccessPolicy {
      *
      * <p>仅做空间合并与 scope 限定；overlay 遮蔽由检索/查询层在 SQL 中实现。</p>
      */
-    public MemoryReadFilter buildProjectReadFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
-        return MemoryReadFilter.fromProjectContextOrFallback(
-                ctx != null,
-                ctx != null ? ctx.projectSpaceId() : null,
-                ctx != null ? ctx.personalSpaceId() : null,
-                ctx != null ? ctx.experienceSpaceId() : null,
-                ctx != null && ctx.isolated(),
-                scopes
-        );
+    public MemoryReadFilter buildProjectReadFilter(ProjectContext ctx, Set<MemoryScope> scopes) {
+        Objects.requireNonNull(ctx, "项目上下文不能为空");
+        validateProjectContext(ctx);
+        return MemoryReadFilter.buildForProject(
+                ctx.projectSpaceId(),
+                ctx.personalSpaceId(),
+                ctx.experienceSpaceId(),
+                ctx.isolated(),
+                scopes);
     }
 
     /**
@@ -53,10 +55,9 @@ public class MemoryAccessPolicy {
      *
      * <p>ISOLATED：仅项目 space；主账户/SHARED：personal + experience。</p>
      */
-    public MemoryReadFilter buildWritableEntityFilter(@Nullable ProjectContext ctx) {
-        if (ctx == null) {
-            return MemoryReadFilter.all();
-        }
+    public MemoryReadFilter buildWritableEntityFilter(ProjectContext ctx) {
+        Objects.requireNonNull(ctx, "项目上下文不能为空");
+        validateProjectContext(ctx);
         if (ctx.isolated()) {
             return MemoryReadFilter.of(List.of(ctx.projectSpaceId()), Set.of());
         }
@@ -69,7 +70,7 @@ public class MemoryAccessPolicy {
      * <p>ISOLATED 项目：spaceId=projectSpaceId；主账户/SHARED：spaceId=null（由
      * SemanticMemory 按 entity type 推断默认空间）。</p>
      */
-    public MemoryWriteContext buildProjectWriteContext(@Nullable ProjectContext ctx,
+    public MemoryWriteContext buildProjectWriteContext(ProjectContext ctx,
                                                        @Nullable String sessionId,
                                                        @Nullable String turnId,
                                                        @Nullable String entryId,
@@ -90,14 +91,18 @@ public class MemoryAccessPolicy {
      * <p>用于 Web 手动编辑等非工具入口复用同一项目写入边界，同时保留正确
      * provenance origin。</p>
      */
-    public MemoryWriteContext buildProjectWriteContext(@Nullable ProjectContext ctx,
+    public MemoryWriteContext buildProjectWriteContext(ProjectContext ctx,
                                                        @Nullable String sessionId,
                                                        @Nullable String turnId,
                                                        @Nullable String entryId,
                                                        @Nullable String sourceReference,
                                                        MemoryOriginType originType,
                                                        MemoryRealityType realityType) {
-        String spaceId = (ctx != null && ctx.isolated()) ? ctx.projectSpaceId() : null;
+        Objects.requireNonNull(ctx, "项目上下文不能为空");
+        Objects.requireNonNull(originType, "记忆来源类型不能为空");
+        Objects.requireNonNull(realityType, "记忆现实类型不能为空");
+        validateProjectContext(ctx);
+        String spaceId = ctx.isolated() ? ctx.projectSpaceId() : null;
         return new MemoryWriteContext(
                 spaceId,
                 null,
@@ -116,14 +121,24 @@ public class MemoryAccessPolicy {
     /**
      * 基于轮次快照解析自动学习写入上下文（RealtimeExtractor）。
      *
-     * <p>缺快照或快照禁用时返回 null，调用方应 fail-closed。</p>
+     * <p>快照禁用学习时返回 null；快照缺失或治理字段不完整时直接失败。</p>
      */
     @Nullable
-    public MemoryWriteContext resolveAutoLearningWriteContext(@Nullable ChatTurnMemorySnapshot snapshot,
+    public MemoryWriteContext resolveAutoLearningWriteContext(ChatTurnMemorySnapshot snapshot,
                                                              String sessionId,
-                                                             @Nullable String turnId) {
-        if (snapshot == null) {
-            return null;
+                                                             String turnId) {
+        Objects.requireNonNull(snapshot, "自动学习必须提供轮次治理快照");
+        requireSpaceId(sessionId, "sessionId");
+        requireSpaceId(turnId, "turnId");
+        if (!sessionId.equals(snapshot.sessionId())) {
+            throw new IllegalStateException(
+                    "自动学习快照会话不匹配: expectedSessionId=%s, actualSessionId=%s, turnId=%s"
+                            .formatted(sessionId, snapshot.sessionId(), turnId));
+        }
+        if (!turnId.equals(snapshot.turnId())) {
+            throw new IllegalStateException(
+                    "自动学习快照轮次不匹配: expectedTurnId=%s, actualTurnId=%s, sessionId=%s"
+                            .formatted(turnId, snapshot.turnId(), sessionId));
         }
         if (snapshot.personalLearningEnabled()) {
             // projectSpaceId 非空代表 ISOLATED 对话归属；为空则交由 SemanticMemory 推断默认空间
@@ -138,14 +153,13 @@ public class MemoryAccessPolicy {
                     turnId,
                     null,
                     null,
-                    null
+                null
             );
         }
-        if (snapshot.domainLearningEnabled()
-                && snapshot.domainWriteSpaceId() != null
-                && !snapshot.domainWriteSpaceId().isBlank()) {
+        if (snapshot.domainLearningEnabled()) {
+            String domainWriteSpaceId = requireSpaceId(snapshot.domainWriteSpaceId(), "domainWriteSpaceId");
             return new MemoryWriteContext(
-                    snapshot.domainWriteSpaceId(),
+                    domainWriteSpaceId,
                     MemoryScope.DOMAIN_MEMORY,
                     MemoryOriginType.CHAT,
                     MemoryRealityType.UNKNOWN,
@@ -164,10 +178,11 @@ public class MemoryAccessPolicy {
     /**
      * 读取摘要时的继承读取空间组合：targetSpace + 主账户 personal + experience。
      *
-     * <p>当前快照已持久化 personal/experience space id；若缺失则回退为目标 space 自身。</p>
+     * <p>当前快照必须持久化 personal/experience space id；缺失代表治理凭证不完整，直接失败。</p>
      */
     public MemoryReadFilter buildSummaryReadFilter(MemoryWriteContext writeContext,
                                                    @Nullable ChatTurnMemorySnapshot snapshot) {
+        Objects.requireNonNull(writeContext, "写入上下文不能为空");
         if (writeContext.memoryScope() != null) {
             return MemoryReadFilter.of(
                     writeContext.spaceId() != null ? List.of(writeContext.spaceId()) : List.of(),
@@ -177,16 +192,12 @@ public class MemoryAccessPolicy {
         if (writeContext.spaceId() == null) {
             return MemoryReadFilter.userMemory();
         }
+        ChatTurnMemorySnapshot requiredSnapshot = Objects.requireNonNull(
+                snapshot, "项目写入摘要读取需要轮次治理快照");
         Set<String> spaces = new LinkedHashSet<>();
         spaces.add(writeContext.spaceId());
-        if (snapshot != null) {
-            if (snapshot.personalSpaceId() != null) {
-                spaces.add(snapshot.personalSpaceId());
-            }
-            if (snapshot.experienceSpaceId() != null) {
-                spaces.add(snapshot.experienceSpaceId());
-            }
-        }
+        spaces.add(requireSpaceId(requiredSnapshot.personalSpaceId(), "快照 personalSpaceId"));
+        spaces.add(requireSpaceId(requiredSnapshot.experienceSpaceId(), "快照 experienceSpaceId"));
         return MemoryReadFilter.of(spaces, Set.of());
     }
 
@@ -201,14 +212,33 @@ public class MemoryAccessPolicy {
                                                   String experienceSpaceId,
                                                   List<String> domainReadSpaceIds) {
         Set<String> spaces = new LinkedHashSet<>();
-        if (projectSpaceId != null && !projectSpaceId.isBlank()) {
-            spaces.add(projectSpaceId);
+        if (projectSpaceId != null) {
+            spaces.add(requireSpaceId(projectSpaceId, "projectSpaceId"));
         }
-        spaces.add(personalSpaceId);
-        spaces.add(experienceSpaceId);
-        if (domainReadSpaceIds != null) {
-            spaces.addAll(domainReadSpaceIds);
+        spaces.add(requireSpaceId(personalSpaceId, "personalSpaceId"));
+        spaces.add(requireSpaceId(experienceSpaceId, "experienceSpaceId"));
+        Objects.requireNonNull(domainReadSpaceIds, "domainReadSpaceIds 不能为空");
+        for (String domainSpaceId : domainReadSpaceIds) {
+            spaces.add(requireSpaceId(domainSpaceId, "domainReadSpaceIds"));
         }
         return List.copyOf(spaces);
+    }
+
+    private static void validateProjectContext(ProjectContext ctx) {
+        requireSpaceId(ctx.personalSpaceId(), "personalSpaceId");
+        requireSpaceId(ctx.experienceSpaceId(), "experienceSpaceId");
+        if (ctx.isolated()) {
+            requireSpaceId(ctx.projectSpaceId(), "projectSpaceId");
+        }
+    }
+
+    private static String requireSpaceId(@Nullable String spaceId, String name) {
+        if (spaceId == null || spaceId.isBlank()) {
+            throw new IllegalArgumentException(name + " 不能为空");
+        }
+        if (!spaceId.equals(spaceId.trim())) {
+            throw new IllegalArgumentException(name + " 不能包含首尾空白: " + spaceId);
+        }
+        return spaceId;
     }
 }

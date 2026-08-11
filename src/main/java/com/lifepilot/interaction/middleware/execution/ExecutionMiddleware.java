@@ -7,6 +7,7 @@ import com.lifepilot.agent.model.AgentRequest;
 import com.lifepilot.agent.model.AgentResponse;
 import com.lifepilot.agent.model.CompletionMode;
 import com.lifepilot.agent.model.CompletionReason;
+import com.lifepilot.agent.model.ExecutionConstraintSummarySupport;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.config.threadpool.MdcPropagatingExecutorService;
 import com.lifepilot.interaction.config.GatewayProperties;
@@ -157,7 +158,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
                         : new TokenUsage(0, agentResponse.tokensUsed(), agentResponse.tokensUsed(), DEFAULT_MODEL_ID);
                 chain.context().set(MiddlewareContext.KEY_AGENT_RESPONSE, agentResponse);
                 chain.context().set(MiddlewareContext.KEY_TOKEN_USAGE, tokenUsage);
-                return buildGatewayResponse(message, agentResponse, tokenUsage);
+                return buildGatewayResponse(message, agentRequest, agentResponse, tokenUsage);
             } catch (TimeoutException e) {
                 future.cancel(true);
                 log.warn("Agent 执行超时: messageId={}, timeout={}s",
@@ -329,9 +330,10 @@ public class ExecutionMiddleware implements GatewayMiddleware {
 
     /** 将 AgentResponse 转换为网关层统一响应，并补齐前端关心的 turn 元数据。 */
     private GatewayResponse buildGatewayResponse(GatewayMessage message,
+                                                 AgentRequest agentRequest,
                                                  AgentResponse agentResponse,
                                                  TokenUsage tokenUsage) {
-        Map<String, Object> metadata = buildResponseMetadata(agentResponse);
+        Map<String, Object> metadata = buildResponseMetadata(agentRequest, agentResponse);
         if (agentResponse.completionMode() == CompletionMode.NORMAL
                 && agentResponse.terminationReason() != null
                 && !agentResponse.terminationReason().isBlank()
@@ -399,7 +401,7 @@ public class ExecutionMiddleware implements GatewayMiddleware {
     }
 
     /** 收口前端需要的 trace/turn/completion 元数据，避免控制器重复拼装。 */
-    private Map<String, Object> buildResponseMetadata(AgentResponse agentResponse) {
+    private Map<String, Object> buildResponseMetadata(AgentRequest agentRequest, AgentResponse agentResponse) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         if (agentResponse.turnId() != null && !agentResponse.turnId().isBlank()) {
             metadata.put("turnId", agentResponse.turnId());
@@ -418,6 +420,16 @@ public class ExecutionMiddleware implements GatewayMiddleware {
         }
         if (agentResponse.a2uiComponents() != null && !agentResponse.a2uiComponents().isEmpty()) {
             metadata.put("a2uiComponents", agentResponse.a2uiComponents());
+        }
+        if (!agentResponse.toolsSummary().isEmpty()) {
+            metadata.put("toolsSummary", agentResponse.toolsSummary());
+        }
+        if (agentResponse.taskRecovery() != null && !agentResponse.taskRecovery().isEmpty()) {
+            metadata.put("taskRecovery", agentResponse.taskRecovery());
+        }
+        Map<String, Object> executionConstraints = ExecutionConstraintSummarySupport.from(agentRequest);
+        if (!executionConstraints.isEmpty()) {
+            metadata.put("executionConstraints", executionConstraints);
         }
         return metadata;
     }

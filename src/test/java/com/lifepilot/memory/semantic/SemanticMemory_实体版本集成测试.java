@@ -6,6 +6,7 @@ import com.lifepilot.memory.store.projection.MemoryProjectionOutboxProcessor;
 import com.lifepilot.memory.store.projection.MemoryProjectionOutboxRepository;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
@@ -182,16 +184,17 @@ class SemanticMemory_实体版本集成测试 {
         var memorySpaceRepository = new MemorySpaceRepository(jdbcTemplate, objectMapper);
         conflictDetector = mock(ConflictDetector.class);
         vectorSearcher = mock(VectorSearcher.class);
+        var outboxRepository = new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
+        var outboxProcessor = new MemoryProjectionOutboxProcessor(outboxRepository, vectorSearcher, objectMapper);
+        var projectionService = new MemoryProjectionService(outboxRepository, outboxProcessor);
         semanticMemory = new SemanticMemory(
                 jdbcTemplate,
                 conflictDetector,
                 new VersionMerger(),
                 vectorSearcher,
-                memorySpaceRepository
+                memorySpaceRepository,
+                projectionService
         );
-        var outboxRepository = new MemoryProjectionOutboxRepository(jdbcTemplate, objectMapper);
-        var outboxProcessor = new MemoryProjectionOutboxProcessor(outboxRepository, vectorSearcher, objectMapper);
-        semanticMemory.setProjectionService(new MemoryProjectionService(outboxRepository, outboxProcessor));
     }
 
     @Test
@@ -214,11 +217,26 @@ class SemanticMemory_实体版本集成测试 {
                 null,
                 now,
                 now
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
         when(conflictDetector.detectConflict(any(), nullable(String.class)))
                 .thenReturn(Optional.empty(), Optional.of(created));
 
-        var persisted = semanticMemory.upsertWithConflictDetection(created, "session-1");
+        var persisted = semanticMemory.upsertWithConflictDetection(
+                created,
+                "session-1",
+                MemoryWriteContext.conversation("session-1"));
         var updated = semanticMemory.upsertWithConflictDetection(
                 new TemporalEntity(
                         null,
@@ -237,8 +255,21 @@ class SemanticMemory_实体版本集成测试 {
                         null,
                         now,
                         now
-                ),
-                "session-2"
+                ,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now),
+                "session-2",
+                MemoryWriteContext.conversation("session-2")
         );
 
         assertThat(persisted.id()).isEqualTo("entity-hero");
@@ -266,5 +297,44 @@ class SemanticMemory_实体版本集成测试 {
 
         verify(vectorSearcher).upsertEntityVector("entity-hero", persisted.textRepresentation());
         verify(vectorSearcher).upsertEntityVector("entity-hero", updated.textRepresentation());
+    }
+
+    @Test
+    void countByEntityType_实体类型被污染时应失败() {
+        String now = Instant.parse("2026-06-23T10:00:00Z").toString();
+        jdbcTemplate.update("""
+                INSERT INTO memory_entities (
+                    id, space_id, memory_scope, entity_type, canonical_name, normalized_name,
+                    first_seen_at, last_seen_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                "entity-broken-type",
+                "space-1",
+                "USER_PROFILE",
+                "BROKEN_TYPE",
+                "污染实体",
+                "污染实体",
+                now,
+                now,
+                now,
+                now);
+        jdbcTemplate.update("""
+                INSERT INTO memory_entity_versions (
+                    id, entity_id, version_no, description, is_current,
+                    valid_from, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                "version-broken-type",
+                "entity-broken-type",
+                1,
+                "实体类型被污染",
+                1,
+                now,
+                now,
+                now);
+
+        assertThatThrownBy(() -> semanticMemory.countByEntityType(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("BROKEN_TYPE");
     }
 }

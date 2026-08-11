@@ -3,6 +3,9 @@ package com.lifepilot.interaction.model;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import org.springframework.lang.Nullable;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * 通道元数据 sealed interface。
  *
@@ -37,13 +40,18 @@ public sealed interface ChannelMetadata permits ChannelMetadata.WebMetadata {
                        @Nullable String preferredProvider,
                        @Nullable String turnId,
                        @Nullable ChatTurnAction action,
-                       @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride)
+                       @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride,
+                       @Nullable Map<String, Object> turnRecoveryContext)
             implements ChannelMetadata {
+
+        public WebMetadata {
+            turnRecoveryContext = copyMap(turnRecoveryContext);
+        }
 
         public WebMetadata(String userAgent, String remoteAddr,
                            @Nullable String sessionToken, boolean acceptsSse,
                            @Nullable String preferredProvider) {
-            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, null, ChatTurnAction.SEND, null);
+            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, null, ChatTurnAction.SEND, null, null);
         }
 
         public WebMetadata(String userAgent, String remoteAddr,
@@ -51,12 +59,37 @@ public sealed interface ChannelMetadata permits ChannelMetadata.WebMetadata {
                            @Nullable String preferredProvider,
                            @Nullable String turnId,
                            @Nullable ChatTurnAction action) {
-            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, turnId, action, null);
+            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, turnId, action, null, null);
+        }
+
+        public WebMetadata(String userAgent, String remoteAddr,
+                           @Nullable String sessionToken, boolean acceptsSse,
+                           @Nullable String preferredProvider,
+                           @Nullable String turnId,
+                           @Nullable ChatTurnAction action,
+                           @Nullable com.lifepilot.interaction.web.model.SessionConfigOverride singleTurnOverride) {
+            this(userAgent, remoteAddr, sessionToken, acceptsSse, preferredProvider, turnId, action,
+                    singleTurnOverride, null);
         }
 
         @Override
         public ChannelType channelType() {
             return ChannelType.WEB;
+        }
+
+        @Nullable
+        private static Map<String, Object> copyMap(@Nullable Map<String, Object> raw) {
+            if (raw == null || raw.isEmpty()) {
+                return null;
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (var entry : raw.entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) {
+                    continue;
+                }
+                result.put(entry.getKey(), entry.getValue());
+            }
+            return result.isEmpty() ? null : Map.copyOf(result);
         }
     }
 }

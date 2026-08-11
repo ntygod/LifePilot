@@ -5,7 +5,6 @@ import org.springframework.lang.Nullable;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -26,12 +25,17 @@ public class SpaceTrustDistribution {
     private final Map<String, Stats> bySpace = new ConcurrentHashMap<>();
 
     public SpaceTrustDistribution(int windowSize) {
-        this.windowSize = Math.max(10, windowSize);
+        if (windowSize < MIN_SAMPLES_FOR_ESTIMATION) {
+            throw new IllegalArgumentException(
+                    "trustScore 分布样本窗口不能小于 %d: %d".formatted(MIN_SAMPLES_FOR_ESTIMATION, windowSize));
+        }
+        this.windowSize = windowSize;
     }
 
     /** 加入新样本。 */
     public void observe(@Nullable String spaceId, float trustScore) {
         if (spaceId == null || spaceId.isBlank()) return;
+        requireTrustScore(trustScore);
         Stats stats = bySpace.computeIfAbsent(spaceId, _ -> new Stats());
         synchronized (stats) {
             stats.add(trustScore, windowSize);
@@ -41,6 +45,7 @@ public class SpaceTrustDistribution {
     /** 计算 Mahalanobis 距离（简化为 1D：|x - mean| / stddev）。样本不足返回 0。 */
     public float mahalanobisDistance(@Nullable String spaceId, float trustScore) {
         if (spaceId == null || spaceId.isBlank()) return 0f;
+        requireTrustScore(trustScore);
         Stats stats = bySpace.get(spaceId);
         if (stats == null) return 0f;
         synchronized (stats) {
@@ -53,6 +58,9 @@ public class SpaceTrustDistribution {
 
     /** 判断是否偏离阈值。 */
     public boolean isOutlier(@Nullable String spaceId, float trustScore, float threshold) {
+        if (!(threshold > 0.0f) || Float.isInfinite(threshold)) {
+            throw new IllegalArgumentException("trustScore 异常阈值必须是正有限数: " + threshold);
+        }
         return mahalanobisDistance(spaceId, trustScore) > threshold;
     }
 
@@ -92,6 +100,12 @@ public class SpaceTrustDistribution {
             double m = mean();
             double variance = Math.max(0.0, (sumSq / n) - m * m);
             return Math.sqrt(variance);
+        }
+    }
+
+    private static void requireTrustScore(float trustScore) {
+        if (!(trustScore >= 0.0f && trustScore <= 1.0f)) {
+            throw new IllegalArgumentException("trustScore 必须在 [0,1] 范围内: " + trustScore);
         }
     }
 }

@@ -1,7 +1,4 @@
-mod clipboard_monitor;
 mod commands;
-mod float_window;
-mod focus_monitor;
 mod health_check;
 mod java_manager;
 mod port_finder;
@@ -11,7 +8,7 @@ mod whisper_manager;
 use java_manager::JavaManager;
 use whisper_manager::WhisperManager;
 use std::path::PathBuf;
-use tauri::{Listener, Manager};
+use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 
 /// Tauri 插件注册入口
@@ -57,22 +54,6 @@ pub fn run() {
             // 初始化系统托盘
             tray::setup_tray(app.handle())?;
 
-            // 浮窗助手已关闭 — 主动引擎默认关闭，浮窗暂不启用
-            // float_window::create_float_window(app.handle())?;
-
-            // 后端就绪后：启动环境感知监控
-            let ready_handle = app.handle().clone();
-            app.listen("backend-ready", move |_| {
-                // 浮窗已关闭
-                // if let Err(e) = float_window::show_float_window(&ready_handle) {
-                //     log::warn!("浮窗显示失败: {}", e);
-                // }
-                // 获取后端端口，启动焦点和剪贴板监控
-                let port = ready_handle.state::<JavaManager>().port();
-                focus_monitor::start_focus_monitor(ready_handle.clone(), port);
-                clipboard_monitor::start_clipboard_monitor(ready_handle.clone(), port);
-            });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,9 +66,6 @@ pub fn run() {
             commands::cancel_whisper_download,
             commands::open_document_path,
             commands::reveal_document_in_file_manager,
-            float_window::show_reminder_bubble,
-            float_window::hide_reminder_bubble,
-            float_window::resize_float_window,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

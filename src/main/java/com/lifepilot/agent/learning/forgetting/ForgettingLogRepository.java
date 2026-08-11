@@ -7,7 +7,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Objects;
 
 /**
  * 遗忘日志数据访问仓库 — 封装 {@code forgetting_log} 表的查询操作。
@@ -21,7 +23,7 @@ public class ForgettingLogRepository {
     private final JdbcTemplate jdbcTemplate;
 
     public ForgettingLogRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
     }
 
     /**
@@ -60,21 +62,27 @@ public class ForgettingLogRepository {
                                                        @Nullable String strategy,
                                                        int page,
                                                        int size) {
-        // 构建动态 SQL
+        if (page < 0) {
+            throw new IllegalArgumentException("page 不能小于 0");
+        }
+        if (size <= 0) {
+            throw new IllegalArgumentException("size 必须大于 0");
+        }
+
         var conditions = new ArrayList<String>();
         var params = new ArrayList<Object>();
 
-        if (timeFrom != null && !timeFrom.isBlank()) {
+        if (timeFrom != null) {
             conditions.add("created_at >= ?");
-            params.add(timeFrom);
+            params.add(requireIsoInstant(timeFrom, "timeFrom"));
         }
-        if (timeTo != null && !timeTo.isBlank()) {
+        if (timeTo != null) {
             conditions.add("created_at <= ?");
-            params.add(timeTo);
+            params.add(requireIsoInstant(timeTo, "timeTo"));
         }
-        if (strategy != null && !strategy.isBlank()) {
+        if (strategy != null) {
             conditions.add("strategy = ?");
-            params.add(strategy);
+            params.add(requireCleanText(strategy, "strategy"));
         }
 
         String whereClause = conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions);
@@ -101,5 +109,25 @@ public class ForgettingLogRepository {
         ), params.toArray());
 
         return new PageResult<>(items, page, size, total != null ? total : 0L);
+    }
+
+    private static String requireIsoInstant(String value, String field) {
+        String cleanValue = requireCleanText(value, field);
+        try {
+            Instant.parse(cleanValue);
+            return cleanValue;
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException(field + "必须是 ISO 8601 时间: " + value, e);
+        }
+    }
+
+    private static String requireCleanText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(field + "不能包含首尾空白: " + value);
+        }
+        return value;
     }
 }

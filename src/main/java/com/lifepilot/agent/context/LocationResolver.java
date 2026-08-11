@@ -14,9 +14,10 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 用户位置解析器 — 优先使用配置覆盖，否则通过 IP 地理定位自动检测。
+ * 用户位置解析器 — 优先使用配置覆盖，显式配置 URL 时才通过 IP 地理定位自动检测。
  *
- * <p>检测结果缓存在内存中，整个应用生命周期只发一次 HTTP 请求。</p>
+ * <p>检测结果缓存在内存中，整个应用生命周期只发一次 HTTP 请求。默认不探测公网 IP，
+ * 避免本地个人应用首轮对话等待外部服务。</p>
  *
  * @author zsg
  * @since 2026-04-09
@@ -25,7 +26,7 @@ public class LocationResolver {
 
     private static final Logger log = LoggerFactory.getLogger(LocationResolver.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Duration TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration TIMEOUT = Duration.ofMillis(800);
 
     private final AgentConfigProperties config;
     private final AtomicReference<String> cached = new AtomicReference<>();

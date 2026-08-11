@@ -1,4 +1,15 @@
-import type { A2uiComponent, ChatAttachment, Message, ReactStepDto } from '@/types'
+import type {
+  A2uiComponent,
+  ChatAttachment,
+  ExecutionConstraintSummary,
+  KnowledgeSettlement,
+  Message,
+  ReactStepDto,
+  SourceSummary,
+  TaskRecoverySummary,
+  ToolCallSummary,
+  TurnRecoveryContext,
+} from '@/types'
 import type { PermissionApprovalLog } from '@/types'
 import { formatPermissionActionLabel } from '@/utils/permissionApproval'
 
@@ -25,11 +36,18 @@ type BackendMessageLike = {
   reasoningDurationMs?: number | null
   traceId?: string | null
   attachments?: BackendAttachment[] | null
+  sources?: SourceSummary[] | null
+  memoryChanges?: SourceSummary[] | null
+  knowledgeSettlements?: KnowledgeSettlement[] | null
+  toolsSummary?: ToolCallSummary[] | null
   reactSteps?: ReactStepDto[] | null
   completionMode?: Message['completionMode'] | null
   resumedFromTraceId?: string | null
   turnStatus?: Message['turnStatus'] | null
   errorMessage?: string | null
+  taskRecovery?: TaskRecoverySummary | null
+  turnRecoveryContext?: TurnRecoveryContext | null
+  executionConstraints?: ExecutionConstraintSummary | null
   suspendReasonType?: string | null
   suspendReasonSourceId?: string | null
   artifactRefs?: Array<{
@@ -151,11 +169,18 @@ export function mapBackendMessage(message: BackendMessageLike): Message {
     reasoningDurationMs: message.reasoningDurationMs ?? undefined,
     traceId: message.traceId ?? undefined,
     attachments,
+    sources: message.sources?.length ? message.sources : undefined,
+    memoryChanges: message.memoryChanges?.length ? message.memoryChanges : undefined,
+    knowledgeSettlements: message.knowledgeSettlements?.length ? message.knowledgeSettlements : undefined,
+    toolsSummary: message.toolsSummary?.length ? message.toolsSummary : undefined,
     reactSteps: message.reactSteps?.length ? message.reactSteps : undefined,
     completionMode: message.completionMode ?? undefined,
     resumedFromTraceId: message.resumedFromTraceId ?? undefined,
     turnStatus: message.turnStatus ?? undefined,
     errorMessage: message.errorMessage ?? undefined,
+    taskRecovery: message.taskRecovery ?? undefined,
+    turnRecoveryContext: message.turnRecoveryContext ?? undefined,
+    executionConstraints: message.executionConstraints ?? undefined,
     suspendReasonType: message.suspendReasonType ?? undefined,
     suspendReasonSourceId: message.suspendReasonSourceId ?? undefined,
     artifactRefs: message.artifactRefs?.length

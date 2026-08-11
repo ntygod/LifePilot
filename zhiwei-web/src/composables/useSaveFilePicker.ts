@@ -88,10 +88,10 @@ export async function openDocumentPath(path: string): Promise<void> {
   await invoke('open_document_path', { path })
 }
 
-/** 在文件管理器中定位（Windows 资源管理器 /select、macOS Finder open -R、Linux xdg-open 父目录）*/
+/** 在文件管理器中打开目录或定位文件。仅 Tauri 可用 */
 export async function revealInFileManager(path: string): Promise<void> {
   if (!isTauriEnv()) {
-    throw new Error('非 Tauri 环境不支持"在文件管理器中定位"')
+    throw new Error('非 Tauri 环境不支持"打开本地位置"')
   }
   const { invoke } = await import('@tauri-apps/api/core')
   await invoke('reveal_document_in_file_manager', { path })

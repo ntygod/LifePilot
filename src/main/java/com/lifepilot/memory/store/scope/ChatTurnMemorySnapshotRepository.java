@@ -3,8 +3,6 @@ package com.lifepilot.memory.store.scope;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
@@ -25,7 +23,6 @@ import java.util.Optional;
 @Repository
 public class ChatTurnMemorySnapshotRepository {
 
-    private static final Logger log = LoggerFactory.getLogger(ChatTurnMemorySnapshotRepository.class);
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -89,44 +86,49 @@ public class ChatTurnMemorySnapshotRepository {
     }
 
     private ChatTurnMemorySnapshot mapRow(ResultSet rs, int rowNum) throws SQLException {
+        String turnId = rs.getString("turn_id");
         return new ChatTurnMemorySnapshot(
-                rs.getString("turn_id"),
+                turnId,
                 rs.getString("session_id"),
                 rs.getString("personal_space_id"),
                 rs.getString("experience_space_id"),
                 rs.getString("domain_write_space_id"),
                 rs.getString("project_space_id"),
-                readStringList(rs.getString("read_space_ids_json")),
-                readStringList(rs.getString("effective_knowledge_base_ids_json")),
+                readStringList("read_space_ids_json", turnId, rs.getString("read_space_ids_json")),
+                readStringList("effective_knowledge_base_ids_json", turnId,
+                        rs.getString("effective_knowledge_base_ids_json")),
                 rs.getInt("personal_learning_enabled") == 1,
                 rs.getInt("domain_learning_enabled") == 1,
                 rs.getInt("experience_learning_enabled") == 1,
-                readJsonMap(rs.getString("resolution_source_json")),
+                readJsonMap("resolution_source_json", turnId, rs.getString("resolution_source_json")),
                 Instant.parse(rs.getString("created_at"))
         );
     }
 
-    private List<String> readStringList(@Nullable String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
+    private List<String> readStringList(String columnName, String turnId, @Nullable String json) {
+        requireJson(columnName, turnId, json);
         try {
             return objectMapper.readValue(json, STRING_LIST_TYPE);
         } catch (JsonProcessingException e) {
-            log.warn("解析会话轮次记忆快照列表失败: {}", e.getMessage());
-            return List.of();
+            throw new IllegalStateException(
+                    "解析会话轮次记忆快照列表失败: column=" + columnName + ", turnId=" + turnId, e);
         }
     }
 
-    private Map<String, Object> readJsonMap(@Nullable String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
+    private Map<String, Object> readJsonMap(String columnName, String turnId, @Nullable String json) {
+        requireJson(columnName, turnId, json);
         try {
             return objectMapper.readValue(json, MAP_TYPE);
         } catch (JsonProcessingException e) {
-            log.warn("解析会话轮次记忆快照来源信息失败: {}", e.getMessage());
-            return Map.of();
+            throw new IllegalStateException(
+                    "解析会话轮次记忆快照来源信息失败: column=" + columnName + ", turnId=" + turnId, e);
+        }
+    }
+
+    private void requireJson(String columnName, String turnId, @Nullable String json) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException(
+                    "会话轮次记忆快照字段不能为空: column=" + columnName + ", turnId=" + turnId);
         }
     }
 

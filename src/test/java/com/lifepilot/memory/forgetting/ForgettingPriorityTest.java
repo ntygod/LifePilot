@@ -142,6 +142,18 @@ class ForgettingPriorityTest {
                 properties, 1, true, createdAt, null,
                 null, 0.8f, importanceScore, accessCount, lastAccessedAt,
                 createdAt, createdAt
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                createdAt);
     }
 }

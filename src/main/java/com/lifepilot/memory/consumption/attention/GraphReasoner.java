@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -29,11 +30,9 @@ import java.util.Set;
 public class GraphReasoner {
 
     private static final Logger log = LoggerFactory.getLogger(GraphReasoner.class);
-    private static final float DEFAULT_STRENGTH = 0.5f;
-
     private final JdbcTemplate jdbcTemplate;
     private final int maxFanout;
-    /** 关系最低可信分门控；trust_score < 此值的边被跳过（NULL 历史边放行）。 */
+    /** 关系最低可信分门控；trust_score < 此值的边被跳过。 */
     private final float minRelationTrust;
 
     public GraphReasoner(JdbcTemplate jdbcTemplate, int maxFanout) {
@@ -41,21 +40,42 @@ public class GraphReasoner {
     }
 
     public GraphReasoner(JdbcTemplate jdbcTemplate, int maxFanout, float minRelationTrust) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.maxFanout = Math.max(1, maxFanout);
-        this.minRelationTrust = Math.max(0.0f, minRelationTrust);
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        if (maxFanout <= 0) {
+            throw new IllegalArgumentException("图联想 fanout 必须大于 0: " + maxFanout);
+        }
+        if (!isProbability(minRelationTrust)) {
+            throw new IllegalArgumentException("关系最低可信分必须在 [0,1] 范围内: " + minRelationTrust);
+        }
+        this.maxFanout = maxFanout;
+        this.minRelationTrust = minRelationTrust;
     }
 
     /** 一条关系边（含方向与强度）。 */
-    private record Edge(String relationType, String sourceId, String targetId, float strength) {}
+    private record Edge(String relationType, String sourceId, String targetId, float strength) {
+        Edge {
+            requireText(relationType, "图推理关系类型");
+            requireEntityId(sourceId, "图推理关系 sourceId");
+            requireEntityId(targetId, "图推理关系 targetId");
+            requireProbability(strength, "图推理关系强度");
+        }
+    }
 
     /** 联想路径的一跳。 */
-    public record Hop(String fromId, String relationType, String toId, String toName, float strength) {}
+    public record Hop(String fromId, String relationType, String toId, String toName, float strength) {
+        public Hop {
+            requireEntityId(fromId, "联想路径 fromId");
+            requireText(relationType, "联想路径关系类型");
+            requireEntityId(toId, "联想路径 toId");
+            requireText(toName, "联想路径目标名称");
+            requireProbability(strength, "联想路径关系强度");
+        }
+    }
 
     /** 从起点实体出发的联想路径（有序多跳）。 */
     public record AssociationPath(List<Hop> hops) {
         public AssociationPath {
-            hops = hops != null ? List.copyOf(hops) : List.of();
+            hops = List.copyOf(Objects.requireNonNull(hops, "联想路径 hops 不能为空"));
         }
         @Nullable
         public String endId() {
@@ -77,14 +97,31 @@ public class GraphReasoner {
     /** 连接机会：start 经 bridge 两跳可达 to，但 start 与 to 无直接 ACTIVE 边。 */
     public record ConnectionOpportunity(String fromId, String bridgeId, String bridgeName,
                                         String toId, String toName,
-                                        String firstRelation, String secondRelation, float score) {}
+                                        String firstRelation, String secondRelation, float score) {
+        public ConnectionOpportunity {
+            requireEntityId(fromId, "连接机会 fromId");
+            requireEntityId(bridgeId, "连接机会 bridgeId");
+            requireText(bridgeName, "连接机会 bridgeName");
+            requireEntityId(toId, "连接机会 toId");
+            requireText(toName, "连接机会 toName");
+            requireText(firstRelation, "连接机会第一跳关系");
+            requireText(secondRelation, "连接机会第二跳关系");
+            requireProbability(score, "连接机会分数");
+        }
+    }
 
     /**
      * 从起点实体出发的带关系类型多跳路径（深度 ≤ maxDepth，去环，最短路径优先）。
      */
     public List<AssociationPath> pathsFrom(String entityId, int maxDepth, @Nullable MemoryReadFilter filter) {
-        if (entityId == null || entityId.isBlank() || maxDepth <= 0) {
-            return List.of();
+        if (entityId == null || entityId.isBlank()) {
+            throw new IllegalArgumentException("图联想起点实体 id 不能为空");
+        }
+        if (!entityId.equals(entityId.trim())) {
+            throw new IllegalArgumentException("图联想起点实体 id 不能包含首尾空白: " + entityId);
+        }
+        if (maxDepth <= 0) {
+            throw new IllegalArgumentException("图联想最大深度必须大于 0: " + maxDepth);
         }
         List<AssociationPath> result = new ArrayList<>();
         Set<String> visited = new LinkedHashSet<>();
@@ -136,7 +173,10 @@ public class GraphReasoner {
      */
     public List<ConnectionOpportunity> connectionOpportunities(String entityId, @Nullable MemoryReadFilter filter) {
         if (entityId == null || entityId.isBlank()) {
-            return List.of();
+            throw new IllegalArgumentException("图联想起点实体 id 不能为空");
+        }
+        if (!entityId.equals(entityId.trim())) {
+            throw new IllegalArgumentException("图联想起点实体 id 不能包含首尾空白: " + entityId);
         }
         // 1 跳：直接邻居 + 连接关系/强度
         var startEdges = loadEdges(Set.of(entityId));
@@ -184,7 +224,7 @@ public class GraphReasoner {
             bridgeFanout.put(bridge, used + 1);
 
             Edge firstHop = directNeighbors.get(bridge);
-            float score = (float) Math.sqrt(Math.max(0f, firstHop.strength()) * Math.max(0f, e.strength()));
+            float score = (float) Math.sqrt(firstHop.strength() * e.strength());
             var opp = new ConnectionOpportunity(
                     entityId, bridge, bridgeName, to, toName,
                     firstHop.relationType(), e.relationType(), score);
@@ -219,13 +259,15 @@ public class GraphReasoner {
 
     /** 加载触及给定节点集合的所有当前有效关系边。 */
     private List<Edge> loadEdges(Collection<String> nodeIds) {
-        if (nodeIds == null || nodeIds.isEmpty()) {
+        Objects.requireNonNull(nodeIds, "图推理节点集合不能为空");
+        if (nodeIds.isEmpty()) {
             return List.of();
         }
+        for (String nodeId : nodeIds) {
+            requireEntityId(nodeId, "图推理节点 id");
+        }
         String placeholders = buildPlaceholders(nodeIds.size());
-        String trustClause = minRelationTrust > 0.0f
-                ? " AND (mr.trust_score IS NULL OR mr.trust_score >= ?)"
-                : "";
+        String trustClause = minRelationTrust > 0.0f ? " AND mr.trust_score >= ?" : "";
         String sql = """
                 SELECT tr.relation_type AS relation_type,
                        tr.source_entity_id AS source_id,
@@ -243,22 +285,29 @@ public class GraphReasoner {
         if (minRelationTrust > 0.0f) {
             params.add(minRelationTrust);
         }
-        try {
-            return jdbcTemplate.query(sql, (rs, n) -> {
-                float strength = rs.getObject("strength") != null ? rs.getFloat("strength") : DEFAULT_STRENGTH;
-                return new Edge(rs.getString("relation_type"), rs.getString("source_id"),
-                        rs.getString("target_id"), strength);
-            }, params.toArray());
-        } catch (Exception e) {
-            log.warn("图推理: 边加载失败, error={}", e.getMessage());
-            return List.of();
-        }
+        return requireEdges(jdbcTemplate.query(sql, (rs, n) -> {
+            Object strengthValue = rs.getObject("strength");
+            if (strengthValue == null) {
+                throw new IllegalStateException("图推理关系版本缺少 strength: source=%s, target=%s, relationType=%s"
+                        .formatted(
+                                rs.getString("source_id"),
+                                rs.getString("target_id"),
+                                rs.getString("relation_type")));
+            }
+            float strength = rs.getFloat("strength");
+            return new Edge(rs.getString("relation_type"), rs.getString("source_id"),
+                    rs.getString("target_id"), strength);
+        }, params.toArray()), "图推理边查询结果");
     }
 
     /** 解析候选节点 id → name，仅保留可召回生命周期且通过空间过滤的当前实体。 */
     private Map<String, String> loadRecallableNames(Set<String> ids, @Nullable MemoryReadFilter filter) {
-        if (ids == null || ids.isEmpty()) {
+        Objects.requireNonNull(ids, "图推理候选节点集合不能为空");
+        if (ids.isEmpty()) {
             return Map.of();
+        }
+        for (String id : ids) {
+            requireEntityId(id, "图推理候选节点 id");
         }
         StringBuilder sql = new StringBuilder(
                 "SELECT id, name FROM temporal_entities WHERE is_current = 1"
@@ -278,19 +327,51 @@ public class GraphReasoner {
                 params.addAll(filter.scopes().stream().map(Enum::name).toList());
             }
         }
-        try {
-            Map<String, String> map = new LinkedHashMap<>();
-            jdbcTemplate.query(sql.toString(), rs -> {
-                map.put(rs.getString("id"), rs.getString("name"));
-            }, params.toArray());
-            return map;
-        } catch (Exception e) {
-            log.warn("图推理: 节点名称解析失败, error={}", e.getMessage());
-            return Map.of();
-        }
+        Map<String, String> map = new LinkedHashMap<>();
+        jdbcTemplate.query(sql.toString(), rs -> {
+            String id = rs.getString("id");
+            String name = rs.getString("name");
+            requireEntityId(id, "图推理候选实体 id");
+            requireText(name, "图推理候选实体名称");
+            map.put(id, name);
+        }, params.toArray());
+        return map;
     }
 
     private String buildPlaceholders(int count) {
         return String.join(",", Collections.nCopies(count, "?"));
+    }
+
+    private List<Edge> requireEdges(List<Edge> edges, String label) {
+        if (edges == null) {
+            throw new IllegalStateException(label + "不能为空");
+        }
+        if (edges.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalStateException(label + "包含 null 条目");
+        }
+        return edges;
+    }
+
+    private static void requireEntityId(String value, String name) {
+        requireText(value, name);
+        if (!value.equals(value.trim())) {
+            throw new IllegalStateException(name + "不能包含首尾空白: " + value);
+        }
+    }
+
+    private static void requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(name + "不能为空");
+        }
+    }
+
+    private static void requireProbability(float value, String name) {
+        if (!isProbability(value)) {
+            throw new IllegalStateException(name + "必须在 [0,1] 范围内: " + value);
+        }
+    }
+
+    private static boolean isProbability(float value) {
+        return Float.isFinite(value) && value >= 0.0f && value <= 1.0f;
     }
 }

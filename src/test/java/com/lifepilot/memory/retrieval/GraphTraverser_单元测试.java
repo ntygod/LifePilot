@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
 /**
  * GraphTraverser 图遍历检索器单元测试。
  * <p>
- * 覆盖场景：空输入、无起始实体、单跳遍历、多跳遍历、深度评分、limit 限制、异常兜底。
+ * 覆盖场景：空输入、无起始实体、单跳遍历、多跳遍历、深度评分、limit 限制、异常暴露。
  * </p>
  *
  * @author zsg
@@ -44,26 +44,32 @@ class GraphTraverser_单元测试 {
     class 空输入与边界场景 {
 
         @Test
-        void query为null时返回空列表() {
-            var result = traverser.traverse(null, 10);
+        void query为null时直接拒绝() {
+            var exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> traverser.traverse(null, 10));
 
-            assertTrue(result.isEmpty());
+            assertTrue(exception.getMessage().contains("图遍历 query 不能为空"));
             verifyNoInteractions(jdbcTemplate);
         }
 
         @Test
-        void query为空字符串时返回空列表() {
-            var result = traverser.traverse("", 10);
+        void query为空字符串时直接拒绝() {
+            var exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> traverser.traverse("", 10));
 
-            assertTrue(result.isEmpty());
+            assertTrue(exception.getMessage().contains("图遍历 query 不能为空"));
             verifyNoInteractions(jdbcTemplate);
         }
 
         @Test
-        void query为空白字符串时返回空列表() {
-            var result = traverser.traverse("   \t\n  ", 10);
+        void query为空白字符串时直接拒绝() {
+            var exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> traverser.traverse("   \t\n  ", 10));
 
-            assertTrue(result.isEmpty());
+            assertTrue(exception.getMessage().contains("图遍历 query 不能为空"));
             verifyNoInteractions(jdbcTemplate);
         }
     }
@@ -221,17 +227,15 @@ class GraphTraverser_单元测试 {
         }
 
         @Test
-        void limit为0时查询仍然执行_由数据库决定返回结果() {
-            // given
-            mockFindStartEntities(List.of("entity-start"));
-            mockCteQuery(List.of());
-
+        void limit为0时直接拒绝() {
             // when
-            var result = traverser.traverse("查询实体", 0);
+            var exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> traverser.traverse("查询实体", 0));
 
             // then
-            assertTrue(result.isEmpty());
-            verifyCteQueryCalledWithTopK(0);
+            assertTrue(exception.getMessage().contains("图遍历 topK 必须大于 0"));
+            verifyNoInteractions(jdbcTemplate);
         }
 
         @Test
@@ -276,14 +280,56 @@ class GraphTraverser_单元测试 {
         }
     }
 
-    // ==================== 异常兜底 ====================
+    // ==================== 异常暴露 ====================
 
     @Nested
     class 异常处理 {
 
         @Test
         @SuppressWarnings("unchecked")
-        void CTE查询抛出异常时返回空列表而非传播异常() {
+        void 起始实体查询返回null时直接失败() {
+            when(jdbcTemplate.query(
+                    contains("temporal_entities WHERE is_current"),
+                    any(RowMapper.class),
+                    any()))
+                    .thenReturn(null);
+
+            var exception = assertThrows(IllegalStateException.class,
+                    () -> traverser.traverse("查询实体", 10));
+
+            assertTrue(exception.getMessage().contains("图遍历起始实体查询结果不能为空"));
+        }
+
+        @Test
+        void 起始实体查询返回空ID时直接失败() {
+            mockFindStartEntities(List.of(" "));
+
+            var exception = assertThrows(IllegalStateException.class,
+                    () -> traverser.traverse("查询实体", 10));
+
+            assertTrue(exception.getMessage().contains("图遍历起始实体查询结果包含空实体 ID"));
+            verify(jdbcTemplate, never()).query(
+                    contains("WITH RECURSIVE"),
+                    any(RowMapper.class),
+                    any(Object[].class));
+        }
+
+        @Test
+        void CTE查询返回null条目时直接失败() {
+            mockFindStartEntities(List.of("entity-start"));
+            List<RankedItem> invalidRows = new java.util.ArrayList<>();
+            invalidRows.add(null);
+            mockCteQuery(invalidRows);
+
+            var exception = assertThrows(IllegalStateException.class,
+                    () -> traverser.traverse("查询实体", 10));
+
+            assertTrue(exception.getMessage().contains("图遍历 CTE 查询结果包含 null 条目"));
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void CTE查询抛出异常时传播异常() {
             // given
             mockFindStartEntities(List.of("entity-start"));
 
@@ -294,10 +340,10 @@ class GraphTraverser_单元测试 {
                     .thenThrow(new RuntimeException("SQLite 查询超时"));
 
             // when
-            var result = traverser.traverse("查询实体", 10);
+            var exception = assertThrows(RuntimeException.class, () -> traverser.traverse("查询实体", 10));
 
             // then
-            assertTrue(result.isEmpty());
+            assertTrue(exception.getMessage().contains("SQLite 查询超时"));
         }
     }
 

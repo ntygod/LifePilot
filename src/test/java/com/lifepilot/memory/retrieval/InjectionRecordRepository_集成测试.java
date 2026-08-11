@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * InjectionRecordRepository 集成测试。
@@ -19,11 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InjectionRecordRepository_集成测试 {
 
     private InjectionRecordRepository repository;
+    private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void setUp() {
         var dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
-        var jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("PRAGMA foreign_keys = ON");
 
         jdbcTemplate.execute("""
@@ -116,5 +118,65 @@ class InjectionRecordRepository_集成测试 {
 
         assertThat(repository.findEntityIdsBySourceTraceIdAndType("trace-exp", "EXPERIENCE"))
                 .containsExactlyInAnyOrder("exp-1", "exp-2");
+    }
+
+    @Test
+    void deleteBySessionId_删除普通和Trace注入记录且保留其他会话() {
+        jdbcTemplate.update("""
+                        INSERT INTO session_store (
+                            session_id, title, created_at, updated_at, last_activity_at
+                        ) VALUES (?, ?, '2026-03-23T10:00:00Z', '2026-03-23T10:00:00Z', '2026-03-23T10:00:00Z')
+                        """,
+                "session-2", "其他会话");
+        jdbcTemplate.update("""
+                        INSERT INTO session_transcript_entries (
+                            id, session_id, branch_id, entry_type, role, payload_json, created_at
+                        ) VALUES (?, ?, 'main', 'assistant_message', 'assistant', '{"content":"你好"}', '2026-03-23T10:00:01Z')
+                        """,
+                "entry-2", "session-2");
+        repository.save("entry-1", "session-1", "trace-1", java.util.List.of("e1"));
+        repository.saveWithType("trace-exp", "session-1", java.util.List.of("exp-1"), "EXPERIENCE");
+        repository.save("entry-2", "session-2", "trace-2", java.util.List.of("other"));
+
+        int deleted = repository.deleteBySessionId("session-1");
+
+        assertThat(deleted).isEqualTo(2);
+        assertThat(countRowsBySession("session-1")).isZero();
+        assertThat(countRowsBySession("session-2")).isEqualTo(1);
+    }
+
+    @Test
+    void sourceEntry注入记录Json被污染时查询应失败() {
+        repository.save("entry-1", "session-1", "trace-1", java.util.List.of("e1", "e2"));
+        jdbcTemplate.update("""
+                UPDATE memory_injection_records
+                SET entity_ids_json = ?
+                WHERE source_entry_id = ?
+                """, "{不是合法JSON", "entry-1");
+
+        assertThatThrownBy(() -> repository.findEntityIdsBySourceEntryId("entry-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sourceEntryId=entry-1");
+    }
+
+    @Test
+    void sourceTrace注入记录Json被污染时查询应失败() {
+        repository.saveWithType("trace-exp", "session-1", java.util.List.of("exp-1", "exp-2"), "EXPERIENCE");
+        jdbcTemplate.update("""
+                UPDATE memory_injection_records
+                SET entity_ids_json = ?
+                WHERE source_trace_id = ?
+                """, "{不是合法JSON", "trace-exp");
+
+        assertThatThrownBy(() -> repository.findEntityIdsBySourceTraceIdAndType("trace-exp", "EXPERIENCE"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sourceTraceId=trace-exp");
+    }
+
+    private int countRowsBySession(String sessionId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM memory_injection_records WHERE session_id = ?",
+                Integer.class,
+                sessionId);
     }
 }

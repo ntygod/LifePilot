@@ -10,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * L2 情景记忆定时清理任务 — 删除过期对话记录，保留 pinned 对话。
@@ -31,9 +32,9 @@ public class EpisodicCleanupJob {
     public EpisodicCleanupJob(EpisodicMemory episodicMemory,
                               JdbcTemplate jdbcTemplate,
                               MemoryConsumptionProperties properties) {
-        this.episodicMemory = episodicMemory;
-        this.jdbcTemplate = jdbcTemplate;
-        this.properties = properties;
+        this.episodicMemory = Objects.requireNonNull(episodicMemory, "EpisodicMemory 不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        this.properties = Objects.requireNonNull(properties, "MemoryConsumptionProperties 不能为空");
     }
 
     /**
@@ -48,30 +49,20 @@ public class EpisodicCleanupJob {
         log.info("情景清理: 开始执行, cutoff={}, maxPerRun={}", cutoff, maxPerRun);
         long start = System.currentTimeMillis();
 
-        List<String> expiredIds;
-        try {
-            expiredIds = jdbcTemplate.queryForList(
-                    """
-                    SELECT session_id
-                    FROM session_store
-                    WHERE COALESCE(last_activity_at, last_message_at, created_at) < ?
-                      AND is_pinned = 0
-                    LIMIT ?
-                    """,
-                    String.class, cutoff.toString(), maxPerRun);
-        } catch (Exception e) {
-            log.warn("情景清理: 查询过期对话失败, error={}", e.getMessage());
-            return;
-        }
+        List<String> expiredIds = Objects.requireNonNull(jdbcTemplate.queryForList(
+                """
+                SELECT session_id
+                FROM session_store
+                WHERE COALESCE(last_activity_at, last_message_at, created_at) < ?
+                  AND is_pinned = 0
+                LIMIT ?
+                """,
+                String.class, cutoff.toString(), maxPerRun), "情景清理查询结果不能为空");
 
         int deleted = 0;
         for (var id : expiredIds) {
-            try {
-                if (episodicMemory.delete(id)) {
-                    deleted++;
-                }
-            } catch (Exception e) {
-                log.warn("情景清理: 删除对话失败, id={}, error={}", id, e.getMessage());
+            if (episodicMemory.delete(id)) {
+                deleted++;
             }
         }
 

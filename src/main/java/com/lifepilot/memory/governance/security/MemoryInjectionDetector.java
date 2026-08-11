@@ -48,43 +48,64 @@ public class MemoryInjectionDetector {
         if (!properties.getSecurity().isInjectionDetectionEnabled()) {
             return InjectionDetectionResult.pass();
         }
-        try {
-            // 1. Prompt injection 模式扫描
-            var match = scanner.scan(text);
-            if (match.isPresent()) {
-                log.info("注入检测: BLOCKED space={}, pattern={}, excerpt={}",
-                        spaceId, match.get().pattern(), match.get().excerpt());
-                return InjectionDetectionResult.blocked(
-                        InjectionReason.PROMPT_INJECTION_PATTERN,
-                        1.0f,
-                        "命中模式: " + match.get().pattern());
-            }
+        requireTrustScore(trustScore);
+        float outlierThreshold = positiveFinite(
+                properties.getSecurity().getOutlierThreshold(),
+                "注入检测异常阈值");
 
-            // 2. TrustScore 分布异常
-            if (distribution.isOutlier(spaceId, trustScore, properties.getSecurity().getOutlierThreshold())) {
-                float distance = distribution.mahalanobisDistance(spaceId, trustScore);
-                String details = "mahalanobis=" + String.format("%.2f", distance)
-                        + " > threshold=" + properties.getSecurity().getOutlierThreshold();
-                log.info("注入检测: SUSPICIOUS space={}, trustScore={}, {}",
-                        spaceId, trustScore, details);
-                if (properties.getSecurity().isBlockOnSuspicious()) {
-                    return InjectionDetectionResult.blocked(
-                            InjectionReason.TRUST_SCORE_OUTLIER,
-                            Math.min(1.0f, distance / 10f),
-                            details);
-                }
-                return InjectionDetectionResult.suspicious(
+        // 1. Prompt injection 模式扫描
+        var match = scanner.scan(text);
+        if (match.isPresent()) {
+            log.info("注入检测: BLOCKED space={}, pattern={}, excerpt={}",
+                    spaceId, match.get().pattern(), match.get().excerpt());
+            return InjectionDetectionResult.blocked(
+                    InjectionReason.PROMPT_INJECTION_PATTERN,
+                    1.0f,
+                    "命中模式: " + match.get().pattern());
+        }
+
+        // 2. TrustScore 分布异常
+        if (distribution.isOutlier(spaceId, trustScore, outlierThreshold)) {
+            float distance = distribution.mahalanobisDistance(spaceId, trustScore);
+            String details = "mahalanobis=" + String.format("%.2f", distance)
+                    + " > threshold=" + outlierThreshold;
+            log.info("注入检测: SUSPICIOUS space={}, trustScore={}, {}",
+                    spaceId, trustScore, details);
+            float confidence = outlierConfidence(distance);
+            if (properties.getSecurity().isBlockOnSuspicious()) {
+                return InjectionDetectionResult.blocked(
                         InjectionReason.TRUST_SCORE_OUTLIER,
-                        Math.min(1.0f, distance / 10f),
+                        confidence,
                         details);
             }
-
-            // 3. 通过后纳入样本集
-            distribution.observe(spaceId, trustScore);
-            return InjectionDetectionResult.pass();
-        } catch (Exception e) {
-            log.debug("注入检测异常容错, 返回 PASS: {}", e.getMessage());
-            return InjectionDetectionResult.pass();
+            return InjectionDetectionResult.suspicious(
+                    InjectionReason.TRUST_SCORE_OUTLIER,
+                    confidence,
+                    details);
         }
+
+        // 3. 通过后纳入样本集
+        distribution.observe(spaceId, trustScore);
+        return InjectionDetectionResult.pass();
+    }
+
+    private static float outlierConfidence(float distance) {
+        if (!(distance >= 0.0f)) {
+            return 0.0f;
+        }
+        return Math.min(1.0f, distance / 10.0f);
+    }
+
+    private static void requireTrustScore(float trustScore) {
+        if (!(trustScore >= 0.0f && trustScore <= 1.0f)) {
+            throw new IllegalArgumentException("trustScore 必须在 [0,1] 范围内: " + trustScore);
+        }
+    }
+
+    private static float positiveFinite(float value, String name) {
+        if (!(value > 0.0f) || Float.isInfinite(value)) {
+            throw new IllegalArgumentException(name + "必须是正有限数: " + value);
+        }
+        return value;
     }
 }

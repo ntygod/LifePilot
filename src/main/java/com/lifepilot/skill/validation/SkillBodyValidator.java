@@ -10,7 +10,7 @@ import java.util.List;
  * <p>规则（见 docs/skill-spec.md §2.3 和 §5）：</p>
  * <ol>
  *   <li>≤5000 字符（超长请拆 references/）</li>
- *   <li>必需 3 小节：## 适用场景 / ## 不适用场景 / ## 工作流</li>
+ *   <li>必需 4 小节：## 触发判断 / ## 决策路径 / ## 输出标准 / ## 失败策略</li>
  * </ol>
  *
  * @author zsg
@@ -21,7 +21,7 @@ public class SkillBodyValidator {
 
     private static final int MAX = 5000;
     private static final List<String> REQUIRED_HEADINGS = List.of(
-            "## 适用场景", "## 不适用场景", "## 工作流");
+            "## 触发判断", "## 决策路径", "## 输出标准", "## 失败策略");
 
     /**
      * 校验 body 是否满足小节结构与字数硬限。

@@ -9,7 +9,6 @@ import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.observability.redactor.DataRedactor;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -39,8 +38,8 @@ public class MemoryConsumptionAutoConfiguration {
     @ConditionalOnMissingBean
     public HotMemoryDigestService hotMemoryDigestService(SemanticMemory semanticMemory,
                                                           MemoryConsumptionProperties properties,
-                                                          @Nullable ProceduralMemory proceduralMemory,
-                                                          @Nullable DataRedactor dataRedactor,
+                                                          ProceduralMemory proceduralMemory,
+                                                          DataRedactor dataRedactor,
                                                           Clock clock) {
         log.info("记忆模块: 注册 HotMemoryDigestService");
         return new HotMemoryDigestService(semanticMemory, properties, proceduralMemory, dataRedactor, clock);

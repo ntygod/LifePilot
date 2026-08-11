@@ -2,14 +2,15 @@ package com.lifepilot.memory.governance.lifecycle.listeners;
 
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.governance.lifecycle.events.SourceInvalidated;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Clock;
+import java.util.Objects;
 
 /**
  * 源对象（文档 / 知识库 / 会话）失效时，将所有引用它的 {@code memory_entity_provenances}
@@ -23,8 +24,7 @@ import java.time.Clock;
  * <p>真正的再验证入队流程由 {@code ReValidationListener} 独立处理 —— 二者共享同一
  * {@link SourceInvalidated} 事件但职责互补。</p>
  *
- * <p>失败处理：{@link MemoryProvenanceRepository#markStale} 内部已记录 DEBUG 日志；
- * 若底层抛异常，此处捕获并转为 WARN 不再上抛，避免中断同事件的其他监听器。</p>
+ * <p>底层写入失败会直接上抛，避免来源已失效但 provenance 仍保持 VALID。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -33,14 +33,12 @@ import java.time.Clock;
 @Component
 public class ProvenanceStaleListener {
 
-    private static final Logger log = LoggerFactory.getLogger(ProvenanceStaleListener.class);
-
     private final MemoryProvenanceRepository repo;
     private final Clock clock;
 
     public ProvenanceStaleListener(MemoryProvenanceRepository repo, Clock clock) {
-        this.repo = repo;
-        this.clock = clock;
+        this.repo = Objects.requireNonNull(repo, "repo 不能为空");
+        this.clock = Objects.requireNonNull(clock, "clock 不能为空");
     }
 
     /**
@@ -49,12 +47,9 @@ public class ProvenanceStaleListener {
      * @param event 源对象失效事件
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onSourceInvalidated(SourceInvalidated event) {
-        try {
-            repo.markStale(event.sourceType(), event.sourceId(), clock.instant());
-        } catch (Exception ex) {
-            log.warn("Provenance 失效标记失败 sourceType={} sourceId={} kind={}",
-                    event.sourceType(), event.sourceId(), event.kind(), ex);
-        }
+        Objects.requireNonNull(event, "源失效事件不能为空");
+        repo.markStale(event.sourceType(), event.sourceId(), clock.instant());
     }
 }

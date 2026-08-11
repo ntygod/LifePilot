@@ -36,8 +36,8 @@ public record SkillDefinition(
         if (id == null || id.isBlank()) throw new IllegalArgumentException("Skill ID 不能为空");
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Skill 名称不能为空");
         if (instructions == null || instructions.isBlank()) throw new IllegalArgumentException("Skill 指令不能为空");
-        suggestedTools = List.copyOf(suggestedTools);
-        metadata = Map.copyOf(metadata);
+        suggestedTools = suggestedTools == null ? List.of() : List.copyOf(suggestedTools);
+        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
         zhiweiMeta = zhiweiMeta == null ? SkillZhiweiMeta.empty() : zhiweiMeta;
     }
 
@@ -50,6 +50,9 @@ public record SkillDefinition(
         var sb = new StringBuilder();
         sb.append("<skill id=\"").append(id).append("\" name=\"").append(name).append("\">\n");
         sb.append("  <description>").append(description != null ? description : "").append("</description>\n");
+        if (!zhiweiMeta.outputs().isEmpty()) {
+            sb.append("  <outputs>").append(String.join(",", zhiweiMeta.outputs())).append("</outputs>\n");
+        }
         sb.append("</skill>");
         return sb.toString();
     }

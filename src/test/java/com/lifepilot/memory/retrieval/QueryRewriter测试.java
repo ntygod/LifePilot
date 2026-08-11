@@ -12,11 +12,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import java.util.Map;
 
 /**
  * QueryRewriter 单元测试。
@@ -95,32 +95,92 @@ class QueryRewriter测试 {
     }
 
     @Test
-    void 生成调用失败时降级() {
+    void 生成调用失败时应抛出() {
         properties.setQueryRewriteMode("rewrite");
         when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
                 eq(GenerationCapability.CHAT), any()))
                 .thenThrow(new RuntimeException("生成失败"));
 
         var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
-        var result = rewriter.rewrite("原始查询");
 
-        assertEquals("原始查询", result.primaryQuery());
-        assertTrue(result.rewrittenQueries().isEmpty());
-        assertTrue(result.hydeEmbedding().isEmpty());
+        assertThrows(RuntimeException.class, () -> rewriter.rewrite("原始查询"));
     }
 
     @Test
-    void 生成服务不可用时降级() {
+    void rewrite模式返回非JSON数组时按契约失败() {
+        properties.setQueryRewriteMode("rewrite");
+        var llmResponse = new LlmResponse("不是 JSON 数组", null, null, List.of(), Map.of(),
+                10, 20, null, 0, "provider-1", "model-1", 100, false);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
+
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
+
+        assertThrows(IllegalStateException.class, () -> rewriter.rewrite("原始查询"));
+    }
+
+    @Test
+    void rewrite模式返回非字符串数组项时按契约失败() {
+        properties.setQueryRewriteMode("rewrite");
+        var llmResponse = new LlmResponse("[\"有效改写\", 42]", null, null, List.of(), Map.of(),
+                10, 20, null, 0, "provider-1", "model-1", 100, false);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
+
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
+
+        assertThrows(IllegalStateException.class, () -> rewriter.rewrite("原始查询"));
+    }
+
+    @Test
+    void rewrite模式返回首尾空白数组项时按契约失败() {
+        properties.setQueryRewriteMode("rewrite");
+        var llmResponse = new LlmResponse("[\" 有效改写\"]", null, null, List.of(), Map.of(),
+                10, 20, null, 0, "provider-1", "model-1", 100, false);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
+
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
+
+        assertThrows(IllegalStateException.class, () -> rewriter.rewrite("原始查询"));
+    }
+
+    @Test
+    void rewrite模式返回空白数组项时按契约失败() {
+        properties.setQueryRewriteMode("rewrite");
+        var llmResponse = new LlmResponse("[\"有效改写\", \"\"]", null, null, List.of(), Map.of(),
+                10, 20, null, 0, "provider-1", "model-1", 100, false);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
+
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
+
+        assertThrows(IllegalStateException.class, () -> rewriter.rewrite("原始查询"));
+    }
+
+    @Test
+    void rewrite模式返回改写数量超过上限时按契约失败() {
+        properties.setQueryRewriteMode("rewrite");
+        properties.setMaxRewrites(2);
+        var llmResponse = new LlmResponse("[\"改写查询1\", \"改写查询2\", \"改写查询3\"]", null, null,
+                List.of(), Map.of(), 10, 20, null, 0, "provider-1", "model-1", 100, false);
+        when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
+                eq(GenerationCapability.CHAT), any())).thenReturn(llmResponse);
+
+        var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
+
+        assertThrows(IllegalStateException.class, () -> rewriter.rewrite("原始查询"));
+    }
+
+    @Test
+    void 生成服务不可用时应抛出() {
         properties.setQueryRewriteMode("rewrite");
         when(generationRouter.call(anyString(), anyString(), isNull(), isNull(), isNull(),
                 eq(GenerationCapability.CHAT), any()))
                 .thenThrow(new LlmUnavailableException("生成服务不可用", "memory_query_rewrite", List.of()));
 
         var rewriter = new QueryRewriter(generationRouter, embeddingRouter, properties, promptRegistry);
-        var result = rewriter.rewrite("原始查询");
 
-        assertEquals("原始查询", result.primaryQuery());
-        assertTrue(result.rewrittenQueries().isEmpty());
-        assertTrue(result.hydeEmbedding().isEmpty());
+        assertThrows(LlmUnavailableException.class, () -> rewriter.rewrite("原始查询"));
     }
 }

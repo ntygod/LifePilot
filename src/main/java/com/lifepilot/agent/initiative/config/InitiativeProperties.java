@@ -15,8 +15,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "lifepilot.initiative")
 public class InitiativeProperties {
 
-    /** 总开关，默认关闭（Phase 3 完成后开启）。 */
-    private boolean enabled = false;
+    /** 总开关，默认启用；缺少 Agent 或记忆注意力依赖时自动不注册。 */
+    private boolean enabled = true;
 
     /** 想法池最大活跃想法数。 */
     private int maxActiveThoughts = 20;

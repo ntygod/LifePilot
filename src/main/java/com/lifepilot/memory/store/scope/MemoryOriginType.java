@@ -11,6 +11,5 @@ public enum MemoryOriginType {
     KNOWLEDGE_BASE_DOCUMENT,
     MANUAL,
     TOOL,
-    CONSOLIDATION,
-    UNKNOWN
+    CONSOLIDATION
 }

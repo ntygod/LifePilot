@@ -33,7 +33,9 @@ public record InjectionDetectionResult(
     public InjectionDetectionResult {
         status = Objects.requireNonNull(status, "status 不能为空");
         reason = Objects.requireNonNull(reason, "reason 不能为空");
-        confidence = Math.max(0f, Math.min(1f, confidence));
+        if (!(confidence >= 0.0f && confidence <= 1.0f)) {
+            throw new IllegalArgumentException("注入检测置信度必须在 [0,1] 范围内: " + confidence);
+        }
     }
 
     public boolean isBlocked() { return status == Status.BLOCKED; }

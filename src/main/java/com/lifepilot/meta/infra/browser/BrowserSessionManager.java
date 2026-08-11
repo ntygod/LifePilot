@@ -49,6 +49,8 @@ public class BrowserSessionManager {
     private final boolean playwrightAvailable;
     @Nullable
     private final String unavailableReason;
+    @Nullable
+    private volatile String runtimeUnavailableReason;
     private final BrowserRuntime browserRuntime;
     private final BrowserAcquisitionMode acquisitionMode;
     private final ZhiweiPaths zhiweiPaths;
@@ -131,7 +133,7 @@ public class BrowserSessionManager {
         this.browserRuntime = browserRuntime;
         this.acquisitionMode = browserConfig.getAcquisitionMode();
         if (playwrightAvailable) {
-            log.info("Playwright 检测成功，浏览器自动化功能可用: mode={}", acquisitionMode);
+            log.info("Playwright 依赖检测成功，浏览器将在首次使用时初始化: mode={}", acquisitionMode);
         } else {
             log.warn("浏览器自动化功能不可用: {}", unavailableReason);
         }
@@ -165,7 +167,7 @@ public class BrowserSessionManager {
      * @return true 表示 Playwright 在 classpath 上且可初始化
      */
     public boolean isAvailable() {
-        return playwrightAvailable && browserConfig.isEnabled();
+        return playwrightAvailable && runtimeUnavailableReason == null && browserConfig.isEnabled();
     }
 
     /**
@@ -174,7 +176,13 @@ public class BrowserSessionManager {
      * @return 降级提示消息
      */
     public String getUnavailableMessage() {
-        return unavailableReason != null ? unavailableReason : "浏览器功能未配置";
+        if (unavailableReason != null) {
+            return unavailableReason;
+        }
+        if (runtimeUnavailableReason != null) {
+            return runtimeUnavailableReason;
+        }
+        return "浏览器功能未配置";
     }
 
     /**
@@ -413,6 +421,7 @@ public class BrowserSessionManager {
                 String msg = e.getMessage();
                 if (msg != null && (msg.contains("install") || msg.contains("executable doesn't exist")
                         || msg.contains("browserType.launch"))) {
+                    markRuntimeUnavailable("Playwright 浏览器二进制未安装，请运行安装命令");
                     throw new BrowserNotInstalledException(
                             "Playwright 浏览器二进制未安装，请运行安装命令", e);
                 }
@@ -529,6 +538,7 @@ public class BrowserSessionManager {
             playwrightInstance = null;
             String msg = e.getMessage();
             if (msg != null && (msg.contains("install") || msg.contains("executable doesn't exist"))) {
+                markRuntimeUnavailable("Playwright 浏览器二进制未安装，请运行安装命令");
                 throw new BrowserNotInstalledException(
                         "Playwright 浏览器二进制未安装，请运行安装命令", e);
             }
@@ -536,6 +546,26 @@ public class BrowserSessionManager {
         }
         log.info("持久化浏览器上下文已创建（会话级覆盖）: userDataDir={}, headless={}",
                 dir, browserConfig.isHeadless());
+    }
+
+    private void markRuntimeUnavailable(String reason) {
+        runtimeUnavailableReason = reason;
+        log.warn("浏览器运行时标记为不可用: {}", reason);
+        closeRuntimeAfterLaunchFailure();
+    }
+
+    private void closeRuntimeAfterLaunchFailure() {
+        Object playwright = playwrightInstance;
+        playwrightInstance = null;
+        browserInstance = null;
+        sharedBrowserContext = null;
+        if (playwright != null) {
+            try {
+                browserRuntime.closePlaywright(playwright);
+            } catch (Exception closeError) {
+                log.debug("关闭失败的 Playwright 运行时失败: {}", closeError.getMessage());
+            }
+        }
     }
 
     /** LAUNCH 模式 — 每个会话独立 BrowserContext（原有逻辑）。 */

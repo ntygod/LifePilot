@@ -44,27 +44,24 @@ public class EntityDeduplicator {
                               JdbcTemplate jdbcTemplate,
                               AgentLearningProperties properties,
                               PlatformTransactionManager transactionManager) {
-        this.semanticMemory = semanticMemory;
-        this.vectorSearcher = vectorSearcher;
-        this.jdbcTemplate = jdbcTemplate;
-        this.properties = properties;
-        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "vectorSearcher 不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
+        this.properties = Objects.requireNonNull(properties, "properties 不能为空");
+        this.transactionTemplate = new TransactionTemplate(
+                Objects.requireNonNull(transactionManager, "transactionManager 不能为空"));
     }
 
     /** 定时去重入口。 */
     @Scheduled(cron = "${lifepilot.agent.learning.consolidation.dedup-cron:0 30 4 * * *}")
     public void scheduledDedup() {
-        try {
-            var stats = dedup();
-            if (stats.mergedCount() > 0) {
-                log.info("实体去重: 完成定时去重, 扫描={}, 候选={}, 合并={}, 耗时={}ms",
-                        stats.entitiesScanned(), stats.candidatesFound(),
-                        stats.mergedCount(), stats.elapsedMs());
-            } else {
-                log.debug("实体去重: 定时去重无合并, 扫描={}", stats.entitiesScanned());
-            }
-        } catch (Exception e) {
-            log.error("实体去重: 定时去重异常, error={}", e.getMessage(), e);
+        var stats = dedup();
+        if (stats.mergedCount() > 0) {
+            log.info("实体去重: 完成定时去重, 扫描={}, 候选={}, 合并={}, 耗时={}ms",
+                    stats.entitiesScanned(), stats.candidatesFound(),
+                    stats.mergedCount(), stats.elapsedMs());
+        } else {
+            log.debug("实体去重: 定时去重无合并, 扫描={}", stats.entitiesScanned());
         }
     }
 
@@ -75,14 +72,20 @@ public class EntityDeduplicator {
      */
     public DedupStats dedup() {
         long startMs = System.currentTimeMillis();
-        var allEntities = semanticMemory.findAllCurrent();
+        var allEntities = requireEntityList(
+                semanticMemory.findAllCurrent(),
+                "实体去重: 当前实体查询");
         int scanned = allEntities.size();
         if (scanned == 0) {
             return new DedupStats(0, 0, 0, System.currentTimeMillis() - startMs);
         }
 
-        float threshold = properties.getConsolidation().getDedupSimilarityThreshold();
-        int maxPerRun = properties.getConsolidation().getMaxDedupPerRun();
+        float threshold = similarityThreshold(
+                properties.getConsolidation().getDedupSimilarityThreshold(),
+                "实体去重相似度阈值");
+        int maxPerRun = positive(
+                properties.getConsolidation().getMaxDedupPerRun(),
+                "实体去重单轮最大合并数");
 
         // 按 EntityType 分组
         var grouped = allEntities.stream()
@@ -101,24 +104,19 @@ public class EntityDeduplicator {
                     .collect(Collectors.toMap(TemporalEntity::id, e -> e));
 
             for (var entity : entities) {
-                try {
-                    var results = vectorSearcher.searchEntities(
-                            entity.textRepresentation(), 5, threshold);
-                    for (VectorSearchResult result : results) {
-                        String otherId = result.entityId();
-                        if (otherId.equals(entity.id())) continue;
-                        // 只匹配同类型实体
-                        if (!entityMap.containsKey(otherId)) continue;
+                var results = requireVectorResults(
+                        vectorSearcher.searchEntities(entity.textRepresentation(), 5, threshold));
+                for (VectorSearchResult result : results) {
+                    String otherId = result.entityId();
+                    if (otherId.equals(entity.id())) continue;
+                    // 只匹配同类型实体
+                    if (!entityMap.containsKey(otherId)) continue;
 
-                        String pairKey = pairKey(entity.id(), otherId);
-                        if (!candidates.containsKey(pairKey)) {
-                            candidates.put(pairKey, new CandidatePair(
-                                    entity, entityMap.get(otherId), result.similarity()));
-                        }
+                    String pairKey = pairKey(entity.id(), otherId);
+                    if (!candidates.containsKey(pairKey)) {
+                        candidates.put(pairKey, new CandidatePair(
+                                entity, entityMap.get(otherId), result.similarity()));
                     }
-                } catch (Exception e) {
-                    log.warn("实体去重: 向量搜索异常, entityId={}, error={}",
-                            entity.id(), e.getMessage());
                 }
             }
         }
@@ -130,14 +128,9 @@ public class EntityDeduplicator {
             if (alreadyMerged.contains(pair.a.id()) || alreadyMerged.contains(pair.b.id())) {
                 continue;
             }
-            try {
-                mergePair(pair);
-                alreadyMerged.add(pair.secondary().id());
-                mergedCount++;
-            } catch (Exception e) {
-                log.warn("实体去重: 单对合并失败, primary={}, secondary={}, error={}",
-                        pair.primary().name(), pair.secondary().name(), e.getMessage());
-            }
+            mergePair(pair);
+            alreadyMerged.add(pair.secondary().id());
+            mergedCount++;
         }
 
         long elapsed = System.currentTimeMillis() - startMs;
@@ -183,14 +176,19 @@ public class EntityDeduplicator {
         // 事务包裹：更新主实体 + 迁移关系 + 归档从实体 + 记录日志，保证原子性
         SqliteBusyRetry.run(() -> transactionTemplate.executeWithoutResult(status -> {
             // 4. 更新主实体属性 — 同时标记为派生实体并写入 derivation_sources
-            jdbcTemplate.update("""
+            int entityUpdated = jdbcTemplate.update("""
                     UPDATE memory_entities
                     SET access_count = ?, last_seen_at = ?, updated_at = ?,
                         is_derived = 1, derivation_sources = ?
                     WHERE id = ?
                     """,
                     mergedAccessCount, now, now, derivationSourcesJson, primary.id());
-            jdbcTemplate.update("""
+            if (entityUpdated != 1) {
+                throw new IllegalStateException("实体去重: 主实体更新失败, entityId=" + primary.id()
+                        + ", updated=" + entityUpdated);
+            }
+
+            int versionUpdated = jdbcTemplate.update("""
                     UPDATE memory_entity_versions
                     SET description = COALESCE(?, description),
                         properties_json = COALESCE(?, properties_json),
@@ -198,6 +196,10 @@ public class EntityDeduplicator {
                     WHERE entity_id = ? AND is_current = 1
                     """,
                     finalDesc, propsJson, now, primary.id());
+            if (versionUpdated != 1) {
+                throw new IllegalStateException("实体去重: 主实体当前版本更新失败, entityId=" + primary.id()
+                        + ", updated=" + versionUpdated);
+            }
 
             // 5. 迁移关系
             migrateRelations(secondary.id(), primary.id(), now);
@@ -280,7 +282,7 @@ public class EntityDeduplicator {
         try {
             return OBJECT_MAPPER.writeValueAsString(props);
         } catch (Exception e) {
-            return null;
+            throw new IllegalStateException("实体去重: properties 序列化失败", e);
         }
     }
 
@@ -292,8 +294,13 @@ public class EntityDeduplicator {
             @jakarta.annotation.Nullable List<String> existing, String primaryId, String secondaryId) {
         var combined = new LinkedHashSet<String>();
         if (existing != null) {
-            combined.addAll(existing);
+            for (String sourceId : existing) {
+                requireCanonicalId(sourceId, "实体去重已有派生来源 ID");
+                combined.add(sourceId);
+            }
         }
+        requireCanonicalId(primaryId, "实体去重主实体 ID");
+        requireCanonicalId(secondaryId, "实体去重从实体 ID");
         combined.add(primaryId);
         combined.add(secondaryId);
         return List.copyOf(combined);
@@ -307,7 +314,7 @@ public class EntityDeduplicator {
         try {
             return OBJECT_MAPPER.writeValueAsString(sources);
         } catch (Exception e) {
-            return null;
+            throw new IllegalStateException("实体去重: 派生来源序列化失败", e);
         }
     }
 
@@ -316,11 +323,80 @@ public class EntityDeduplicator {
         return id1.compareTo(id2) < 0 ? id1 + "|" + id2 : id2 + "|" + id1;
     }
 
+    private static List<TemporalEntity> requireEntityList(List<TemporalEntity> entities, String label) {
+        if (entities == null) {
+            throw new IllegalStateException(label + "返回 null");
+        }
+        for (TemporalEntity entity : entities) {
+            if (entity == null) {
+                throw new IllegalStateException(label + "返回 null 实体");
+            }
+            requireCanonicalId(entity.id(), "实体去重实体 ID");
+            Objects.requireNonNull(entity.type(), "实体去重实体类型不能为空");
+            requireNonBlank(entity.name(), "实体去重实体名称");
+        }
+        return entities;
+    }
+
+    private static List<VectorSearchResult> requireVectorResults(List<VectorSearchResult> results) {
+        if (results == null) {
+            throw new IllegalStateException("实体去重: 向量搜索结果不能为空");
+        }
+        for (VectorSearchResult result : results) {
+            if (result == null) {
+                throw new IllegalStateException("实体去重: 向量搜索结果不能包含 null 元素");
+            }
+            requireCanonicalId(result.entityId(), "实体去重向量候选 ID");
+            if (!Float.isFinite(result.similarity())
+                    || result.similarity() < 0.0f
+                    || result.similarity() > 1.0f) {
+                throw new IllegalStateException("实体去重: 向量相似度必须在 [0,1] 范围内: "
+                        + result.similarity());
+            }
+        }
+        return results;
+    }
+
+    private static float similarityThreshold(float value, String name) {
+        if (!Float.isFinite(value) || value < 0.0f || value > 1.0f) {
+            throw new IllegalArgumentException(name + "必须在 [0,1] 范围内: " + value);
+        }
+        return value;
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
+    }
+
+    private static void requireCanonicalId(String value, String label) {
+        requireNonBlank(value, label);
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+    }
+
+    private static void requireNonBlank(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(label + "不能为空");
+        }
+    }
+
     /**
      * 重复候选对 — 包含两个实体和相似度。
      * {@link #primary()} 返回主实体，{@link #secondary()} 返回从实体。
      */
     private record CandidatePair(TemporalEntity a, TemporalEntity b, float similarity) {
+        private CandidatePair {
+            Objects.requireNonNull(a, "实体去重候选 a 不能为空");
+            Objects.requireNonNull(b, "实体去重候选 b 不能为空");
+            requireCanonicalId(a.id(), "实体去重候选 a ID");
+            requireCanonicalId(b.id(), "实体去重候选 b ID");
+            similarityThreshold(similarity, "实体去重候选相似度");
+        }
+
         /** 主实体选择：importanceScore 较高 → accessCount 较高 → createdAt 较早。 */
         TemporalEntity primary() {
             if (Float.compare(a.importanceScore(), b.importanceScore()) != 0) {

@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -14,8 +15,8 @@ import java.util.UUID;
  *
  * <p>队列条目由 {@code ReValidationListener} 在源失效时写入，状态迁移：
  * {@code PENDING → PROMPTED → RESOLVED} —— {@code PROMPTED} 表示已被检索层捎带给 LLM
- * 提示复核，{@code RESOLVED} 由 LLM 反馈或人工处理关闭。本仓库只负责入队与基础计数，
- * 后续状态迁移由更上层的检索 / 复核流程驱动。</p>
+ * 提示复核，{@code RESOLVED} 由 LLM 反馈或人工处理关闭。本仓库负责入队、基础计数与
+ * 人工关闭动作，复杂复核策略由更上层的检索 / 复核流程驱动。</p>
  *
  * @author zsg
  * @since 2026-04-23
@@ -28,7 +29,7 @@ public class RevalidationQueueRepository {
     private final JdbcTemplate jdbc;
 
     public RevalidationQueueRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc 不能为空");
     }
 
     /**
@@ -43,19 +44,26 @@ public class RevalidationQueueRepository {
      * @param when     入队时间
      */
     public void enqueue(String entityId, SourceType type, String sourceId, Instant when) {
-        jdbc.update(
+        String cleanEntityId = requireCleanText(entityId, "entityId");
+        Objects.requireNonNull(type, "type 不能为空");
+        String cleanSourceId = requireCleanText(sourceId, "sourceId");
+        Objects.requireNonNull(when, "when 不能为空");
+        int affected = jdbc.update(
                 """
                 INSERT INTO memory_revalidation_queue
                     (id, entity_id, source_type, source_id, created_at, status)
                 VALUES (?, ?, ?, ?, ?, 'PENDING')
                 """,
                 UUID.randomUUID().toString(),
-                entityId,
+                cleanEntityId,
                 type.name(),
-                sourceId,
+                cleanSourceId,
                 when.toString());
+        if (affected != 1) {
+            throw new IllegalStateException("再验证队列入队影响行数异常: affected=" + affected);
+        }
         log.debug("再验证队列入队: entity={}, source={}:{}, when={}",
-                entityId, type, sourceId, when);
+                cleanEntityId, type, cleanSourceId, when);
     }
 
     /**
@@ -66,12 +74,50 @@ public class RevalidationQueueRepository {
      * @return PENDING 行数
      */
     public int countPendingBySource(SourceType type, String sourceId) {
+        Objects.requireNonNull(type, "type 不能为空");
+        String cleanSourceId = requireCleanText(sourceId, "sourceId");
         Integer n = jdbc.queryForObject(
                 """
                 SELECT COUNT(*) FROM memory_revalidation_queue
                  WHERE source_type = ? AND source_id = ? AND status = 'PENDING'
                 """,
-                Integer.class, type.name(), sourceId);
-        return n == null ? 0 : n;
+                Integer.class, type.name(), cleanSourceId);
+        if (n == null) {
+            throw new IllegalStateException("再验证队列计数结果不能为空");
+        }
+        return n;
+    }
+
+    /**
+     * 人工确认实体仍有效后，关闭实体下所有未完成的再验证任务。
+     *
+     * <p>只关闭 {@code PENDING}/{@code PROMPTED} 队列项，保留 provenance 的 {@code STALE}
+     * 审计事实，避免抹掉来源曾经失效的历史。</p>
+     *
+     * @param entityId 实体 ID
+     * @return 被关闭的队列行数
+     */
+    public int markResolvedByEntityId(String entityId) {
+        String cleanEntityId = requireCleanText(entityId, "entityId");
+        int affected = jdbc.update(
+                """
+                UPDATE memory_revalidation_queue
+                   SET status = 'RESOLVED'
+                 WHERE entity_id = ?
+                   AND status IN ('PENDING', 'PROMPTED')
+                """,
+                cleanEntityId);
+        log.debug("再验证队列人工关闭: entity={}, affected={}", cleanEntityId, affected);
+        return affected;
+    }
+
+    private static String requireCleanText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " 不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(field + " 不能包含首尾空白: " + value);
+        }
+        return value;
     }
 }

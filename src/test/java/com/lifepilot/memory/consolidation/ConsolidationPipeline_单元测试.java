@@ -5,17 +5,25 @@ import com.lifepilot.agent.learning.consolidation.ConsolidationPipeline;
 import com.lifepilot.agent.learning.consolidation.ConsolidationStats;
 import com.lifepilot.agent.learning.consolidation.EpisodicToProceduralConsolidator;
 import com.lifepilot.agent.learning.consolidation.EpisodicToSemanticConsolidator;
+import com.lifepilot.agent.learning.consolidation.ExperienceMerger;
+import com.lifepilot.agent.learning.consolidation.ExperiencePromoter;
+import com.lifepilot.agent.learning.consolidation.PreferenceConsolidator;
 import com.lifepilot.agent.learning.consolidation.UserProfileConsolidator;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateApplier;
+import com.lifepilot.agent.learning.consolidation.association.AssociationCandidateGenerator;
+import com.lifepilot.agent.learning.consolidation.association.AssociationConsolidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * ConsolidationPipeline 单元测试 — 验证全量巩固的手动语义透传与阶段故障隔离。
+ * ConsolidationPipeline 单元测试 — 验证全量巩固的手动语义透传与失败直抛契约。
  *
  * <p>调度触发逻辑（事件/cron/空闲）已迁移到 ConsolidationScheduler，由
  * {@code ConsolidationScheduler_单元测试} 覆盖；本类只验证管线本身的全量执行行为。</p>
@@ -33,6 +41,7 @@ class ConsolidationPipeline_单元测试 {
     @BeforeEach
     void setUp() {
         properties = new AgentLearningProperties();
+        properties.getRem().setEnabled(false);
         semanticConsolidator = mock(EpisodicToSemanticConsolidator.class);
         proceduralConsolidator = mock(EpisodicToProceduralConsolidator.class);
         when(semanticConsolidator.consolidate()).thenReturn(
@@ -47,7 +56,13 @@ class ConsolidationPipeline_单元测试 {
         var userProfileConsolidator = mock(UserProfileConsolidator.class);
         var pipeline = new ConsolidationPipeline(
                 semanticConsolidator, proceduralConsolidator, properties,
-                null, null, userProfileConsolidator, null, null, null, null);
+                preferenceConsolidator(),
+                experienceMerger(),
+                userProfileConsolidator,
+                mock(ExperiencePromoter.class),
+                mock(AssociationCandidateGenerator.class),
+                mock(AssociationConsolidator.class),
+                mock(AssociationCandidateApplier.class));
 
         pipeline.consolidate(true);
 
@@ -55,17 +70,35 @@ class ConsolidationPipeline_单元测试 {
     }
 
     @Test
-    @DisplayName("单阶段异常不阻塞后续阶段")
-    void 单阶段异常不阻塞后续阶段() {
+    @DisplayName("单阶段异常应直接暴露并停止后续阶段")
+    void 单阶段异常应直接暴露并停止后续阶段() {
         when(semanticConsolidator.consolidate()).thenThrow(new RuntimeException("语义巩固故障"));
         var pipeline = new ConsolidationPipeline(
                 semanticConsolidator, proceduralConsolidator, properties,
-                null, null, null, null, null, null, null);
+                preferenceConsolidator(),
+                experienceMerger(),
+                mock(UserProfileConsolidator.class),
+                mock(ExperiencePromoter.class),
+                mock(AssociationCandidateGenerator.class),
+                mock(AssociationConsolidator.class),
+                mock(AssociationCandidateApplier.class));
 
-        // 语义巩固抛异常，但管线应继续执行程序巩固
-        pipeline.consolidate();
+        assertThrows(RuntimeException.class, pipeline::consolidate);
 
         verify(semanticConsolidator).consolidate();
-        verify(proceduralConsolidator).consolidate();
+        verify(proceduralConsolidator, never()).consolidate();
+    }
+
+    private PreferenceConsolidator preferenceConsolidator() {
+        var consolidator = mock(PreferenceConsolidator.class);
+        when(consolidator.consolidate()).thenReturn(
+                new com.lifepilot.agent.learning.consolidation.PreferenceSyncStats(0, 0, 0));
+        return consolidator;
+    }
+
+    private ExperienceMerger experienceMerger() {
+        var merger = mock(ExperienceMerger.class);
+        when(merger.merge()).thenReturn(new ExperienceMerger.MergeStats(0, 0, 0));
+        return merger;
     }
 }

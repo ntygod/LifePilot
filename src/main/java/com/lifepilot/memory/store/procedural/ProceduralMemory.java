@@ -13,6 +13,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -33,10 +34,11 @@ public class ProceduralMemory {
     private final ObjectMapper objectMapper;
 
     public ProceduralMemory(JdbcTemplate jdbcTemplate,
-                            MemoryProjectionService projectionService) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.projectionService = projectionService;
-        this.objectMapper = new ObjectMapper();
+                            MemoryProjectionService projectionService,
+                            ObjectMapper objectMapper) {
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        this.projectionService = Objects.requireNonNull(projectionService, "MemoryProjectionService 不能为空");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "ObjectMapper 不能为空");
     }
 
     // ========== 模板 CRUD ==========
@@ -52,8 +54,7 @@ public class ProceduralMemory {
             String variablesJson = objectMapper.writeValueAsString(template.variables());
             String sourceTraceIdsJson = objectMapper.writeValueAsString(template.sourceTraceIds());
 
-            // V15 起 INSERT 需带 source_entity_id / deactivated_reason 以供 L4SyncListener
-            // 通过 source_entity_id 反查并级联失活；旧调用点默认 null（兼容 ctor 已填默认）。
+            // source_entity_id / deactivated_reason 供 L4SyncListener 反查并级联失活。
             jdbcTemplate.update(
                     """
                     INSERT INTO procedure_templates(
@@ -123,9 +124,8 @@ public class ProceduralMemory {
             String variablesJson = objectMapper.writeValueAsString(template.variables());
             String sourceTraceIdsJson = objectMapper.writeValueAsString(template.sourceTraceIds());
 
-            // V15 新增列 source_entity_id / deactivated_reason 亦支持更新，
-            // 典型场景：模板巩固去重时合并多个源 entity id，或手工置失活原因。
-            jdbcTemplate.update(
+            // 模板巩固去重会更新源 entity id，手工失活会写入 deactivated_reason。
+            int updated = jdbcTemplate.update(
                     """
                     UPDATE procedure_templates SET
                         name = ?, description = ?, trigger_intent = ?,
@@ -142,6 +142,7 @@ public class ProceduralMemory {
                     template.updatedAt().toString(),
                     template.sourceEntityId(), template.deactivatedReason(),
                     template.templateId());
+            requireUpdated(updated, "程序记忆: 更新模板失败，模板不存在, templateId=" + template.templateId());
 
             projectionService.enqueueProcedureTemplateVectorUpsertAfterCommit(
                     template.templateId(), template.triggerIntent());
@@ -158,7 +159,8 @@ public class ProceduralMemory {
      * @param templateId 模板 ID
      */
     public void delete(String templateId) {
-        jdbcTemplate.update("DELETE FROM procedure_templates WHERE template_id = ?", templateId);
+        int deleted = jdbcTemplate.update("DELETE FROM procedure_templates WHERE template_id = ?", templateId);
+        requireUpdated(deleted, "程序记忆: 删除模板失败，模板不存在, templateId=" + templateId);
         projectionService.enqueueProcedureTemplateVectorDeleteAfterCommit(templateId);
         log.info("程序记忆: 删除模板, id={}", templateId);
     }
@@ -180,8 +182,7 @@ public class ProceduralMemory {
                 templateId);
 
         if (results.isEmpty()) {
-            log.warn("程序记忆: 记录执行结果失败, 模板不存在, templateId={}", templateId);
-            return;
+            throw new IllegalStateException("程序记忆: 记录执行结果失败，模板不存在, templateId=" + templateId);
         }
 
         float oldRate = results.getFirst()[0];
@@ -189,13 +190,14 @@ public class ProceduralMemory {
         float newRate = (oldRate * oldCount + (success ? 1.0f : 0.0f)) / (oldCount + 1);
         String now = Instant.now().toString();
 
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
                 """
                 UPDATE procedure_templates
                 SET success_rate = ?, use_count = ?, last_used_at = ?, updated_at = ?
                 WHERE template_id = ?
                 """,
                 newRate, oldCount + 1, now, now, templateId);
+        requireUpdated(updated, "程序记忆: 记录执行结果失败，模板不存在, templateId=" + templateId);
 
         log.debug("程序记忆: 记录执行结果, templateId={}, success={}, newRate={}, newCount={}",
                 templateId, success, newRate, oldCount + 1);
@@ -209,9 +211,7 @@ public class ProceduralMemory {
      * @param rule 偏好规则
      */
     public void savePreference(PreferenceRule rule) {
-        // V15 起 INSERT OR REPLACE 需带 source_entity_id / deactivated_reason —
-        // L4SyncListener 通过 source_entity_id 反查并置 deactivated_reason 实现失活，
-        // 若不写该列则 L3→L4 级联永不命中。
+        // source_entity_id / deactivated_reason 供 L4SyncListener 级联失活偏好规则。
         jdbcTemplate.update(
                 """
                 INSERT OR REPLACE INTO preference_rules(
@@ -278,10 +278,9 @@ public class ProceduralMemory {
                 now, ruleId);
 
         if (updated == 0) {
-            log.warn("程序记忆: 强化偏好规则失败, 规则不存在, ruleId={}", ruleId);
-        } else {
-            log.debug("程序记忆: 强化偏好规则, ruleId={}", ruleId);
+            throw new IllegalStateException("程序记忆: 强化偏好规则失败，规则不存在, ruleId=" + ruleId);
         }
+        log.debug("程序记忆: 强化偏好规则, ruleId={}", ruleId);
     }
 
     /**
@@ -347,17 +346,18 @@ public class ProceduralMemory {
      * ResultSet 行映射为 ProcedureTemplate。
      */
     private ProcedureTemplate mapRowToTemplate(ResultSet rs) throws SQLException {
+        String templateId = rs.getString("template_id");
         String stepsJson = rs.getString("steps_json");
         String variablesJson = rs.getString("variables_json");
         String sourceTraceIdsJson = rs.getString("source_trace_ids_json");
         String lastUsedAtStr = rs.getString("last_used_at");
 
-        List<TemplateStep> steps = deserializeSteps(stepsJson);
-        Map<String, String> variables = deserializeVariables(variablesJson);
-        List<String> sourceTraceIds = deserializeStringList(sourceTraceIdsJson);
+        List<TemplateStep> steps = deserializeSteps(templateId, stepsJson);
+        Map<String, String> variables = deserializeVariables(templateId, variablesJson);
+        List<String> sourceTraceIds = deserializeStringList(templateId, sourceTraceIdsJson);
 
         return new ProcedureTemplate(
-                rs.getString("template_id"),
+                templateId,
                 rs.getString("name"),
                 rs.getString("description"),
                 rs.getString("trigger_intent"),
@@ -375,41 +375,48 @@ public class ProceduralMemory {
     }
 
     /** 反序列化 steps_json 为 List<TemplateStep>。 */
-    private List<TemplateStep> deserializeSteps(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
+    private List<TemplateStep> deserializeSteps(String templateId, String json) {
+        requireJson("steps_json", templateId, json);
         try {
             return List.copyOf(objectMapper.readValue(json, new TypeReference<List<TemplateStep>>() {}));
         } catch (JsonProcessingException e) {
-            log.warn("程序记忆: steps_json 反序列化失败, json={}", json);
-            return List.of();
+            throw new IllegalStateException(
+                    "程序记忆: steps_json 反序列化失败, templateId=" + templateId, e);
         }
     }
 
     /** 反序列化 variables_json 为 Map<String, String>。 */
-    private Map<String, String> deserializeVariables(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
+    private Map<String, String> deserializeVariables(String templateId, String json) {
+        requireJson("variables_json", templateId, json);
         try {
             return Map.copyOf(objectMapper.readValue(json, new TypeReference<Map<String, String>>() {}));
         } catch (JsonProcessingException e) {
-            log.warn("程序记忆: variables_json 反序列化失败, json={}", json);
-            return Map.of();
+            throw new IllegalStateException(
+                    "程序记忆: variables_json 反序列化失败, templateId=" + templateId, e);
         }
     }
 
     /** 反序列化 source_trace_ids_json 为 List<String>。 */
-    private List<String> deserializeStringList(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
+    private List<String> deserializeStringList(String templateId, String json) {
+        requireJson("source_trace_ids_json", templateId, json);
         try {
             return List.copyOf(objectMapper.readValue(json, new TypeReference<List<String>>() {}));
         } catch (JsonProcessingException e) {
-            log.warn("程序记忆: source_trace_ids_json 反序列化失败, json={}", json);
-            return List.of();
+            throw new IllegalStateException(
+                    "程序记忆: source_trace_ids_json 反序列化失败, templateId=" + templateId, e);
+        }
+    }
+
+    private void requireJson(String columnName, String templateId, String json) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException(
+                    "程序记忆: " + columnName + " 不能为空, templateId=" + templateId);
+        }
+    }
+
+    private static void requireUpdated(int updated, String message) {
+        if (updated != 1) {
+            throw new IllegalStateException(message + ", updated=" + updated);
         }
     }
 }

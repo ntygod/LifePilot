@@ -1,7 +1,10 @@
 package com.lifepilot.skill.markdown;
 
+import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.skill.model.SkillSource;
+import com.lifepilot.skill.spec.SkillRequires;
+import com.lifepilot.skill.spec.SkillZhiweiMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link MarkdownSkillSerializer} 单元测试。
  *
  * @author zsg
- * @since 2026-07-28
+ * @since 2026-07-02
  */
 class MarkdownSkillSerializerTest {
 
@@ -28,33 +31,49 @@ class MarkdownSkillSerializerTest {
     private SkillDefinition sampleDefinition() {
         return SkillDefinition.builder()
                 .id("writing-assistant")
-                .name("写作助手")
-                .description("帮助用户撰写高质量文章")
+                .name("writing-assistant")
+                .description("当用户要写文章、润色文案或生成报告草稿时使用。")
                 .version("2.0.0")
                 .source(new SkillSource.UserDefined("/skills/writing-assistant", null))
-                .instructions("你是一个专业的写作助手。")
-                .suggestedTools(List.of("todo.create", "memory.search"))
+                .instructions("""
+                        # 写作助手
+
+                        ## 触发判断
+                        - 写作
+                        ## 决策路径
+                        1. 判断受众和渠道
+                        ## 输出标准
+                        - text
+                        ## 失败策略
+                        - 缺少素材时追问
+                        """)
+                .suggestedTools(List.of("file.read", "file.write"))
                 .metadata(Map.of())
+                .zhiweiMeta(new SkillZhiweiMeta(
+                        List.of("file.read", "file.write"),
+                        List.of("writing", "draft"),
+                        List.of("text", "file"),
+                        SkillRequires.empty()))
                 .build();
     }
 
-    // ─────────────────────────────────────────────
-    //  基本序列化
-    // ─────────────────────────────────────────────
-
     @Test
-    void 标准定义_序列化包含Frontmatter和Body() {
+    void 标准定义_序列化包含v3Frontmatter和Body() {
         String result = serializer.serialize(sampleDefinition());
 
         assertThat(result).startsWith("---\n");
-        assertThat(result).contains("id: writing-assistant");
-        assertThat(result).contains("name: 写作助手");
-        assertThat(result).contains("description: 帮助用户撰写高质量文章");
+        assertThat(result).doesNotContain("id:");
+        assertThat(result).doesNotContain("suggested-tools:");
+        assertThat(result).contains("name: writing-assistant");
+        assertThat(result).contains("description: 当用户要写文章、润色文案或生成报告草稿时使用。");
         assertThat(result).contains("version: 2.0.0");
-        assertThat(result).contains("suggested-tools:");
-        assertThat(result).contains("- todo.create");
-        assertThat(result).contains("- memory.search");
-        assertThat(result).contains("你是一个专业的写作助手。");
+        assertThat(result).contains("metadata:");
+        assertThat(result).contains("zhiwei:");
+        assertThat(result).contains("suggested_tools:");
+        assertThat(result).contains("- file.read");
+        assertThat(result).contains("outputs:");
+        assertThat(result).contains("- text");
+        assertThat(result).contains("## 触发判断");
     }
 
     @Test
@@ -72,33 +91,40 @@ class MarkdownSkillSerializerTest {
     }
 
     @Test
-    void 空metadata_不输出metadata节点() {
-        String result = serializer.serialize(sampleDefinition());
+    void 空metadata和空zhiweiMeta_不输出metadata节点() {
+        var def = sampleDefinition().toBuilder()
+                .suggestedTools(List.of())
+                .metadata(Map.of())
+                .zhiweiMeta(SkillZhiweiMeta.empty())
+                .build();
+
+        String result = serializer.serialize(def);
+
         assertThat(result).doesNotContain("metadata:");
     }
 
     @Test
-    void 非空metadata_输出metadata节点() {
+    void 非空metadata_输出metadata扩展节点() {
         var def = sampleDefinition().toBuilder()
                 .metadata(Map.of("custom-key", "custom-value"))
                 .build();
+
         String result = serializer.serialize(def);
+
         assertThat(result).contains("metadata:");
         assertThat(result).contains("custom-key: custom-value");
     }
 
     @Test
-    void 空suggestedTools_输出空列表() {
-        var def = sampleDefinition().toBuilder()
-                .suggestedTools(List.of())
-                .build();
-        String result = serializer.serialize(def);
-        assertThat(result).contains("suggested-tools");
-    }
+    void serialize结果应能被当前Parser读回() {
+        String result = serializer.serialize(sampleDefinition());
+        var parsed = new MarkdownSkillParser().parse(result);
 
-    // ─────────────────────────────────────────────
-    //  Round Trip（序列化→解析）
-    // ─────────────────────────────────────────────
-    // TODO Phase B.6: 旧 Round Trip 测试依赖 com.lifepilot.skill.markdown.MarkdownSkillParser，
-    // 该类已随 v2 规范重写删除，Round Trip 待 Phase B.6 接入新 parser 后重写。
+        assertThat(parsed.frontmatter().name()).isEqualTo("writing-assistant");
+        assertThat(parsed.frontmatter().zhiweiMeta().suggestedTools())
+                .containsExactly("file.read", "file.write");
+        assertThat(parsed.frontmatter().zhiweiMeta().outputs())
+                .containsExactly("text", "file");
+        assertThat(parsed.body()).contains("## 失败策略");
+    }
 }

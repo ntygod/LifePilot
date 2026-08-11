@@ -3,6 +3,12 @@
   ChatResponse,
   ChatTurnAction,
   ChatTurnStatus,
+  DiagnosticBundleInfo,
+  DiagnosticReport,
+  LocalBackupFileInfo,
+  LocalBackupInfo,
+  LocalBackupRestorePreparationInfo,
+  LocalBackupValidationInfo,
   ChatSession,
   ChatSessionDetail,
   CreateKbRequest,
@@ -12,11 +18,15 @@
   KbDocument,
   KbStats,
   KnowledgeBase,
+  KnowledgeSettlement,
   McpServer,
   McpServerConfig,
   McpTool,
   Message,
   ReactStepDto,
+  TaskRecoverySummary,
+  ToolCallSummary,
+  ToolRecoveryAction,
   PageResult,
   ProcessingLog,
   SkillDetail,
@@ -71,14 +81,14 @@
   OptionItem,
   // 通知中心类型
   NotificationItem,
-  ProactiveConfig,
-  ProactiveConfigUpdate,
-  QueuedAction,
-  TrustStatus,
   SessionConfigOverride,
   // 记忆管理类型
   MemoryStats,
   MemorySearchResult,
+  MemorySearchResponse,
+  MemoryTurnChangesInfo,
+  ExecutionConstraintSummary,
+  SourceSummary,
   MemoryProvenanceListParams,
   MemoryProvenanceSummary,
   EntitySummary,
@@ -220,12 +230,28 @@ export const chatApi = {
     turnId?: string,
     action: ChatTurnAction = 'SEND',
     signal?: AbortSignal,
-    singleTurnOverride?: SessionConfigOverride | null
+    singleTurnOverride?: SessionConfigOverride | null,
+    visibleContent?: string | null,
+    recoveryAction?: ToolRecoveryAction | null
   ): Promise<ReadableStream<Uint8Array>> {
+    const body: Record<string, unknown> = {
+      content,
+      sessionId,
+      attachmentIds,
+      turnId,
+      action,
+      singleTurnOverride: singleTurnOverride ?? null,
+    }
+    if (visibleContent !== undefined) {
+      body.visibleContent = visibleContent
+    }
+    if (recoveryAction !== undefined) {
+      body.recoveryAction = recoveryAction
+    }
     const res = await fetch(`${getBase()}/chat/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, sessionId, attachmentIds, turnId, action, singleTurnOverride: singleTurnOverride ?? null }),
+      body: JSON.stringify(body),
       signal
     })
     if (!res.ok || !res.body) {
@@ -268,11 +294,18 @@ export const chatApi = {
       reasoningDurationMs?: number | null
       traceId?: string | null
       attachments?: Array<{ id: string; fileName: string; fileSize: number; mimeType: string; url?: string | null }> | null
+      sources?: SourceSummary[] | null
+      memoryChanges?: SourceSummary[] | null
+      knowledgeSettlements?: KnowledgeSettlement[] | null
+      toolsSummary?: ToolCallSummary[] | null
       reactSteps?: ReactStepDto[] | null
       completionMode?: 'NORMAL' | 'DEGRADED' | 'SUSPENDED' | null
       resumedFromTraceId?: string | null
       turnStatus?: ChatTurnStatus | null
       errorMessage?: string | null
+      taskRecovery?: TaskRecoverySummary | null
+      turnRecoveryContext?: import('@/types').TurnRecoveryContext | null
+      executionConstraints?: ExecutionConstraintSummary | null
       suspendReasonType?: string | null
       suspendReasonSourceId?: string | null
     }>>(`/chat/sessions/${sessionId}/messages`)
@@ -332,6 +365,17 @@ export const chatApi = {
     return request(`/chat/entries/${entryId}/feedback`, {
       method: 'POST',
       body: JSON.stringify({ type, feedback })
+    })
+  },
+
+  /** 记录消息/产物已沉淀到资料库 */
+  recordKnowledgeSettlement(
+    entryId: string,
+    settlement: Pick<KnowledgeSettlement, 'knowledgeBaseId' | 'knowledgeBaseName' | 'sourceType' | 'artifactId' | 'fileName'>
+  ): Promise<void> {
+    return request(`/chat/entries/${entryId}/knowledge-settlements`, {
+      method: 'POST',
+      body: JSON.stringify(settlement)
     })
   },
 
@@ -880,6 +924,39 @@ export const modelServiceApi = {
   /** 测试模型服务连接。 */
   testConnection(id: string): Promise<{ healthy: boolean; serviceId: string; modelName?: string; error?: string }> {
     return request(`/model-services/${id}/test`, { method: 'POST' })
+  },
+}
+
+/** 本地诊断 API */
+export const diagnosticsApi = {
+  getReport(): Promise<DiagnosticReport> {
+    return request('/diagnostics/report')
+  },
+
+  createDiagnosticBundle(): Promise<DiagnosticBundleInfo> {
+    return request('/diagnostics/bundles', { method: 'POST' })
+  },
+
+  listBackups(): Promise<LocalBackupFileInfo[]> {
+    return request('/diagnostics/backups')
+  },
+
+  createBackup(): Promise<LocalBackupInfo> {
+    return request('/diagnostics/backups', { method: 'POST' })
+  },
+
+  validateBackup(fileName: string): Promise<LocalBackupValidationInfo> {
+    return request('/diagnostics/backups/validate', {
+      method: 'POST',
+      body: JSON.stringify({ fileName }),
+    })
+  },
+
+  prepareBackupRestore(fileName: string): Promise<LocalBackupRestorePreparationInfo> {
+    return request('/diagnostics/backups/prepare-restore', {
+      method: 'POST',
+      body: JSON.stringify({ fileName }),
+    })
   },
 }
 
@@ -1653,57 +1730,6 @@ export const notificationApi = {
     return request(`/notifications/read-all?userId=${encodeURIComponent(userId)}`, { method: 'PUT' })
   },
 
-  /** 提交主动提醒反馈 */
-  submitFeedback(id: string, feedbackType: string): Promise<NotificationItem> {
-    return request(`/notifications/${id}/feedback`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ feedbackType }),
-    })
-  }
-}
-
-// ========== 主动引擎 API ==========
-
-export const proactiveApi = {
-  /** 获取待阅队列 */
-  getQueue(userId: string = 'default', limit: number = 20): Promise<QueuedAction[]> {
-    return request(`/proactive/queue?userId=${encodeURIComponent(userId)}&limit=${limit}`)
-  },
-
-  /** 标记队列条目已展示 */
-  markShown(id: string): Promise<void> {
-    return request(`/proactive/queue/${id}/shown`, { method: 'PUT' })
-  },
-
-  /** 删除队列条目 */
-  deleteQueueItem(id: string): Promise<void> {
-    return request(`/proactive/queue/${id}`, { method: 'DELETE' })
-  },
-
-  /** 获取信任状态列表 */
-  getTrustStatus(userId: string = 'default'): Promise<TrustStatus[]> {
-    return request(`/proactive/trust?userId=${encodeURIComponent(userId)}`)
-  },
-
-  /** 确认信任升级 */
-  confirmUpgrade(behavior: string, userId: string = 'default'): Promise<TrustStatus> {
-    return request(`/proactive/trust/${behavior}/confirm?userId=${encodeURIComponent(userId)}`, { method: 'POST' })
-  },
-
-  /** 获取主动引擎配置 */
-  getConfig(userId: string = 'default'): Promise<ProactiveConfig> {
-    return request(`/proactive/config?userId=${encodeURIComponent(userId)}`)
-  },
-
-  /** 更新主动引擎配置 */
-  updateConfig(data: ProactiveConfigUpdate): Promise<ProactiveConfig> {
-    return request('/proactive/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-  },
 }
 
 // ========== 记忆管理 API ==========
@@ -1719,14 +1745,27 @@ function toQueryString(params: Record<string, unknown>): string {
   return query.toString()
 }
 
+function withQuery(path: string, params?: Record<string, unknown>): string {
+  const query = params ? toQueryString(params) : ''
+  return query ? `${path}?${query}` : path
+}
+
 /** 记忆管理 API */
 export const memoryApi = {
   /** 统计概览 */
   getStats: () => request<MemoryStats>('/memories/stats'),
 
   /** 统一搜索 */
-  search: (q: string, top_k = 10) =>
-    request<MemorySearchResult[]>(`/memories/search?q=${encodeURIComponent(q)}&top_k=${top_k}`),
+  search: (q: string, topK = 10, projectId?: string | null) =>
+    request<MemorySearchResponse>(withQuery('/memories/search', { q, topK, projectId })),
+
+  /** 查询某轮对话已沉淀的记忆 */
+  getTurnMemoryChanges: (turnId: string, projectId?: string | null) =>
+    request<SourceSummary[]>(withQuery(`/memories/turns/${encodeURIComponent(turnId)}/changes`, { projectId })),
+
+  /** 查询某轮对话记忆沉淀状态 */
+  getTurnMemoryChangesStatus: (turnId: string, projectId?: string | null) =>
+    request<MemoryTurnChangesInfo>(withQuery(`/memories/turns/${encodeURIComponent(turnId)}/changes/status`, { projectId })),
 
   /** 手动巩固 */
   triggerConsolidation: () =>
@@ -1735,24 +1774,39 @@ export const memoryApi = {
   // L3 实体
   listEntities: (params: EntityListParams) =>
     request<PageResult<EntitySummary>>(`/memories/entities?${toQueryString(params as unknown as Record<string, unknown>)}`),
-  getEntity: (id: string) => request<EntityDetail>(`/memories/entities/${id}`),
-  getEntityHistory: (id: string) => request<EntityDetail[]>(`/memories/entities/${id}/history`),
+  getEntity: (id: string, projectId?: string | null) =>
+    request<EntityDetail>(withQuery(`/memories/entities/${id}`, { projectId })),
+  getEntityHistory: (id: string, projectId?: string | null) =>
+    request<EntityDetail[]>(withQuery(`/memories/entities/${id}/history`, { projectId })),
   getEntityProvenances: (id: string, params?: EntityProvenanceParams) => {
-    const query = params ? toQueryString(params as unknown as Record<string, unknown>) : ''
-    return request<EntityProvenance[]>(`/memories/entities/${id}/provenances${query ? `?${query}` : ''}`)
+    return request<EntityProvenance[]>(withQuery(
+      `/memories/entities/${id}/provenances`,
+      params as unknown as Record<string, unknown>,
+    ))
   },
+  resolveEntityRevalidation: (id: string, projectId?: string | null) =>
+    request<{ resolvedCount: number; status: string }>(
+      withQuery(`/memories/entities/${id}/revalidation/resolve`, { projectId }),
+      { method: 'POST' },
+    ),
   listRecentProvenances: (params?: MemoryProvenanceListParams) => {
     const query = params ? toQueryString(params as unknown as Record<string, unknown>) : ''
     return request<MemoryProvenanceSummary[]>(`/memories/provenances/recent${query ? `?${query}` : ''}`)
   },
-  getRelatedEntities: (id: string, maxDepth = 2) =>
-    request<EntitySummary[]>(`/memories/entities/${id}/related?maxDepth=${maxDepth}`),
-  createEntity: (req: EntityCreateRequest) =>
-    request<EntityDetail>('/memories/entities', { method: 'POST', body: JSON.stringify(req) }),
-  updateEntity: (id: string, req: EntityUpdateRequest) =>
-    request<EntityDetail>(`/memories/entities/${id}`, { method: 'PUT', body: JSON.stringify(req) }),
-  deleteEntity: (id: string) =>
-    request<void>(`/memories/entities/${id}`, { method: 'DELETE' }),
+  getRelatedEntities: (id: string, maxDepth = 2, projectId?: string | null) =>
+    request<EntitySummary[]>(withQuery(`/memories/entities/${id}/related`, { maxDepth, projectId })),
+  createEntity: (req: EntityCreateRequest, projectId?: string | null) =>
+    request<EntityDetail>(withQuery('/memories/entities', { projectId }), {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  updateEntity: (id: string, req: EntityUpdateRequest, projectId?: string | null) =>
+    request<EntityDetail>(withQuery(`/memories/entities/${id}`, { projectId }), {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+  deleteEntity: (id: string, projectId?: string | null) =>
+    request<void>(withQuery(`/memories/entities/${id}`, { projectId }), { method: 'DELETE' }),
 
   // L3 关系
   listRelations: (params: RelationListParams) =>

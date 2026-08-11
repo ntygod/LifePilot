@@ -1,5 +1,7 @@
 package com.lifepilot.agent.intelligence.model;
 
+import org.springframework.lang.Nullable;
+
 import java.time.Instant;
 
 /**
@@ -13,7 +15,9 @@ public record ToolHealth(
     int recentSuccesses,
     int recentFailures,
     long avgLatencyMs,
+    @Nullable
     String lastError,
+    @Nullable
     Instant lastExecutedAt
 ) {
     public float successRate() {

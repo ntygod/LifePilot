@@ -4,6 +4,7 @@ import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import jakarta.annotation.Nullable;
 import java.time.Instant;
+import java.util.Objects;
 
 /**
  * 时序关系 — 知识图谱的边，带强度、时间维度与质量治理字段。
@@ -26,29 +27,22 @@ public record TemporalRelation(
         MemoryTrustLevel trustLevel,
         float trustScore
 ) {
-    /** compact constructor：验证 strength 范围 + 补质量默认值。 */
+    /** compact constructor：验证 strength 与质量字段。 */
     public TemporalRelation {
-        if (strength < 0.0f || strength > 1.0f) {
+        Objects.requireNonNull(sourceEntityId, "关系源实体不能为空");
+        Objects.requireNonNull(targetEntityId, "关系目标实体不能为空");
+        Objects.requireNonNull(relationType, "关系类型不能为空");
+        Objects.requireNonNull(validFrom, "关系生效时间不能为空");
+        Objects.requireNonNull(createdAt, "关系创建时间不能为空");
+        if (!(strength >= 0.0f && strength <= 1.0f)) {
             throw new IllegalArgumentException(
                     "关系强度必须在 [0.0, 1.0] 范围内，当前为 %.2f".formatted(strength));
         }
-        evidenceKind = evidenceKind == null ? MemoryEvidenceKind.UNKNOWN : evidenceKind;
-        trustLevel = trustLevel == null ? MemoryTrustLevel.UNVERIFIED : trustLevel;
-        trustScore = Math.max(0.0f, Math.min(1.0f, trustScore));
-    }
-
-    /**
-     * 便捷构造器 — 质量字段取默认（UNKNOWN/UNVERIFIED/0）。
-     *
-     * <p>供测试与未关心质量的写入点；按来源推导质量的写入口应改用全参构造器 + {@link #withQuality}。</p>
-     */
-    public TemporalRelation(String id, String sourceEntityId, String targetEntityId,
-                            String relationType, float strength, @Nullable String propertiesJson,
-                            Instant validFrom, @Nullable Instant validTo,
-                            @Nullable String sourceConversationId, Instant createdAt) {
-        this(id, sourceEntityId, targetEntityId, relationType, strength, propertiesJson,
-                validFrom, validTo, sourceConversationId, createdAt,
-                MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED, 0.0f);
+        Objects.requireNonNull(evidenceKind, "关系证据类型不能为空");
+        Objects.requireNonNull(trustLevel, "关系可信等级不能为空");
+        if (!(trustScore >= 0.0f && trustScore <= 1.0f)) {
+            throw new IllegalArgumentException("关系可信分必须在 [0,1] 范围内: " + trustScore);
+        }
     }
 
     /** 当前有效：validTo 为 null。 */

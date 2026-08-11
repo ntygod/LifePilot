@@ -18,6 +18,7 @@ import com.lifepilot.prompt.PromptRegistry;
 import com.lifepilot.prompt.config.PromptAutoConfiguration;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -102,13 +103,14 @@ public class KnowledgeEnhancementAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({GenerationRouter.class, SemanticMemory.class, MemorySpaceRepository.class})
     @ConditionalOnProperty(prefix = "lifepilot.memory", name = "enabled",
             havingValue = "true", matchIfMissing = true)
-    public KnowledgeExtractionPipeline knowledgeExtractionPipeline(@Nullable GenerationRouter generationRouter,
-                                                                   @Nullable SemanticMemory semanticMemory,
+    public KnowledgeExtractionPipeline knowledgeExtractionPipeline(GenerationRouter generationRouter,
+                                                                   SemanticMemory semanticMemory,
                                                                    KnowledgeBaseProperties props,
                                                                    PromptRegistry promptRegistry,
-                                                                   @Nullable MemorySpaceRepository memorySpaceRepository) {
+                                                                   MemorySpaceRepository memorySpaceRepository) {
         return new KnowledgeExtractionPipeline(
                 generationRouter,
                 semanticMemory,

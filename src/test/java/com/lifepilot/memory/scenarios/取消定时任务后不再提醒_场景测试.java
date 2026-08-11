@@ -1,9 +1,12 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
@@ -15,6 +18,8 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.prompt.PromptRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -92,9 +97,10 @@ class 取消定时任务后不再提醒_场景测试 {
         when(vectorSearcher.searchEntities(any(), any(Integer.class), any(Float.class)))
                 .thenReturn(List.of());
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
     }
 
@@ -113,7 +119,10 @@ class 取消定时任务后不再提醒_场景测试 {
     void 取消后GOAL应转CANCELLED() {
         // 1. 用户"每周一 10 点提醒我做汇报"落入系统 → 建立 GOAL 实体
         var goal = 构造ACTIVE实体(EntityType.GOAL, "每周一汇报", "每周一上午 10 点做汇报");
-        var created = semanticMemory.upsertWithConflictDetection(goal, "scenario-session-s1");
+        var created = semanticMemory.upsertWithConflictDetection(
+                goal,
+                "scenario-session-s1",
+                MemoryWriteContext.conversation("scenario-session-s1"));
 
         assertThat(created).as("upsert 应返回持久化实体").isNotNull();
         assertThat(created.lifecycleState())
@@ -162,6 +171,18 @@ class 取消定时任务后不再提醒_场景测试 {
                 /* accessCount */ 0,
                 /* lastAccessedAt */ null,
                 /* createdAt */ now,
-                /* updatedAt */ now);
+                /* updatedAt */ now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        /* updatedAt */ now);
     }
 }

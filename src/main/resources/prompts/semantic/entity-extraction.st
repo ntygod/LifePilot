@@ -134,7 +134,7 @@
 - entityType: PERSON/ORGANIZATION/PLACE/EVENT/PROJECT/TOPIC/PREFERENCE/HABIT/GOAL/SKILL/EXPERIENCE/CUSTOM
 - description: 简洁描述（不含相对时间词）
 - properties: 可选键值对，仅在信息明确时填写
-    * **dueAt**：当且仅当用户为 GOAL / EVENT / PROJECT 陈述了**具体截止日期/到期日**（如"6月14日截止""下周五要交""月底前完成"且能推出具体日期）时，填入 ISO-8601 日期（如 `"2026-06-14"` 或 `"2026-06-14T18:00:00Z"`）。
+    * **dueAt**：当且仅当用户为 GOAL / EVENT / PROJECT 陈述了**具体截止日期/到期日**（如"6月14日截止""下周五要交""月底前完成"且能推出具体日期）时，填入 `yyyy-MM-dd` 日期（如 `"2026-06-14"`）。
       dueAt 表示"该事项何时该完成"，与记忆遗忘无关；纯计划/无明确日期时**不要**填 dueAt，也不要臆造日期。
 - extractionConfidence: 0.0-1.0（<0.6 不提取）
 - importanceScore: 0.0-1.0
@@ -143,10 +143,10 @@
     * CHAT_INFERRED — 需要推断但用户没有直接说；默认不要提取。只有证据很强、evidenceExcerpt 完整、extractionConfidence >= 0.75 时才允许
     * UNKNOWN — 证据不清楚；此类应返回 NOOP 或不输出
 - evidenceExcerpt: 最小必要证据片段，必须来自"用户:"内容，禁止引用 AI 回复。不要超过 80 个中文字符
-- temporality: 记忆持久度，三选一：
+- temporality: 记忆持久度，必须填写，三选一：
     * EPHEMERAL — 临时情绪或短期吐槽（"最近不想碰 X"、"这阵子在忙 Y"），TTL 约 7 天
     * SHORT_TERM — 短期计划或状态（"下周去出差"、"这个月在学 Rust"），TTL 约 30 天
-    * PERSISTENT — 长期偏好、价值观、稳定事实（"我不吃牛肉"、"我习惯早起"）。默认为此类
+    * PERSISTENT — 长期偏好、价值观、稳定事实（"我不吃牛肉"、"我习惯早起"）。长期信息选择此类
 - expires_at: （可选）ISO 8601 时间（如 "2026-05-01T00:00:00Z"），LLM 若从上下文推断出具体时间可直接填；否则可省略，系统按 temporality 自动计算
 
 </instructions>

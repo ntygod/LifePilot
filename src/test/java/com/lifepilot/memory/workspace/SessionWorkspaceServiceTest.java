@@ -8,9 +8,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SessionWorkspaceServiceTest {
 
@@ -98,6 +100,23 @@ class SessionWorkspaceServiceTest {
         assertThat(updated.id()).isEqualTo(first.id());
         assertThat(items.getFirst().summary()).isEqualTo("第二版摘要");
         assertThat(items.getFirst().priority()).isEqualTo(40);
+    }
+
+    @Test
+    void payload无法序列化时保存应失败() {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("self", payload);
+
+        assertThatThrownBy(() -> workspaceService.saveTaskState("s1", new TaskStateItem(
+                "任务继续中",
+                "包含无法序列化的 payload",
+                payload,
+                30,
+                "task-broken-payload",
+                "trace-broken-payload",
+                Instant.now().plusSeconds(3600))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("工作区 payload 序列化失败");
     }
 
     @Test

@@ -80,7 +80,7 @@ class SkillSynthesizer_管线测试 {
         var descriptionValidator = new SkillDescriptionValidator();
         var bodyValidator = new SkillBodyValidator();
         var validator = new SkillValidator(descriptionValidator, bodyValidator, toolRegistry);
-        var installer = new SkillInstaller(parser, descriptionValidator, bodyValidator, repository);
+        var installer = new SkillInstaller(parser, validator, repository);
         var config = new SkillConfigProperties();
         lenient().when(zhiweiPaths.home("skills")).thenReturn(tempDir);
 
@@ -184,13 +184,19 @@ class SkillSynthesizer_管线测试 {
                 name: %s
                 description: 当需要 AI 生成时使用。关键词 ai
                 version: 1.0.0
+                metadata:
+                  zhiwei:
+                    outputs:
+                      - text
                 ---
-                ## 适用场景
+                ## 触发判断
                 - a
-                ## 不适用场景
-                - b
-                ## 工作流
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - b
+                ## 失败策略
+                - c
                 """.formatted(name);
     }
 }

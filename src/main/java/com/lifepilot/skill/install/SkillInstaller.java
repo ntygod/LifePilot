@@ -2,8 +2,7 @@ package com.lifepilot.skill.install;
 
 import com.lifepilot.skill.MarkdownSkillParser;
 import com.lifepilot.skill.MarkdownSkillParser.ParsedSkill;
-import com.lifepilot.skill.validation.SkillBodyValidator;
-import com.lifepilot.skill.validation.SkillDescriptionValidator;
+import com.lifepilot.skill.validation.SkillValidator;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -21,7 +20,7 @@ import java.time.Instant;
  * 四步流水线：</p>
  * <ol>
  *   <li>parse —— 用 {@link MarkdownSkillParser} 解析 SKILL.md frontmatter + body</li>
- *   <li>validate —— 先 {@link SkillDescriptionValidator} 再 {@link SkillBodyValidator}</li>
+ *   <li>validate —— 用 {@link SkillValidator} 执行 description/body/secret/metadata 合一校验</li>
  *   <li>writeFile —— 在 {@code targetDir/<name>/SKILL.md} 写入原始内容</li>
  *   <li>upsertDb —— {@link SkillInstallationRepository#upsert} 刷新 skills 表元数据</li>
  * </ol>
@@ -42,17 +41,14 @@ import java.time.Instant;
 public class SkillInstaller {
 
     private final MarkdownSkillParser parser;
-    private final SkillDescriptionValidator descriptionValidator;
-    private final SkillBodyValidator bodyValidator;
+    private final SkillValidator validator;
     private final SkillInstallationRepository repository;
 
     public SkillInstaller(MarkdownSkillParser parser,
-                          SkillDescriptionValidator descriptionValidator,
-                          SkillBodyValidator bodyValidator,
+                          SkillValidator validator,
                           SkillInstallationRepository repository) {
         this.parser = parser;
-        this.descriptionValidator = descriptionValidator;
-        this.bodyValidator = bodyValidator;
+        this.validator = validator;
         this.repository = repository;
     }
 
@@ -68,9 +64,8 @@ public class SkillInstaller {
         // 1. 解析（parse 失败即短路，不写文件不入表）
         ParsedSkill parsed = parser.parse(request.skillMdContent());
 
-        // 2. 校验（description + body 两道）
-        descriptionValidator.validate(parsed.frontmatter().description());
-        bodyValidator.validate(parsed.body());
+        // 2. 校验（description + body + metadata + secret 模式）
+        validator.validate(parsed);
 
         // 3. 写文件：targetDir/<name>/SKILL.md（绝对规范化路径）
         Path dir = request.targetDir().resolve(parsed.frontmatter().name())

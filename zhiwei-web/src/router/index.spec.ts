@@ -10,6 +10,11 @@ import { describe, it, expect } from 'vitest'
 import router from './index'
 
 describe('router 核心入口状态', () => {
+  it('/capabilities 路由已注册', () => {
+    const route = router.resolve('/capabilities')
+    expect(route.name).toBe('capabilities')
+  })
+
   it('/scheduled-tasks 路由已注册', () => {
     const route = router.resolve('/scheduled-tasks')
     expect(route.name).toBe('scheduledTasks')

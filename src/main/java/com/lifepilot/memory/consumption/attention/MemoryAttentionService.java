@@ -3,6 +3,7 @@ package com.lifepilot.memory.consumption.attention;
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.semantic.DueAtFormat;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -14,12 +15,14 @@ import org.springframework.lang.Nullable;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -34,7 +37,7 @@ import java.util.Set;
  *   <li>CONNECTION：图联想连接机会（经桥实体两跳可达但无直接边）</li>
  * </ul>
  *
- * <p>全程只读、无副作用；单类计算异常被隔离，不影响其余产出。</p>
+ * <p>全程只读、无副作用；任一启用信号计算失败都会直接暴露，避免返回不完整注意力清单。</p>
  *
  * @author zsg
  * @since 2026-06-07
@@ -67,10 +70,10 @@ public class MemoryAttentionService {
                                   GraphReasoner graphReasoner,
                                   MemoryConsumptionProperties properties,
                                   Clock clock) {
-        this.semanticMemory = semanticMemory;
-        this.graphReasoner = graphReasoner;
-        this.properties = properties;
-        this.clock = clock != null ? clock : Clock.systemUTC();
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "SemanticMemory 不能为空");
+        this.graphReasoner = Objects.requireNonNull(graphReasoner, "GraphReasoner 不能为空");
+        this.properties = Objects.requireNonNull(properties, "记忆消费配置不能为空");
+        this.clock = Objects.requireNonNull(clock, "Clock 不能为空");
     }
 
     /** 注意力信号类别。 */
@@ -106,6 +109,7 @@ public class MemoryAttentionService {
         if (!cfg.isEnabled()) {
             return List.of();
         }
+        validateConfig(cfg, topN);
         Instant now = Instant.now(clock);
         int limit = topN > 0 ? topN : cfg.getTopN();
         List<AttentionItem> items = new ArrayList<>();
@@ -114,101 +118,80 @@ public class MemoryAttentionService {
 
         // EXPIRING
         if (cfg.isExpiringEnabled()) {
-            try {
-                Instant until = now.plus(Duration.ofDays(cfg.getExpiringWindowDays()));
-                var list = semanticMemory.findApproachingExpiry(until, EXPIRING_TYPES, filter);
-                for (var e : capped(consumable(list), cfg.getMaxPerKind())) {
-                    items.add(toExpiring(e, now, cfg));
-                    expiring++;
-                }
-            } catch (Exception ex) {
-                log.warn("记忆注意力: EXPIRING 计算失败，跳过, error={}", ex.getMessage());
+            Instant until = now.plus(Duration.ofDays(cfg.getExpiringWindowDays()));
+            var list = semanticMemory.findApproachingExpiry(until, EXPIRING_TYPES, filter);
+            for (var e : capped(consumable(list), cfg.getMaxPerKind())) {
+                items.add(toExpiring(e, now, cfg));
+                expiring++;
             }
         }
 
         // DUE_SOON —— 硬截止日期临近（含逾期），dueAt 存于 properties，与 expires_at 解耦
         int dueSoon = 0;
         if (cfg.isDueSoonEnabled()) {
-            try {
-                Instant until = now.plus(Duration.ofDays(cfg.getDueSoonWindowDays()));
-                for (var e : semanticMemory.findWithDueDate(DUE_TYPES, filter)) {
-                    if (dueSoon >= cfg.getMaxPerKind()) break;
-                    if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
-                    Instant due = parseDueAt(e.properties().get("dueAt"));
-                    if (due == null) continue;
-                    if (due.isAfter(until)) continue;  // 窗口外（含未来太远）；逾期(due<now)仍纳入
-                    items.add(toDueSoon(e, due, now, cfg));
-                    dueSoon++;
-                }
-            } catch (Exception ex) {
-                log.warn("记忆注意力: DUE_SOON 计算失败，跳过, error={}", ex.getMessage());
+            Instant until = now.plus(Duration.ofDays(cfg.getDueSoonWindowDays()));
+            for (var e : semanticMemory.findWithDueDate(DUE_TYPES, filter)) {
+                if (dueSoon >= cfg.getMaxPerKind()) break;
+                if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
+                Instant due = parseDueAt(e.id(), e.properties().get("dueAt"));
+                if (due.isAfter(until)) continue;  // 窗口外（含未来太远）；逾期(due<now)仍纳入
+                items.add(toDueSoon(e, due, now, cfg));
+                dueSoon++;
             }
         }
 
         // NEGLECTED
         if (cfg.isNeglectedEnabled()) {
-            try {
-                Instant idleBefore = now.minus(Duration.ofDays(cfg.getNeglectDays()));
-                var list = semanticMemory.findNeglected(
-                        NEGLECTED_TYPES, idleBefore, cfg.getNeglectMinImportance(), filter);
-                for (var e : capped(consumable(list), cfg.getMaxPerKind())) {
-                    items.add(toNeglected(e, now, cfg));
-                    neglected++;
-                }
-            } catch (Exception ex) {
-                log.warn("记忆注意力: NEGLECTED 计算失败，跳过, error={}", ex.getMessage());
+            Instant idleBefore = now.minus(Duration.ofDays(cfg.getNeglectDays()));
+            var list = semanticMemory.findNeglected(
+                    NEGLECTED_TYPES, idleBefore, cfg.getNeglectMinImportance(), filter);
+            for (var e : capped(consumable(list), cfg.getMaxPerKind())) {
+                items.add(toNeglected(e, now, cfg));
+                neglected++;
             }
         }
 
         // EVOLVING
         if (cfg.isEvolvingEnabled()) {
-            try {
-                Instant windowStart = now.minus(Duration.ofDays(cfg.getEvolvingWindowDays()));
-                int count = 0;
-                for (var type : EVOLVING_TYPES) {
+            Instant windowStart = now.minus(Duration.ofDays(cfg.getEvolvingWindowDays()));
+            int count = 0;
+            for (var type : EVOLVING_TYPES) {
+                if (count >= cfg.getMaxPerKind()) break;
+                for (var e : semanticMemory.findCurrentByType(type, filter)) {
                     if (count >= cfg.getMaxPerKind()) break;
-                    for (var e : semanticMemory.findCurrentByType(type, filter)) {
-                        if (count >= cfg.getMaxPerKind()) break;
-                        if (e.lifecycleState() != LifecycleState.ACTIVE) continue;
-                        if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
-                        if (e.version() >= cfg.getEvolvingMinVersions()
-                                && e.updatedAt() != null && e.updatedAt().isAfter(windowStart)) {
-                            items.add(toEvolving(e, cfg));
-                            count++;
-                            evolving++;
-                        }
+                    if (e.lifecycleState() != LifecycleState.ACTIVE) continue;
+                    if (!MemoryQualityPolicy.isPromptConsumable(e)) continue;
+                    if (e.version() >= cfg.getEvolvingMinVersions()
+                            && e.updatedAt() != null && e.updatedAt().isAfter(windowStart)) {
+                        items.add(toEvolving(e, cfg));
+                        count++;
+                        evolving++;
                     }
                 }
-            } catch (Exception ex) {
-                log.warn("记忆注意力: EVOLVING 计算失败，跳过, error={}", ex.getMessage());
             }
         }
 
         // CONNECTION —— 以当前已关注实体为种子做图联想
         if (cfg.isConnectionEnabled()) {
-            try {
-                var seeds = collectConnectionSeeds(items);
-                Map<String, AttentionItem> byTarget = new LinkedHashMap<>();
-                int seedCount = 0;
-                for (var seed : seeds.entrySet()) {
-                    if (seedCount++ >= MAX_CONNECTION_SEEDS) break;
-                    var opps = graphReasoner.connectionOpportunities(seed.getKey(), filter);
-                    for (var opp : opps) {
-                        if (connection >= cfg.getMaxPerKind()) break;
-                        // 端点必须可消费：不把不可信/已完成实体作为联想目标浮现
-                        if (!semanticMemory.existsConsumableById(opp.toId())) continue;
-                        var item = toConnection(seed.getValue(), opp, cfg);
-                        var existing = byTarget.get(opp.toId());
-                        if (existing == null || item.score() > existing.score()) {
-                            if (existing == null) connection++;
-                            byTarget.put(opp.toId(), item);
-                        }
+            var seeds = collectConnectionSeeds(items);
+            Map<String, AttentionItem> byTarget = new LinkedHashMap<>();
+            int seedCount = 0;
+            for (var seed : seeds.entrySet()) {
+                if (seedCount++ >= MAX_CONNECTION_SEEDS) break;
+                var opps = graphReasoner.connectionOpportunities(seed.getKey(), filter);
+                for (var opp : opps) {
+                    if (connection >= cfg.getMaxPerKind()) break;
+                    // 端点必须可消费：不把不可信/已完成实体作为联想目标浮现
+                    if (!semanticMemory.existsConsumableById(opp.toId())) continue;
+                    var item = toConnection(seed.getValue(), opp, cfg);
+                    var existing = byTarget.get(opp.toId());
+                    if (existing == null || item.score() > existing.score()) {
+                        if (existing == null) connection++;
+                        byTarget.put(opp.toId(), item);
                     }
                 }
-                items.addAll(byTarget.values());
-            } catch (Exception ex) {
-                log.warn("记忆注意力: CONNECTION 计算失败，跳过, error={}", ex.getMessage());
             }
+            items.addAll(byTarget.values());
         }
 
         items.sort(Comparator.comparing(AttentionItem::score).reversed());
@@ -222,7 +205,7 @@ public class MemoryAttentionService {
 
     private AttentionItem toExpiring(TemporalEntity e, Instant now, MemoryConsumptionProperties.Attention cfg) {
         long daysUntil = Math.max(0, Duration.between(now, e.expiresAt()).toDays());
-        float windowDays = Math.max(1, cfg.getExpiringWindowDays());
+        float windowDays = positive(cfg.getExpiringWindowDays(), "EXPIRING 窗口天数");
         float remaining = (float) Duration.between(now, e.expiresAt()).toHours() / (windowDays * 24f);
         float urgency = clamp01(1f - remaining);
         float score = cfg.getWeightExpiring() * (0.5f + 0.5f * urgency) * (0.4f + 0.6f * e.importanceScore());
@@ -240,7 +223,7 @@ public class MemoryAttentionService {
             urgency = 1.0f;  // 已逾期，最高紧迫度
             reason = "「%s」已逾期 %d 天未完成".formatted(e.name(), Math.max(0, -daysUntil));
         } else {
-            float windowDays = Math.max(1, cfg.getDueSoonWindowDays());
+            float windowDays = positive(cfg.getDueSoonWindowDays(), "DUE_SOON 窗口天数");
             float remaining = (float) Duration.between(now, due).toHours() / (windowDays * 24f);
             urgency = clamp01(1f - remaining);
             reason = "「%s」将在 %d 天后到期".formatted(e.name(), Math.max(0, daysUntil));
@@ -250,27 +233,17 @@ public class MemoryAttentionService {
                 clamp01(score), reason, due, daysUntil, null);
     }
 
-    /** 解析 dueAt：容忍完整时间戳与纯日期；非法返回 null。 */
-    @Nullable
-    private static Instant parseDueAt(@Nullable Object raw) {
-        if (raw == null) return null;
-        String s = raw.toString().trim();
-        if (s.isEmpty()) return null;
-        try {
-            return Instant.parse(s);
-        } catch (Exception ignore) {
-            try {
-                return java.time.LocalDate.parse(s).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
-            } catch (Exception ignore2) {
-                return null;
-            }
-        }
+    /** 解析 dueAt：仅接受 yyyy-MM-dd；非法格式直接暴露。 */
+    private static Instant parseDueAt(String entityId, @Nullable Object raw) {
+        return DueAtFormat.requireCanonicalDate(raw, "注意力 dueAt", "entityId=" + entityId)
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant();
     }
 
     private AttentionItem toNeglected(TemporalEntity e, Instant now, MemoryConsumptionProperties.Attention cfg) {
         Instant since = e.lastAccessedAt() != null ? e.lastAccessedAt() : e.createdAt();
         long daysIdle = Math.max(0, Duration.between(since, now).toDays());
-        float idleFactor = clamp01((float) daysIdle / Math.max(1, cfg.getNeglectDays()));
+        float idleFactor = clamp01((float) daysIdle / positive(cfg.getNeglectDays(), "NEGLECTED 未访问天数"));
         float score = cfg.getWeightNeglected() * e.importanceScore() * (0.5f + 0.5f * idleFactor);
         String reason = "「%s」重要但已 %d 天未关注".formatted(e.name(), daysIdle);
         return new AttentionItem(e.id(), e.name(), e.type().name(), AttentionKind.NEGLECTED,
@@ -278,7 +251,8 @@ public class MemoryAttentionService {
     }
 
     private AttentionItem toEvolving(TemporalEntity e, MemoryConsumptionProperties.Attention cfg) {
-        float versionFactor = clamp01((float) e.version() / Math.max(1, cfg.getEvolvingMinVersions() * 2));
+        float versionFactor = clamp01((float) e.version()
+                / (positive(cfg.getEvolvingMinVersions(), "EVOLVING 最小版本数") * 2));
         float score = cfg.getWeightEvolving() * (0.4f + 0.6f * e.importanceScore()) * (0.5f + 0.5f * versionFactor);
         String reason = "「%s」近期持续演进（%d 个版本）".formatted(e.name(), e.version());
         return new AttentionItem(e.id(), e.name(), e.type().name(), AttentionKind.EVOLVING,
@@ -315,6 +289,54 @@ public class MemoryAttentionService {
     /** 质量门过滤：只保留可消费实体（与全系统消费路径一致，避免主动浮现不可信记忆）。 */
     private static List<TemporalEntity> consumable(List<TemporalEntity> list) {
         return list.stream().filter(MemoryQualityPolicy::isPromptConsumable).toList();
+    }
+
+    private static void validateConfig(MemoryConsumptionProperties.Attention cfg, int requestedTopN) {
+        positive(cfg.getMaxPerKind(), "每类注意力最大候选数");
+        if (requestedTopN <= 0) {
+            positive(cfg.getTopN(), "注意力返回上限");
+        }
+        if (cfg.isExpiringEnabled()) {
+            positive(cfg.getExpiringWindowDays(), "EXPIRING 窗口天数");
+            nonNegativeFinite(cfg.getWeightExpiring(), "EXPIRING 权重");
+        }
+        if (cfg.isDueSoonEnabled()) {
+            positive(cfg.getDueSoonWindowDays(), "DUE_SOON 窗口天数");
+            nonNegativeFinite(cfg.getWeightDueSoon(), "DUE_SOON 权重");
+        }
+        if (cfg.isNeglectedEnabled()) {
+            positive(cfg.getNeglectDays(), "NEGLECTED 未访问天数");
+            probability(cfg.getNeglectMinImportance(), "NEGLECTED 最小重要度");
+            nonNegativeFinite(cfg.getWeightNeglected(), "NEGLECTED 权重");
+        }
+        if (cfg.isEvolvingEnabled()) {
+            positive(cfg.getEvolvingWindowDays(), "EVOLVING 窗口天数");
+            positive(cfg.getEvolvingMinVersions(), "EVOLVING 最小版本数");
+            nonNegativeFinite(cfg.getWeightEvolving(), "EVOLVING 权重");
+        }
+        if (cfg.isConnectionEnabled()) {
+            nonNegativeFinite(cfg.getWeightConnection(), "CONNECTION 权重");
+        }
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
+    }
+
+    private static float probability(float value, String name) {
+        if (!(value >= 0.0f && value <= 1.0f)) {
+            throw new IllegalArgumentException(name + "必须在 [0,1] 范围内: " + value);
+        }
+        return value;
+    }
+
+    private static void nonNegativeFinite(float value, String name) {
+        if (!(value >= 0.0f) || Float.isInfinite(value)) {
+            throw new IllegalArgumentException(name + "必须是非负有限数: " + value);
+        }
     }
 
     private static float clamp01(float v) {

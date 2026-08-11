@@ -53,6 +53,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import java.util.Map;
 import com.lifepilot.llm.LlmResponse;
@@ -104,8 +106,7 @@ class ReactAgentLoop_单元测试 {
                 null,  // intentMatcher
                 null,  // compactionEngine
                 sharedScheduler,
-                null,  // workspaceService
-                null   // experienceSummarizer
+                null   // workspaceService
         );
     }
 
@@ -299,6 +300,28 @@ class ReactAgentLoop_单元测试 {
         }
 
         @Test
+        void 上下文组装后取消不应继续调用LLM() {
+            var budget = 基础预算();
+            var request = 简单请求("测试取消", "session-cancel-after-context", budget);
+            var initialState = ReactAgentState.init(request, budget);
+            var token = new CancellationToken();
+            when(contextAssembler.assemble(any())).thenAnswer(invocation -> {
+                token.cancel();
+                return 基础上下文("测试取消");
+            });
+            IterationCallback callback = mock(IterationCallback.class);
+
+            var result = reactAgentLoop.coreLoop(
+                    initialState, request, null, Instant.now(),
+                    callback, token, new AgentLoopContext()
+            );
+
+            assertThat(result.finalOutput()).isNull();
+            verify(callback, never()).callLlm(any(), any(), any(), any());
+            verify(agentToolProvider, never()).getToolCallbacks(any(), nullable(String.class), any());
+        }
+
+        @Test
         void 工具调用中途取消应中断后续迭代() {
             when(contextAssembler.assemble(any())).thenReturn(基础上下文("取消测试"));
             when(agentToolProvider.resolveToolDisplayName("slow.tool")).thenReturn("慢操作");
@@ -384,7 +407,7 @@ class ReactAgentLoop_单元测试 {
                     customConfig,
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, null, null, null, null, sharedScheduler, null, null
+                    null, null, null, null, null, null, sharedScheduler, null
             );
 
             when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of(
@@ -436,7 +459,7 @@ class ReactAgentLoop_单元测试 {
                     customConfig,
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, null, null, null, null, sharedScheduler, null, null
+                    null, null, null, null, null, null, sharedScheduler, null
             );
 
             when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
@@ -507,7 +530,7 @@ class ReactAgentLoop_单元测试 {
                     customConfig,
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, null, null, null, null, sharedScheduler, null, null
+                    null, null, null, null, null, null, sharedScheduler, null
             );
 
             when(agentToolProvider.getToolCallbacks(any(), nullable(String.class), any())).thenReturn(List.of());
@@ -687,7 +710,7 @@ class ReactAgentLoop_单元测试 {
                     new AgentConfigProperties(),
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, eventPublisher, null, null, null, sharedScheduler, null, null
+                    null, null, eventPublisher, null, null, null, sharedScheduler, null
             );
 
             var state = ReactAgentState.builder()
@@ -728,7 +751,7 @@ class ReactAgentLoop_单元测试 {
                     new AgentConfigProperties(),
                     new ObjectMapper(),
                     null, transcriptStore,
-                    null, null, eventPublisher, null, null, null, sharedScheduler, null, null
+                    null, null, eventPublisher, null, null, null, sharedScheduler, null
             );
 
             var state = ReactAgentState.builder()

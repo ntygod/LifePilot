@@ -11,6 +11,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.Objects;
+
 /**
  * 主动任务取消时，级联将关联的 L3 insight 实体从 {@code ACTIVE} 转 {@code CANCELLED}。
  *
@@ -44,7 +46,7 @@ public class ProactiveTaskCancelListener {
     private final SemanticMemory semanticMemory;
 
     public ProactiveTaskCancelListener(SemanticMemory semanticMemory) {
-        this.semanticMemory = semanticMemory;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
     }
 
     /**
@@ -54,6 +56,7 @@ public class ProactiveTaskCancelListener {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCancelled(ProactiveTaskCancelled event) {
+        Objects.requireNonNull(event, "主动任务取消事件不能为空");
         if (event.relatedInsightEntityIds().isEmpty()) {
             log.debug("主动任务取消: 无关联 insight, taskId={}", event.taskId());
             return;
@@ -71,14 +74,9 @@ public class ProactiveTaskCancelListener {
                         event.taskId(), id, existingOpt.get().lifecycleState());
                 continue;
             }
-            try {
-                semanticMemory.updateLifecycleState(
-                        id, LifecycleState.CANCELLED, reason, ChangeSource.PROACTIVE_CANCEL);
-                cancelledCount++;
-            } catch (Exception ex) {
-                log.warn("主动任务取消: 级联转 CANCELLED 失败, taskId={}, insight={}, error={}",
-                        event.taskId(), id, ex.getMessage(), ex);
-            }
+            semanticMemory.updateLifecycleState(
+                    id, LifecycleState.CANCELLED, reason, ChangeSource.PROACTIVE_CANCEL);
+            cancelledCount++;
         }
         log.info("主动任务取消级联完成: taskId={}, 总数={}, 实际转换={}",
                 event.taskId(), event.relatedInsightEntityIds().size(), cancelledCount);

@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
@@ -65,14 +66,38 @@ class ProvenanceStaleListener_单元测试 {
     }
 
     @Test
-    void markStale失败应warn不抛异常() {
+    void markStale失败应直接抛出() {
         doThrow(new RuntimeException("DB 离线"))
                 .when(repo).markStale(SourceType.DOCUMENT, "doc-x", FIXED_NOW);
         var event = new SourceInvalidated(SourceType.DOCUMENT, "doc-x", InvalidationKind.DELETED);
 
-        // 期望：不抛异常，listener 正常返回
-        listener().onSourceInvalidated(event);
+        assertThatThrownBy(() -> listener().onSourceInvalidated(event))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("DB 离线");
 
         verify(repo).markStale(SourceType.DOCUMENT, "doc-x", FIXED_NOW);
+    }
+
+    @Test
+    void 空事件应直接失败() {
+        assertThatThrownBy(() -> listener().onSourceInvalidated(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("源失效事件不能为空");
+    }
+
+    @Test
+    void 非法源失效事件应在构造时失败() {
+        assertThatThrownBy(() -> new SourceInvalidated(null, "doc-1", InvalidationKind.DELETED))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("源对象类型不能为空");
+        assertThatThrownBy(() -> new SourceInvalidated(SourceType.DOCUMENT, " ", InvalidationKind.DELETED))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("源对象 ID 不能为空");
+        assertThatThrownBy(() -> new SourceInvalidated(SourceType.DOCUMENT, " doc-1", InvalidationKind.DELETED))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("源对象 ID 不能包含首尾空白");
+        assertThatThrownBy(() -> new SourceInvalidated(SourceType.DOCUMENT, "doc-1", null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("源失效类型不能为空");
     }
 }

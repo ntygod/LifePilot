@@ -6,7 +6,9 @@ import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
@@ -34,6 +36,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -45,8 +48,6 @@ import java.util.stream.Stream;
  * <p>从 L3 语义记忆中读取 PREFERENCE/HABIT/GOAL/SKILL 碎片实体，
  * 结合 L2 最近对话和 L4 偏好规则，调用 LLM 生成第三人称自然语言画像，
  * 存入 L3 作为 {@code __consolidated_profile} 特殊 CUSTOM 实体。</p>
- *
- * <p>所有依赖均可为 null，缺失时 {@link #consolidate()} 直接跳过。</p>
  *
  * @author zsg
  * @since 2026-04-15
@@ -80,37 +81,27 @@ public class UserProfileConsolidator {
     /** LLM 调用超时。 */
     private final Duration llmTimeout;
 
-    @Nullable
     private final SemanticMemory semanticMemory;
-    @Nullable
     private final EpisodicMemory episodicMemory;
-    @Nullable
     private final ProceduralMemory proceduralMemory;
-    @Nullable
     private final GenerationRouter generationRouter;
-    @Nullable
     private final PromptRegistry promptRegistry;
 
-    public UserProfileConsolidator(@Nullable SemanticMemory semanticMemory,
-                                   @Nullable EpisodicMemory episodicMemory,
-                                   @Nullable ProceduralMemory proceduralMemory,
-                                   @Nullable GenerationRouter generationRouter,
-                                   @Nullable PromptRegistry promptRegistry,
+    public UserProfileConsolidator(SemanticMemory semanticMemory,
+                                   EpisodicMemory episodicMemory,
+                                   ProceduralMemory proceduralMemory,
+                                   GenerationRouter generationRouter,
+                                   PromptRegistry promptRegistry,
                                    Duration llmTimeout) {
-        this.semanticMemory = semanticMemory;
-        this.episodicMemory = episodicMemory;
-        this.proceduralMemory = proceduralMemory;
-        this.generationRouter = generationRouter;
-        this.promptRegistry = promptRegistry;
-        this.llmTimeout = llmTimeout;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory");
+        this.episodicMemory = Objects.requireNonNull(episodicMemory, "episodicMemory");
+        this.proceduralMemory = Objects.requireNonNull(proceduralMemory, "proceduralMemory");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "promptRegistry");
+        this.llmTimeout = Objects.requireNonNull(llmTimeout, "llmTimeout");
     }
 
-    /**
-     * 执行用户画像巩固。
-     *
-     * <p>核心依赖（SemanticMemory / GenerationRouter / PromptRegistry）缺失时直接跳过。
-     * 任何异常静默捕获，不影响其他巩固步骤。</p>
-     */
+    /** 执行用户画像巩固。 */
     public void consolidate() {
         consolidate(false);
     }
@@ -121,15 +112,7 @@ public class UserProfileConsolidator {
      * @param force 是否绕过最小间隔防抖；手动触发使用 true，定时/空闲触发使用 false
      */
     public void consolidate(boolean force) {
-        if (semanticMemory == null || generationRouter == null || promptRegistry == null) {
-            log.debug("用户画像巩固: 核心依赖缺失，已跳过");
-            return;
-        }
-        try {
-            doConsolidate(force);
-        } catch (Exception e) {
-            log.warn("用户画像巩固: 执行失败, error={}", e.getMessage(), e);
-        }
+        doConsolidate(force);
     }
 
     private void doConsolidate(boolean force) {
@@ -208,12 +191,15 @@ public class UserProfileConsolidator {
                 "recentFeedback", recentFeedback,
                 "activeIntents", activeIntents
         ));
+        if (prompt == null || prompt.isBlank()) {
+            throw new IllegalStateException("用户画像巩固 Prompt 渲染为空");
+        }
 
         log.debug("用户画像巩固: 发起 LLM 调用, fragmentCount={}, promptChars={}",
                 allFragments.size(), prompt.length());
 
         // skipCache=true：画像巩固每次输入不同但模板相似，语义缓存会错误命中旧结果
-        LlmResponse response = generationRouter.call(
+        LlmResponse response = Objects.requireNonNull(generationRouter.call(
                 LlmScene.BACKGROUND_ANALYSIS,
                 prompt,
                 null,
@@ -221,12 +207,11 @@ public class UserProfileConsolidator {
                 null,
                 GenerationCapability.CHAT,
                 llmTimeout,
-                true);
+                true), "用户画像巩固 LLM 响应不能为空");
 
         String portraitText = response.content();
         if (portraitText == null || portraitText.isBlank()) {
-            log.warn("用户画像巩固: LLM 返回空画像，已跳过写入");
-            return;
+            throw new IllegalStateException("用户画像巩固 LLM 返回空画像");
         }
 
         // 7. 写入 L3
@@ -247,6 +232,10 @@ public class UserProfileConsolidator {
                 .toList();
 
         var now = Instant.now();
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.DERIVED;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, 1.0f);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
+        int evidenceCount = derivationSources.size();
         if (existingProfile.isPresent()) {
             // UPDATE: 用 upsertWithConflictDetection 更新已有画像
             var existing = existingProfile.get();
@@ -277,7 +266,12 @@ public class UserProfileConsolidator {
                     Temporality.PERSISTENT,
                     null,
                     true,
-                    derivationSources
+                    derivationSources,
+                    evidenceKind,
+                    trustLevel,
+                    trustScore,
+                    evidenceCount,
+                    null
             );
             semanticMemory.upsertWithConflictDetection(updated, "user-profile-consolidation", writeContext);
             log.info("用户画像巩固: 已更新画像, entityId={}, chars={}, sources={}",
@@ -306,7 +300,12 @@ public class UserProfileConsolidator {
                     // 画像为派生实体 — isDerived=true + derivationSources 指向 L3 源实体集。
                     LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null,
                     true,
-                    derivationSources
+                    derivationSources,
+                    evidenceKind,
+                    trustLevel,
+                    trustScore,
+                    evidenceCount,
+                    null
             );
             semanticMemory.upsertWithConflictDetection(newEntity, "user-profile-consolidation", writeContext);
             log.info("用户画像巩固: 已创建画像, entityId={}, chars={}, sources={}",
@@ -318,58 +317,42 @@ public class UserProfileConsolidator {
      * 从 L2 读取最近 7 天对话记录，拼接为摘要/标题列表。
      */
     private String buildRecentConversations() {
-        if (episodicMemory == null) {
+        var conversations = episodicMemory.getRecent(Duration.ofDays(7));
+        if (conversations.isEmpty()) {
             return "无最近对话";
         }
-        try {
-            var conversations = episodicMemory.getRecent(Duration.ofDays(7));
-            if (conversations.isEmpty()) {
-                return "无最近对话";
-            }
-            return conversations.stream()
-                    .map(c -> {
-                        String label = c.summary() != null && !c.summary().isBlank()
-                                ? c.summary()
-                                : c.goal();
-                        return "- " + label;
-                    })
-                    .collect(Collectors.joining("\n"));
-        } catch (Exception e) {
-            log.debug("用户画像巩固: 读取最近对话失败, error={}", e.getMessage());
-            return "无最近对话";
-        }
+        return conversations.stream()
+                .map(c -> {
+                    String label = c.summary() != null && !c.summary().isBlank()
+                            ? c.summary()
+                            : c.goal();
+                    return "- " + label;
+                })
+                .collect(Collectors.joining("\n"));
     }
 
     /**
      * 从 L4 读取偏好规则，拼接为摘要文本。
      */
     private String buildRecentFeedback(Set<String> consumableFragmentIds) {
-        if (proceduralMemory == null) {
+        var allRules = new ArrayList<PreferenceRule>();
+        for (var category : PREFERENCE_CATEGORIES) {
+            allRules.addAll(proceduralMemory.getPreferences(category));
+        }
+        allRules.removeIf(rule -> rule.sourceEntityId() == null
+                || rule.sourceEntityId().isBlank()
+                || !consumableFragmentIds.contains(rule.sourceEntityId()));
+        if (allRules.isEmpty()) {
             return "无偏好反馈";
         }
-        try {
-            var allRules = new ArrayList<PreferenceRule>();
-            for (var category : PREFERENCE_CATEGORIES) {
-                allRules.addAll(proceduralMemory.getPreferences(category));
-            }
-            allRules.removeIf(rule -> rule.sourceEntityId() == null
-                    || rule.sourceEntityId().isBlank()
-                    || !consumableFragmentIds.contains(rule.sourceEntityId()));
-            if (allRules.isEmpty()) {
-                return "无偏好反馈";
-            }
-            return allRules.stream()
-                    .sorted(Comparator
-                            .comparing(PreferenceRule::category)
-                            .thenComparing(PreferenceRule::key)
-                            .thenComparing(r -> r.sourceEntityId() != null ? r.sourceEntityId() : ""))
-                    .map(r -> "- " + r.key() +
-                            (r.value() != null && !r.value().isBlank() ? ": " + r.value() : ""))
-                    .collect(Collectors.joining("\n"));
-        } catch (Exception e) {
-            log.debug("用户画像巩固: 读取偏好规则失败, error={}", e.getMessage());
-            return "无偏好反馈";
-        }
+        return allRules.stream()
+                .sorted(Comparator
+                        .comparing(PreferenceRule::category)
+                        .thenComparing(PreferenceRule::key)
+                        .thenComparing(r -> r.sourceEntityId() != null ? r.sourceEntityId() : ""))
+                .map(r -> "- " + r.key() +
+                        (r.value() != null && !r.value().isBlank() ? ": " + r.value() : ""))
+                .collect(Collectors.joining("\n"));
     }
 
     private boolean isSourceUnchanged(java.util.Optional<TemporalEntity> existingProfile,

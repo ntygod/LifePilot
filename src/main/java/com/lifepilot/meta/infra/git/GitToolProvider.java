@@ -58,7 +58,7 @@ public class GitToolProvider {
     /** 构建统一 Git 查询工具。 */
     private BuiltinTool buildGitQueryTool(GitQueryActionDispatchExecutor executor) {
         return BuiltinTool.builder()
-                .id("shell_exec")
+                .id("git.query")
                 .category(ToolCategory.PERCEPTION)
                 .name("Git 查询")
                 .description("""
@@ -109,7 +109,7 @@ public class GitToolProvider {
     /** 构建统一 Git 变更工具。 */
     private BuiltinTool buildGitMutateTool(GitMutateActionDispatchExecutor executor) {
         return BuiltinTool.builder()
-                .id("shell_exec")
+                .id("git.mutate")
                 .category(ToolCategory.ACTION)
                 .name("Git 变更")
                 .description("""

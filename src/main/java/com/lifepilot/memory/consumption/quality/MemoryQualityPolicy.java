@@ -1,14 +1,11 @@
 package com.lifepilot.memory.consumption.quality;
 
-import com.lifepilot.memory.store.scope.MemoryOriginType;
-import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.semantic.AudnDecision;
-import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import jakarta.annotation.Nullable;
 
 import java.time.Instant;
-import java.util.Locale;
+import java.util.Objects;
 
 /**
  * 记忆质量策略。
@@ -23,20 +20,21 @@ public final class MemoryQualityPolicy {
     private MemoryQualityPolicy() {
     }
 
-    public static TemporalEntity applyDefaults(TemporalEntity entity, MemoryWriteContext context) {
-        if (entity.evidenceKind() != MemoryEvidenceKind.UNKNOWN
-                && entity.trustLevel() != MemoryTrustLevel.UNVERIFIED
-                && entity.trustScore() > 0.0f) {
-            return entity;
+    public static TemporalEntity requireWritableQuality(TemporalEntity entity) {
+        Objects.requireNonNull(entity, "待写入实体不能为空");
+        if (entity.evidenceKind() == MemoryEvidenceKind.UNKNOWN) {
+            throw new IllegalArgumentException("语义记忆写入必须指定有效证据类型");
         }
-        MemoryEvidenceKind evidenceKind = inferEvidenceKind(entity, context);
-        float trustScore = Math.max(baseTrustScore(evidenceKind), clamp(entity.extractionConfidence()));
-        MemoryTrustLevel trustLevel = inferTrustLevel(evidenceKind, trustScore);
-        int evidenceCount = entity.evidenceCount() > 0 ? entity.evidenceCount() : initialEvidenceCount(evidenceKind);
-        Instant verifiedAt = entity.lastVerifiedAt() != null
-                ? entity.lastVerifiedAt()
-                : initialVerifiedAt(evidenceKind, entity.updatedAt());
-        return entity.withQuality(evidenceKind, trustLevel, trustScore, evidenceCount, verifiedAt);
+        if (entity.trustLevel() == MemoryTrustLevel.UNVERIFIED) {
+            throw new IllegalArgumentException("语义记忆写入必须指定可消费的可信等级");
+        }
+        if (!(entity.trustScore() > 0.0f && entity.trustScore() <= 1.0f)) {
+            throw new IllegalArgumentException("语义记忆写入可信分必须在 (0,1] 范围内: " + entity.trustScore());
+        }
+        if (entity.evidenceCount() <= 0) {
+            throw new IllegalArgumentException("语义记忆写入证据数量必须大于 0: " + entity.evidenceCount());
+        }
+        return entity;
     }
 
     public static MemoryEvidenceKind evidenceKindFromDecision(AudnDecision decision) {
@@ -89,31 +87,16 @@ public final class MemoryQualityPolicy {
 
     public static MemoryEvidenceKind parseEvidenceKind(@Nullable String raw) {
         if (raw == null || raw.isBlank()) {
-            return MemoryEvidenceKind.UNKNOWN;
+            throw new IllegalArgumentException("证据类型不能为空");
+        }
+        if (!raw.equals(raw.trim())) {
+            throw new IllegalArgumentException("证据类型不能包含首尾空白: " + raw);
         }
         try {
-            return MemoryEvidenceKind.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ignored) {
-            return MemoryEvidenceKind.UNKNOWN;
+            return MemoryEvidenceKind.valueOf(raw);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("未知证据类型: " + raw, ex);
         }
-    }
-
-    private static MemoryEvidenceKind inferEvidenceKind(TemporalEntity entity, MemoryWriteContext context) {
-        if (entity.isDerived()) {
-            return MemoryEvidenceKind.DERIVED;
-        }
-        if (entity.type() == EntityType.EXPERIENCE
-                && context.originType() == MemoryOriginType.CONSOLIDATION) {
-            return MemoryEvidenceKind.LLM_SUMMARIZED_EXPERIENCE;
-        }
-        return switch (context.originType()) {
-            case MANUAL -> MemoryEvidenceKind.USER_CONFIRMED;
-            case TOOL -> MemoryEvidenceKind.USER_CONFIRMED;
-            case KNOWLEDGE_BASE_DOCUMENT -> MemoryEvidenceKind.DOCUMENT_GROUNDED;
-            case CONSOLIDATION -> MemoryEvidenceKind.DERIVED;
-            case CHAT -> MemoryEvidenceKind.CHAT_INFERRED;
-            case UNKNOWN -> MemoryEvidenceKind.UNKNOWN;
-        };
     }
 
     private static MemoryTrustLevel inferTrustLevel(MemoryEvidenceKind evidenceKind, float trustScore) {
@@ -146,18 +129,6 @@ public final class MemoryQualityPolicy {
         };
     }
 
-    private static int initialEvidenceCount(MemoryEvidenceKind evidenceKind) {
-        return evidenceKind == MemoryEvidenceKind.UNKNOWN ? 0 : 1;
-    }
-
-    @Nullable
-    private static Instant initialVerifiedAt(MemoryEvidenceKind evidenceKind, Instant updatedAt) {
-        return switch (evidenceKind) {
-            case USER_CONFIRMED, TOOL_VERIFIED, DOCUMENT_GROUNDED -> updatedAt;
-            default -> null;
-        };
-    }
-
     private static float minimumPromptTrust(MemoryTrustLevel trustLevel) {
         return switch (trustLevel) {
             case VERIFIED, EXPLICIT -> 0.60f;
@@ -168,9 +139,9 @@ public final class MemoryQualityPolicy {
     }
 
     private static float clamp(float value) {
-        if (Float.isNaN(value)) {
-            return 0.0f;
+        if (!(value >= 0.0f && value <= 1.0f)) {
+            throw new IllegalArgumentException("质量分数必须在 [0,1] 范围内: " + value);
         }
-        return Math.max(0.0f, Math.min(1.0f, value));
+        return value;
     }
 }

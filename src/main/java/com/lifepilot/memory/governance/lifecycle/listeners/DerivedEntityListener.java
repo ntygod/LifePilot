@@ -10,6 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -17,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -69,9 +72,9 @@ public class DerivedEntityListener {
     public DerivedEntityListener(SemanticMemory semanticMemory,
                                  RegenerationQueueRepository queueRepo,
                                  Clock clock) {
-        this.semanticMemory = semanticMemory;
-        this.queueRepo = queueRepo;
-        this.clock = clock;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.queueRepo = Objects.requireNonNull(queueRepo, "queueRepo 不能为空");
+        this.clock = Objects.requireNonNull(clock, "clock 不能为空");
     }
 
     /**
@@ -80,7 +83,9 @@ public class DerivedEntityListener {
      * @param event 生命周期变化事件
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onLifecycleChanged(EntityLifecycleChanged event) {
+        Objects.requireNonNull(event, "生命周期变化事件不能为空");
         // ① 过滤非触发态（ARCHIVED / REGENERATION_NEEDED / ACTIVE↔COMPLETED 等）
         if (!TRIGGER_STATES.contains(event.newState())) {
             return;
@@ -104,13 +109,8 @@ public class DerivedEntityListener {
                         derived.id(), event.entityId());
                 continue;
             }
-            try {
-                markRegenerationNeeded(derived.id(), event.entityId(), when);
-                triggered++;
-            } catch (Exception ex) {
-                log.warn("派生实体级联失败: derived={}, source={}, error={}",
-                        derived.id(), event.entityId(), ex.getMessage(), ex);
-            }
+            markRegenerationNeeded(derived.id(), event.entityId(), when);
+            triggered++;
         }
         log.info("派生实体级联完成: source={}, 候选={}, 实际触发={}",
                 event.entityId(), derivedList.size(), triggered);

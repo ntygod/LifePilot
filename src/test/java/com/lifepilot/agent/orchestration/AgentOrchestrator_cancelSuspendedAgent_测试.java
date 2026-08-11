@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>验证用户取消挂起 Agent 的硬终止主路径：</p>
  * <ul>
- *   <li>挂起记录存在 → 走 loadAndDelete + markCompleted(FAILED) + 不进入 ReAct 循环</li>
+ *   <li>挂起记录存在 → 走 loadAndDelete + markCompleted(CANCELLED) + 不进入 ReAct 循环</li>
  *   <li>挂起记录不存在 → 幂等返回，仅 warn 不抛</li>
  *   <li>SuspendStore 未配置 → 抛 IllegalStateException</li>
  * </ul>
@@ -71,7 +71,7 @@ class AgentOrchestrator_cancelSuspendedAgent_测试 {
     }
 
     @Test
-    void 挂起记录存在_硬终止_落库为_FAILED_并删除挂起记录() {
+    void 挂起记录存在_硬终止_落库为_CANCELLED_并删除挂起记录() {
         var traceId = "trace-cancel-1";
         var suspended = buildBrowserTakeoverSuspended(traceId, "session-login");
         when(suspendStore.loadAndDelete(traceId)).thenReturn(Optional.of(suspended));
@@ -82,7 +82,7 @@ class AgentOrchestrator_cancelSuspendedAgent_测试 {
         verify(suspendStore).loadAndDelete(traceId);
         verify(suspendStore, never()).save(any());
 
-        // turn 必须落为 FAILED（无 CANCELLED 枚举时的近似）
+        // turn 必须落为 CANCELLED，避免把用户主动取消误判为失败
         var statusCaptor = ArgumentCaptor.forClass(ChatTurnStatus.class);
         verify(chatTurnService).markCompleted(
                 eq(suspended.sessionId()),
@@ -92,7 +92,7 @@ class AgentOrchestrator_cancelSuspendedAgent_测试 {
                 any(),
                 any(),
                 any());
-        assertThat(statusCaptor.getValue()).isEqualTo(ChatTurnStatus.FAILED);
+        assertThat(statusCaptor.getValue()).isEqualTo(ChatTurnStatus.CANCELLED);
     }
 
     @Test

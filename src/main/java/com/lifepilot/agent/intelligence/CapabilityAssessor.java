@@ -1,14 +1,12 @@
 package com.lifepilot.agent.intelligence;
 
-import com.lifepilot.agent.intelligence.model.CapabilityProfile;
 import com.lifepilot.agent.intelligence.model.ToolHealth;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 
+import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -26,11 +24,22 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class CapabilityAssessor {
 
-    private static final Logger log = LoggerFactory.getLogger(CapabilityAssessor.class);
-    private static final int DEFAULT_WINDOW_SIZE = 20;
-
     /** 工具健康状态缓存（内存，进程重启后重建）。 */
     private final ConcurrentHashMap<String, ToolHealthAccumulator> healthMap = new ConcurrentHashMap<>();
+    private final int toolHealthWindowSize;
+    private final Clock clock;
+
+    public CapabilityAssessor(int toolHealthWindowSize) {
+        this(toolHealthWindowSize, Clock.systemDefaultZone());
+    }
+
+    CapabilityAssessor(int toolHealthWindowSize, Clock clock) {
+        if (toolHealthWindowSize <= 0) {
+            throw new IllegalArgumentException("工具健康滑动窗口大小必须大于 0");
+        }
+        this.toolHealthWindowSize = toolHealthWindowSize;
+        this.clock = clock;
+    }
 
     /**
      * 记录一次工具执行结果。
@@ -41,7 +50,7 @@ public class CapabilityAssessor {
      * @param error     错误信息（成功时为 null）
      */
     public void recordExecution(String toolId, boolean success, long latencyMs, @Nullable String error) {
-        healthMap.computeIfAbsent(toolId, k -> new ToolHealthAccumulator(k, DEFAULT_WINDOW_SIZE))
+        healthMap.computeIfAbsent(toolId, k -> new ToolHealthAccumulator(k, toolHealthWindowSize, clock))
                 .record(success, latencyMs, error);
     }
 
@@ -161,41 +170,50 @@ public class CapabilityAssessor {
     private static class ToolHealthAccumulator {
         private final String toolId;
         private final int windowSize;
-        private int successes;
-        private int failures;
-        private long totalLatency;
-        private int totalCount;
-        private String lastError;
-        private Instant lastExecutedAt;
+        private final Clock clock;
+        private final Deque<ToolExecutionRecord> records = new ArrayDeque<>();
 
-        ToolHealthAccumulator(String toolId, int windowSize) {
+        ToolHealthAccumulator(String toolId, int windowSize, Clock clock) {
             this.toolId = toolId;
             this.windowSize = windowSize;
+            this.clock = clock;
         }
 
         synchronized void record(boolean success, long latencyMs, @Nullable String error) {
-            if (success) {
-                successes++;
-            } else {
-                failures++;
-                lastError = error;
-            }
-            totalLatency += latencyMs;
-            totalCount++;
-            lastExecutedAt = Instant.now();
-
-            // 简单衰减：超过窗口大小时减半
-            if (successes + failures > windowSize) {
-                successes = successes / 2;
-                failures = failures / 2;
-                totalLatency = totalLatency / 2;
-                totalCount = totalCount / 2;
+            records.addLast(new ToolExecutionRecord(success, Math.max(0, latencyMs), error, Instant.now(clock)));
+            while (records.size() > windowSize) {
+                records.removeFirst();
             }
         }
 
         synchronized ToolHealth snapshot() {
-            long avgLatency = totalCount > 0 ? totalLatency / totalCount : 0;
+            int successes = 0;
+            int failures = 0;
+            long totalLatency = 0;
+            String lastError = null;
+            Instant lastExecutedAt = null;
+
+            for (ToolExecutionRecord record : records) {
+                if (record.success()) {
+                    successes++;
+                } else {
+                    failures++;
+                    lastError = record.error();
+                }
+                totalLatency += record.latencyMs();
+                lastExecutedAt = record.executedAt();
+            }
+
+            long avgLatency = records.isEmpty() ? 0 : totalLatency / records.size();
             return new ToolHealth(toolId, successes, failures, avgLatency, lastError, lastExecutedAt);
         }
+    }
+
+    private record ToolExecutionRecord(
+            boolean success,
+            long latencyMs,
+            @Nullable String error,
+            Instant executedAt
+    ) {
     }
 }

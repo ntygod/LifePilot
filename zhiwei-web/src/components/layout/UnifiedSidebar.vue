@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/input'
 import { useChatStore } from '@/stores/chat'
 import { useTheme } from '@/composables/useTheme'
 import type { ChatSession } from '@/types'
+import { logger } from '@/utils/logger'
 import { manageNavGroups, manageRoutePrefixes, isNavItemActive } from './appNavigation'
 
 const emit = defineEmits<{
@@ -57,8 +58,12 @@ type SidebarTab = 'chat' | 'manage'
 const activeTab = ref<SidebarTab>('chat')
 
 onMounted(async () => {
-  if (chatStore.sessions.length === 0) {
-    await chatStore.loadSessions()
+  try {
+    if (chatStore.sessions.length === 0) {
+      await chatStore.loadSessions()
+    }
+  } catch (error) {
+    logger.warn('加载侧栏会话列表失败:', error)
   }
 })
 
@@ -245,10 +250,10 @@ function switchToChatTab() {
   activeTab.value = 'chat'
 }
 
-/** 从对话 Tab 切换到管理 Tab 时，导航到通用设置页（管理首页） */
+/** 从对话 Tab 切换到管理 Tab 时，导航到能力中心。 */
 function switchToManageTab() {
   if (activeTab.value === 'chat') {
-    router.push('/settings/general')
+    router.push('/capabilities')
   }
   activeTab.value = 'manage'
 }

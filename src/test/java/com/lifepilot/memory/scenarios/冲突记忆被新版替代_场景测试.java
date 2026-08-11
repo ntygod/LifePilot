@@ -1,6 +1,7 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -8,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.llm.LlmResponse;
@@ -23,6 +25,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
 import java.nio.file.Files;
@@ -65,7 +68,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *       单元测试更贴近真实场景（前者仅单测 applyVerdict）。</li>
  *   <li>异步执行：{@code resolveAsync} 实际由 virtual thread 触发，测试改调
  *       同包可见的 {@code resolveSync}（package-private），使断言同步可见。</li>
- *   <li>{@link ConflictResolutionRepository} 使用真实 DB 版本（V15 conflict_resolution_queue 表
+ *   <li>{@link ConflictResolutionRepository} 使用真实 DB 版本（conflict_resolution_queue 表
  *       已由 Flyway 建出），enqueue/markResolved 走真实 SQL，一起覆盖。</li>
  * </ol>
  *
@@ -114,12 +117,13 @@ class 冲突记忆被新版替代_场景测试 {
         when(vectorSearcher.searchEntities(any(), any(Integer.class), any(Float.class)))
                 .thenReturn(List.of());
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, generationRouter, 0.92f, promptRegistry);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
 
-        var queueRepo = new ConflictResolutionRepository(jdbcTemplate);
+        var queueRepo = new ConflictResolutionRepository(jdbcTemplate, new ObjectMapper());
         lenient().when(promptRegistry.render(anyString(), any())).thenReturn("冲突裁决 prompt body");
         conflictResolutionService = new ConflictResolutionService(
                 generationRouter, promptRegistry, vectorSearcher, queueRepo, semanticMemory);
@@ -142,14 +146,20 @@ class 冲突记忆被新版替代_场景测试 {
     void 高相似新偏好应触发LLM裁决使老版SUPERSEDED() {
         // 1. 用户说"我最爱的编程语言是 Python" → 落入系统
         var oldPref = 构造ACTIVE偏好("最爱编程语言", "Python");
-        var pythonEntity = semanticMemory.upsertWithConflictDetection(oldPref, "scenario-session-s4");
+        var pythonEntity = semanticMemory.upsertWithConflictDetection(
+                oldPref,
+                "scenario-session-s4",
+                MemoryWriteContext.conversation("scenario-session-s4"));
         assertThat(pythonEntity).isNotNull();
         var oldId = pythonEntity.id();
 
         // 2. 用户改主意："现在我更爱 Rust" → 再落入一条新实体
         //    name 换成新值以避免 ConflictDetector 相同 (name, type) 判定 → 走合并
         var newPref = 构造ACTIVE偏好("偏好变更_Rust", "Rust");
-        var rustEntity = semanticMemory.upsertWithConflictDetection(newPref, "scenario-session-s4");
+        var rustEntity = semanticMemory.upsertWithConflictDetection(
+                newPref,
+                "scenario-session-s4",
+                MemoryWriteContext.conversation("scenario-session-s4"));
         assertThat(rustEntity).isNotNull();
         var newId = rustEntity.id();
 
@@ -170,17 +180,11 @@ class 冲突记忆被新版替代_场景测试 {
                         """.formatted(oldId), null, null, List.of(), Map.of(), 100, 50, null, 0, "test-provider", "test-model", 200L, false));
 
         // 5. 驱动 resolveAsync（生产路径通过 upsert afterCommit 触发，此处直接调以控制时序）
-        //    Awaitility 轮询 conflict_resolution_queue 直到出现 RESOLVED 状态，避免主测试线程竞态
-        conflictResolutionService.resolveAsync(rustEntity, List.of(pythonEntity));
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(5))
-                .pollInterval(Duration.ofMillis(50))
-                .untilAsserted(() -> {
-                    Integer resolved = jdbcTemplate.queryForObject(
-                            "SELECT COUNT(*) FROM conflict_resolution_queue WHERE status = 'RESOLVED'",
-                            Integer.class);
-                    assertThat(resolved).as("等待裁决完成").isEqualTo(1);
-                });
+        conflictResolutionService.resolveAsync(rustEntity, List.of(pythonEntity)).join();
+        Integer resolved = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM conflict_resolution_queue WHERE status = 'RESOLVED'",
+                Integer.class);
+        assertThat(resolved).as("裁决完成").isEqualTo(1);
 
         // 6. 老实体应沿 ACTIVE → SUPERSEDED；新实体保持 ACTIVE
         var afterOld = queryApi.findById(oldId).orElseThrow();
@@ -216,6 +220,18 @@ class 冲突记忆被新版替代_场景测试 {
                 /* accessCount */ 0,
                 /* lastAccessedAt */ null,
                 /* createdAt */ now,
-                /* updatedAt */ now);
+                /* updatedAt */ now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        /* updatedAt */ now);
     }
 }

@@ -1,9 +1,6 @@
 package com.lifepilot.agent.context;
 
-import com.lifepilot.agent.task.reminder.ReminderSignal;
 import org.springframework.lang.Nullable;
-
-import java.util.List;
 
 /**
  * 天气服务接口 — 统一天气数据获取和异常信号评估的抽象。
@@ -27,16 +24,6 @@ public interface WeatherService {
      */
     @Nullable
     String getWeatherSummary();
-
-    /**
-     * 评估是否有异常天气需要产生提醒信号。
-     *
-     * <p>由心跳周期调用，允许同步网络请求。</p>
-     *
-     * @param hasOutdoorEvents 用户明日是否有外出事件
-     * @return 信号列表（可能为空）
-     */
-    List<ReminderSignal> evaluateWeatherSignals(boolean hasOutdoorEvents);
 
     /**
      * 触发后台天气数据预取。应在应用启动后调用。

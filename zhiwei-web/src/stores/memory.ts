@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { MemoryStats, MemorySearchResult, ErrorResponse } from '@/types'
+import type { MemoryStats, MemorySearchResult, MemorySearchResponse, ErrorResponse } from '@/types'
 import { memoryApi } from '@/api/client'
 import { logger } from '@/utils/logger'
 
@@ -65,11 +65,12 @@ export const useMemoryStore = defineStore('memory', () => {
    * 跨层记忆搜索。
    *
    * @param query 搜索关键词
-   * @param top_k 返回结果数量，默认 10
+   * @param topK 返回结果数量，默认 10
+   * @param projectId 项目 ID；传入时仅搜索该项目可见记忆
    * @returns 搜索结果列表
    */
-  async function search(query: string, top_k?: number): Promise<MemorySearchResult[]> {
-    return memoryApi.search(query, top_k)
+  async function search(query: string, topK?: number, projectId?: string | null): Promise<MemorySearchResponse> {
+    return memoryApi.search(query, topK, projectId)
   }
 
   /**

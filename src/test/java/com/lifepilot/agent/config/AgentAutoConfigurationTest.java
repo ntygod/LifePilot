@@ -2,6 +2,7 @@ package com.lifepilot.agent.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
+import com.lifepilot.agent.capability.ConversationCapabilityPlanner;
 import com.lifepilot.agent.context.ContextAssembler;
 import com.lifepilot.config.threadpool.SharedScheduler;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
@@ -12,6 +13,7 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.memory.store.document.MemoryDocumentRepository;
 import com.lifepilot.memory.retrieval.HybridRetriever;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -67,6 +69,47 @@ class AgentAutoConfigurationTest {
                     assertThat(context).hasSingleBean(ContextAssembler.class);
                     assertThat(context).hasBean("customContextAssembler");
                     assertThat(context).doesNotHaveBean("contextAssembler");
+                });
+    }
+
+    @Test
+    void 工具经验后台记录超时配置应进入属性对象() {
+        contextRunner
+                .withPropertyValues("lifepilot.agent.loop.tool-experience-record-timeout-ms=450")
+                .run(context -> {
+                    var properties = context.getBean(AgentConfigProperties.class);
+
+                    assertThat(properties.getLoop().getToolExperienceRecordTimeoutMs()).isEqualTo(450);
+                });
+    }
+
+    @Test
+    void 能力预发现开启时应注册轻量预发现器并绑定探针配置() {
+        contextRunner
+                .withUserConfiguration(ToolRegistryConfig.class)
+                .withPropertyValues(
+                        "lifepilot.agent.capability-discovery.control-prefix-chars=48",
+                        "lifepilot.agent.capability-discovery.planning-probe-max-chars=160")
+                .run(context -> {
+                    var properties = context.getBean(AgentConfigProperties.class);
+
+                    assertThat(context).hasSingleBean(ConversationCapabilityPlanner.class);
+                    assertThat(properties.getCapabilityDiscovery().isEnabled()).isTrue();
+                    assertThat(properties.getCapabilityDiscovery().getControlPrefixChars()).isEqualTo(48);
+                    assertThat(properties.getCapabilityDiscovery().getPlanningProbeMaxChars()).isEqualTo(160);
+                });
+    }
+
+    @Test
+    void 能力预发现关闭时不应注册预发现器() {
+        contextRunner
+                .withUserConfiguration(ToolRegistryConfig.class)
+                .withPropertyValues("lifepilot.agent.capability-discovery.enabled=false")
+                .run(context -> {
+                    var properties = context.getBean(AgentConfigProperties.class);
+
+                    assertThat(context).doesNotHaveBean(ConversationCapabilityPlanner.class);
+                    assertThat(properties.getCapabilityDiscovery().isEnabled()).isFalse();
                 });
     }
 
@@ -129,6 +172,17 @@ class AgentAutoConfigurationTest {
         @Bean
         HybridRetriever hybridRetriever() {
             return mock(HybridRetriever.class);
+        }
+    }
+
+    /**
+     * 只在能力预发现测试中提供工具注册表。
+     */
+    @Configuration
+    static class ToolRegistryConfig {
+        @Bean
+        DynamicToolRegistry dynamicToolRegistry() {
+            return new DynamicToolRegistry(_ -> {});
         }
     }
 

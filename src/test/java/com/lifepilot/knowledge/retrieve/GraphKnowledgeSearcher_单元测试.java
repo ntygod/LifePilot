@@ -1,12 +1,9 @@
 package com.lifepilot.knowledge.retrieve;
 
 import com.lifepilot.knowledge.chunking.DocumentChunk;
-import com.lifepilot.knowledge.model.Document;
 import com.lifepilot.knowledge.model.DocumentSourceType;
-import com.lifepilot.knowledge.model.DocumentStatus;
 import com.lifepilot.knowledge.model.KnowledgeSearchScope;
 import com.lifepilot.knowledge.repository.DocumentChunkRepository;
-import com.lifepilot.knowledge.repository.DocumentRepository;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryScope;
 import com.lifepilot.memory.store.scope.MemorySpace;
@@ -28,7 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -46,10 +42,9 @@ class GraphKnowledgeSearcher_单元测试 {
     void 图命中应优先通过实体来源定位chunk() {
         var semanticMemory = mock(SemanticMemory.class);
         var chunkRepository = mock(DocumentChunkRepository.class);
-        var docRepository = mock(DocumentRepository.class);
         var memorySpaceRepository = mock(MemorySpaceRepository.class);
         var searcher = new GraphKnowledgeSearcher(
-                semanticMemory, chunkRepository, docRepository, memorySpaceRepository);
+                semanticMemory, chunkRepository, memorySpaceRepository);
 
         var domainSpace = domainSpace("space-kb-1", "kb-1");
         when(memorySpaceRepository.findBySpaceKey(MemorySpaceKeys.knowledgeBaseDomain("kb-1")))
@@ -75,17 +70,15 @@ class GraphKnowledgeSearcher_单元测试 {
         assertThat(results.getFirst().scoreBreakdown()).hasValueSatisfying(score ->
                 assertThat(score.graphScore()).isGreaterThan(0.0));
         verify(semanticMemory).findCurrentByNameAndType(eq("角色A"), eq(EntityType.PERSON), eq(expectedFilter));
-        verifyNoInteractions(docRepository);
     }
 
     @Test
     void 指定知识库没有domainSpace时不应跨库匹配实体() {
         var semanticMemory = mock(SemanticMemory.class);
         var chunkRepository = mock(DocumentChunkRepository.class);
-        var docRepository = mock(DocumentRepository.class);
         var memorySpaceRepository = mock(MemorySpaceRepository.class);
         var searcher = new GraphKnowledgeSearcher(
-                semanticMemory, chunkRepository, docRepository, memorySpaceRepository);
+                semanticMemory, chunkRepository, memorySpaceRepository);
 
         when(memorySpaceRepository.findBySpaceKey(MemorySpaceKeys.knowledgeBaseDomain("kb-missing")))
                 .thenReturn(Optional.empty());
@@ -93,17 +86,16 @@ class GraphKnowledgeSearcher_单元测试 {
         var results = searcher.search("角色A", List.of(new KnowledgeSearchScope("kb-missing")), 5);
 
         assertThat(results).isEmpty();
-        verifyNoInteractions(semanticMemory, chunkRepository, docRepository);
+        verifyNoInteractions(semanticMemory, chunkRepository);
     }
 
     @Test
-    void 文档provenance已存在但无有效来源时不应回退实体根文档() {
+    void 无chunk级来源时不应回退实体根文档() {
         var semanticMemory = mock(SemanticMemory.class);
         var chunkRepository = mock(DocumentChunkRepository.class);
-        var docRepository = mock(DocumentRepository.class);
         var memorySpaceRepository = mock(MemorySpaceRepository.class);
         var searcher = new GraphKnowledgeSearcher(
-                semanticMemory, chunkRepository, docRepository, memorySpaceRepository);
+                semanticMemory, chunkRepository, memorySpaceRepository);
 
         when(memorySpaceRepository.findBySpaceKey(MemorySpaceKeys.knowledgeBaseDomain("kb-1")))
                 .thenReturn(Optional.of(domainSpace("space-kb-1", "kb-1")));
@@ -113,24 +105,20 @@ class GraphKnowledgeSearcher_单元测试 {
                 .thenReturn(Optional.of(entity));
         when(semanticMemory.findRelated("entity-a", 2)).thenReturn(List.of());
         when(semanticMemory.findSourceEntryIdsByEntityIds(any())).thenReturn(Map.of());
-        when(semanticMemory.findSourceDocumentIdsByEntityIds(any(), eq(true))).thenReturn(Map.of());
-        when(semanticMemory.findSourceDocumentIdsByEntityIds(any(), eq(false)))
-                .thenReturn(Map.of("entity-a", List.of("doc-1")));
 
         var results = searcher.search("角色A", List.of(new KnowledgeSearchScope("kb-1")), 5);
 
         assertThat(results).isEmpty();
-        verify(docRepository, never()).findById("doc-1");
+        verifyNoInteractions(chunkRepository);
     }
 
     @Test
-    void 完全没有文档provenance的旧数据才允许回退实体根文档() {
+    void 完全没有chunk级证据时返回空结果() {
         var semanticMemory = mock(SemanticMemory.class);
         var chunkRepository = mock(DocumentChunkRepository.class);
-        var docRepository = mock(DocumentRepository.class);
         var memorySpaceRepository = mock(MemorySpaceRepository.class);
         var searcher = new GraphKnowledgeSearcher(
-                semanticMemory, chunkRepository, docRepository, memorySpaceRepository);
+                semanticMemory, chunkRepository, memorySpaceRepository);
 
         when(memorySpaceRepository.findBySpaceKey(MemorySpaceKeys.knowledgeBaseDomain("kb-1")))
                 .thenReturn(Optional.of(domainSpace("space-kb-1", "kb-1")));
@@ -140,15 +128,11 @@ class GraphKnowledgeSearcher_单元测试 {
                 .thenReturn(Optional.of(entity));
         when(semanticMemory.findRelated("entity-a", 2)).thenReturn(List.of());
         when(semanticMemory.findSourceEntryIdsByEntityIds(any())).thenReturn(Map.of());
-        when(semanticMemory.findSourceDocumentIdsByEntityIds(any(), eq(true))).thenReturn(Map.of());
-        when(semanticMemory.findSourceDocumentIdsByEntityIds(any(), eq(false))).thenReturn(Map.of());
-        when(docRepository.findById("doc-1")).thenReturn(Optional.of(document("doc-1", "kb-1")));
-        when(chunkRepository.findByDocumentId("doc-1")).thenReturn(List.of(chunk("chunk-parent", "doc-1", "kb-1")));
 
         var results = searcher.search("角色A", List.of(new KnowledgeSearchScope("kb-1")), 5);
 
-        assertThat(results).hasSize(1);
-        assertThat(results.getFirst().chunkId()).isEqualTo("chunk-parent");
+        assertThat(results).isEmpty();
+        verifyNoInteractions(chunkRepository);
     }
 
     private static TemporalEntity entity(String id, String name, EntityType type) {
@@ -170,7 +154,19 @@ class GraphKnowledgeSearcher_单元测试 {
                 null,
                 now,
                 now
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
     }
 
     private static DocumentChunk chunk(String id, String documentId, String knowledgeBaseId) {
@@ -191,30 +187,6 @@ class GraphKnowledgeSearcher_单元测试 {
                 DocumentSourceType.FILE,
                 Optional.empty(),
                 1
-        );
-    }
-
-    private static Document document(String id, String knowledgeBaseId) {
-        var now = Instant.now();
-        return new Document(
-                id,
-                knowledgeBaseId,
-                "domain.md",
-                "/tmp/domain.md",
-                12,
-                "text/markdown",
-                "hash-" + id,
-                DocumentStatus.READY,
-                1,
-                1,
-                null,
-                null,
-                Map.of(),
-                now,
-                now,
-                DocumentSourceType.FILE,
-                "FILE:" + id,
-                Map.of()
         );
     }
 

@@ -1,5 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
+import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
@@ -9,6 +10,7 @@ import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.modelservice.model.GenerationCapability;
 import com.lifepilot.prompt.PromptRegistry;
+import com.lifepilot.rerank.router.RerankRouter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,9 +19,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
@@ -54,6 +58,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
     private GraphTraverser graphTraverser;
     private SemanticMemory semanticMemory;
     private JdbcTemplate jdbcTemplate;
+    private MemoryProvenanceRepository provenanceRepository;
     private HybridRetriever hybridRetriever;
 
     @BeforeEach
@@ -78,6 +83,8 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
         graphTraverser = mock(GraphTraverser.class);
         semanticMemory = mock(SemanticMemory.class);
         jdbcTemplate = mock(JdbcTemplate.class);
+        provenanceRepository = mock(MemoryProvenanceRepository.class);
+        when(provenanceRepository.findStaleEntityIds(any())).thenReturn(Set.of());
 
         hybridRetriever = new HybridRetriever(
                 vectorSearcher,
@@ -87,7 +94,7 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 null,
                 properties,
                 jdbcTemplate,
-                null, null);
+                mock(RerankRouter.class), provenanceRepository);
     }
 
     @Test
@@ -126,10 +133,22 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 1,
                 now,
                 now,
-                now);
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
         when(semanticMemory.findByIds(any())).thenReturn(Map.of("entity-travel-1", entity));
         when(ftsSearcher.search(anyString(), anyInt())).thenReturn(List.of());
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(List.of());
+        when(graphTraverser.traverse(anyString(), anyInt(), isNull())).thenReturn(List.of());
 
         String refined = queryRefiner.refine(rawQuery);
         assertFalse(refined.isBlank());
@@ -162,8 +181,8 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
     }
 
     @Test
-    @DisplayName("rewrite 模式失败时会降级回原始查询继续检索")
-    void rewrite模式失败时会降级回原始查询继续检索() {
+    @DisplayName("rewrite 模式失败时应直接暴露异常")
+    void rewrite模式失败时应直接暴露异常() {
         when(generationRouter.call(
                 anyString(),
                 anyString(),
@@ -174,41 +193,9 @@ class MemoryRetrieval_QueryRewrite_集成测试 {
                 any()))
                 .thenThrow(new RuntimeException("生成模型不可用"));
 
-        var vectorResult = new VectorSearchResult("entity-meeting-1", 0.75f);
-        when(vectorSearcher.searchEntities(anyString(), anyInt(), anyFloat(), any()))
-                .thenReturn(List.of(vectorResult));
-
-        Instant now = Instant.now();
-        var entity = new TemporalEntity(
-                "entity-meeting-1",
-                EntityType.EVENT,
-                "会议记录",
-                "上周的项目会议",
-                Map.of(),
-                1,
-                true,
-                now,
-                null,
-                null,
-                0.8f,
-                0.7f,
-                1,
-                now,
-                now,
-                now);
-        when(semanticMemory.findByIds(any())).thenReturn(Map.of("entity-meeting-1", entity));
-        when(ftsSearcher.search(anyString(), anyInt())).thenReturn(List.of());
-        when(graphTraverser.traverse(anyString(), anyInt())).thenReturn(List.of());
-
         String rawQuery = "帮我查一下之前的会议记录";
         String refined = queryRefiner.refine(rawQuery);
 
-        var rewriteResult = queryRewriter.rewrite(refined);
-        assertEquals(refined, rewriteResult.primaryQuery());
-        assertTrue(rewriteResult.rewrittenQueries().isEmpty());
-
-        var results = hybridRetriever.retrieve(rewriteResult.primaryQuery(), 10, RetrievalWeights.DEFAULT);
-        assertFalse(results.isEmpty());
-        assertEquals("entity-meeting-1", results.getFirst().entityId());
+        assertThrows(RuntimeException.class, () -> queryRewriter.rewrite(refined));
     }
 }

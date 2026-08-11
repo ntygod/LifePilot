@@ -8,6 +8,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -27,31 +28,45 @@ public class SqliteVecDataSource extends AbstractDataSource {
     private final SqliteVecInitializer sqliteVecInitializer;
     private final String dataSourceName;
     private final AtomicBoolean loggedReadyOnce = new AtomicBoolean(false);
+    private final AtomicBoolean loggedUnavailableOnce = new AtomicBoolean(false);
 
     public SqliteVecDataSource(DataSource delegate, SqliteVecInitializer sqliteVecInitializer, String dataSourceName) {
-        this.delegate = delegate;
-        this.sqliteVecInitializer = sqliteVecInitializer;
+        this.delegate = Objects.requireNonNull(delegate, "delegate 不能为空");
+        this.sqliteVecInitializer = Objects.requireNonNull(sqliteVecInitializer, "sqliteVecInitializer 不能为空");
+        if (dataSourceName == null || dataSourceName.isBlank()) {
+            throw new IllegalArgumentException("dataSourceName 不能为空");
+        }
         this.dataSourceName = dataSourceName;
     }
 
     @Override
     public Connection getConnection() throws SQLException {
         Connection con = delegate.getConnection();
-        ensureVecLoaded(con);
-        return con;
+        return tryEnsureVecLoaded(con);
     }
 
     @Override
     public Connection getConnection(String username, String password) throws SQLException {
         Connection con = delegate.getConnection(username, password);
-        ensureVecLoaded(con);
+        return tryEnsureVecLoaded(con);
+    }
+
+    private Connection tryEnsureVecLoaded(Connection con) {
+        try {
+            ensureVecLoaded(con);
+        } catch (RuntimeException e) {
+            if (loggedUnavailableOnce.compareAndSet(false, true)) {
+                log.warn("记忆系统: sqlite-vec 扩展当前不可用, 数据源={} 将以普通 SQLite 连接继续运行, reason={}",
+                        dataSourceName, e.getMessage());
+            }
+        }
         return con;
     }
 
     private void ensureVecLoaded(Connection con) {
         String extensionPath = sqliteVecInitializer.getExtractedExtensionAbsolutePath();
         if (extensionPath == null || extensionPath.isBlank()) {
-            return;
+            throw new IllegalStateException("sqlite-vec 扩展路径未准备");
         }
 
         // 先轻量探测：已加载则直接返回
@@ -72,14 +87,21 @@ public class SqliteVecDataSource extends AbstractDataSource {
             String version = queryVecVersion(stmt);
             logReadyOnce(version, extensionPath);
         } catch (Exception e) {
-            // 静默降级：让上层决定是否 fallback
-            log.debug("记忆系统: sqlite-vec 扩展未就绪（本连接无法加载），将降级, reason={}", e.getMessage());
+            throw new IllegalStateException("sqlite-vec 扩展未就绪（本连接无法加载）: " + e.getMessage(), e);
         }
     }
 
     private String queryVecVersion(Statement stmt) throws Exception {
-        var rs = stmt.executeQuery("SELECT vec_version()");
-        return rs.next() ? rs.getString(1) : "unknown";
+        try (var rs = stmt.executeQuery("SELECT vec_version()")) {
+            if (!rs.next()) {
+                throw new IllegalStateException("sqlite-vec 版本查询无结果");
+            }
+            String version = rs.getString(1);
+            if (version == null || version.isBlank()) {
+                throw new IllegalStateException("sqlite-vec 版本不能为空");
+            }
+            return version;
+        }
     }
 
     private void logReadyOnce(String version, String extensionPath) {
@@ -89,4 +111,3 @@ public class SqliteVecDataSource extends AbstractDataSource {
         }
     }
 }
-

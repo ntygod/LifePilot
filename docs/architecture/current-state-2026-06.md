@@ -13,7 +13,7 @@
 
 - **记忆能力**：成体系、分层完整、刚完成模块化拆分 → 成熟
 - **学习系统**：八个子系统全部有实现 → 基本完整，但"巩固调度解耦"仅有未接线骨架
-- **主动智能**：分两层落地 —— 智能层（感知/决策信号）**已上线默认开启**；主动发起层（自主思考/主动对话）**已有第一版但默认关闭**
+- **主动智能**：分两层落地 —— 智能层（感知/决策信号）**已上线默认开启**；主动发起层（自主思考/主动对话）**已接成第一版闭环**
 
 ---
 
@@ -48,7 +48,7 @@
 | 层 | 包 | 关键类 | 默认开关 |
 |----|----|----|--------|
 | 智能层 | `agent.intelligence`（+`model`,`config`）| CapabilityAssessor, EnvironmentPerceptor, AdaptiveDecisionEngine, DecisionSignal | **enabled=true（开）** |
-| 主动发起层 | `agent.initiative.{pool,gate,thinker,express,execute,signal,model,config}` | ThoughtPool, Gatekeeper, DefaultThinker, ConversationInitiator, ActionExecutor, ExecutionPermission, InitiativeEngine | **enabled=true（开，思考脚手架）**；触发/表达/执行接线待灰度，见 initiative-activation spec |
+| 主动发起层 | `agent.initiative.{pool,gate,thinker,express,signal,model,config}` | ThoughtPool, Gatekeeper, DefaultThinker, ConversationInitiator, InitiativeEngine | **enabled=true（开）**；记忆注意力 → 想法池 → 门控 → 主动对话已接线 |
 
 两层均已注册进 `META-INF/spring/...AutoConfiguration.imports`（`IntelligenceAutoConfiguration` / `InitiativeAutoConfiguration`）。
 
@@ -86,7 +86,7 @@ ReactAgentLoop.asyncPostProcess（Virtual Thread）
 ```
 ToolExecutionCoordinator 每次工具执行后 → capabilityAssessor.recordExecution(toolId, success, latency, error)
 ContextAssembler.buildDecisionSignalSection() → adaptiveDecisionEngine.buildDecisionSignal(goal, toolIds)
-   → 有不健康工具/环境提示时，注入 <decision_context> 到系统提示词（无信号则返回 null 不注入）
+   → 有经验/不健康工具/环境提示时，注入 <decision_context> 上下文消息（无信号则返回 null 不注入）
 ```
 
 ---
@@ -103,7 +103,7 @@ ContextAssembler.buildDecisionSignalSection() → adaptiveDecisionEngine.buildDe
 | 学习子系统（提取/经验/遗忘/冲突/老化/反馈）| ✅ 实现 | `agent.learning.*` 八子包齐全 |
 | **巩固调度解耦（EVENT/CRON/IDLE）** | ❌ **骨架未接线** | `ConsolidationScheduler` 四方法全转发 `pipeline.consolidate(false)`；全仓无 `new ConsolidationScheduler` |
 | 智能层（感知 + 决策信号）| ✅ 上线，默认开 | ContextAssembler + ToolExecutionCoordinator 已接线 |
-| 主动发起层（思考/主动对话/自主执行）| 🟡 第一版，默认关 | 代码 + AgentOrchestrator 集成 + 迁移脚本已有，`initiative.enabled=false` |
+| 主动发起层（思考/主动对话）| 🟡 第一版，默认开 | 记忆注意力生成想法，门控通过后由 AgentOrchestrator 发起主动对话 |
 | 统一检索编排 RetrievalOrchestrator | 🟡 可选接口，默认关 | `orchestrator.enabled=false` |
 
 ---

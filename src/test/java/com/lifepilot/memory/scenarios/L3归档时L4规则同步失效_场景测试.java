@@ -1,9 +1,13 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.agent.learning.consolidation.PreferenceConsolidator;
 import com.lifepilot.agent.learning.consolidation.PreferenceSyncStats;
@@ -24,6 +28,8 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.prompt.PromptRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -63,7 +69,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *   <li><b>path-B</b>（单元覆盖）：直接向 {@code preference_rules} 表插入带
  *       {@code source_entity_id} 的规则，然后手动触发 {@link L4SyncListener#onLifecycleChanged}
  *       事件（模拟 {@code SemanticMemory.updateLifecycleState} 提交事务后的 AFTER_COMMIT
- *       回调），断言 {@code deactivated_reason} 被写入。此路径验证 V15 schema 与
+ *       回调），断言 {@code deactivated_reason} 被写入。此路径验证当前 schema 与
  *       L4SyncListener 的失活 SQL 本身可用，与 path-A 互为回归底座。</li>
  * </ol></p>
  *
@@ -119,12 +125,13 @@ class L3归档时L4规则同步失效_场景测试 {
         when(vectorSearcher.searchEntities(any(), any(Integer.class), any(Float.class)))
                 .thenReturn(List.of());
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
-        var projectionService = MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
         queryApi = new MemoryQueryApi(semanticMemory, new MemoryProvenanceRepository(jdbcTemplate), jdbcTemplate);
 
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService, new ObjectMapper());
         ruleRepo = new PreferenceRuleRepository(jdbcTemplate);
         procedureRepo = new ProceduralMemoryRepository(jdbcTemplate);
         preferenceConsolidator = new PreferenceConsolidator(semanticMemory, proceduralMemory);
@@ -146,7 +153,10 @@ class L3归档时L4规则同步失效_场景测试 {
     void L3PREFERENCE_CANCELLED应使L4preference_rules失活() {
         // 1. 用户"我是素食主义者" → L3 建立 PREFERENCE
         var pref = 构造ACTIVE偏好("饮食偏好", "素食");
-        var persistedPref = semanticMemory.upsertWithConflictDetection(pref, "scenario-session-s6");
+        var persistedPref = semanticMemory.upsertWithConflictDetection(
+                pref,
+                "scenario-session-s6",
+                MemoryWriteContext.conversation("scenario-session-s6"));
         var prefId = persistedPref.id();
 
         // 2. 触发 L3 → L4 巩固 —— 预期写 preference_rules，但当前实现不填 source_entity_id
@@ -191,7 +201,10 @@ class L3归档时L4规则同步失效_场景测试 {
     void 带source_entity_id的规则可被L4SyncListener失活() {
         // 1. 用户"我是素食主义者" → L3 PREFERENCE
         var pref = 构造ACTIVE偏好("饮食偏好", "素食");
-        var persistedPref = semanticMemory.upsertWithConflictDetection(pref, "scenario-session-s6");
+        var persistedPref = semanticMemory.upsertWithConflictDetection(
+                pref,
+                "scenario-session-s6",
+                MemoryWriteContext.conversation("scenario-session-s6"));
         var prefId = persistedPref.id();
 
         // 2. 直接 INSERT 一条带 source_entity_id 的 L4 规则（模拟"PreferenceConsolidator 若已扩字段"的效果）
@@ -244,7 +257,19 @@ class L3归档时L4规则同步失效_场景测试 {
                 null, EntityType.PREFERENCE, name, "偏好值=" + value,
                 Map.of("value", value), 1, true, now, null,
                 "scenario-session-s6",
-                0.9f, 0.5f, 0, null, now, now)
+                0.9f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now)
                 .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f, 1, now);
     }
 }

@@ -3,8 +3,6 @@ package com.lifepilot.agent.context;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
-import com.lifepilot.agent.task.reminder.ReminderSignal;
-import com.lifepilot.agent.task.reminder.ReminderSignalKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
@@ -120,102 +118,6 @@ public class OpenMeteoWeatherService implements WeatherService {
                 data.todayMin(), data.todayMax(),
                 data.tomorrowDesc(), data.tomorrowMin(), data.tomorrowMax()
         );
-    }
-
-    /**
-     * 评估是否有异常天气需要产生提醒信号。
-     *
-     * <p>由心跳周期调用，允许同步拉取（心跳在后台线程执行，不阻塞用户）。</p>
-     *
-     * @param hasOutdoorEvents 用户明日是否有外出事件
-     * @return 信号列表（可能为空）
-     */
-    @Override
-    public List<ReminderSignal> evaluateWeatherSignals(boolean hasOutdoorEvents) {
-        WeatherData data = getOrFetchWeatherData();
-        if (data == null) {
-            return List.of();
-        }
-
-        var weatherConfig = config.getTask();
-        int tempDiffThreshold = weatherConfig.getWeatherTempDiffThreshold();
-        double precipThreshold = weatherConfig.getWeatherPrecipitationThreshold();
-        double heavyPrecipThreshold = weatherConfig.getWeatherHeavyPrecipitationThreshold();
-
-        Instant now = Instant.now();
-        List<ReminderSignal> signals = new ArrayList<>();
-
-        // 温差检查
-        int tempDiff = data.tomorrowMax() - data.tomorrowMin();
-        if (tempDiff >= tempDiffThreshold) {
-            signals.add(new ReminderSignal(
-                    UUID.randomUUID().toString(),
-                    ReminderSignalKind.EVENT,
-                    0.8f, 0.6f, 1,
-                    now, null, null,
-                    7, 9,
-                    0.3f, true, false,
-                    "明日温差较大（%d°C），注意增减衣物".formatted(tempDiff)
-            ));
-        }
-
-        // 降水检查（有外出事件时才提醒）
-        if (hasOutdoorEvents && data.tomorrowPrecipitation() > precipThreshold) {
-            signals.add(new ReminderSignal(
-                    UUID.randomUUID().toString(),
-                    ReminderSignalKind.EVENT,
-                    0.85f, 0.7f, 1,
-                    now, null, null,
-                    7, 9,
-                    0.4f, true, false,
-                    "明日有%s（降水 %.1fmm），你有外出安排，建议携带雨具".formatted(
-                            data.tomorrowDesc(), data.tomorrowPrecipitation())
-            ));
-        }
-
-        // 强降水（无论是否外出）
-        if (data.tomorrowPrecipitation() > heavyPrecipThreshold) {
-            signals.add(new ReminderSignal(
-                    UUID.randomUUID().toString(),
-                    ReminderSignalKind.EVENT,
-                    0.9f, 0.75f, 1,
-                    now, null, null,
-                    7, 9,
-                    0.5f, true, false,
-                    "明日有强降水（%s，%.1fmm），出行请注意安全".formatted(
-                            data.tomorrowDesc(), data.tomorrowPrecipitation())
-            ));
-        }
-
-        // 晚 8 点后额外评估后天天气
-        if (LocalTime.now().isAfter(EVENING_CUTOFF) && data.dayAfterTomorrowDesc() != null) {
-            int dayAfterDiff = data.dayAfterTomorrowMax() - data.dayAfterTomorrowMin();
-            if (dayAfterDiff >= tempDiffThreshold) {
-                signals.add(new ReminderSignal(
-                        UUID.randomUUID().toString(),
-                        ReminderSignalKind.EVENT,
-                        0.75f, 0.55f, 1,
-                        now, null, null,
-                        7, 9,
-                        0.25f, true, false,
-                        "后天温差较大（%d°C），注意增减衣物".formatted(dayAfterDiff)
-                ));
-            }
-            if (data.dayAfterTomorrowPrecipitation() > heavyPrecipThreshold) {
-                signals.add(new ReminderSignal(
-                        UUID.randomUUID().toString(),
-                        ReminderSignalKind.EVENT,
-                        0.85f, 0.7f, 1,
-                        now, null, null,
-                        7, 9,
-                        0.4f, true, false,
-                        "后天有强降水（%s，%.1fmm），提前做好准备".formatted(
-                                data.dayAfterTomorrowDesc(), data.dayAfterTomorrowPrecipitation())
-                ));
-            }
-        }
-
-        return signals;
     }
 
     // ===== 内部方法 =====

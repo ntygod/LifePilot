@@ -7,7 +7,11 @@
 [![CI](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml/badge.svg)](https://github.com/ntygod/ZhiWei/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——拥有四层认知记忆、自主任务执行、工作流引擎和插件市场。所有数据存储在本地，隐私完全掌控。
+ZhiWei 是一个**本地个人助手**，面向普通人，不是开发者工具。
+
+它只想把三件事做好：**更少误打扰、更准记住、更懂何时该开口**。数据全部存在你自己的机器上，记忆文件是你的资产。
+
+写代码、跑 shell、操作 git 这些事它不做——大厂的编码 Agent 在那些方向上更强，而那些能力与上面三件事无关。
 
 **下载桌面客户端，安装即用** — 无需 Java、Docker 或任何开发环境：
 
@@ -31,7 +35,7 @@ ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——
 ### 不只是聊天 — Agent 引擎
 
 - **ReAct 循环**：思考 → 工具调用 → 观察 → 回答，完全可追溯
-- **33 个内置技能**：记忆管理 / 定时任务 / 浏览器自动化 / 代码沙箱 / 数据分析 / 知识检索
+- **13 个内置技能**：日程管理 / 定时任务 / 文件整理 / 文档处理 / 资料调研 / 内容创作 / 数据分析
 - **挂起与恢复**：等待用户确认、工作流完成、定时唤醒、外部数据就绪时自动挂起，条件满足后恢复
 - **Skill 自扩展**：运行时检测能力缺口，自动生成新技能
 
@@ -58,7 +62,7 @@ ZhiWei 是一个自托管的 AI Agent 系统。它不只是聊天机器人——
 ### 安全与可观测
 
 - **权限**：工具调用分级授权（会话 / 工作区 / 任务 / 长期），高风险操作需确认
-- **护栏**：内容安全 + 敏感数据脱敏 + 代码沙箱（Process / Docker 双模式）
+- **护栏**：内容安全 + 敏感数据脱敏 + 工具四级风险分级
 - **可观测**：完整轨迹追踪 + 决策回放 + Agentic Evals 评估框架
 - **Gateway**：6 层中间件管道（认证 → 限流 → 安全 → 路由 → 执行 → 审计）
 
@@ -237,7 +241,6 @@ Docker Compose 使用 `.env` 文件管理环境变量，参考 `.env.example` �
 ZhiWei/
 ├── .github/                         # GitHub Actions（CI / 桌面端构建）、Issue/PR 模板、Dependabot
 ├── src/main/java/com/lifepilot/     # 按领域拆分的后端模块
-│   ├── a2a/             # A2A 协议（Agent-to-Agent 互操作）
 │   ├── agent/           # Agent 引擎（ReactAgentLoop / ContextAssembler / 挂起恢复）
 │   ├── config/          # 全局配置
 │   ├── conversation/    # 对话管理
@@ -260,7 +263,6 @@ ZhiWei/
 │   ├── observability/   # 可观测性（TraceRecorder / GuardrailEngine / DataRedactor）
 │   ├── permission/      # 工具授权（作用域匹配 / 预授权 / 授权记录）
 │   ├── prompt/          # Prompt 模板管理
-│   ├── sandbox/         # 代码执行沙箱（Process / Docker 双模式）
 │   ├── scheduler/       # 定时任务（ScheduledTaskService / TaskScheduler）
 │   ├── skill/           # Skill 系统（注册 / 验证 / 激活 / 生成 / SkillToToolBridge）
 │   ├── tool/            # 工具系统（ToolContract / DynamicToolRegistry / ToolBridge）
@@ -330,7 +332,6 @@ ZhiWei/
 ### 长期目标
 
 - [ ] GraalVM native image：探索原生编译，消除 Java 运行时依赖
-- [ ] 插件市场完善：支持社区共享
 - [ ] 语音交互：TTS / STT 集成
 
 ## 🧪 开发指南
@@ -466,7 +467,6 @@ ZhiWei 本身免费开源，但需要自备 LLM API Key（如 DeepSeek、OpenAI 
 
 - [Spring AI](https://spring.io/projects/spring-ai) — AI 原生集成框架
 - [MCP](https://modelcontextprotocol.io/) — Model Context Protocol 标准
-- [A2A](https://google.github.io/A2A/) — Agent-to-Agent 协议
 
 ---
 

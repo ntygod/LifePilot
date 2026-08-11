@@ -8,10 +8,10 @@
 |---|---|---|
 | Goldilocks 时效窗口 | DUE_SOON/PREPARATION 类候选在 "suggestedAt + p80(latency)" 之后自动跳过，不会再推送"已经没用"的提醒 | `timing/GoldilocksWindowCalculator` + `ReminderDecisionEngine` |
 | Gate 3 CoT 推理 | 高分候选（≥ 0.6）LLM 前注入真实反馈 few-shot + 四段结构化思考（observation → user-state → necessity → action） | `cot/GateThreeReasoner` |
-| 行为分层激活 | 8 个行为插件按依赖记忆层分 4 组（FACT/EXPERIENCE/HABIT/STANDALONE），每次心跳只激活相关组，降低 detect 开销 | `behavior/BehaviorLayer` + `behavior/BehaviorActivationPolicy` |
-| 偏好命名卫士 | 明确 `proactive-*` 前缀约定，静态工具类可用于未来严格化 | `ProactivePreferenceGuard` |
+| 行为分层激活 | 主动行为插件按依赖记忆层分 3 组（FACT/HABIT/STANDALONE），每次心跳只激活相关组，降低 detect 开销 | `behavior/BehaviorLayer` + `behavior/BehaviorActivationPolicy` |
+| 偏好命名约定 | 主动引擎只读写 `proactive-*` 前缀类别，避免和通用用户偏好混用 | `ProactiveEngine` / `ProactiveMemoryBridge` |
 
-## 开关（全部默认保守）
+## 配置
 
 ```yaml
 lifepilot:
@@ -27,9 +27,6 @@ lifepilot:
       proactive-cot-enabled: false
       proactive-cot-min-score: 0.6
       proactive-cot-few-shot-count: 4
-
-      # 分层激活：默认关闭（减少回归风险，运维验证后手动开启）
-      proactive-behavior-layered-activation-enabled: false
 ```
 
 ## Goldilocks 行为矩阵
@@ -77,14 +74,11 @@ boundary=IN_BOUNDARY, focus=NORMAL, 今日已推送=0/5
 
 ## BehaviorLayer 分组
 
-| 层 | 归属插件 | 激活条件（开关开启时）|
+| 层 | 归属插件 | 激活条件 |
 |---|---|---|
-| FACT_DRIVEN | FollowUp, Insight | boundary ∈ {IN_BOUNDARY, UNKNOWN} 或（OUT_OF_BOUNDARY 且未推送 + 有画像） |
-| EXPERIENCE_DRIVEN | ContextPrep, TaskExecution | `ctx.recentExperience` 非空 |
+| FACT_DRIVEN | FollowUp, Insight, MemoryAttention | boundary ∈ {IN_BOUNDARY, UNKNOWN} 或（OUT_OF_BOUNDARY 且未推送 + 有画像） |
 | HABIT_DRIVEN | Reminder, Report | boundary ∈ {IN_BOUNDARY, UNKNOWN} 或处于活跃时段（morning/afternoon/evening） |
-| STANDALONE | Clipboard, InfoSupplement | 始终激活 |
-
-开关 `proactive-behavior-layered-activation-enabled=false` 时 `shouldActivate` 始终返回 true（等价既有行为）。
+| STANDALONE | Clipboard | 始终激活 |
 
 ## 偏好命名约定
 
@@ -96,7 +90,7 @@ boundary=IN_BOUNDARY, focus=NORMAL, 今日已推送=0/5
 | `user-preference` | 通用用户偏好（HotDigest 用） | ❌ |
 | `schedule` / `output` | 其他领域 | ❌ |
 
-`ProactivePreferenceGuard.isProactiveCategory(category)` 提供静态判定。
+主动引擎调用点直接使用固定的 `proactive-domain` / `proactive-timing` / `proactive-style` 类别，不保留额外的文档级工具类。
 
 ## 调试技巧
 
@@ -116,7 +110,7 @@ lifepilot.agent.task.proactive-cot-enabled: true
 
 ### 分层激活调试
 
-开启 `proactive-behavior-layered-activation-enabled=true` 后，`BehaviorActivationPolicy.shouldActivate` 返回 false 时会输出 DEBUG 日志：
+`BehaviorActivationPolicy.shouldActivate` 返回 false 时会输出 DEBUG 日志：
 
 ```
 决策门控: 分层激活跳过 behavior=insight layer=FACT_DRIVEN
@@ -124,7 +118,7 @@ lifepilot.agent.task.proactive-cot-enabled: true
 
 ## 回退策略
 
-全部三个子系统支持独立关闭：
+Timing 与 CoT 可独立关闭；行为分层激活是主动引擎固定运行路径，不再保留全行为直通开关。
 
 ```yaml
 lifepilot:
@@ -132,15 +126,11 @@ lifepilot:
     task:
       proactive-timing-window-enabled: false
       proactive-cot-enabled: false
-      proactive-behavior-layered-activation-enabled: false
 ```
-
-关闭全部配置 + Goldilocks/Reasoner Bean 视条件不装配时，行为等价于本 spec 前。
 
 ## 测试覆盖
 
-- `ProactivePreferenceGuard_单元测试`：6 场景
-- `BehaviorActivationPolicy_单元测试`：8 场景
+- `BehaviorActivationPolicy_单元测试`：5 场景
 - `GateThreeReasoner_单元测试`：6 场景（prompt 拼接 / parseAction / 开关）
 - `GoldilocksWindowCalculator_单元测试`：7 场景（默认延迟 / p80 估算 / 支持类型过滤等）
 - `ReminderDecisionEngine_Goldilocks_集成测试`：2 场景（WINDOW_CLOSED 触发 / null calculator 兼容）

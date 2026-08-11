@@ -147,6 +147,20 @@ public class SessionPruningEngine {
         return formatToolResultPreview(payload);
     }
 
+    /**
+     * 判断某工具的<strong>历史</strong>成功 Observation 是否应降级为摘要。
+     *
+     * <p>依据 {@code pruning.historicalCompactToolIds} 配置（默认仅 {@code web.fetch}）。
+     * 当回合 Observation 不受此约束，由调用方负责区分回合。</p>
+     */
+    public boolean shouldCompactHistoricalOutput(@Nullable String toolId) {
+        if (toolId == null) {
+            return false;
+        }
+        List<String> ids = config.getContext().getPruning().getHistoricalCompactToolIds();
+        return ids != null && ids.contains(toolId);
+    }
+
     Map<String, Object> readPayload(@Nullable String payloadJson) {
         if (payloadJson == null || payloadJson.isBlank()) {
             return Map.of();

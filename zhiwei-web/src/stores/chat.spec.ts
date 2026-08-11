@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import type { ChatSession } from '@/types'
 
 vi.mock('@/api/client', () => ({
@@ -75,5 +76,51 @@ describe('useChatStore 项目上下文继承', () => {
     expect(created.id).toBe('s-3')
     expect(store.activeSessionId).toBe('s-3')
     expect(store.sessions[0]?.id).toBe('s-3')
+  })
+
+  it('startNewSession 可保留首轮乐观消息', async () => {
+    const session = makeSession('s-optimistic')
+    chatApiMock.createSession.mockResolvedValueOnce(session)
+
+    const store = useChatStore()
+    store.addMessage({
+      id: 'user-optimistic',
+      role: 'user',
+      content: '先显示这条消息',
+      timestamp: Date.now(),
+      status: 'pending',
+      turnStatus: 'PENDING',
+    })
+
+    await store.startNewSession(undefined, null, { preserveCurrentMessages: true })
+    await nextTick()
+
+    expect(store.activeSessionId).toBe('s-optimistic')
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0]?.content).toBe('先显示这条消息')
+    expect(chatApiMock.getSessionMessages).not.toHaveBeenCalled()
+  })
+
+  it('loadSessions 默认不自动激活最近会话，避免新对话页被历史会话抢占', async () => {
+    chatApiMock.listSessions.mockResolvedValueOnce([
+      makeSession('s-latest'),
+    ])
+
+    const store = useChatStore()
+    await store.loadSessions()
+
+    expect(store.sessions[0]?.id).toBe('s-latest')
+    expect(store.activeSessionId).toBeNull()
+  })
+
+  it('loadSessions 显式 activateFirst 时才激活最近会话', async () => {
+    chatApiMock.listSessions.mockResolvedValueOnce([
+      makeSession('s-latest'),
+    ])
+
+    const store = useChatStore()
+    await store.loadSessions({ activateFirst: true })
+
+    expect(store.activeSessionId).toBe('s-latest')
   })
 })

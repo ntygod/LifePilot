@@ -37,16 +37,16 @@ public record Thought(
     @Nullable Instant lastReinforcedAt
 ) {
     public boolean isReady() {
-        return state == ThoughtState.READY && maturity >= 0.6f;
+        return state == ThoughtState.READY;
     }
 
-    public boolean isExpired(java.time.Duration maxBrewingTtl, java.time.Duration maxReadyTtl) {
-        Instant now = Instant.now();
+    public boolean isExpired(java.time.Duration maxBrewingTtl, java.time.Duration maxReadyTtl, Instant now) {
         if (state == ThoughtState.BREWING) {
             return java.time.Duration.between(createdAt, now).compareTo(maxBrewingTtl) > 0;
         }
-        if (state == ThoughtState.READY && matureAt != null) {
-            return java.time.Duration.between(matureAt, now).compareTo(maxReadyTtl) > 0;
+        if (state == ThoughtState.READY) {
+            Instant readySince = matureAt != null ? matureAt : createdAt;
+            return java.time.Duration.between(readySince, now).compareTo(maxReadyTtl) > 0;
         }
         return false;
     }
@@ -54,6 +54,11 @@ public record Thought(
     public Thought withState(ThoughtState newState) {
         return new Thought(id, intentKey, kind, summary, evidence, confidence, maturity,
                 createdAt, matureAt, newState, conversationId, lastReinforcedAt);
+    }
+
+    public Thought withExpression(String newConversationId) {
+        return new Thought(id, intentKey, kind, summary, evidence, confidence, maturity,
+                createdAt, matureAt, ThoughtState.EXPRESSED, newConversationId, lastReinforcedAt);
     }
 
     public Thought withMaturity(float newMaturity) {

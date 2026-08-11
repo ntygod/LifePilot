@@ -2,6 +2,9 @@ package com.lifepilot.project;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.SessionStoreRepository;
+import com.lifepilot.knowledge.KnowledgeBaseManager;
+import com.lifepilot.knowledge.model.KnowledgeBase;
+import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemorySpace;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
@@ -17,7 +20,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Plan 1 Task 25 —— 隔离语义端到端集成测试。
@@ -67,8 +80,11 @@ class ProjectIsolation_端到端测试 {
         projectRepo = new ProjectRepository(jdbcTemplate);
         SessionStoreRepository sessionRepo = new SessionStoreRepository(
                 jdbcTemplate, new ObjectMapper(), null);
-        // KnowledgeBaseManager = null：端到端验证项目隔离语义，不触达 KB 自动创建路径
-        projectService = new ProjectService(projectRepo, spaceRepo, sessionRepo, jdbcTemplate, null);
+        var projectionService = mock(MemoryProjectionService.class);
+        var knowledgeBaseManager = mock(KnowledgeBaseManager.class);
+        stubKnowledgeBaseManager(knowledgeBaseManager);
+        projectService = new ProjectService(projectRepo, spaceRepo, sessionRepo,
+                jdbcTemplate, knowledgeBaseManager, projectionService);
         resolver = new ProjectContextResolver(projectRepo, spaceRepo);
     }
 
@@ -162,6 +178,40 @@ class ProjectIsolation_端到端测试 {
                     UNIQUE(name),
                     FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE RESTRICT
                 )""");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE memory_space_knowledge_bases (
+                    memory_space_id TEXT NOT NULL,
+                    knowledge_base_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (memory_space_id, knowledge_base_id),
+                    FOREIGN KEY (memory_space_id) REFERENCES memory_spaces(id) ON DELETE CASCADE
+                )""");
+    }
+
+    private void stubKnowledgeBaseManager(KnowledgeBaseManager knowledgeBaseManager) {
+        when(knowledgeBaseManager.createKnowledgeBase(
+                anyString(), anyString(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> projectKnowledgeBase(UUID.randomUUID().toString(), invocation.getArgument(0)));
+        when(knowledgeBaseManager.getKnowledgeBase(anyString()))
+                .thenAnswer(invocation -> Optional.of(projectKnowledgeBase(invocation.getArgument(0), "项目知识库")));
+    }
+
+    private KnowledgeBase projectKnowledgeBase(String id, String name) {
+        Instant now = Instant.now();
+        return new KnowledgeBase(
+                id,
+                name,
+                "自动创建的默认项目知识库",
+                null,
+                null,
+                "smart",
+                Map.of(),
+                0,
+                0,
+                List.of("project"),
+                now,
+                now);
     }
 
     @Test

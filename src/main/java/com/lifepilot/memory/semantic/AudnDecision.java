@@ -1,7 +1,6 @@
 package com.lifepilot.memory.semantic;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
 import com.lifepilot.memory.store.entity.EntityType;
 import org.springframework.lang.Nullable;
@@ -14,39 +13,35 @@ import java.util.Map;
  * <p>每条决策描述对一个实体的操作：新增、更新、删除或跳过。
  * 由 {@link RealtimeExtractor} 通过 LLM 结构化输出获取。</p>
  *
- * <p>LLM 返回的字段名可能与 Java 定义不同（如 "op" vs "operation"），
- * 使用 {@link JsonAlias} 兼容常见变体。</p>
- *
- * <p>Task 23：新增 {@code temporality} 与 {@code expiresAt} 字段承载记忆持久度
- * 与过期时间，驱动生命周期的 Cron 回收。两字段都允许为 null，由 RealtimeExtractor
- * 按规则补默认（null → PERSISTENT / 非持久时按 temporality 自动推导 expiresAt）。</p>
+ * <p>{@code temporality} 与 {@code expiresAt} 字段承载记忆持久度
+ * 与过期时间，驱动生命周期的 Cron 回收。{@code temporality} 是 LLM 契约必填字段；
+ * {@code expiresAt} 可为空，由 RealtimeExtractor 按 temporality 自动推导非持久实体过期时间。</p>
  *
  * @param operation  操作类型
  * @param entityName 实体名称
  * @param entityType 实体类型
  * @param description 实体描述（ADD/UPDATE 时使用）
  * @param properties 实体属性键值对（ADD/UPDATE 时使用）
- * @param extractionConfidence LLM 提取置信度 [0.0, 1.0]，可能为 null
- * @param importanceScore 信息重要性评分 [0.0, 1.0]，可能为 null
- * @param temporalityRaw LLM 输出的 temporality 字符串（EPHEMERAL/SHORT_TERM/PERSISTENT），可能为 null
+ * @param extractionConfidence LLM 提取置信度 [0.0, 1.0]，LLM 契约要求必填
+ * @param importanceScore 信息重要性评分 [0.0, 1.0]，LLM 契约要求必填
+ * @param temporalityRaw LLM 输出的 temporality 字符串（EPHEMERAL/SHORT_TERM/PERSISTENT）
  * @param expiresAtRaw LLM 输出的 ISO 8601 到期时间字符串，可能为 null
  * @param evidenceKindRaw 证据类型字符串，可能为 null
  * @param evidenceExcerpt 最小必要证据片段，可能为 null
  * @author zsg
  * @since 2026-03-05
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
 public record AudnDecision(
-        @JsonAlias({"op", "action", "type"}) AudnOperation operation,
-        @JsonAlias({"name", "entity_name"}) String entityName,
-        @JsonAlias({"entity_type", "entitytype"}) EntityType entityType,
-        @Nullable @JsonAlias({"desc"}) String description,
-        @Nullable @JsonAlias({"props", "attributes"}) Map<String, Object> properties,
-        @Nullable @JsonAlias({"confidence", "extraction_confidence"}) Float extractionConfidence,
-        @Nullable @JsonAlias({"importance", "importance_score"}) Float importanceScore,
-        @Nullable @JsonAlias({"temporality"}) String temporalityRaw,
-        @Nullable @JsonAlias({"expires_at", "expiresAt"}) String expiresAtRaw,
-        @Nullable @JsonAlias({"evidence_kind", "evidenceKind"}) String evidenceKindRaw,
-        @Nullable @JsonAlias({"evidence_excerpt", "evidenceExcerpt"}) String evidenceExcerpt
+        AudnOperation operation,
+        String entityName,
+        EntityType entityType,
+        @Nullable String description,
+        @Nullable Map<String, Object> properties,
+        @Nullable Float extractionConfidence,
+        @Nullable Float importanceScore,
+        @Nullable @JsonProperty("temporality") String temporalityRaw,
+        @Nullable @JsonProperty("expires_at") String expiresAtRaw,
+        @Nullable @JsonProperty("evidenceKind") String evidenceKindRaw,
+        @Nullable String evidenceExcerpt
 ) {
 }

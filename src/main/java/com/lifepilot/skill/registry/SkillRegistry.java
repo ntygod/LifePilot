@@ -73,7 +73,7 @@ public class SkillRegistry {
             skills.put(definition.id(), definition);
             searchIndex.index(definition);
             eventPublisher.publishEvent(new SkillRegistryEvent.SkillUpdated(existing, definition));
-            log.info("Skill 已更新: skillId={}", definition.id());
+            log.debug("Skill 已更新: skillId={}", definition.id());
             return true;
         }
 
@@ -81,7 +81,7 @@ public class SkillRegistry {
         skills.put(definition.id(), definition);
         searchIndex.index(definition);
         eventPublisher.publishEvent(new SkillRegistryEvent.SkillRegistered(definition));
-        log.info("Skill 已注册: skillId={}", definition.id());
+        log.debug("Skill 已注册: skillId={}", definition.id());
         return true;
     }
 
@@ -99,7 +99,7 @@ public class SkillRegistry {
         }
         searchIndex.remove(skillId);
         eventPublisher.publishEvent(new SkillRegistryEvent.SkillUnregistered(skillId));
-        log.info("Skill 已注销: skillId={}", skillId);
+        log.debug("Skill 已注销: skillId={}", skillId);
         return true;
     }
 

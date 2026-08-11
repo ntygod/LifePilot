@@ -7,12 +7,13 @@ import com.lifepilot.memory.governance.lifecycle.feedback.RegenerationQueueRepos
 import com.lifepilot.memory.governance.lifecycle.feedback.RegenerationQueueRepository.QueueItem;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
+import java.util.Objects;
 
 /**
  * 派生实体重算扫描器 —— 每 2 小时消费 {@code derivation_regeneration_queue}，把源失效
@@ -33,14 +34,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
  *         <li>{@code EntityDeduplicator} 的 {@code dedup()} 是全局扫描 + 合并流程，也没有
  *             针对单个 MERGED 实体的 {@code regenerate(entity)} API；</li>
  *       </ul>
- *       两类 API 都未提供时，降级策略统一为：不尝试重算，直接把派生实体转
+ *       两类 API 都未提供时，处理策略统一为：不尝试重算，直接把派生实体转
  *       {@code SUPERSEDED}（由 {@link #finalizeToSupersededIfStillPending} 收尾），
  *       避免长期停留在 {@code REGENERATION_NEEDED} 污染检索召回。</li>
  * </ul>
  *
  * <p><b>待补充</b>：如后续 {@code ContrastiveLearner}/{@code EntityDeduplicator} 提供
  * 精准的重算入口（形如 {@code learnFromSources(e1, e2)} 或 {@code regenerate(entity)}），
- * 在此类中补对应分支并保留 SUPERSEDED 兜底。</p>
+ * 在此类中补对应分支。</p>
  *
  * <h3>状态与事件</h3>
  * <p>所有状态转换走
@@ -51,7 +52,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
  *
  * <h3>可靠性</h3>
  * <ul>
- *   <li>单条失败 {@code log.warn} + {@link RegenerationQueueRepository#markFailed} 并继续</li>
+ *   <li>单条失败先 {@link RegenerationQueueRepository#markFailed}，随后继续抛出异常</li>
  *   <li>派生实体已不存在 / 已非 {@code REGENERATION_NEEDED} 直接 {@link RegenerationQueueRepository#markDone}</li>
  *   <li>{@link #processQueueNow()} 暴露给测试 / 手动触发</li>
  * </ul>
@@ -74,21 +75,20 @@ public class DerivationRegenerator {
      */
     static final String PROFILE_ENTITY_NAME = "__consolidated_profile";
 
-    /** 降级兜底的收尾原因 —— 写入 {@code memory_entities.lifecycle_reason}。 */
+    /** 重算收尾原因 —— 写入 {@code memory_entities.lifecycle_reason}。 */
     private static final String REASON_REGENERATED = "regenerated";
     private static final String REASON_NO_API = "no-regenerate-api";
 
     private final RegenerationQueueRepository queueRepository;
     private final SemanticMemory semanticMemory;
-    @Nullable
     private final UserProfileConsolidator profileConsolidator;
 
     public DerivationRegenerator(RegenerationQueueRepository queueRepository,
                                  SemanticMemory semanticMemory,
-                                 @Nullable UserProfileConsolidator profileConsolidator) {
-        this.queueRepository = queueRepository;
-        this.semanticMemory = semanticMemory;
-        this.profileConsolidator = profileConsolidator;
+                                 UserProfileConsolidator profileConsolidator) {
+        this.queueRepository = Objects.requireNonNull(queueRepository, "queueRepository");
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory");
+        this.profileConsolidator = Objects.requireNonNull(profileConsolidator, "profileConsolidator");
     }
 
     /**
@@ -103,7 +103,9 @@ public class DerivationRegenerator {
 
     /** 测试友好入口 —— 与 {@link #process()} 共用逻辑。 */
     public void processQueueNow() {
-        var pending = queueRepository.findPending(BATCH_SIZE);
+        var pending = Objects.requireNonNull(
+                queueRepository.findPending(BATCH_SIZE),
+                "派生实体重算队列查询结果不能为空");
         if (pending.isEmpty()) {
             log.debug("DerivationRegenerator 无 PENDING 项，跳过");
             return;
@@ -111,22 +113,27 @@ public class DerivationRegenerator {
         log.info("DerivationRegenerator 拉取 {} 条 PENDING 重算项", pending.size());
 
         int done = 0;
-        int failed = 0;
         for (var item : pending) {
             try {
                 regenerateOne(item);
                 queueRepository.markDone(item.id());
                 done++;
-            } catch (Exception ex) {
-                // 单条失败不中断整批
-                log.warn("DerivationRegenerator 重算失败, queueId={}, derivedId={}, error={}",
-                        item.id(), item.derivedEntityId(), ex.getMessage(), ex);
-                queueRepository.markFailed(item.id(), ex.getMessage());
-                failed++;
+            } catch (RuntimeException ex) {
+                markFailedAndRethrow(item, ex);
             }
         }
-        log.info("DerivationRegenerator 完成: done={}, failed={}, total={}",
-                done, failed, pending.size());
+        log.info("DerivationRegenerator 完成: done={}, total={}", done, pending.size());
+    }
+
+    private void markFailedAndRethrow(QueueItem item, RuntimeException cause) {
+        log.warn("DerivationRegenerator 重算失败, queueId={}, derivedId={}, error={}",
+                item.id(), item.derivedEntityId(), cause.getMessage(), cause);
+        try {
+            queueRepository.markFailed(item.id(), cause.getMessage());
+        } catch (RuntimeException markFailedError) {
+            cause.addSuppressed(markFailedError);
+        }
+        throw cause;
     }
 
     /**
@@ -153,12 +160,11 @@ public class DerivationRegenerator {
         if (PROFILE_ENTITY_NAME.equals(derived.name())) {
             regenerateProfile(derived);
         } else if (derived.isDerived()) {
-            // ContrastiveLearner / EntityDeduplicator 无精准重算 API，降级为直接 SUPERSEDED
-            log.debug("DerivationRegenerator 非画像派生实体降级为直接 SUPERSEDED, derivedId={}, name={}",
+            // ContrastiveLearner / EntityDeduplicator 无精准重算 API，直接转 SUPERSEDED
+            log.debug("DerivationRegenerator 非画像派生实体直接转 SUPERSEDED, derivedId={}, name={}",
                     derived.id(), derived.name());
         } else {
-            // 不该发生：非派生实体却进了队列；兜底仍走收尾 SUPERSEDED 避免死锁
-            log.warn("DerivationRegenerator 非派生实体进入队列，按降级处理, derivedId={}", derived.id());
+            throw new IllegalStateException("DerivationRegenerator 非派生实体进入重算队列: " + derived.id());
         }
 
         // 统一收尾：若上面分支未把派生实体转出 REGENERATION_NEEDED，补 SUPERSEDED
@@ -175,11 +181,6 @@ public class DerivationRegenerator {
      * @param profile 画像实体
      */
     private void regenerateProfile(TemporalEntity profile) {
-        if (profileConsolidator == null) {
-            log.debug("DerivationRegenerator UserProfileConsolidator 未装配，画像走降级 SUPERSEDED, derivedId={}",
-                    profile.id());
-            return;
-        }
         log.debug("DerivationRegenerator 触发画像重算, derivedId={}", profile.id());
         profileConsolidator.consolidate();
     }

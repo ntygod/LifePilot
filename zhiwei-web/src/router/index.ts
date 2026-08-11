@@ -127,6 +127,11 @@ const router = createRouter({
      * Agent、工作流与扩展
      */
     {
+      path: '/capabilities',
+      name: 'capabilities',
+      component: () => import('@/views/CapabilityCenterView.vue')
+    },
+    {
       path: '/agents',
       name: 'agents',
       component: () => import('@/views/AgentsView.vue')
@@ -228,11 +233,6 @@ const router = createRouter({
     {
       path: '/settings/permissions',
       name: 'settingsPermissions',
-      component: () => import('@/views/SettingsView.vue')
-    },
-    {
-      path: '/settings/proactive',
-      name: 'settingsProactive',
       component: () => import('@/views/SettingsView.vue')
     },
     {

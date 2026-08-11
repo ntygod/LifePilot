@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -21,8 +22,7 @@ import java.util.stream.Collectors;
  *   <li>L3 有 + L4 无 → savePreference（新建）</li>
  *   <li>L3 有 + L4 有 → reinforcePreference（强化）</li>
  *   <li>L3 归档 + L4 有 → deletePreference（删除）</li>
- * </ul>
- * 单条同步失败时捕获异常、记录 WARN 日志、继续处理剩余条目。</p>
+ * </ul></p>
  *
  * @author zsg
  * @since 2026-03-18
@@ -38,8 +38,8 @@ public class PreferenceConsolidator {
 
     public PreferenceConsolidator(SemanticMemory semanticMemory,
                                   ProceduralMemory proceduralMemory) {
-        this.semanticMemory = semanticMemory;
-        this.proceduralMemory = proceduralMemory;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "SemanticMemory 不能为空");
+        this.proceduralMemory = Objects.requireNonNull(proceduralMemory, "ProceduralMemory 不能为空");
     }
 
     /**
@@ -69,45 +69,37 @@ public class PreferenceConsolidator {
 
         // 3. L3 有 → 新建或强化
         for (var entity : currentEntities) {
-            try {
-                var existing = ruleByKey.get(entity.name());
-                if (existing == null) {
-                    // L3 有 + L4 无 → 新建 —— 填 sourceEntityId = L3 PREFERENCE 实体 id，
-                    // 让后续 L3 CANCELLED/EXPIRED/SUPERSEDED 能通过 L4SyncListener
-                    // 的 source_entity_id 反查命中并级联失活。
-                    var rule = new PreferenceRule(
-                            UUID.randomUUID().toString(),
-                            PREFERENCE_CATEGORY,
-                            entity.name(),
-                            entity.description() != null ? entity.description() : "",
-                            0.5f,
-                            "consolidation",
-                            1,
-                            Instant.now(),
-                            Instant.now(),
-                            entity.id(),
-                            null);
-                    proceduralMemory.savePreference(rule);
-                    created++;
-                } else {
-                    // L3 有 + L4 有 → 强化
-                    proceduralMemory.reinforcePreference(existing.ruleId());
-                    reinforced++;
-                }
-            } catch (Exception e) {
-                log.warn("偏好同步: 单条处理失败, entityName={}, error={}", entity.name(), e.getMessage());
+            var existing = ruleByKey.get(entity.name());
+            if (existing == null) {
+                // L3 有 + L4 无 → 新建 —— 填 sourceEntityId = L3 PREFERENCE 实体 id，
+                // 让后续 L3 CANCELLED/EXPIRED/SUPERSEDED 能通过 L4SyncListener
+                // 的 source_entity_id 反查命中并级联失活。
+                var rule = new PreferenceRule(
+                        UUID.randomUUID().toString(),
+                        PREFERENCE_CATEGORY,
+                        entity.name(),
+                        entity.description() != null ? entity.description() : "",
+                        0.5f,
+                        "consolidation",
+                        1,
+                        Instant.now(),
+                        Instant.now(),
+                        entity.id(),
+                        null);
+                proceduralMemory.savePreference(rule);
+                created++;
+            } else {
+                // L3 有 + L4 有 → 强化
+                proceduralMemory.reinforcePreference(existing.ruleId());
+                reinforced++;
             }
         }
 
         // 4. L3 归档 + L4 有 → 删除
         for (var rule : existingRules) {
             if (!currentEntityNames.contains(rule.key())) {
-                try {
-                    proceduralMemory.deletePreference(rule.ruleId());
-                    deleted++;
-                } catch (Exception e) {
-                    log.warn("偏好同步: 删除失败, ruleId={}, error={}", rule.ruleId(), e.getMessage());
-                }
+                proceduralMemory.deletePreference(rule.ruleId());
+                deleted++;
             }
         }
 

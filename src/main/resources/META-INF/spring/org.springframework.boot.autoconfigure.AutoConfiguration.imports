@@ -8,8 +8,6 @@ com.lifepilot.agent.initiative.config.InitiativeAutoConfiguration
 com.lifepilot.tool.config.ToolAutoConfiguration
 com.lifepilot.agent.config.AgentAutoConfiguration
 com.lifepilot.agent.task.config.TaskAutoConfiguration
-com.lifepilot.agent.task.config.ReminderAutoConfiguration
-com.lifepilot.agent.task.proactive.ProactiveAutoConfiguration
 com.lifepilot.agent.suspend.config.SuspendAutoConfiguration
 com.lifepilot.mcp.config.McpAutoConfiguration
 com.lifepilot.knowledge.config.KnowledgeAutoConfiguration
@@ -24,7 +22,6 @@ com.lifepilot.sandbox.config.SandboxAutoConfiguration
 
 com.lifepilot.interaction.web.config.WebAutoConfiguration
 com.lifepilot.multiagent.config.MultiAgentAutoConfiguration
-com.lifepilot.a2a.config.A2aAutoConfiguration
 com.lifepilot.observability.config.ObservabilityAutoConfiguration
 com.lifepilot.marketplace.config.MarketplaceAutoConfiguration
 com.lifepilot.meta.config.MetaAutoConfiguration

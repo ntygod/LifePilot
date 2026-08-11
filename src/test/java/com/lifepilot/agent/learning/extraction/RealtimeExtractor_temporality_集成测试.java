@@ -6,6 +6,9 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.governance.security.InjectionDetectionResult;
+import com.lifepilot.memory.governance.security.MemoryInjectionDetector;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.scope.ChatTurnMemorySnapshot;
@@ -28,10 +31,14 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -42,8 +49,8 @@ import static org.mockito.Mockito.when;
  *   <li>给 EPHEMERAL 未给 expires_at → 自动填 now + 7 天；</li>
  *   <li>给 SHORT_TERM 未给 expires_at → 自动填 now + 30 天；</li>
  *   <li>给 PERSISTENT → expires_at 留 null；</li>
- *   <li>LLM 未给 temporality → 默认 PERSISTENT；</li>
- *   <li>LLM 给非法 temporality → 降级为 PERSISTENT；</li>
+ *   <li>LLM 未给 temporality → 拒绝写入；</li>
+ *   <li>LLM 给非法 temporality → 拒绝写入；</li>
  *   <li>LLM 显式提供 expires_at → 尊重该值，不走自动推导。</li>
  * </ul>
  *
@@ -61,6 +68,7 @@ class RealtimeExtractor_temporality_集成测试 {
     private JdbcTemplate jdbcTemplate;
     private PromptRegistry promptRegistry;
     private ChatTurnMemorySnapshotRepository snapshotRepo;
+    private MemoryExtractionCandidateRepository candidateRepository;
     private RealtimeExtractor extractor;
 
     @BeforeEach
@@ -74,11 +82,18 @@ class RealtimeExtractor_temporality_集成测试 {
         when(promptRegistry.render(eq("semantic/entity-extraction"), any()))
                 .thenReturn("stub-prompt");
         when(semanticMemory.findAllCurrent(any())).thenReturn(List.of());
+        when(semanticMemory.upsertWithConflictDetection(any(), any(), any()))
+                .thenAnswer(inv -> inv.getArgument(0));
         when(snapshotRepo.findByTurnId(anyString()))
-                .thenAnswer(inv -> Optional.of(快照(inv.getArgument(0))));
+                .thenAnswer(inv -> Optional.of(快照(inv.getArgument(0), sessionIdForTurn(inv.getArgument(0)))));
 
         var properties = new AgentLearningProperties();
         var extractionValidator = new ExtractionValidator(properties);
+        candidateRepository = mock(MemoryExtractionCandidateRepository.class);
+        when(candidateRepository.recordValidated(anyString(), any(), any())).thenReturn("candidate-id");
+        var injectionDetector = mock(MemoryInjectionDetector.class);
+        when(injectionDetector.detect(any(), any(), anyFloat())).thenReturn(InjectionDetectionResult.pass());
+        var relationExtractionStep = mock(RelationExtractionStep.class);
 
         extractor = new RealtimeExtractor(
                 generationRouter,
@@ -89,10 +104,10 @@ class RealtimeExtractor_temporality_集成测试 {
                 promptRegistry,
                 snapshotRepo,
                 FIXED_CLOCK,
-                null,
-                null,
-                null,
-                null
+                new MemoryAccessPolicy(),
+                candidateRepository,
+                injectionDetector,
+                relationExtractionStep
         );
     }
 
@@ -109,6 +124,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "临时情绪，短期不想继续",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.5,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "EPHEMERAL"
                   }
                 ]
@@ -132,6 +149,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "短期学习计划",
                     "extractionConfidence": 0.85,
                     "importanceScore": 0.7,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "SHORT_TERM"
                   }
                 ]
@@ -157,6 +176,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "长期饮食偏好",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.8,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "PERSISTENT"
                   }
                 ]
@@ -169,10 +190,10 @@ class RealtimeExtractor_temporality_集成测试 {
         assertThat(captured.expiresAt()).isNull();
     }
 
-    // ---------------- LLM 未给 temporality → 默认 PERSISTENT ----------------
+    // ---------------- LLM 未给 temporality → 直接失败 ----------------
 
     @Test
-    void LLM未给temporality应默认PERSISTENT且不设expires_at() {
+    void LLM未给temporality应直接失败且不写入() {
         给出LLM响应("""
                 [
                   {
@@ -181,22 +202,25 @@ class RealtimeExtractor_temporality_集成测试 {
                     "entityType": "ORGANIZATION",
                     "description": "用户所在公司",
                     "extractionConfidence": 0.9,
-                    "importanceScore": 0.7
+                    "importanceScore": 0.7,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述"
                   }
                 ]
                 """);
 
-        extractor.extract("sess-4", "turn-4", "我在阿里工作", null);
+        assertThatThrownBy(() -> extractor.extract("sess-4", "turn-4", "我在阿里工作", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AUDN 决策 temporality 不能为空");
 
-        var captured = 捕获upsert实体();
-        assertThat(captured.temporality()).isEqualTo(Temporality.PERSISTENT);
-        assertThat(captured.expiresAt()).isNull();
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+        verify(candidateRepository, never()).recordRejected(any(), any(), any(), any());
     }
 
-    // ---------------- LLM 非法 temporality → 降级 PERSISTENT ----------------
+    // ---------------- LLM 非法 temporality → 直接失败 ----------------
 
     @Test
-    void LLM给非法temporality应降级为PERSISTENT() {
+    void LLM给非法temporality应直接失败且不写入() {
         给出LLM响应("""
                 [
                   {
@@ -206,16 +230,20 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "description 足够长以通过验证",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.5,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "WEIRD_VALUE"
                   }
                 ]
                 """);
 
-        extractor.extract("sess-5", "turn-5", "测试非法值", null);
+        assertThatThrownBy(() -> extractor.extract("sess-5", "turn-5", "测试非法值", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AUDN 决策 temporality 非法")
+                .hasMessageContaining("WEIRD_VALUE");
 
-        var captured = 捕获upsert实体();
-        assertThat(captured.temporality()).isEqualTo(Temporality.PERSISTENT);
-        assertThat(captured.expiresAt()).isNull();
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+        verify(candidateRepository, never()).recordRejected(any(), any(), any(), any());
     }
 
     // ---------------- LLM 显式提供 expires_at → 尊重 ----------------
@@ -232,6 +260,8 @@ class RealtimeExtractor_temporality_集成测试 {
                     "description": "短期计划，LLM 指定结束时间",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.6,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "SHORT_TERM",
                     "expires_at": "%s"
                   }
@@ -248,30 +278,140 @@ class RealtimeExtractor_temporality_集成测试 {
                 .isNotEqualTo(FIXED_NOW.plus(Duration.ofDays(30)));
     }
 
-    // ---------------- LLM 非法 expires_at 格式 → 回退自动推导 ----------------
+    // ---------------- LLM 非法 expires_at 格式 → 拒绝写入 ----------------
 
     @Test
-    void LLM给非法expires_at时应回退到按temporality自动计算() {
+    void LLM给非法expires_at时应拒绝写入() {
         给出LLM响应("""
                 [
                   {
                     "operation": "ADD",
                     "entityName": "模糊日期",
                     "entityType": "TOPIC",
-                    "description": "日期格式 LLM 胡写，走兜底",
+                    "description": "日期格式 LLM 胡写，应直接拒绝",
                     "extractionConfidence": 0.9,
                     "importanceScore": 0.5,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
                     "temporality": "EPHEMERAL",
                     "expires_at": "不是合法 ISO"
                   }
                 ]
                 """);
 
-        extractor.extract("sess-7", "turn-7", "测试非法日期", null);
+        assertThatThrownBy(() -> extractor.extract("sess-7", "turn-7", "测试非法日期", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AUDN expires_at 格式非法")
+                .hasMessageContaining("模糊日期");
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+    }
 
-        var captured = 捕获upsert实体();
-        assertThat(captured.temporality()).isEqualTo(Temporality.EPHEMERAL);
-        assertThat(captured.expiresAt()).isEqualTo(FIXED_NOW.plus(Duration.ofDays(7)));
+    @Test
+    void LLM给空白expires_at时应拒绝写入() {
+        给出LLM响应("""
+                [
+                  {
+                    "operation": "ADD",
+                    "entityName": "空白日期",
+                    "entityType": "TOPIC",
+                    "description": "空白日期字段不符合契约",
+                    "extractionConfidence": 0.9,
+                    "importanceScore": 0.5,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
+                    "temporality": "EPHEMERAL",
+                    "expires_at": " "
+                  }
+                ]
+                """);
+
+        assertThatThrownBy(() -> extractor.extract("sess-8", "turn-8", "测试空白日期", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AUDN expires_at 不能为空白字符串")
+                .hasMessageContaining("空白日期");
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+    }
+
+    @Test
+    void LLM给dueAt时间戳时应拒绝写入() {
+        给出LLM响应("""
+                [
+                  {
+                    "operation": "ADD",
+                    "entityName": "季度述职报告",
+                    "entityType": "GOAL",
+                    "description": "提交季度述职报告",
+                    "properties": {"dueAt": "2026-06-13T00:00:00Z"},
+                    "extractionConfidence": 0.9,
+                    "importanceScore": 0.7,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
+                    "temporality": "PERSISTENT"
+                  }
+                ]
+                """);
+
+        assertThatThrownBy(() -> extractor.extract("sess-due-ts", "turn-due-ts", "6 月 13 日前交季度述职报告", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AUDN dueAt 格式非法")
+                .hasMessageContaining("2026-06-13T00:00:00Z")
+                .hasMessageContaining("yyyy-MM-dd");
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+        verify(candidateRepository, never()).recordRejected(any(), any(), any(), any());
+    }
+
+    @Test
+    void LLM给非法dueAt时应拒绝写入() {
+        给出LLM响应("""
+                [
+                  {
+                    "operation": "ADD",
+                    "entityName": "季度述职报告",
+                    "entityType": "GOAL",
+                    "description": "提交季度述职报告",
+                    "properties": {"dueAt": "不是日期"},
+                    "extractionConfidence": 0.9,
+                    "importanceScore": 0.7,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
+                    "temporality": "PERSISTENT"
+                  }
+                ]
+                """);
+
+        assertThatThrownBy(() -> extractor.extract("sess-due-invalid", "turn-due-invalid", "6 月 13 日前交季度述职报告", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AUDN dueAt 格式非法")
+                .hasMessageContaining("不是日期");
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+        verify(candidateRepository, never()).recordRejected(any(), any(), any(), any());
+    }
+
+    @Test
+    void 非截止类型携带dueAt应拒绝写入() {
+        给出LLM响应("""
+                [
+                  {
+                    "operation": "ADD",
+                    "entityName": "SQLite WAL",
+                    "entityType": "TOPIC",
+                    "description": "用户关注 SQLite WAL 的知识点",
+                    "properties": {"dueAt": "2026-06-13"},
+                    "extractionConfidence": 0.9,
+                    "importanceScore": 0.7,
+                    "evidenceKind": "USER_EXPLICIT",
+                    "evidenceExcerpt": "用户明确陈述",
+                    "temporality": "PERSISTENT"
+                  }
+                ]
+                """);
+
+        assertThatThrownBy(() -> extractor.extract("sess-due-type", "turn-due-type", "我在关注 SQLite WAL", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AUDN dueAt 只允许用于 GOAL/EVENT/PROJECT")
+                .hasMessageContaining("TOPIC");
+        verify(semanticMemory, never()).upsertWithConflictDetection(any(), any(), any());
+        verify(candidateRepository, never()).recordRejected(any(), any(), any(), any());
     }
 
     // ---------------- 辅助 ----------------
@@ -297,10 +437,28 @@ class RealtimeExtractor_temporality_集成测试 {
         return captor.getValue();
     }
 
-    private ChatTurnMemorySnapshot 快照(String turnId) {
+    private String sessionIdForTurn(String turnId) {
+        return switch (turnId) {
+            case "turn-1" -> "sess-1";
+            case "turn-2" -> "sess-2";
+            case "turn-3" -> "sess-3";
+            case "turn-4" -> "sess-4";
+            case "turn-5" -> "sess-5";
+            case "turn-6" -> "sess-6";
+            case "turn-7" -> "sess-7";
+            case "turn-8" -> "sess-8";
+            case "turn-due" -> "sess-due";
+            case "turn-due-ts" -> "sess-due-ts";
+            case "turn-due-invalid" -> "sess-due-invalid";
+            case "turn-due-type" -> "sess-due-type";
+            default -> throw new IllegalArgumentException("测试未配置轮次对应会话: " + turnId);
+        };
+    }
+
+    private ChatTurnMemorySnapshot 快照(String turnId, String sessionId) {
         return new ChatTurnMemorySnapshot(
                 turnId,
-                "sess-x",
+                sessionId,
                 "memory-space-personal-default",
                 "memory-space-experience-default",
                 null,

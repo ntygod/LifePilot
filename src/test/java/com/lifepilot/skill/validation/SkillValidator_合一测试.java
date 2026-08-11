@@ -21,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -66,15 +68,15 @@ class SkillValidator_合一测试 {
     void body违规应拒绝_缺少必需小节() {
         var parsed = new MarkdownSkillParser.ParsedSkill(
                 parser.parse(validMd("x", List.of())).frontmatter(),
-                "## 适用场景\n- only this\n");
+                "## 触发判断\n- only this\n");
         assertThatThrownBy(() -> validator.validate(parsed)).hasMessageContaining("小节");
     }
 
     @Test
     void 身体命中API_key模式应拒绝() {
         String md = validMd("secret", List.of())
-                .replace("## 工作流\n1. do",
-                        "## 工作流\n1. 使用 api_key=\"sk-abc12345678901234567890123456789012345678901234\"");
+                .replace("## 决策路径\n1. do",
+                        "## 决策路径\n1. 使用 api_key=\"sk-abc12345678901234567890123456789012345678901234\"");
         var parsed = parser.parse(md);
         assertThatThrownBy(() -> validator.validate(parsed)).hasMessageContaining("secret");
     }
@@ -82,8 +84,8 @@ class SkillValidator_合一测试 {
     @Test
     void 身体命中PRIVATE_KEY模式应拒绝() {
         String md = validMd("pk", List.of())
-                .replace("## 工作流\n1. do",
-                        "## 工作流\n1. 参考 -----BEGIN RSA PRIVATE KEY-----");
+                .replace("## 决策路径\n1. do",
+                        "## 决策路径\n1. 参考 -----BEGIN RSA PRIVATE KEY-----");
         var parsed = parser.parse(md);
         assertThatThrownBy(() -> validator.validate(parsed)).hasMessageContaining("secret");
     }
@@ -96,11 +98,30 @@ class SkillValidator_合一测试 {
     }
 
     @Test
+    void 预置路径对核心工具目录不依赖运行时注册表() {
+        var parsed = parser.parse(validMd("canonical", List.of("shell.exec", "memory", "ui.render")));
+
+        assertThatCode(() -> validator.validate(parsed)).doesNotThrowAnyException();
+
+        verify(toolRegistry, never()).resolve(anyString());
+    }
+
+    @Test
     void 自生成路径对未知工具应ERROR() {
         when(toolRegistry.resolve("unknown.tool")).thenReturn(Optional.empty());
         var parsed = parser.parse(validMd("gen-bad", List.of("unknown.tool")));
         assertThatThrownBy(() -> validator.validateGenerated(parsed))
                 .hasMessageContaining("未知工具");
+    }
+
+    @Test
+    void 自生成路径对未注册核心工具应ERROR() {
+        when(toolRegistry.resolve("ui.render")).thenReturn(Optional.empty());
+        var parsed = parser.parse(validMd("gen-missing-core", List.of("ui.render")));
+
+        assertThatThrownBy(() -> validator.validateGenerated(parsed))
+                .hasMessageContaining("当前不可用工具")
+                .hasMessageContaining("ui.render");
     }
 
     @Test
@@ -122,7 +143,7 @@ class SkillValidator_合一测试 {
 
     // ─────────────────────────────── helpers ───────────────────────────────
 
-    /** 生成一份最小合法 SKILL.md（frontmatter + 三必需小节 + 可选 suggested_tools）。 */
+    /** 生成一份最小合法 SKILL.md（frontmatter + v3 四必需小节 + 可选 suggested_tools）。 */
     private String validMd(String name, List<String> suggestedTools) {
         String tools = suggestedTools.isEmpty() ? "" :
                 "\n    suggested_tools: [" + String.join(", ", suggestedTools) + "]";
@@ -133,13 +154,17 @@ class SkillValidator_合一测试 {
                 version: 1.0.0
                 metadata:
                   zhiwei:%s
+                    outputs:
+                      - text
                 ---
-                ## 适用场景
+                ## 触发判断
                 - a
-                ## 不适用场景
-                - b
-                ## 工作流
+                ## 决策路径
                 1. do
+                ## 输出标准
+                - b
+                ## 失败策略
+                - c
                 """.formatted(name, tools);
     }
 

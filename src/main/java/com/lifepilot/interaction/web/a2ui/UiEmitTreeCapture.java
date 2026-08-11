@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * ui.emit 组件树捕获桥接器 — 在工具执行器和编排器之间传递 A2UI 组件树。
+ * ui.render 组件树捕获桥接器 — 在工具执行器和编排器之间传递 A2UI 组件树。
  *
  * <p>解决的问题：{@link UiEmitToolExecutor} 通过 SSE 将组件树推送到前端后，
  * 编排器需要将同一棵树持久化到数据库以支持历史回放。
@@ -39,7 +39,7 @@ public class UiEmitTreeCapture {
     /**
      * 捕获组件树，关联到指定 streamId。
      *
-     * <p>如果同一 streamId 已有捕获的树，会被覆盖（以最后一次 ui.emit 调用为准）。
+     * <p>如果同一 streamId 已有捕获的树，会被覆盖（以最后一次 ui.render 调用为准）。
      * 每次调用会触发一次过期条目的惰性清理。</p>
      *
      * @param streamId SSE 流标识

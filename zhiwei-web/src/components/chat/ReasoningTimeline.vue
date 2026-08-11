@@ -17,6 +17,8 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Check, ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-vue-next'
 import type { ReasoningEvent } from '@/types'
+import { isInternalCapabilityId } from '@/utils/liveCapabilities'
+import { normalizeTurnStatusText } from '@/utils/turnPhase'
 
 const props = defineProps<{
   summary?: string
@@ -51,7 +53,7 @@ function humanizeDetail(raw: string | undefined, isError: boolean): string | nul
 
 // ─── 数据 ───
 
-const eventList = computed(() => props.events ?? [])
+const eventList = computed(() => (props.events ?? []).filter(isVisibleReasoningEvent))
 
 const hasToolCalls = computed(() =>
   eventList.value.some(e => e.type === 'TOOL_CALL'),
@@ -118,7 +120,10 @@ const stages = computed<Stage[]>(() => {
 const latestProgress = computed(() => {
   for (let i = eventList.value.length - 1; i >= 0; i--) {
     const e = eventList.value[i]
-    if (e.type === 'PROGRESS' && e.description) return e.description
+    if (e.type === 'PROGRESS') {
+      const normalized = normalizeTurnStatusText(e.description)
+      if (normalized) return normalized
+    }
   }
   return null
 })
@@ -153,6 +158,28 @@ function toggleGroup(name: string) {
 
 function stageRunningLabel(s: Stage) {
   return s.count <= 1 ? `${s.name}…` : `${s.name}（已执行 ${s.count} 次）…`
+}
+
+function readToolId(ev: ReasoningEvent) {
+  const value = ev.extra?.toolId
+  return typeof value === 'string' ? value : null
+}
+
+function isVisibleTool(toolId?: string | null, toolName?: string | null) {
+  const id = toolId?.trim()
+  if (id) return !isInternalCapabilityId(id)
+  const name = toolName?.trim()
+  return !!name && !isInternalCapabilityId(name)
+}
+
+function isVisibleReasoningEvent(ev: ReasoningEvent) {
+  if (ev.type === 'TOOL_CALL' || ev.type === 'OBSERVATION') {
+    return isVisibleTool(readToolId(ev), ev.toolName || ev.title)
+  }
+  if (ev.type === 'PROGRESS') {
+    return !!normalizeTurnStatusText(ev.description)
+  }
+  return true
 }
 </script>
 

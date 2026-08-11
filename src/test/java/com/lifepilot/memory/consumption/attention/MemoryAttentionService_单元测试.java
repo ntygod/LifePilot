@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -28,7 +29,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * MemoryAttentionService 单元测试 —— 验证四类候选生成、排序、topN、kind 开关与故障隔离。
+ * MemoryAttentionService 单元测试 —— 验证四类候选生成、排序、topN、kind 开关与失败暴露。
  *
  * @author zsg
  * @since 2026-06-07
@@ -70,7 +71,12 @@ class MemoryAttentionService_单元测试 {
         return new TemporalEntity(
                 id, type, name, name + "描述", Map.of(), version, true, NOW, null, "conv",
                 0.9f, importance, 0, lastAccessed, NOW, NOW,
-                LifecycleState.ACTIVE, null, expiresAt, Temporality.PERSISTENT, null, false, List.of())
+                LifecycleState.ACTIVE, null, expiresAt, Temporality.PERSISTENT, null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        NOW)
                 .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
     }
 
@@ -80,7 +86,12 @@ class MemoryAttentionService_单元测试 {
         return new TemporalEntity(
                 id, type, name, name + "描述", Map.of(), version, true, NOW, null, "conv",
                 0.3f, importance, 0, lastAccessed, NOW, NOW,
-                LifecycleState.ACTIVE, null, expiresAt, Temporality.PERSISTENT, null, false, List.of())
+                LifecycleState.ACTIVE, null, expiresAt, Temporality.PERSISTENT, null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        NOW)
                 .withQuality(MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED, 0.0f, 0, null);
     }
 
@@ -88,7 +99,12 @@ class MemoryAttentionService_单元测试 {
         return new TemporalEntity(
                 id, type, name, name + "描述", Map.of("dueAt", dueAt), 1, true, NOW, null, "conv",
                 0.9f, importance, 0, NOW, NOW, NOW,
-                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of())
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        NOW)
                 .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
     }
 
@@ -132,13 +148,27 @@ class MemoryAttentionService_单元测试 {
     }
 
     @Test
-    void DUE_SOON_非法日期跳过不报错() {
+    void DUE_SOON_非法日期应直接暴露错误() {
         when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of(
                 dueEntity("g1", "目标", EntityType.GOAL, 0.7f, "不是日期")));
 
-        var items = service.computeAttention(null, 10);
+        assertThatThrownBy(() -> service.computeAttention(null, 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("注意力 dueAt 格式非法")
+                .hasMessageContaining("g1")
+                .hasMessageContaining("不是日期");
+    }
 
-        assertThat(items).noneMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.DUE_SOON);
+    @Test
+    void DUE_SOON_时间戳dueAt应直接暴露错误() {
+        when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of(
+                dueEntity("g1", "目标", EntityType.GOAL, 0.7f, "2026-06-13T00:00:00Z")));
+
+        assertThatThrownBy(() -> service.computeAttention(null, 10))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("注意力 dueAt 格式非法")
+                .hasMessageContaining("g1")
+                .hasMessageContaining("yyyy-MM-dd");
     }
 
     @Test
@@ -193,21 +223,39 @@ class MemoryAttentionService_单元测试 {
     }
 
     @Test
-    void 单类异常应被隔离不影响其他类() {
+    void 单类异常应直接抛出() {
         when(semanticMemory.findNeglected(any(), any(), org.mockito.ArgumentMatchers.anyFloat(), any()))
                 .thenThrow(new RuntimeException("DB 故障"));
         when(semanticMemory.findApproachingExpiry(any(), any(), any())).thenReturn(List.of(
                 entity("g1", "学小提琴", EntityType.GOAL, 0.9f, NOW.plus(Duration.ofDays(1)), NOW, 1)));
 
-        var items = service.computeAttention(null, 10);
-
-        assertThat(items).anyMatch(i -> i.kind() == MemoryAttentionService.AttentionKind.EXPIRING);
+        assertThatThrownBy(() -> service.computeAttention(null, 10))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("DB 故障");
     }
 
     @Test
     void 总开关关闭返回空() {
         properties.getAttention().setEnabled(false);
         assertThat(service.computeAttention(null, 10)).isEmpty();
+    }
+
+    @Test
+    void 非法窗口配置应抛异常() {
+        properties.getAttention().setExpiringWindowDays(0);
+
+        assertThatThrownBy(() -> service.computeAttention(null, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EXPIRING 窗口天数必须大于 0");
+    }
+
+    @Test
+    void 默认topN配置非法时应抛异常() {
+        properties.getAttention().setTopN(0);
+
+        assertThatThrownBy(() -> service.computeAttention(null, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("注意力返回上限必须大于 0");
     }
 
     // ── 质量门（Task 2 / 2.1）：不可信 / 已完成实体不应主动浮现 ──
@@ -240,7 +288,12 @@ class MemoryAttentionService_单元测试 {
         var due = new TemporalEntity(
                 "g1", EntityType.GOAL, "猜测截止", "描述", Map.of("dueAt", isoPlus(3)),
                 1, true, NOW, null, "conv", 0.3f, 0.7f, 0, NOW, NOW, NOW,
-                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of())
+                LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT, null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        NOW)
                 .withQuality(MemoryEvidenceKind.UNKNOWN, MemoryTrustLevel.UNVERIFIED, 0.0f, 0, null);
         when(semanticMemory.findWithDueDate(any(), any())).thenReturn(List.of(due));
 
@@ -264,7 +317,12 @@ class MemoryAttentionService_单元测试 {
         var completed = new TemporalEntity(
                 "g3", EntityType.GOAL, "已完成目标", "描述", Map.of(), 3, true, NOW, null, "conv",
                 0.9f, 0.7f, 0, NOW, NOW, NOW,
-                LifecycleState.COMPLETED, null, null, Temporality.PERSISTENT, null, false, List.of())
+                LifecycleState.COMPLETED, null, null, Temporality.PERSISTENT, null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        NOW)
                 .withQuality(MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f, 1, NOW);
         when(semanticMemory.findCurrentByType(eqType(EntityType.GOAL), any())).thenReturn(List.of(completed));
 

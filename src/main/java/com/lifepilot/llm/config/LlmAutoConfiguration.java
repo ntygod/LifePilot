@@ -16,6 +16,7 @@ import com.lifepilot.llm.thinking.ThinkingProtocol;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.modelservice.probe.ProbeModelsService;
+import com.lifepilot.modelservice.service.ModelServiceRuntimeHealth;
 import com.lifepilot.modelservice.service.ModelServiceRegistrationService;
 import com.lifepilot.skill.registry.SkillSearchIndex;
 import org.slf4j.Logger;
@@ -117,6 +118,12 @@ public class LlmAutoConfiguration {
         return new ProviderRegistry(adapterFactory, healthChecker);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public ModelServiceRuntimeHealth modelServiceRuntimeHealth() {
+        return new ModelServiceRuntimeHealth();
+    }
+
     @EventListener(ApplicationReadyEvent.class)
     public void registerProvidersFromDatabase(ApplicationReadyEvent event) {
         ApplicationContext context = event.getApplicationContext();
@@ -174,6 +181,7 @@ public class LlmAutoConfiguration {
         // 通过 profile.baseAdapter() 区分本地 / 云端：本地模型（OLLAMA）不参与预热，
         // 避免在用户未启动本地 Ollama 时产生噪音日志。
         var profileRegistry = context.getBean(ProviderProfileRegistry.class);
+        ModelServiceRuntimeHealth runtimeHealth = context.getBean(ModelServiceRuntimeHealth.class);
 
         int warmupCount = 0;
         for (String providerId : providerRegistry.registeredIds()) {
@@ -183,18 +191,30 @@ public class LlmAutoConfiguration {
             }
             BaseAdapterType baseAdapter = profileRegistry.get(config.get().profileId()).baseAdapter();
             if (baseAdapter == BaseAdapterType.OLLAMA) {
+                runtimeHealth.record(providerId, config.get().capabilities(),
+                        ModelServiceRuntimeHealth.HealthState.SKIPPED,
+                        "本地模型服务跳过启动预热");
                 continue;
             }
             try {
                 boolean healthy = providerRegistry.healthCheck(providerId);
                 if (healthy) {
                     log.info("云端模型服务预热成功: id={}", providerId);
+                    runtimeHealth.record(providerId, config.get().capabilities(),
+                            ModelServiceRuntimeHealth.HealthState.HEALTHY,
+                            "启动预热成功");
                 } else {
                     log.warn("云端模型服务预热返回异常状态: id={}", providerId);
+                    runtimeHealth.record(providerId, config.get().capabilities(),
+                            ModelServiceRuntimeHealth.HealthState.UNHEALTHY,
+                            "启动预热返回异常状态");
                 }
                 warmupCount++;
             } catch (Exception e) {
                 log.warn("云端模型服务预热失败: id={}, error={}", providerId, e.getMessage());
+                runtimeHealth.record(providerId, config.get().capabilities(),
+                        ModelServiceRuntimeHealth.HealthState.UNHEALTHY,
+                        "启动预热失败：" + e.getMessage());
             }
         }
         if (warmupCount > 0) {

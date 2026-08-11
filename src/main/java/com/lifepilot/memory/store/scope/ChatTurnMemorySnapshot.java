@@ -5,6 +5,7 @@ import org.springframework.lang.Nullable;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 会话轮次记忆作用域快照。
@@ -32,8 +33,12 @@ public record ChatTurnMemorySnapshot(
         Instant createdAt
 ) {
     public ChatTurnMemorySnapshot {
-        readSpaceIds = readSpaceIds != null ? List.copyOf(readSpaceIds) : List.of();
-        effectiveKnowledgeBaseIds = effectiveKnowledgeBaseIds != null ? List.copyOf(effectiveKnowledgeBaseIds) : List.of();
-        resolutionSource = resolutionSource != null ? Map.copyOf(resolutionSource) : Map.of();
+        Objects.requireNonNull(turnId, "轮次 ID 不能为空");
+        Objects.requireNonNull(sessionId, "会话 ID 不能为空");
+        readSpaceIds = List.copyOf(Objects.requireNonNull(readSpaceIds, "读取空间列表不能为空"));
+        effectiveKnowledgeBaseIds = List.copyOf(Objects.requireNonNull(
+                effectiveKnowledgeBaseIds, "有效知识库列表不能为空"));
+        resolutionSource = Map.copyOf(Objects.requireNonNull(resolutionSource, "作用域解析来源不能为空"));
+        Objects.requireNonNull(createdAt, "作用域快照创建时间不能为空");
     }
 }

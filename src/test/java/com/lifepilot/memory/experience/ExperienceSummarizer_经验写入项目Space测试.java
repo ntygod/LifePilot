@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
@@ -125,14 +126,12 @@ class ExperienceSummarizer_经验写入项目Space测试 {
     }
 
     @Test
-    void resolver缺失_fallback为null() {
-        var summarizer = new ExperienceSummarizer(
-                semanticMemory, vectorSearcher, generationRouter,
-                promptRegistry, properties, qualityAssessor);
-        summarizer.summarize(buildState("session-x"));
+    void 会话不存在_应暴露写入空间判定失败() {
+        when(chatSessionRepository.findById("session-x")).thenReturn(Optional.empty());
 
-        MemoryWriteContext ctx = captureWriteContext();
-        assertThat(ctx.spaceId()).isNull();
+        assertThatThrownBy(() -> newSummarizer().summarize(buildState("session-x")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("无法找到会话，不能判定经验写入空间: session-x");
     }
 
     private ExperienceSummarizer newSummarizer() {

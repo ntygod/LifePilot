@@ -25,7 +25,7 @@ public class AgentConfigProperties {
     /** 手动覆盖用户位置（优先于 IP 自动检测），为空时自动检测。 */
     private String location = "";
     /** IP 地理定位 API 地址，为空时禁用自动检测。 */
-    private String ipApiUrl = "http://ip-api.com/json/?fields=city,regionName,country&lang=zh-CN";
+    private String ipApiUrl = "";
     private LoopConfig loop = new LoopConfig();
     private BudgetConfig budget = new BudgetConfig();
     private ContextConfig context = new ContextConfig();
@@ -34,6 +34,23 @@ public class AgentConfigProperties {
     private ExecutionRetryConfig executionRetry = new ExecutionRetryConfig();
     private DebugConfig debug = new DebugConfig();
     private TaskConfig task = new TaskConfig();
+    private CapabilityDiscoveryConfig capabilityDiscovery = new CapabilityDiscoveryConfig();
+
+    public void setCapabilityDiscovery(CapabilityDiscoveryConfig capabilityDiscovery) {
+        this.capabilityDiscovery = capabilityDiscovery != null ? capabilityDiscovery : new CapabilityDiscoveryConfig();
+    }
+
+    /** 主对话能力预发现配置。 */
+    @Setter
+    @Getter
+    public static class CapabilityDiscoveryConfig {
+        /** 是否启用规则化能力预发现；关闭后主对话不做工具/能力预判。 */
+        private boolean enabled = true;
+        /** 只读取用户控制语义前缀的最大字符数。 */
+        private int controlPrefixChars = 96;
+        /** 超长输入用于能力预发现的头尾探针最大字符数。 */
+        private int planningProbeMaxChars = 320;
+    }
 
     /** ReAct 循环配置（替代原 LoopConfig）。 */
     public static class LoopConfig {
@@ -44,6 +61,10 @@ public class AgentConfigProperties {
         private int maxEarlyStopRejects = 2;
         /** 单个工具波次允许的最大并发数。 */
         private int maxParallelToolCalls = 4;
+        /** 工具执行后程序经验记录的后台任务上限，0 表示跳过该增强。 */
+        private int maxPendingToolExperienceRecords = 4;
+        /** 工具执行后程序经验记录的后台超时时间（毫秒），0 表示不限制。 */
+        private long toolExperienceRecordTimeoutMs = 1200;
         /** LLM 调用场景标识。 */
         private String llmScene = "agent_react";
         /** 默认 temperature（会话未配置时使用）。 */
@@ -57,6 +78,10 @@ public class AgentConfigProperties {
         public void setMaxEarlyStopRejects(int maxEarlyStopRejects) { this.maxEarlyStopRejects = maxEarlyStopRejects; }
         public int getMaxParallelToolCalls() { return maxParallelToolCalls; }
         public void setMaxParallelToolCalls(int maxParallelToolCalls) { this.maxParallelToolCalls = maxParallelToolCalls; }
+        public int getMaxPendingToolExperienceRecords() { return maxPendingToolExperienceRecords; }
+        public void setMaxPendingToolExperienceRecords(int maxPendingToolExperienceRecords) { this.maxPendingToolExperienceRecords = maxPendingToolExperienceRecords; }
+        public long getToolExperienceRecordTimeoutMs() { return toolExperienceRecordTimeoutMs; }
+        public void setToolExperienceRecordTimeoutMs(long toolExperienceRecordTimeoutMs) { this.toolExperienceRecordTimeoutMs = toolExperienceRecordTimeoutMs; }
         public String getLlmScene() { return llmScene; }
         public void setLlmScene(String llmScene) { this.llmScene = llmScene; }
         public double getDefaultTemperature() { return defaultTemperature; }
@@ -103,6 +128,13 @@ public class AgentConfigProperties {
         private int maxContextTokens = 2000000;
         @Setter
         private int outputReservedTokens = 8192;
+        /**
+         * 决策增强信号在上下文组装中的最大等待时间。
+         *
+         * <p>该信号只用于后台增强，不应拖慢主对话；为 0 时不等待、不注入，只做后台热身。</p>
+         */
+        @Setter
+        private long decisionSignalTimeoutMs = 0;
         /** Token 分配比例。 */
         private TokenAllocation tokenAllocation = new TokenAllocation();
         private SliceConfig slice = new SliceConfig();
@@ -162,6 +194,14 @@ public class AgentConfigProperties {
             private int recentToolResultLimit = 4;
             private int failedToolResultLimit = 2;
             private int toolResultPreviewChars = 240;
+            /**
+             * 历史降级工具集 —— 这些工具的<strong>非当回合</strong>成功 Observation 在组装
+             * ReAct 消息时降级为结构化摘要，避免完整正文（如网页抓取全文）在多轮里反复重发。
+             *
+             * <p>当回合（模型本次首见）仍保留完整正文；只有进入历史后才摘要化。默认仅
+             * {@code web.fetch}：它的正文体量最大且模型消费一次即可。</p>
+             */
+            private java.util.List<String> historicalCompactToolIds = java.util.List.of("web.fetch");
         }
 
         @Setter
@@ -351,80 +391,5 @@ public class AgentConfigProperties {
         private String activeHoursEnd;
         /** 每个 cron 任务保留的最大执行日志数。 */
         private int maxLogsPerTask = 50;
-
-        // ── 主动引擎（ProactiveEngine）参数 ──
-
-        /** Gate 2 阈值 — 所有候选最高分低于此值时不进入 FULL 推理。 */
-        private float proactiveEngineGate2Threshold = 0.4f;
-        /** 主动引擎行为插件 LLM 调用超时（秒）。 */
-        private int proactiveEngineLlmTimeoutSeconds = 15;
-        /** 信任升级连续正反馈阈值。 */
-        private int proactiveEngineTrustUpgradeThreshold = 5;
-        /** 信任降级冷却天数。 */
-        private int proactiveEngineTrustDowngradeCooldownDays = 7;
-        /** 日报触发小时（24h 制）。 */
-        private int proactiveEngineDailyReportHour = 20;
-        /** 追问行为最小意图年龄（小时） — 创建时间不足此值的意图不追问。 */
-        private int proactiveEngineFollowUpMinAgeHours = 24;
-        /** 追问行为最大检查次数 — 超过此值的意图不再追问。 */
-        private int proactiveEngineFollowUpMaxCheckCount = 5;
-        /** 剪贴板意图缓冲区最大容量。 */
-        private int proactiveEngineClipboardBufferMaxSize = 20;
-
-        // ── 主动引擎 Boundary / Focus / Training 参数（proactive-boundary-training spec） ──
-
-        /** 是否启用边界信号采集（订阅对话/工作流/A2A 完成事件）。 */
-        private boolean boundarySignalEnabled = true;
-        /** 边界窗口分钟数 — 事件发生后多少分钟内视为"处于边界"。 */
-        private int boundaryWindowMinutes = 10;
-
-        /** 是否启用焦点状态检测。 */
-        private boolean focusDetectionEnabled = true;
-        /** 触发 FOCUS_MODE 的最小近期消息数（5 分钟窗口）。 */
-        private int focusMessageDensityThreshold = 5;
-        /** 触发 FOCUS_MODE 的最大平均消息间隔（秒）。 */
-        private int focusMessageIntervalSeconds = 40;
-
-        /** Boundary 内 NOTIFY 阈值偏移（默认 -0.15，更易 NOTIFY）。 */
-        private float proactiveEngineBoundaryNotifyDelta = -0.15f;
-        /** Boundary 内 INTERRUPT 阈值偏移（默认 -0.15）。 */
-        private float proactiveEngineBoundaryInterruptDelta = -0.15f;
-        /** Boundary 外两级阈值偏移（默认 +0.25，更难投递）。 */
-        private float proactiveEngineOutOfBoundaryDelta = 0.25f;
-
-        /** 是否启用主动训练回放（周级生成 few-shot 样例库）。 */
-        private boolean proactiveTrainingEnabled = false;
-        /** 主动训练回放间隔（天）。 */
-        private int proactiveTrainingReplayIntervalDays = 7;
-        /** 正例 reward 阈值（>= 此值视为正例）。 */
-        private float proactiveTrainingPositiveRewardThreshold = 0.6f;
-        /** 负例 reward 阈值（<= 此值视为负例）。 */
-        private float proactiveTrainingNegativeRewardThreshold = 0.2f;
-        /** 正例 top-K 截断。 */
-        private int proactiveTrainingTopKPositive = 10;
-        /** 负例 top-K 截断。 */
-        private int proactiveTrainingTopKNegative = 10;
-
-        // ── Timing / CoT / 分层激活（proactive-timing-cot spec） ──
-
-        /** 是否启用 Goldilocks 时效窗口检查。 */
-        private boolean proactiveTimingWindowEnabled = true;
-        /** 历史样本不足时的默认用户响应延迟（分钟）。 */
-        private int proactiveTimingDefaultResponseLatencyMinutes = 30;
-        /** 估算 p80 延迟所需的最少样本数。 */
-        private int proactiveTimingResponseLatencyMinSamples = 5;
-        /** p80 分位安全系数（0-1，越小越早判定 windowClosed）。 */
-        private float proactiveTimingResponseLatencyP80Percentile = 0.8f;
-
-        /** 是否启用 Gate 3 CoT 结构化推理。 */
-        private boolean proactiveCotEnabled = false;
-        /** 启用 CoT 的最低候选分数。 */
-        private float proactiveCotMinScore = 0.6f;
-        /** CoT prompt 中拼接的 few-shot 样本数。 */
-        private int proactiveCotFewShotCount = 4;
-
-        /** 是否启用行为插件分层激活。 */
-        private boolean proactiveBehaviorLayeredActivationEnabled = false;
-
     }
 }

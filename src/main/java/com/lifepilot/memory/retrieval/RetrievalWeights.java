@@ -20,6 +20,14 @@ public record RetrievalWeights(
 
     /** compact constructor：验证三权重之和 ≈ 1.0（误差 ≤ 0.01）。 */
     public RetrievalWeights {
+        nonNegativeFinite(vectorWeight, "向量检索权重");
+        nonNegativeFinite(ftsWeight, "全文检索权重");
+        nonNegativeFinite(graphWeight, "图遍历权重");
+        nonNegativeFinite(recencyDecay, "时间衰减系数");
+        nonNegativeFinite(importanceBoost, "重要度加成系数");
+        if (rrfK <= 0) {
+            throw new IllegalArgumentException("RRF K 必须大于 0: " + rrfK);
+        }
         float sum = vectorWeight + ftsWeight + graphWeight;
         if (Math.abs(sum - 1.0f) > 0.01f) {
             throw new IllegalArgumentException(
@@ -41,5 +49,11 @@ public record RetrievalWeights(
                 ftsWeight + reduction * 0.7f,
                 graphWeight + reduction * 0.3f,
                 recencyDecay, importanceBoost, rrfK);
+    }
+
+    private static void nonNegativeFinite(float value, String name) {
+        if (!Float.isFinite(value) || value < 0.0f) {
+            throw new IllegalArgumentException(name + "必须是非负有限数: " + value);
+        }
     }
 }

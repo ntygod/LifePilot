@@ -5,7 +5,7 @@
 大文件先采样确认列名、分隔符、编码:
 
 ```
-file_read(path="<data.csv>", maxChars=2000)
+file.read(path="<data.csv>", maxChars=2000)
 ```
 
 ## 2. 加载与探索
@@ -135,7 +135,7 @@ code(action="reset", kernelId="<id>")        # 状态变脏时清空重来
 | `UnicodeDecodeError` | `read_csv(..., encoding='utf-8')` 或 `'gbk'` / `'gb18030'` |
 | MemoryError 加载阶段 | `chunksize=100000` 分块 + `usecols=[...]` 选列 |
 | 图表中文显示方框 | `plt.rcParams['font.sans-serif'] = ['SimHei']` 或 `WenQuanYi`;Linux 还需安装中文字体包 |
-| `ModuleNotFoundError` | `shell_exec(command="pip install openpyxl scipy seaborn")` |
+| `ModuleNotFoundError` | `shell.exec(command="pip install openpyxl scipy seaborn")` |
 | `to_excel` 失败缺引擎 | `pip install openpyxl`(.xlsx)或 `xlwt`(.xls) |
 | 相关性矩阵全 NaN | 列含字符串,先 `select_dtypes(include='number')` |
 | `kernelId` 状态混乱 | `code(action="reset", kernelId="...")` 清空重跑 |

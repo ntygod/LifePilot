@@ -20,14 +20,14 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Property 2+3: 激活内容一致性 + 激活幂等性 属性测试（v2）。
+ * Property 2+3: 激活内容一致性 + 激活幂等性 属性测试（v3）。
  *
  * <p>Property 2: 对任意已启用并已注册的 SkillDefinition，
  * activate() 返回的 SkillActivation 的 name/instructions/suggestedTools 与原始定义一致。</p>
  *
  * <p>Property 3: 对同一 Skill 多次调用 activate()，返回内容完全相同（幂等性）。</p>
  *
- * <p>v2 迁移要点：Activator 构造器新增 {@link SkillInstallationRepository}；测试用内存桩替代。</p>
+ * <p>迁移要点：Activator 构造器依赖 {@link SkillInstallationRepository}；测试用内存桩替代。</p>
  *
  * @author zsg
  * @since 2026-04-24

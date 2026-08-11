@@ -14,7 +14,6 @@ import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.retrieval.VectorSearcher;
-import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
 import com.lifepilot.memory.store.scope.MemoryScope;
@@ -38,6 +37,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -57,11 +57,8 @@ public class SemanticMemory {
     private static final Logger log = LoggerFactory.getLogger(SemanticMemory.class);
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
-    private static final String DEFAULT_PERSONAL_SPACE_ID = "memory-space-personal-default";
-    private static final String DEFAULT_EXPERIENCE_SPACE_ID = "memory-space-experience-default";
-
     /**
-     * temporal_entities 视图包含的全部列 — 含 V15 生命周期新字段。
+     * temporal_entities 视图包含的全部列 — 含生命周期与质量字段。
      * 集中声明以确保所有 SELECT 路径与 {@link #mapRowToEntity} 对齐。
      */
     private static final String ENTITY_SELECT_COLUMNS = "id, type, name, description, properties_json, "
@@ -74,26 +71,18 @@ public class SemanticMemory {
     private final ConflictDetector conflictDetector;
     private final VersionMerger versionMerger;
     private final VectorSearcher vectorSearcher;
-    @Nullable
     private final MemorySpaceRepository memorySpaceRepository;
-    /** Spring 事件总线 — Task 11/12 发布权重与生命周期变化事件；为保持单测轻量，允许为空。 */
+    /** Spring 事件总线 — 发布权重与生命周期变化事件。 */
     @Nullable
     private ApplicationEventPublisher eventPublisher;
 
-    /** 记忆写入回调 — 通知检索引擎数据已变更。 */
-    @Nullable
-    private Runnable writeCallback;
-
     /**
-     * 冲突裁决服务 — 在 upsert 末尾对新/合并实体触发语义冲突 LLM 裁决；为保持单测轻量，
-     * 允许为空（setter 注入，不改构造器签名）。
+     * 冲突裁决服务 — 在 upsert 末尾对新/合并实体触发语义冲突 LLM 裁决。
+     * 该服务依赖 SemanticMemory 回写裁决结果，因此通过 setter 打断构造期循环。
      */
     @Nullable
     private ConflictResolutionService conflictResolutionService;
-    @Nullable
-    private Boolean overlayTableAvailable;
-    @Nullable
-    private MemoryProjectionService projectionService;
+    private final MemoryProjectionService projectionService;
 
     @Nullable
     private StalenessCoordinator stalenessCoordinator;
@@ -101,41 +90,24 @@ public class SemanticMemory {
     public SemanticMemory(JdbcTemplate jdbcTemplate,
                           ConflictDetector conflictDetector,
                           VersionMerger versionMerger,
-                          VectorSearcher vectorSearcher) {
-        this(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, null);
-    }
-
-    public SemanticMemory(JdbcTemplate jdbcTemplate,
-                          ConflictDetector conflictDetector,
-                          VersionMerger versionMerger,
                           VectorSearcher vectorSearcher,
-                          @Nullable MemorySpaceRepository memorySpaceRepository) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.conflictDetector = conflictDetector;
-        this.versionMerger = versionMerger;
-        this.vectorSearcher = vectorSearcher;
-        this.memorySpaceRepository = memorySpaceRepository;
+                          MemorySpaceRepository memorySpaceRepository,
+                          MemoryProjectionService projectionService) {
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        this.conflictDetector = Objects.requireNonNull(conflictDetector, "ConflictDetector 不能为空");
+        this.versionMerger = Objects.requireNonNull(versionMerger, "VersionMerger 不能为空");
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "VectorSearcher 不能为空");
+        this.memorySpaceRepository = Objects.requireNonNull(memorySpaceRepository, "MemorySpaceRepository 不能为空");
+        this.projectionService = Objects.requireNonNull(projectionService, "MemoryProjectionService 不能为空");
     }
 
     /**
-     * 注入 Spring {@link ApplicationEventPublisher} — 用 setter 而非构造器注入，
-     * 避免破坏现有 2-/3- 参构造器签名以及大量手工装配测试。
+     * 注入 Spring {@link ApplicationEventPublisher}。
      *
      * @param eventPublisher 事件发布器
      */
-    public void setEventPublisher(@Nullable ApplicationEventPublisher eventPublisher) {
-        this.eventPublisher = eventPublisher;
-    }
-
-    /**
-     * 设置记忆写入回调，用于在实体写入后通知检索引擎重置空数据标记。
-     *
-     * <p>通过 setter 注入避免 SemanticMemory ↔ HybridRetriever 循环依赖。</p>
-     *
-     * @param writeCallback 写入回调
-     */
-    public void setWriteCallback(@Nullable Runnable writeCallback) {
-        this.writeCallback = writeCallback;
+    public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = Objects.requireNonNull(eventPublisher, "ApplicationEventPublisher 不能为空");
     }
 
     /**
@@ -143,52 +115,35 @@ public class SemanticMemory {
      * 的循环依赖（裁决服务内部又需要回调 {@code updateLifecycleState / updateSucceededBy /
      * findById}）。Bean 装配由 {@code MemoryAutoConfiguration} 串联。
      *
-     * @param conflictResolutionService 冲突裁决服务，{@code null} 表示关闭裁决
+     * @param conflictResolutionService 冲突裁决服务
      */
-    public void setConflictResolutionService(@Nullable ConflictResolutionService conflictResolutionService) {
-        this.conflictResolutionService = conflictResolutionService;
-    }
-
-    /** 注入投影服务。向量 upsert/delete 必须走 outbox。 */
-    public void setProjectionService(@Nullable MemoryProjectionService projectionService) {
-        this.projectionService = projectionService;
+    public void setConflictResolutionService(ConflictResolutionService conflictResolutionService) {
+        this.conflictResolutionService = Objects.requireNonNull(conflictResolutionService, "ConflictResolutionService 不能为空");
     }
 
     /**
      * 注入 staleness 协调器（memory-staleness spec）。
      * 在 upsertWithConflictDetection 成功返回前异步触发：识别语义冲突邻居 → 标记 STALE_CANDIDATE
-     * → 生成邻居刷新候选。coordinator 为 null 时等价于 staleness 能力关闭。
+     * → 生成邻居刷新候选。
      */
-    public void setStalenessCoordinator(@Nullable StalenessCoordinator stalenessCoordinator) {
-        this.stalenessCoordinator = stalenessCoordinator;
-    }
-
-    /**
-     * 版本感知 upsert：冲突检测 → 合并/新建 → 插入 → 更新向量索引。
-     *
-     * @param incoming       新实体信息
-     * @param conversationId 来源会话 ID
-     * @return 持久化后的实体
-     */
-    @Transactional
-    public TemporalEntity upsertWithConflictDetection(TemporalEntity incoming, String conversationId) {
-        return upsertWithConflictDetection(incoming, conversationId, null);
+    public void setStalenessCoordinator(StalenessCoordinator stalenessCoordinator) {
+        this.stalenessCoordinator = Objects.requireNonNull(stalenessCoordinator, "StalenessCoordinator 不能为空");
     }
 
     /**
      * 带写入上下文的版本感知 upsert。
      *
      * @param incoming        新实体信息
-     * @param sourceReference 来源引用（兼容旧的 conversationId/documentId/sourceId 语义）
+     * @param sourceReference 来源引用
      * @param writeContext    目标写入上下文
      * @return 持久化后的实体
      */
     @Transactional
     public TemporalEntity upsertWithConflictDetection(TemporalEntity incoming,
                                                       @Nullable String sourceReference,
-                                                      @Nullable MemoryWriteContext writeContext) {
+                                                      MemoryWriteContext writeContext) {
         MemoryWriteContext resolvedContext = resolveWriteContext(incoming, sourceReference, writeContext);
-        incoming = MemoryQualityPolicy.applyDefaults(incoming, resolvedContext);
+        incoming = MemoryQualityPolicy.requireWritableQuality(incoming);
         var existing = conflictDetector.detectConflict(incoming, resolvedContext.spaceId());
 
         if (existing.isPresent()) {
@@ -221,7 +176,6 @@ public class SemanticMemory {
             insertEntityVersion(entity, resolvedContext, now);
             updateEntityRoot(entity, resolvedContext, now);
             enqueueVectorUpsertProjection(entity);
-            notifyWriteCallback();
             triggerConflictResolution(entity);
             triggerStalenessProcessing(entity);
             log.debug("语义记忆: 版本化更新, name={}, version={}", entity.name(), entity.version());
@@ -244,7 +198,6 @@ public class SemanticMemory {
             insertEntityRoot(entity, resolvedContext, now);
             insertEntityVersion(entity, resolvedContext, now);
             enqueueVectorUpsertProjection(entity);
-            notifyWriteCallback();
             // Task 12：新建实体发布 LifecycleChanged(null → newState)，source 由 provenance 推断
             publishAfterCommit(new EntityLifecycleChanged(
                     entity.id(),
@@ -277,7 +230,8 @@ public class SemanticMemory {
                                                TemporalEntity baseEntity,
                                                @Nullable String sourceReference,
                                                MemoryWriteContext writeContext) {
-        if (writeContext == null || writeContext.spaceId() == null || writeContext.spaceId().isBlank()) {
+        Objects.requireNonNull(writeContext, "创建项目 overlay 必须提供写入上下文");
+        if (writeContext.spaceId() == null || writeContext.spaceId().isBlank()) {
             throw new IllegalArgumentException("创建项目 overlay 必须提供项目 spaceId");
         }
         TemporalEntity overlay = upsertWithConflictDetection(incoming, sourceReference, writeContext);
@@ -324,7 +278,7 @@ public class SemanticMemory {
         }
         String now = Instant.now().toString();
         return jdbcTemplate.query(
-                """
+                ("""
                 WITH RECURSIVE related(id, depth) AS (
                     SELECT tr.target_entity_id, 1
                     FROM temporal_relations tr
@@ -349,10 +303,10 @@ public class SemanticMemory {
                 FROM temporal_entities te
                 JOIN related r ON te.id = r.id
                 WHERE te.is_current = 1 AND te.id != ?
-                  AND te.lifecycle_state IN ('ACTIVE', 'COMPLETED', 'REGENERATION_NEEDED')
+                  AND te.lifecycle_state IN %s
                   AND (te.valid_to IS NULL OR te.valid_to > ?)
                   AND (te.expires_at IS NULL OR te.expires_at > ?)
-                """,
+                """).formatted(LifecycleState.recallableSqlInClause()),
                 (rs, rowNum) -> mapRowToEntity(rs),
                 entityId, entityId, maxDepth, entityId, now, now);
     }
@@ -423,39 +377,18 @@ public class SemanticMemory {
      * @return 符合条件的实体 ID 集合
      */
     public Set<String> findEligibleEntityIds(MemoryReadFilter filter) {
+        Objects.requireNonNull(filter, "读取过滤条件不能为空");
         var sql = new StringBuilder("SELECT id FROM memory_entities WHERE status = 'ACTIVE'");
         var params = new ArrayList<>();
         appendEntityReadFilter(sql, params, filter, "memory_entities");
-        var ids = new LinkedHashSet<>(
+        return new LinkedHashSet<>(
                 jdbcTemplate.queryForList(sql.toString(), String.class, params.toArray()));
-        // 结果集过大时返回 null，由调用方回退为后过滤
-        if (ids.size() > 1000) {
-            log.debug("语义记忆: pre-filter 候选集过大({}), 回退为后过滤", ids.size());
-            return null;
-        }
-        return ids;
-    }
-
-    /**
-     * 归档（2-arg 兼容签名）— 等价 {@code archive(entity, ChangeSource.UI_EDIT)}。
-     *
-     * <p>保留给 UI/前端删除、Tool delete 等未显式指定来源的调用方：默认按"用户 UI 编辑"
-     * 归因。定时清理 / 合并 / 冲突裁决等路径必须走 3-arg 重载以携带正确 {@link ChangeSource}，
-     * 否则下游 DerivedEntityListener / L4SyncListener 无法区分 cron 与 UI 动作。</p>
-     */
-    public void archive(TemporalEntity entity) {
-        archive(entity, ChangeSource.UI_EDIT);
     }
 
     /**
      * 归档：事务内设置 is_current=0, valid_to=now，同时归档所有当前有效关系；
      * 向量清理只登记 {@code memory_projection_outbox} DELETE 任务，避免事务回滚后留下
      * "向量已删、主库未改"的不一致。
-     *
-     * <p>B5 follow-up：增加 {@code source} 入参，替代原先写死的 {@link ChangeSource#UI_EDIT}。
-     * 允许 {@code ForgettingEngine} / {@code ExperienceMerger} / {@code EntityDeduplicator}
-     * 等调用方显式传 {@link ChangeSource#CRON_EXPIRE} 或 {@link ChangeSource#CONFLICT_RESOLVE}，
-     * 保证事件 source 与实际触发原因对齐。</p>
      *
      * @param entity 待归档实体
      * @param source 归档来源 — 决定 LifecycleChanged 事件的 source 字段
@@ -509,18 +442,15 @@ public class SemanticMemory {
      * 登记删除向量的投影任务。
      */
     private void enqueueVectorDeleteProjection(String entityId) {
-        if (projectionService == null) {
-            throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 直写向量");
-        }
         projectionService.enqueueVectorDeleteAfterCommit(entityId);
     }
 
     /**
      * Task 24：upsert 完成后触发异步 LLM 冲突裁决。
      *
-     * <p>调用链：查 top-5 语义相似邻居 → 过滤掉自己 → 交 {@link ConflictResolutionService}
-     * 异步裁决；裁决服务自身再做一次阈值过滤与 LLM 调用。触发流程与主事务解耦，任何
-     * 异常都只记 warn 日志，不影响 upsert 返回。
+     * <p>调用链：查 top-5 语义相似邻居 → 校验并过滤掉自己 → 回捞候选实体 →
+     * 交 {@link ConflictResolutionService} 异步裁决；裁决服务自身再做一次阈值过滤与
+     * LLM 调用。启用冲突裁决后，触发链路的检索、回捞和提交失败均直接暴露。
      *
      * <p>若存在活跃事务，钩子注册到 {@code afterCommit}，确保新实体已对后续查询可见；
      * 否则（测试直接调 upsert）立即触发。
@@ -535,11 +465,11 @@ public class SemanticMemory {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    safeTriggerConflictResolution(savedEntity);
+                    triggerConflictResolutionNow(savedEntity);
                 }
             });
         } else {
-            safeTriggerConflictResolution(savedEntity);
+            triggerConflictResolutionNow(savedEntity);
         }
     }
 
@@ -553,51 +483,57 @@ public class SemanticMemory {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    try {
-                        stalenessCoordinator.process(savedEntity);
-                    } catch (RuntimeException e) {
-                        log.warn("语义记忆: 触发 staleness 处理失败: entity={}, err={}",
-                                savedEntity.id(), e.getMessage());
-                    }
+                    stalenessCoordinator.process(savedEntity);
                 }
             });
         } else {
-            try {
-                stalenessCoordinator.process(savedEntity);
-            } catch (RuntimeException e) {
-                log.warn("语义记忆: 触发 staleness 处理失败: entity={}, err={}",
-                        savedEntity.id(), e.getMessage());
-            }
+            stalenessCoordinator.process(savedEntity);
         }
     }
 
-    private void safeTriggerConflictResolution(TemporalEntity savedEntity) {
-        try {
-            var results = vectorSearcher.searchEntities(
-                    savedEntity.textRepresentation(), 5, 0.0f);
-            if (results == null || results.isEmpty()) {
-                return;
-            }
-            // 查候选实体（排除自己 + 排除非 ACTIVE）
-            var candidateIds = results.stream()
-                    .map(r -> r.entityId())
-                    .filter(id -> id != null && !id.equals(savedEntity.id()))
-                    .toList();
-            if (candidateIds.isEmpty()) {
-                return;
-            }
-            var candidateMap = findByIds(candidateIds);
-            var candidates = candidateMap.values().stream()
-                    .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
-                    .toList();
-            if (candidates.isEmpty()) {
-                return;
-            }
-            conflictResolutionService.resolveAsync(savedEntity, candidates);
-        } catch (Exception e) {
-            log.warn("语义记忆: 冲突裁决触发失败, entityId={}, error={}",
-                    savedEntity.id(), e.getMessage());
+    private void triggerConflictResolutionNow(TemporalEntity savedEntity) {
+        var results = vectorSearcher.searchEntities(savedEntity.textRepresentation(), 5, 0.0f);
+        if (results == null) {
+            throw new IllegalStateException("冲突裁决向量检索结果不能为空");
         }
+        if (results.isEmpty()) {
+            return;
+        }
+
+        Set<String> candidateIds = new LinkedHashSet<>();
+        for (var result : results) {
+            String candidateId = result.entityId();
+            if (candidateId == null || candidateId.isBlank()) {
+                throw new IllegalStateException("冲突裁决向量候选 entityId 不能为空");
+            }
+            if (!candidateId.equals(savedEntity.id())) {
+                candidateIds.add(candidateId);
+            }
+        }
+        if (candidateIds.isEmpty()) {
+            return;
+        }
+
+        var candidateMap = findByIds(candidateIds);
+        if (candidateMap == null) {
+            throw new IllegalStateException("冲突裁决候选回捞结果不能为空");
+        }
+        var missingIds = candidateIds.stream()
+                .filter(id -> !candidateMap.containsKey(id))
+                .toList();
+        if (!missingIds.isEmpty()) {
+            throw new IllegalStateException("冲突裁决向量候选实体不存在: " + missingIds);
+        }
+
+        var candidates = candidateMap.values().stream()
+                .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
+                .toList();
+        if (candidates.isEmpty()) {
+            return;
+        }
+        Objects.requireNonNull(
+                conflictResolutionService.resolveAsync(savedEntity, candidates),
+                "冲突裁决提交结果不能为空").join();
     }
 
     /**
@@ -639,19 +575,11 @@ public class SemanticMemory {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    try {
-                        eventPublisher.publishEvent(event);
-                    } catch (Exception e) {
-                        log.warn("语义记忆: 事件发布失败, event={}, error={}", event, e.getMessage());
-                    }
+                    eventPublisher.publishEvent(event);
                 }
             });
         } else {
-            try {
-                eventPublisher.publishEvent(event);
-            } catch (Exception e) {
-                log.warn("语义记忆: 事件发布失败, event={}, error={}", event, e.getMessage());
-            }
+            eventPublisher.publishEvent(event);
         }
     }
 
@@ -680,8 +608,8 @@ public class SemanticMemory {
      * 直接更新实体的生命周期状态 + 变更原因 — 只改 {@code memory_entities} 的 lifecycle_* 列，
      * 不 touch 版本与其他字段，完成后发布 {@link EntityLifecycleChanged}。
      *
-     * <p>Task 12（修补 C）接入：UPDATE 影响行为 0 则静默跳过不发事件；有效更新时以
-     * AFTER_COMMIT 发布事件，避免回滚时产生幻觉状态。</p>
+     * <p>UPDATE 影响行为 0 表示调用方持有的实体 ID 已经失效，直接抛出，避免写入契约被静默吞掉。
+     * 有效更新时以 AFTER_COMMIT 发布事件，避免回滚时产生幻觉状态。</p>
      *
      * @param entityId 实体 ID
      * @param newState 目标生命周期状态
@@ -696,16 +624,18 @@ public class SemanticMemory {
         // 先读旧状态：UPDATE 之后无法再得到 oldState，事件需携带
         LifecycleRootSnapshot snapshot = loadLifecycleRootSnapshot(entityId);
         if (snapshot == null) {
-            log.warn("语义记忆: updateLifecycleState 未命中, entityId={}, newState={}", entityId, newState);
-            return;
+            throw new IllegalStateException(
+                    "语义记忆: updateLifecycleState 未命中, entityId=%s, newState=%s"
+                            .formatted(entityId, newState));
         }
         var now = Instant.now();
         int affected = jdbcTemplate.update(
                 "UPDATE memory_entities SET lifecycle_state = ?, lifecycle_reason = ?, updated_at = ? WHERE id = ?",
                 newState.name(), reason, now.toString(), entityId);
         if (affected == 0) {
-            log.warn("语义记忆: updateLifecycleState 未命中, entityId={}, newState={}", entityId, newState);
-            return;
+            throw new IllegalStateException(
+                    "语义记忆: updateLifecycleState 未命中, entityId=%s, newState=%s"
+                            .formatted(entityId, newState));
         }
         publishAfterCommit(new EntityLifecycleChanged(
                 entityId, snapshot.entityType(), snapshot.oldState(), newState, reason, source));
@@ -730,9 +660,9 @@ public class SemanticMemory {
                 "UPDATE memory_entities SET succeeded_by = ?, updated_at = ? WHERE id = ?",
                 newEntityId, now.toString(), entityId);
         if (affected == 0) {
-            log.warn("语义记忆: updateSucceededBy 未命中, entityId={}, newEntityId={}",
-                    entityId, newEntityId);
-            return;
+            throw new IllegalStateException(
+                    "语义记忆: updateSucceededBy 未命中, entityId=%s, newEntityId=%s"
+                            .formatted(entityId, newEntityId));
         }
         log.debug("语义记忆: 更新 succeeded_by, entityId={}, newEntityId={}", entityId, newEntityId);
     }
@@ -777,9 +707,9 @@ public class SemanticMemory {
                 "UPDATE memory_entity_versions SET importance_score = ?, updated_at = ? WHERE entity_id = ? AND is_current = 1",
                 newScore, now, entityId);
         if (affected == 0) {
-            log.warn("语义记忆: updateImportanceScore 未命中当前版本, entityId={}, newScore={}",
-                    entityId, newScore);
-            return;
+            throw new IllegalStateException(
+                    "语义记忆: updateImportanceScore 未命中当前版本, entityId=%s, newScore=%s"
+                            .formatted(entityId, newScore));
         }
         if (eventPublisher != null) {
             double delta = oldScore == null ? newScore : (double) newScore - (double) oldScore;
@@ -837,25 +767,22 @@ public class SemanticMemory {
                 existing.evidenceKind(), existing.trustLevel(), existing.trustScore(),
                 existing.evidenceCount(), existing.lastVerifiedAt());
 
-        var writeContext = defaultWriteContext(updated, "user-edit-description");
+        var writeContext = resolveWriteContext(
+                updated,
+                "user-edit-description",
+                MemoryWriteContext.manual("user-edit-description"));
         insertEntityVersion(updated, writeContext, now);
         // 同步根表的 updated_at（画像等场景需要感知时间刷新）
         jdbcTemplate.update(
                 "UPDATE memory_entities SET updated_at = ?, last_seen_at = ? WHERE id = ?",
                 now.toString(), now.toString(), entityId);
         enqueueVectorUpsertProjection(updated);
-        notifyWriteCallback();
         log.debug("语义记忆: updateDescription 版本化, entityId={}, newVersion={}",
                 entityId, updated.version());
     }
 
-    /** 添加关系。 */
-    public void addRelation(TemporalRelation relation) {
-        addRelation(relation, null);
-    }
-
     /** 添加关系并记录写入上下文。 */
-    public void addRelation(TemporalRelation relation, @Nullable MemoryWriteContext writeContext) {
+    public void addRelation(TemporalRelation relation, MemoryWriteContext writeContext) {
         var now = Instant.now();
         MemoryWriteContext resolvedContext = resolveRelationWriteContext(relation, writeContext);
         String spaceId = resolvedContext.spaceId() != null
@@ -878,8 +805,8 @@ public class SemanticMemory {
                 relation.validTo() == null ? "ACTIVE" : "ARCHIVED",
                 relation.createdAt().toString(),
                 now.toString(),
-                relation.evidenceKind() != null ? relation.evidenceKind().name() : null,
-                relation.trustLevel() != null ? relation.trustLevel().name() : null,
+                relation.evidenceKind().name(),
+                relation.trustLevel().name(),
                 relation.trustScore());
         jdbcTemplate.update(
                 """
@@ -1021,13 +948,16 @@ public class SemanticMemory {
         var rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         Map<EntityType, Integer> result = new java.util.EnumMap<>(EntityType.class);
         for (var row : rows) {
+            String rawType = (String) row.get("type");
+            if (rawType == null || rawType.isBlank()) {
+                throw new IllegalStateException("语义记忆: type 不能为空");
+            }
             try {
-                EntityType type = EntityType.valueOf((String) row.get("type"));
+                EntityType type = EntityType.valueOf(rawType);
                 int count = ((Number) row.get("cnt")).intValue();
                 result.put(type, count);
             } catch (IllegalArgumentException e) {
-                // 未知的实体类型，跳过
-                log.debug("语义记忆: 忽略未知实体类型, type={}", row.get("type"));
+                throw new IllegalStateException("语义记忆: type 包含未知值: " + rawType, e);
             }
         }
         return result;
@@ -1169,7 +1099,7 @@ public class SemanticMemory {
 
     /**
      * 截止日期查询（memory-deadline-awareness）—— 返回 {@code properties_json} 中含 {@code $.dueAt}
-     * 的当前有效、可召回实体。dueAt 的窗口/逾期判定交由调用方解析（容忍纯日期/时间戳），
+     * 的当前有效、可召回实体。dueAt 必须是 {@code yyyy-MM-dd}，窗口/逾期判定交由调用方解析，
      * 避免日期字符串范围比较的脆弱性。
      *
      * @param types  限定的实体类型；为空表示不限类型
@@ -1258,15 +1188,16 @@ public class SemanticMemory {
     private Map<String, List<String>> findProvenanceValuesByEntityIds(Collection<String> entityIds,
                                                                       String column,
                                                                       boolean onlyValid) {
-        if (entityIds == null || entityIds.isEmpty()) {
+        Objects.requireNonNull(entityIds, "provenance 查询实体 ID 集合不能为空");
+        if (entityIds.isEmpty()) {
             return Map.of();
         }
-        var ids = entityIds.stream()
-                .filter(id -> id != null && !id.isBlank())
-                .distinct()
-                .toList();
-        if (ids.isEmpty()) {
-            return Map.of();
+        var ids = new LinkedHashSet<String>();
+        for (String entityId : entityIds) {
+            if (entityId == null || entityId.isBlank()) {
+                throw new IllegalArgumentException("provenance 查询实体 ID 不能为空");
+            }
+            ids.add(entityId);
         }
         if (!Set.of("source_entry_id", "source_document_id").contains(column)) {
             throw new IllegalArgumentException("不支持的 provenance 列: " + column);
@@ -1351,18 +1282,7 @@ public class SemanticMemory {
 
     // --- 内部方法 ---
 
-    /** 通知检索引擎数据已变更。 */
-    private void notifyWriteCallback() {
-        if (writeCallback != null) {
-            try {
-                writeCallback.run();
-            } catch (Exception e) {
-                log.warn("语义记忆: writeCallback 执行失败, error={}", e.getMessage());
-            }
-        }
-    }
-
-    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突；同时写入 V15 生命周期字段。 */
+    /** 插入或更新实体根记录 — 使用 upsert 语义防止 PK 冲突；同时写入生命周期字段。 */
     private void insertEntityRoot(TemporalEntity entity, MemoryWriteContext writeContext, Instant now) {
         String spaceId = writeContext.spaceId() != null
                 ? writeContext.spaceId()
@@ -1436,7 +1356,8 @@ public class SemanticMemory {
             try {
                 propsJson = MAPPER.writeValueAsString(entity.properties());
             } catch (Exception e) {
-                log.warn("语义记忆: properties 序列化失败, id={}", entity.id());
+                throw new IllegalStateException(
+                        "语义记忆: properties 序列化失败, id=" + entity.id(), e);
             }
         }
         String versionId = UUID.randomUUID().toString();
@@ -1517,8 +1438,8 @@ public class SemanticMemory {
                     id, entity_id, version_id, origin_type, source_reference, source_conversation_id,
                     source_session_id, source_turn_id, source_entry_id, source_document_id,
                     source_knowledge_base_id,
-                    confidence, evidence_kind, trust_score, trust_level, created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    confidence, evidence_kind, trust_score, trust_level, evidence_excerpt, created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 UUID.randomUUID().toString(),
                 entity.id(),
@@ -1535,6 +1456,7 @@ public class SemanticMemory {
                 entity.evidenceKind().name(),
                 entity.trustScore(),
                 entity.trustLevel().name(),
+                writeContext.evidenceExcerpt(),
                 now.toString());
     }
 
@@ -1583,10 +1505,6 @@ public class SemanticMemory {
                                      String overlaySpaceId,
                                      @Nullable String originSpaceId,
                                      String overlayKind) {
-        if (!isOverlayTableAvailable()) {
-            log.debug("语义记忆: overlay 表不存在，跳过 lineage 记录, overlayEntityId={}", overlayEntityId);
-            return;
-        }
         var now = Instant.now().toString();
         jdbcTemplate.update(
                 """
@@ -1626,7 +1544,7 @@ public class SemanticMemory {
                 targetEntityId
         );
         if (spaceIds.isEmpty()) {
-            return DEFAULT_PERSONAL_SPACE_ID;
+            throw new IllegalArgumentException("无法解析关系记忆空间：源实体或目标实体不存在");
         }
         if (spaceIds.size() > 1) {
             throw new IllegalArgumentException("暂不支持跨记忆空间建立关系");
@@ -1636,10 +1554,8 @@ public class SemanticMemory {
 
     private MemoryWriteContext resolveWriteContext(TemporalEntity entity,
                                                    @Nullable String sourceReference,
-                                                   @Nullable MemoryWriteContext writeContext) {
-        if (writeContext == null) {
-            return defaultWriteContext(entity, sourceReference);
-        }
+                                                   MemoryWriteContext writeContext) {
+        Objects.requireNonNull(writeContext, "记忆写入上下文不能为空");
         MemoryScope resolvedScope = writeContext.memoryScope() != null
                 ? writeContext.memoryScope()
                 : resolveDefaultScope(entity.type());
@@ -1657,43 +1573,30 @@ public class SemanticMemory {
                 writeContext.sourceTurnId(),
                 writeContext.sourceEntryId(),
                 writeContext.sourceDocumentId(),
-                writeContext.sourceKnowledgeBaseId()
-        );
-    }
-
-    private MemoryWriteContext defaultWriteContext(TemporalEntity entity, @Nullable String sourceReference) {
-        return new MemoryWriteContext(
-                resolveDefaultSpaceId(entity.type()),
-                resolveDefaultScope(entity.type()),
-                detectOriginType(sourceReference),
-                MemoryRealityType.UNKNOWN,
-                sourceReference,
-                sourceReference,
-                null,
-                null,
-                null,
-                null,
-                null
+                writeContext.sourceKnowledgeBaseId(),
+                writeContext.evidenceExcerpt()
         );
     }
 
     private MemoryWriteContext resolveRelationWriteContext(TemporalRelation relation,
-                                                           @Nullable MemoryWriteContext writeContext) {
-        if (writeContext != null) {
+                                                           MemoryWriteContext writeContext) {
+        Objects.requireNonNull(writeContext, "关系写入上下文不能为空");
+        if (writeContext.spaceId() != null) {
             return writeContext;
         }
         return new MemoryWriteContext(
                 resolveRelationSpaceId(relation.sourceEntityId(), relation.targetEntityId()),
-                null,
-                detectOriginType(relation.sourceConversationId()),
-                MemoryRealityType.UNKNOWN,
-                relation.sourceConversationId(),
-                relation.sourceConversationId(),
-                null,
-                null,
-                null,
-                null,
-                null
+                writeContext.memoryScope(),
+                writeContext.originType(),
+                writeContext.realityType(),
+                writeContext.sourceReference() != null ? writeContext.sourceReference() : relation.sourceConversationId(),
+                writeContext.sourceConversationId() != null ? writeContext.sourceConversationId() : relation.sourceConversationId(),
+                writeContext.sourceSessionId(),
+                writeContext.sourceTurnId(),
+                writeContext.sourceEntryId(),
+                writeContext.sourceDocumentId(),
+                writeContext.sourceKnowledgeBaseId(),
+                writeContext.evidenceExcerpt()
         );
     }
 
@@ -1707,41 +1610,20 @@ public class SemanticMemory {
 
     private String resolveDefaultSpaceId(MemoryScope scope, EntityType type) {
         if (scope == MemoryScope.AGENT_EXPERIENCE) {
-            if (memorySpaceRepository != null) {
-                return memorySpaceRepository.ensureDefaultExperienceSpace().id();
-            }
-            return DEFAULT_EXPERIENCE_SPACE_ID;
+            return memorySpaceRepository.ensureDefaultExperienceSpace().id();
         }
         return resolveDefaultSpaceId(type);
     }
 
     private String resolveDefaultSpaceId(EntityType type) {
         if (type == EntityType.EXPERIENCE) {
-            if (memorySpaceRepository != null) {
-                return memorySpaceRepository.ensureDefaultExperienceSpace().id();
-            }
-            return DEFAULT_EXPERIENCE_SPACE_ID;
+            return memorySpaceRepository.ensureDefaultExperienceSpace().id();
         }
-        if (memorySpaceRepository != null) {
-            return memorySpaceRepository.ensureDefaultPersonalSpace().id();
-        }
-        return DEFAULT_PERSONAL_SPACE_ID;
-    }
-
-    private MemoryOriginType detectOriginType(@Nullable String sourceReference) {
-        if (sourceReference == null || sourceReference.isBlank()) {
-            return MemoryOriginType.UNKNOWN;
-        }
-        return switch (sourceReference) {
-            case "user-edit-description", "manual-edit" -> MemoryOriginType.MANUAL;
-            case "subtask-reflection", "contrastive-learning", "experience-merge",
-                    "user-profile-consolidation", "proactive-engine" -> MemoryOriginType.CONSOLIDATION;
-            default -> MemoryOriginType.CHAT;
-        };
+        return memorySpaceRepository.ensureDefaultPersonalSpace().id();
     }
 
     private String normalizeName(String name) {
-        return name == null ? "" : name.trim().toLowerCase();
+        return Objects.requireNonNull(name, "实体名称不能为空").toLowerCase(java.util.Locale.ROOT);
     }
 
     private void appendEntityReadFilter(StringBuilder sql,
@@ -1776,7 +1658,7 @@ public class SemanticMemory {
                                           List<Object> params,
                                           MemoryReadFilter filter,
                                           String outerTableName) {
-        if (!filter.restrictsSpaces() || !isOverlayTableAvailable()) {
+        if (!filter.restrictsSpaces()) {
             return;
         }
         sql.append(" AND NOT EXISTS (")
@@ -1792,34 +1674,16 @@ public class SemanticMemory {
         params.addAll(filter.spaceIds());
     }
 
-    private boolean isOverlayTableAvailable() {
-        if (overlayTableAvailable != null) {
-            return overlayTableAvailable;
-        }
-        try {
-            Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memory_entity_overlays'",
-                    Integer.class);
-            overlayTableAvailable = count != null && count > 0;
-        } catch (Exception e) {
-            overlayTableAvailable = false;
-        }
-        return overlayTableAvailable;
-    }
-
     private String buildPlaceholders(int count) {
         return String.join(",", Collections.nCopies(count, "?"));
     }
 
     /** 登记向量 upsert 投影任务，避免事务回滚后留下孤儿 embedding。 */
     private void enqueueVectorUpsertProjection(TemporalEntity entity) {
-        if (projectionService == null) {
-            throw new IllegalStateException("MemoryProjectionService 未装配，禁止绕过 outbox 直写向量");
-        }
         projectionService.enqueueVectorUpsertAfterCommit(entity);
     }
 
-    /** ResultSet 行映射为 TemporalEntity — 含 V15 生命周期字段。 */
+    /** ResultSet 行映射为 TemporalEntity — 含生命周期与质量字段。 */
     @SuppressWarnings("unchecked")
     private TemporalEntity mapRowToEntity(java.sql.ResultSet rs) throws java.sql.SQLException {
         String propsJson = rs.getString("properties_json");
@@ -1828,7 +1692,8 @@ public class SemanticMemory {
             try {
                 properties = MAPPER.readValue(propsJson, Map.class);
             } catch (Exception e) {
-                log.warn("语义记忆: properties_json 解析失败, id={}", rs.getString("id"));
+                throw new IllegalStateException(
+                        "语义记忆: properties_json 解析失败, id=" + rs.getString("id"), e);
             }
         }
 
@@ -1874,55 +1739,38 @@ public class SemanticMemory {
         );
     }
 
-    /** 将 lifecycle_state 字符串解析为枚举，异常或空值回退 ACTIVE。 */
+    /** 将 lifecycle_state 字符串严格解析为枚举。 */
     private static LifecycleState parseLifecycleState(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return LifecycleState.ACTIVE;
-        }
-        try {
-            return LifecycleState.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 lifecycle_state={}，回退 ACTIVE", raw);
-            return LifecycleState.ACTIVE;
-        }
+        return parseRequiredEnum("lifecycle_state", raw, LifecycleState.class);
     }
 
-    /** 将 temporality 字符串解析为枚举，异常或空值回退 PERSISTENT。 */
+    /** 将 temporality 字符串严格解析为枚举。 */
     private static Temporality parseTemporality(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return Temporality.PERSISTENT;
-        }
-        try {
-            return Temporality.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 temporality={}，回退 PERSISTENT", raw);
-            return Temporality.PERSISTENT;
-        }
+        return parseRequiredEnum("temporality", raw, Temporality.class);
     }
 
-    /** 将 evidence_kind 字符串解析为枚举，异常或空值回退 UNKNOWN。 */
+    /** 将 evidence_kind 字符串严格解析为枚举。 */
     private static MemoryEvidenceKind parseEvidenceKind(@Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
-            return MemoryEvidenceKind.UNKNOWN;
-        }
-        try {
-            return MemoryEvidenceKind.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 evidence_kind={}，回退 UNKNOWN", raw);
-            return MemoryEvidenceKind.UNKNOWN;
-        }
+        return parseRequiredEnum("evidence_kind", raw, MemoryEvidenceKind.class);
     }
 
-    /** 将 trust_level 字符串解析为枚举，异常或空值回退 UNVERIFIED。 */
+    /** 将 trust_level 字符串严格解析为枚举。 */
     private static MemoryTrustLevel parseTrustLevel(@Nullable String raw) {
+        return parseRequiredEnum("trust_level", raw, MemoryTrustLevel.class);
+    }
+
+    private static <E extends Enum<E>> E parseRequiredEnum(
+            String columnName,
+            @Nullable String raw,
+            Class<E> enumType) {
         if (raw == null || raw.isBlank()) {
-            return MemoryTrustLevel.UNVERIFIED;
+            throw new IllegalStateException("语义记忆: " + columnName + " 不能为空");
         }
         try {
-            return MemoryTrustLevel.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            log.warn("语义记忆: 未知 trust_level={}，回退 UNVERIFIED", raw);
-            return MemoryTrustLevel.UNVERIFIED;
+            return Enum.valueOf(enumType, raw);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException(
+                    "语义记忆: " + columnName + " 包含未知值: " + raw, ex);
         }
     }
 
@@ -1935,12 +1783,12 @@ public class SemanticMemory {
         try {
             return MAPPER.writeValueAsString(sources);
         } catch (Exception e) {
-            log.warn("语义记忆: derivation_sources 序列化失败, count={}", sources.size());
-            return null;
+            throw new IllegalStateException(
+                    "语义记忆: derivation_sources 序列化失败, count=" + sources.size(), e);
         }
     }
 
-    /** 反序列化 derivation_sources JSON 数组；解析失败回退空列表。 */
+    /** 反序列化 derivation_sources JSON 数组；空列代表无派生来源。 */
     private static List<String> deserializeDerivationSources(@Nullable String json) {
         if (json == null || json.isBlank()) {
             return List.of();
@@ -1948,8 +1796,7 @@ public class SemanticMemory {
         try {
             return MAPPER.readValue(json, STRING_LIST_TYPE);
         } catch (Exception e) {
-            log.warn("语义记忆: derivation_sources 反序列化失败, error={}", e.getMessage());
-            return List.of();
+            throw new IllegalStateException("语义记忆: derivation_sources 反序列化失败", e);
         }
     }
 

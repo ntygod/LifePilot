@@ -46,9 +46,10 @@ public class AssociationConsolidator {
      * 过滤去重 + 持久化；返回实际入库数量。
      */
     public int consolidate(List<AssociationCandidate> candidates) {
-        if (candidates == null || candidates.isEmpty()) return 0;
-        float minConfidence = properties.getRem().getMinConfidence();
-        int windowHours = Math.max(1, properties.getRem().getDeduplicationWindowHours());
+        Objects.requireNonNull(candidates, "REM 联想候选列表不能为空");
+        if (candidates.isEmpty()) return 0;
+        float minConfidence = probability(properties.getRem().getMinConfidence(), "REM 最小置信度");
+        int windowHours = positive(properties.getRem().getDeduplicationWindowHours(), "REM 去重窗口小时数");
 
         Instant now = Instant.now();
         // 顺便清理过期的 dedup 条目，避免长期运行内存膨胀
@@ -56,6 +57,7 @@ public class AssociationConsolidator {
 
         List<AssociationCandidate> keep = new ArrayList<>();
         for (var c : candidates) {
+            Objects.requireNonNull(c, "REM 联想候选不能为空");
             if (c.confidence() < minConfidence) continue;
             String key = c.dedupKey();
             Instant last = dedup.get(key);
@@ -72,5 +74,19 @@ public class AssociationConsolidator {
         store.save(LocalDate.now(), keep);
         log.info("REM 联想: 入库 input={}, saved={}", candidates.size(), keep.size());
         return keep.size();
+    }
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
+    }
+
+    private static float probability(float value, String name) {
+        if (!(value >= 0.0f && value <= 1.0f)) {
+            throw new IllegalArgumentException(name + "必须在 [0,1] 范围内: " + value);
+        }
+        return value;
     }
 }

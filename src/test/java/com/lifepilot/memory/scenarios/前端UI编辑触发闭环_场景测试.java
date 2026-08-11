@@ -1,6 +1,7 @@
 package com.lifepilot.memory.scenarios;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import static org.mockito.Mockito.mock;
 
 import com.lifepilot.agent.learning.consolidation.PreferenceConsolidator;
@@ -40,7 +41,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
  *
  * <p>验证目标：记忆管理页（Vue 3 SPA）删除一条偏好，应：
  * <ol>
- *   <li>L3 实体沿 ACTIVE → ARCHIVED（V15 lifecycle_state 列）；</li>
+ *   <li>L3 实体沿 ACTIVE → ARCHIVED（lifecycle_state 列）；</li>
  *   <li>L3 事件 source = {@link ChangeSource#UI_EDIT}（表示用户 UI 动作）；</li>
  *   <li>L4 关联的 {@code preference_rules.deactivated_reason} 非空（失活）；</li>
  *   <li>L4 {@code deactivated_reason} 携带 UI 侧给出的理由。</li>
@@ -122,8 +123,8 @@ class 前端UI编辑触发闭环_场景测试 {
         var vectorSearcher = mock(VectorSearcher.class);
         var conflictDetector = mock(ConflictDetector.class);
         var versionMerger = mock(VersionMerger.class);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher);
-        MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+        var projectionService = MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, versionMerger, vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         ruleRepo = new PreferenceRuleRepository(jdbcTemplate);
         var procedureRepo = new ProceduralMemoryRepository(jdbcTemplate);

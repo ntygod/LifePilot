@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -35,7 +36,7 @@ import static org.mockito.Mockito.when;
 /**
  * ConflictDetector 三级冲突检测引擎单元测试。
  *
- * <p>覆盖精确匹配、语义匹配、LLM 消歧义三个阶段的正常路径与降级行为。</p>
+ * <p>覆盖精确匹配、语义匹配、LLM 消歧义三个阶段的正常路径与失败处理。</p>
  *
  * @author zsg
  * @since 2026-04-03
@@ -70,7 +71,19 @@ class ConflictDetector_单元测试 {
                 Map.of(), 1, true,
                 now, null, null,
                 0.9f, 0.5f, 0, null, now, now
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
     }
 
     /** 构造测试用 LlmResponse */
@@ -371,7 +384,7 @@ class ConflictDetector_单元测试 {
         }
 
         @Test
-        void LLM返回非JSON文本_包含true_降级为文本匹配_视为冲突() {
+        void LLM返回非JSON文本_应按契约失败() {
             // given
             var newEntity = buildEntity("new-1", "张三", EntityType.PERSON, "工程师");
             var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "程序员");
@@ -388,15 +401,13 @@ class ConflictDetector_单元测试 {
                     any(), isNull()))
                     .thenReturn(buildLlmResponse("Yes, they are the same. Result: TRUE"));
 
-            // when
-            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
-
-            // then — 文本包含 "true"（大小写不敏感），视为冲突
-            assertThat(result).isPresent();
+            assertThatThrownBy(() -> detector.detectConflict(newEntity, TEST_SPACE_ID))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("冲突消歧响应不是合法 JSON");
         }
 
         @Test
-        void LLM返回非JSON文本_不包含true_不视为冲突() {
+        void LLM返回非JSON文本不包含true_应按契约失败() {
             // given
             var newEntity = buildEntity("new-1", "张三", EntityType.PERSON, "设计师");
             var candidate = buildEntity("existing-1", "张三丰", EntityType.PERSON, "道长");
@@ -413,15 +424,13 @@ class ConflictDetector_单元测试 {
                     any(), isNull()))
                     .thenReturn(buildLlmResponse("No, these are different people."));
 
-            // when
-            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
-
-            // then
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> detector.detectConflict(newEntity, TEST_SPACE_ID))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("冲突消歧响应不是合法 JSON");
         }
 
         @Test
-        void LLM返回空isSame字段_默认false_不视为冲突() {
+        void LLM返回缺少isSame字段_应按契约失败() {
             // given
             var newEntity = buildEntity("new-1", "李四", EntityType.PERSON, "销售");
             var candidate = buildEntity("existing-1", "李四", EntityType.PERSON, "市场");
@@ -438,50 +447,53 @@ class ConflictDetector_单元测试 {
                     any(), isNull()))
                     .thenReturn(buildLlmResponse("{\"confidence\": 0.8}"));
 
-            // when
-            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
+            assertThatThrownBy(() -> detector.detectConflict(newEntity, TEST_SPACE_ID))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("冲突消歧响应缺少布尔字段 isSame");
+        }
 
-            // then — isSame 缺失默认 false
-            assertThat(result).isEmpty();
+        @Test
+        void LLM返回confidence越界_应按契约失败() {
+            // given
+            var newEntity = buildEntity("new-1", "李四", EntityType.PERSON, "销售");
+            var candidate = buildEntity("existing-1", "李四", EntityType.PERSON, "市场");
+
+            when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
+                    .thenReturn(List.of(new VectorSearchResult("existing-1", 0.91f)));
+            when(jdbcTemplate.query(anyString(), any(RowMapper.class),
+                    eq("existing-1"), eq(TEST_SPACE_ID)))
+                    .thenReturn(List.of(candidate));
+            when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
+                    .thenReturn("判断prompt");
+            when(generationRouter.call(
+                    eq("knowledge_extraction"), anyString(), isNull(), isNull(), isNull(),
+                    any(), isNull()))
+                    .thenReturn(buildLlmResponse("{\"isSame\": true, \"confidence\": 1.2}"));
+
+            assertThatThrownBy(() -> detector.detectConflict(newEntity, TEST_SPACE_ID))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("冲突消歧 confidence 必须在 [0,1] 范围内");
         }
     }
 
     // ------------------------------------------------------------------
-    // 降级行为
+    // 失败暴露
     // ------------------------------------------------------------------
 
     @Nested
-    @DisplayName("降级行为")
-    class 降级行为 {
+    @DisplayName("失败暴露")
+    class 失败暴露 {
 
         @Test
-        void 无_GenerationRouter时_语义匹配超阈值直接视为冲突_不调用LLM() {
-            // given — 构造时 generationRouter 为 null
-            detector = new ConflictDetector(
-                    jdbcTemplate, vectorSearcher, null, SEMANTIC_THRESHOLD, promptRegistry);
-            var newEntity = buildEntity("new-1", "小张", EntityType.PERSON, "前端");
-            var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "前端开发");
-
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    anyString(), anyString(), any()))
-                    .thenReturn(List.of());
-            when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
-                    .thenReturn(List.of(new VectorSearchResult("existing-1", 0.92f)));
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class),
-                    eq("existing-1"), eq(TEST_SPACE_ID)))
-                    .thenReturn(List.of(candidate));
-
-            // when
-            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
-
-            // then
-            assertThat(result).isPresent();
-            assertThat(result.get().id()).isEqualTo("existing-1");
-            verifyNoInteractions(generationRouter);
+        void 缺少GenerationRouter时构造器拒绝创建() {
+            assertThatThrownBy(() -> new ConflictDetector(
+                    jdbcTemplate, vectorSearcher, null, SEMANTIC_THRESHOLD, promptRegistry))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("generationRouter 不能为空");
         }
 
         @Test
-        void 语义匹配异常时降级为仅精确匹配_返回空() {
+        void 语义匹配异常时应直接抛出() {
             // given
             detector = new ConflictDetector(
                     jdbcTemplate, vectorSearcher, generationRouter, SEMANTIC_THRESHOLD, promptRegistry);
@@ -493,15 +505,13 @@ class ConflictDetector_单元测试 {
             when(vectorSearcher.searchEntities(anyString(), eq(10), eq(SEMANTIC_THRESHOLD)))
                     .thenThrow(new RuntimeException("Embedding 服务不可用"));
 
-            // when
-            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
-
-            // then — 降级后返回空
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> detector.detectConflict(newEntity, TEST_SPACE_ID))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Embedding 服务不可用");
         }
 
         @Test
-        void LLM消歧义异常时降级返回空() {
+        void LLM消歧义异常时应直接抛出() {
             // given
             detector = new ConflictDetector(
                     jdbcTemplate, vectorSearcher, generationRouter, SEMANTIC_THRESHOLD, promptRegistry);
@@ -523,11 +533,9 @@ class ConflictDetector_单元测试 {
                     any(), isNull()))
                     .thenThrow(new RuntimeException("LLM 服务超时"));
 
-            // when
-            var result = detector.detectConflict(newEntity, TEST_SPACE_ID);
-
-            // then — LLM 异常降级返回空
-            assertThat(result).isEmpty();
+            assertThatThrownBy(() -> detector.detectConflict(newEntity, TEST_SPACE_ID))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("LLM 服务超时");
         }
     }
 
@@ -605,7 +613,7 @@ class ConflictDetector_单元测试 {
         void 带spaceId的语义匹配和实体查找传递spaceId() {
             // given
             detector = new ConflictDetector(
-                    jdbcTemplate, vectorSearcher, null, SEMANTIC_THRESHOLD, promptRegistry);
+                    jdbcTemplate, vectorSearcher, generationRouter, SEMANTIC_THRESHOLD, promptRegistry);
             var newEntity = buildEntity("new-1", "小张", EntityType.PERSON, "前端");
             var candidate = buildEntity("existing-1", "张三", EntityType.PERSON, "前端开发");
 
@@ -619,6 +627,12 @@ class ConflictDetector_单元测试 {
             when(jdbcTemplate.query(anyString(), any(RowMapper.class),
                     eq("existing-1"), eq("space-A")))
                     .thenReturn(List.of(candidate));
+            when(promptRegistry.render(eq("semantic/entity-disambiguation"), any()))
+                    .thenReturn("判断prompt");
+            when(generationRouter.call(
+                    eq("knowledge_extraction"), anyString(), isNull(), isNull(), isNull(),
+                    any(), isNull()))
+                    .thenReturn(buildLlmResponse("{\"isSame\": true, \"confidence\": 0.9}"));
 
             // when
             var result = detector.detectConflict(newEntity, "space-A");

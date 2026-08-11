@@ -135,6 +135,89 @@ class ProviderMessageBuilderTest {
     }
 
     @Test
+    void build_历史webFetch正文应降级为摘要而当回合保留完整正文() {
+        var config = new AgentConfigProperties();
+        var builder = new ProviderMessageBuilder(
+                new TranscriptHygieneEngine(config),
+                new SessionPruningEngine(config, new ObjectMapper())
+        );
+        // 历史轮抓取的 A：完整正文很长，尾部唯一标记 MARKER_A_TAIL_ONLY 落在 180 字摘要窗口之外
+        String fetchAOutput = "{\"url\":\"https://example.com/a\",\"title\":\"文章A标题\",\"content\":\""
+                + "甲".repeat(400) + "MARKER_A_TAIL_ONLY\"}";
+        // 当回合抓取的 B：完整正文含唯一标记 MARKER_B_FULL
+        String fetchBOutput = "{\"url\":\"https://example.com/b\",\"title\":\"文章B标题\","
+                + "\"content\":\"第二篇文章完整正文，包含唯一标记 MARKER_B_FULL 需要模型本轮消费。\"}";
+        var context = new AssembledContext(
+                "system prompt",
+                List.of(),
+                List.of(),
+                "<current_request>汇总</current_request>",
+                List.of(),
+                TokenBudget.allocateDefault(4096),
+                0,
+                0.0f,
+                0,
+                false,
+                List.of(),
+                null
+        );
+        var state = ReactAgentState.builder()
+                .traceId("trace-fetch-compact")
+                .sessionId("session-fetch-compact")
+                .goal("test")
+                .channel("web")
+                .steps(List.of(
+                        new ReactStep.ToolCall("web.fetch", "抓取网页", "{\"url\":\"https://example.com/a\"}", 10, "fetch-a"),
+                        new ReactStep.Observation("web.fetch", "抓取网页", true, fetchAOutput, 12, "fetch-a"),
+                        new ReactStep.ToolCall("web.fetch", "抓取网页", "{\"url\":\"https://example.com/b\"}", 14, "fetch-b"),
+                        new ReactStep.Observation("web.fetch", "抓取网页", true, fetchBOutput, 16, "fetch-b")
+                ))
+                .stepCount(4)
+                .shortTermMemory(List.of())
+                .mentionedEntities(List.of())
+                .budget(Budget.builder()
+                        .maxTokens(4000)
+                        .tokensUsed(0)
+                        .tokensReserved(0)
+                        .maxSteps(10)
+                        .stepsUsed(0)
+                        .maxDuration(Duration.ofMinutes(1))
+                        .elapsed(Duration.ZERO)
+                        .build())
+                .parentTraceId(null)
+                .depth(0)
+                .preferredProvider(null)
+                .done(false)
+                .finalOutput(null)
+                .terminationReason(null)
+                .completionReason(null)
+                .reasoningSummary(null)
+                .completionMode(CompletionMode.NORMAL)
+                .allowedToolIds(null)
+                .pendingMedia(null)
+                .earlyStopRejectCount(0)
+                .suspended(false)
+                .suspendReason(null)
+                .build();
+
+        var result = builder.build(context, state);
+
+        // 消息序列：System, User, Assistant(tc-a), ToolResponse(A 历史), Assistant(tc-b), ToolResponse(B 当回合)
+        var historicalA = (ToolResponseMessage) result.messages().get(3);
+        var currentB = (ToolResponseMessage) result.messages().get(5);
+        String aData = historicalA.getResponses().getFirst().responseData();
+        String bData = currentB.getResponses().getFirst().responseData();
+
+        // 历史 A：降级为摘要 —— 不含尾部完整正文标记，附防重复抓取提示，且明显短于原文
+        assertThat(aData)
+                .doesNotContain("MARKER_A_TAIL_ONLY")
+                .contains("勿重复抓取");
+        assertThat(aData.length()).isLessThan(fetchAOutput.length());
+        // 当回合 B：保留完整正文
+        assertThat(bData).contains("MARKER_B_FULL");
+    }
+
+    @Test
     void serializeForMultimodal_结构化提示词应原样输出而不是套用户消息前缀() {
         var builder = new ProviderMessageBuilder(
                 new TranscriptHygieneEngine(new AgentConfigProperties())

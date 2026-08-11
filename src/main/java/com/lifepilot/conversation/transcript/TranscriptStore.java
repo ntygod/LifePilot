@@ -33,6 +33,56 @@ public interface TranscriptStore {
                                   @Nullable String resumedFromTraceId,
                                   @Nullable Instant createdAt);
 
+    default String appendAssistantMessage(String sessionId,
+                                          @Nullable String turnId,
+                                          String content,
+                                          @Nullable String reasoningSummary,
+                                          @Nullable String traceId,
+                                          @Nullable String a2uiComponentsJson,
+                                          @Nullable String reactStepsJson,
+                                          @Nullable String taskRecoveryJson,
+                                          @Nullable CompletionMode completionMode,
+                                          @Nullable String resumedFromTraceId,
+                                          @Nullable Instant createdAt) {
+        return appendAssistantMessage(sessionId, turnId, content, reasoningSummary, traceId,
+                a2uiComponentsJson, reactStepsJson, completionMode, resumedFromTraceId, createdAt);
+    }
+
+    default String appendAssistantMessage(String sessionId,
+                                          @Nullable String turnId,
+                                          String content,
+                                          @Nullable String reasoningSummary,
+                                          @Nullable String traceId,
+                                          @Nullable String a2uiComponentsJson,
+                                          @Nullable String reactStepsJson,
+                                          @Nullable String toolsSummaryJson,
+                                          @Nullable String taskRecoveryJson,
+                                          @Nullable CompletionMode completionMode,
+                                          @Nullable String resumedFromTraceId,
+                                          @Nullable Instant createdAt) {
+        return appendAssistantMessage(sessionId, turnId, content, reasoningSummary, traceId,
+                a2uiComponentsJson, reactStepsJson, taskRecoveryJson,
+                completionMode, resumedFromTraceId, createdAt);
+    }
+
+    default String appendAssistantMessage(String sessionId,
+                                          @Nullable String turnId,
+                                          String content,
+                                          @Nullable String reasoningSummary,
+                                          @Nullable String traceId,
+                                          @Nullable String a2uiComponentsJson,
+                                          @Nullable String reactStepsJson,
+                                          @Nullable String toolsSummaryJson,
+                                          @Nullable String taskRecoveryJson,
+                                          @Nullable String executionConstraintsJson,
+                                          @Nullable CompletionMode completionMode,
+                                          @Nullable String resumedFromTraceId,
+                                          @Nullable Instant createdAt) {
+        return appendAssistantMessage(sessionId, turnId, content, reasoningSummary, traceId,
+                a2uiComponentsJson, reactStepsJson, toolsSummaryJson, taskRecoveryJson,
+                completionMode, resumedFromTraceId, createdAt);
+    }
+
     default void appendTurn(String sessionId,
                             @Nullable String userMessage,
                             @Nullable String assistantMessage,

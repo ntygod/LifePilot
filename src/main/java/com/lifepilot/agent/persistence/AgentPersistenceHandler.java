@@ -1,17 +1,22 @@
 package com.lifepilot.agent.persistence;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.context.CompactionEngine;
 import com.lifepilot.agent.media.MediaDataExtractor;
+import com.lifepilot.agent.model.ExecutionConstraintSummarySupport;
 import com.lifepilot.agent.model.ReactAgentState;
 import com.lifepilot.agent.model.SuspendReason;
+import com.lifepilot.agent.recovery.TaskRecoverySummaryBuilder;
 import com.lifepilot.conversation.transcript.TranscriptStore;
 import com.lifepilot.interaction.web.model.ChatTurnAction;
 import com.lifepilot.interaction.web.repository.AttachmentRepository;
 import com.lifepilot.interaction.web.service.BrowserIngressService;
 import com.lifepilot.interaction.web.service.ChatTurnService;
 import com.lifepilot.interaction.web.service.SessionTitleGenerator;
+import com.lifepilot.interaction.model.ArtifactRef;
 import com.lifepilot.llm.multimodal.MediaContent;
 import com.lifepilot.agent.learning.experience.ContrastiveLearner;
 import com.lifepilot.agent.learning.experience.EffectivenessTracker;
@@ -31,6 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -44,10 +50,23 @@ import java.util.regex.Pattern;
  */
 public class AgentPersistenceHandler {
     private static final Logger log = LoggerFactory.getLogger(AgentPersistenceHandler.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
     private static final Pattern RESUME_INPUT_PATTERN = Pattern.compile(
             "<resume_user_input>\\s*(.*?)\\s*</resume_user_input>",
-            Pattern.DOTALL
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern RESTART_ORIGINAL_INPUT_PATTERN = Pattern.compile(
+            "<restart_original_user_input>\\s*(.*?)\\s*</restart_original_user_input>",
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern RESTART_INSTRUCTION_PATTERN = Pattern.compile(
+            "\\s*<restart_instruction>\\s*.*?\\s*</restart_instruction>",
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern TASK_RECOVERY_CHECKPOINT_PATTERN = Pattern.compile(
+            "\\s*<task_recovery_checkpoint>\\s*.*?\\s*</task_recovery_checkpoint>",
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
     );
 
     /**
@@ -200,8 +219,11 @@ public class AgentPersistenceHandler {
             }
             // A2UI 信号消息对模型可见但不展示给用户，避免原始信号数据作为气泡出现
             boolean visibleToUser = !isA2uiSignalMessage(state.goal());
-            // 持久化前剥离文档附件 hint，避免操作元数据回显到用户气泡
-            String persistedGoal = stripDocumentParseHint(state.goal());
+            // 持久化前剥离文档附件 hint / 恢复协议块，避免操作元数据回显到用户气泡
+            String persistedGoal = normalizeUserMessageForPersistence(state.goal());
+            if (persistedGoal == null || persistedGoal.isBlank()) {
+                return null;
+            }
             String entryId = transcriptStore.appendUserMessage(
                     state.sessionId(),
                     state.turnId(),
@@ -267,8 +289,42 @@ public class AgentPersistenceHandler {
     }
 
     @Nullable
+    private static String extractRestartOriginalUserInput(@Nullable String goal) {
+        if (goal == null || goal.isBlank()) {
+            return null;
+        }
+        Matcher matcher = RESTART_ORIGINAL_INPUT_PATTERN.matcher(goal);
+        if (!matcher.find()) {
+            return null;
+        }
+        String originalInput = matcher.group(1);
+        return originalInput != null ? originalInput.strip() : null;
+    }
+
+    @Nullable
+    static String normalizeUserMessageForPersistence(@Nullable String goal) {
+        if (goal == null || goal.isBlank()) {
+            return goal;
+        }
+        String restartOriginalInput = extractRestartOriginalUserInput(goal);
+        if (restartOriginalInput != null && !restartOriginalInput.isBlank()) {
+            return stripDocumentParseHint(restartOriginalInput);
+        }
+        String cleaned = RESTART_INSTRUCTION_PATTERN.matcher(goal).replaceAll("");
+        cleaned = TASK_RECOVERY_CHECKPOINT_PATTERN.matcher(cleaned).replaceAll("");
+        return stripDocumentParseHint(cleaned).stripTrailing();
+    }
+
+    @Nullable
     public String persistAssistantMessage(ReactAgentState state,
                                           @Nullable String reactStepsJson) {
+        return persistAssistantMessage(state, reactStepsJson, List.of());
+    }
+
+    @Nullable
+    public String persistAssistantMessage(ReactAgentState state,
+                                          @Nullable String reactStepsJson,
+                                          @Nullable List<ArtifactRef> artifactRefs) {
         String output = state.finalOutput();
         if (output == null || output.isBlank()) {
             return null;
@@ -282,6 +338,9 @@ public class AgentPersistenceHandler {
                     state.traceId(),
                     null,
                     reactStepsJson,
+                    serializeToolSummaries(state, artifactRefs),
+                    serializeTaskRecovery(state, artifactRefs),
+                    serializeExecutionConstraints(state),
                     state.completionMode(),
                     state.resumedFromTraceId(),
                     null
@@ -298,6 +357,17 @@ public class AgentPersistenceHandler {
                                                   @Nullable String reasoningSummary,
                                                   @Nullable String a2uiJson,
                                                   @Nullable String reactStepsJson) {
+        return persistAssistantMessageWithA2ui(state, finalContent, reasoningSummary, a2uiJson,
+                reactStepsJson, List.of());
+    }
+
+    @Nullable
+    public String persistAssistantMessageWithA2ui(ReactAgentState state,
+                                                  @Nullable String finalContent,
+                                                  @Nullable String reasoningSummary,
+                                                  @Nullable String a2uiJson,
+                                                  @Nullable String reactStepsJson,
+                                                  @Nullable List<ArtifactRef> artifactRefs) {
         if ((finalContent == null || finalContent.isBlank()) && a2uiJson == null) {
             return null;
         }
@@ -310,6 +380,9 @@ public class AgentPersistenceHandler {
                     state.traceId(),
                     a2uiJson,
                     reactStepsJson,
+                    serializeToolSummaries(state, artifactRefs),
+                    serializeTaskRecovery(state, artifactRefs),
+                    serializeExecutionConstraints(state),
                     state.completionMode(),
                     state.resumedFromTraceId(),
                     null
@@ -334,6 +407,51 @@ public class AgentPersistenceHandler {
             log.debug("注入记录已持久化：sourceEntryId={}, entityCount={}", sourceEntryId, entityIds.size());
         } catch (Exception e) {
             log.warn("持久化注入记录失败：sourceEntryId={}, error={}", sourceEntryId, e.getMessage());
+        }
+    }
+
+    @Nullable
+    private String serializeTaskRecovery(ReactAgentState state,
+                                         @Nullable List<ArtifactRef> artifactRefs) {
+        var toolSummaries = TaskRecoverySummaryBuilder.toolSummariesFromSteps(state.steps(), artifactRefs);
+        var recovery = TaskRecoverySummaryBuilder.fromState(state, toolSummaries);
+        if (recovery.isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(recovery.get());
+        } catch (JsonProcessingException e) {
+            log.debug("序列化任务恢复摘要失败: traceId={}, error={}", state.traceId(), e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    private String serializeToolSummaries(ReactAgentState state,
+                                          @Nullable List<ArtifactRef> artifactRefs) {
+        var summaries = TaskRecoverySummaryBuilder.toolSummariesFromSteps(state.steps(), artifactRefs);
+        if (summaries.isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(summaries);
+        } catch (JsonProcessingException e) {
+            log.debug("序列化工具执行摘要失败: traceId={}, error={}", state.traceId(), e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    private String serializeExecutionConstraints(ReactAgentState state) {
+        var summary = ExecutionConstraintSummarySupport.from(state);
+        if (summary.isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(summary);
+        } catch (JsonProcessingException e) {
+            log.debug("序列化执行约束摘要失败: traceId={}, error={}", state.traceId(), e.getMessage());
+            return null;
         }
     }
 
@@ -411,6 +529,10 @@ public class AgentPersistenceHandler {
             var extractionFuture = CompletableFuture.runAsync(() -> {
                 try {
                     if (realtimeExtractor != null && finalState.finalOutput() != null) {
+                        if (finalState.turnId() == null || finalState.turnId().isBlank()) {
+                            log.debug("实时记忆抽取跳过：缺少轮次 ID, sessionId={}", finalState.sessionId());
+                            return;
+                        }
                         String userMessageForExtraction = normalizeUserMessageForExtraction(finalState.goal());
                         if (userMessageForExtraction == null || userMessageForExtraction.isBlank()) {
                             log.debug("实时记忆抽取跳过：无可治理用户文本, sessionId={}", finalState.sessionId());
@@ -420,11 +542,14 @@ public class AgentPersistenceHandler {
                                 finalState.sessionId(),
                                 finalState.turnId(),
                                 userMessageForExtraction,
-                                finalState.finalOutput());
+                                finalState.finalOutput()).join();
                     }
                 } catch (Exception e) {
+                    Throwable cause = e instanceof CompletionException && e.getCause() != null
+                            ? e.getCause()
+                            : e;
                     log.warn("实时记忆抽取失败：sessionId={}, error={}",
-                            finalState.sessionId(), e.getMessage());
+                            finalState.sessionId(), cause.getMessage());
                 }
             }, VIRTUAL_EXECUTOR);
 
@@ -584,6 +709,10 @@ public class AgentPersistenceHandler {
 
     @Nullable
     private String normalizeUserMessageForExtraction(@Nullable String goal) {
+        String restartOriginalInput = extractRestartOriginalUserInput(goal);
+        if (restartOriginalInput != null && !restartOriginalInput.isBlank()) {
+            return stripDocumentParseHint(restartOriginalInput);
+        }
         String resumeInput = extractResumeUserInput(goal);
         if (resumeInput != null && !resumeInput.isBlank()) {
             return stripDocumentParseHint(resumeInput);

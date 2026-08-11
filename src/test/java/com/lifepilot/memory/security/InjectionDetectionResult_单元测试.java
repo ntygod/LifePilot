@@ -40,11 +40,13 @@ class InjectionDetectionResult_单元测试 {
     }
 
     @Test
-    void confidence自动clamp() {
-        var r1 = InjectionDetectionResult.blocked(InjectionReason.MANUAL_BLACKLIST, 1.5f, null);
-        var r2 = InjectionDetectionResult.blocked(InjectionReason.MANUAL_BLACKLIST, -0.3f, null);
-        assertThat(r1.confidence()).isEqualTo(1.0f);
-        assertThat(r2.confidence()).isEqualTo(0.0f);
+    void confidence越界时抛异常() {
+        assertThatThrownBy(() -> InjectionDetectionResult.blocked(InjectionReason.MANUAL_BLACKLIST, 1.5f, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("注入检测置信度必须在 [0,1] 范围内");
+        assertThatThrownBy(() -> InjectionDetectionResult.blocked(InjectionReason.MANUAL_BLACKLIST, -0.3f, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("注入检测置信度必须在 [0,1] 范围内");
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.lifepilot.agent.context;
 
 import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.model.ReactAgentState;
+import com.lifepilot.agent.recovery.TaskRecoverySummaryBuilder;
+import com.lifepilot.agent.recovery.ToolExecutionSummarySupport;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.model.SourceKind;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
@@ -12,6 +14,7 @@ import com.lifepilot.memory.consumption.hot.HotMemoryDigest;
 import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
 import com.lifepilot.memory.consumption.hot.HotMemorySectionKind;
+import com.lifepilot.memory.governance.policy.MemoryUserBoundaryPolicy;
 import com.lifepilot.memory.store.scope.MemoryReadFilter;
 import com.lifepilot.memory.store.scope.MemoryScope;
 import com.lifepilot.memory.store.entity.EntityType;
@@ -23,6 +26,7 @@ import com.lifepilot.skill.install.SkillInstallation;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.model.SkillDefinition;
 import com.lifepilot.project.context.ProjectContext;
+import com.lifepilot.project.context.ProjectContextResolution;
 import com.lifepilot.project.context.ProjectContextResolver;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.skill.registry.SkillRegistry;
@@ -43,7 +47,10 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -58,6 +65,9 @@ public class ContextAssembler {
     private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
 
     private static final int DEFAULT_WORKSPACE_PROMPT_LIMIT = 3;
+    private static final int RECOVERY_OUTPUT_DETAIL_MAX_LENGTH = 1200;
+    private static final int RECOVERY_NEXT_ACTION_LIMIT = 5;
+    private static final int RECOVERY_NEXT_ACTION_MAX_LENGTH = 180;
 
     /** 记忆统计缓存（不可变 record）。 */
     private record MetadataCache(MemoryCounts counts, Instant cachedAt) {}
@@ -137,6 +147,7 @@ public class ContextAssembler {
     @Nullable private volatile SkillRequirementGate skillRequirementGate;
     @Nullable private volatile ProjectContextResolver projectContextResolver;
     @Nullable private volatile ChatSessionRepository chatSessionRepository;
+    private final Set<String> warmingDecisionSignalKeys = ConcurrentHashMap.newKeySet();
 
     public ContextAssembler(AgentConfigProperties config,
                             PromptRegistry promptRegistry,
@@ -271,21 +282,34 @@ public class ContextAssembler {
         Instant startTime = Instant.now();
         try {
             boolean mediaPlaceholder = isMediaPlaceholderQuery(state.goal());
+            MemoryContextMode memoryContextMode = resolveMemoryContextMode(state.memoryContextMode());
+            boolean skipDefaultMemory = shouldSkipDefaultMemoryInjection(state.goal(), memoryContextMode);
             int contextWindow = resolveContextWindow(state);
             int totalContextTokens = Math.max(
                     1024,
                     contextWindow - Math.max(0, config.getContext().getOutputReservedTokens()));
             // 入口一次性 resolve ProjectContext，热摘要与统计复用同一读取视图。
-            ProjectContext projectContext = resolveProjectContext(state);
-            MemoryReadFilter memoryFilter = toProjectFilter(projectContext,
-                    Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT, MemoryScope.AGENT_EXPERIENCE));
+            ProjectContextResolution projectResolution = resolveProjectContext(state);
+            MemoryReadFilter memoryFilter;
+            CompletableFuture<HotMemoryDigest> hotDigestFuture;
+            if (projectResolution.failed()) {
+                memoryFilter = MemoryReadFilter.of(
+                        List.of(),
+                        Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT, MemoryScope.AGENT_EXPERIENCE));
+                hotDigestFuture = CompletableFuture.completedFuture(null);
+            } else {
+                ProjectContext projectContext = projectResolution.context();
+                memoryFilter = toProjectFilter(
+                        projectContext,
+                        Set.of(MemoryScope.USER_PROFILE, MemoryScope.USER_FACT, MemoryScope.AGENT_EXPERIENCE));
+                hotDigestFuture = mediaPlaceholder || skipDefaultMemory
+                        ? CompletableFuture.completedFuture(null)
+                        : CompletableFuture.supplyAsync(
+                                () -> buildHotMemoryDigest(projectContext, memoryFilter), VIRTUAL_EXECUTOR);
+            }
             // 默认自动记忆注入只消费 HotMemoryDigest；冷召回由 memory.search / memory.recall 显式触发。
             var contextFuture = CompletableFuture.supplyAsync(
                     () -> safeLoadContextSnapshot(state, totalContextTokens), VIRTUAL_EXECUTOR);
-            var hotDigestFuture = mediaPlaceholder
-                    ? CompletableFuture.completedFuture((HotMemoryDigest) null)
-                    : CompletableFuture.supplyAsync(
-                        () -> safeBuildHotMemoryDigest(projectContext, memoryFilter), VIRTUAL_EXECUTOR);
             CompletableFuture.allOf(contextFuture, hotDigestFuture).join();
 
             ContextEngine.ContextSnapshot contextSnapshot = contextFuture.join();
@@ -364,76 +388,79 @@ public class ContextAssembler {
             logAssemblyMetrics(state, context, startTime);
             return context;
         } catch (Exception e) {
-            log.warn("上下文组装失败，回退到最小提示词: sessionId={}, error={}",
-                    state.sessionId(), e.getMessage());
-            return buildFallbackContext(state);
+            throw new IllegalStateException("上下文组装失败: sessionId=" + state.sessionId(), e);
         }
     }
 
     /**
      * 从 {@code state.sessionId()} 反查 ChatSession 的 projectId，经 resolver 得到 ProjectContext。
      *
-     * <p>依赖任一缺失（resolver / chatSessionRepo 为 null）或查询/解析抛错时返回 null，
-     * 调用方需在 {@link #toProjectFilter(ProjectContext, Set)} 中按 null 走 fallback 分支。</p>
+     * <p>没有会话归属时解析为主账户上下文；查询/解析抛错时返回 failed，调用方需跳过默认记忆注入。</p>
      */
-    @Nullable
-    ProjectContext resolveProjectContext(ReactAgentState state) {
+    ProjectContextResolution resolveProjectContext(ReactAgentState state) {
         if (projectContextResolver == null || chatSessionRepository == null) {
-            return null;
+            log.warn("项目上下文依赖未配置，本轮跳过默认记忆注入");
+            return ProjectContextResolution.failed("project_context_dependency_missing");
         }
         String sessionId = state.sessionId();
         if (sessionId == null || sessionId.isBlank()) {
-            return null;
-        }
-        try {
-            var session = chatSessionRepository.findById(sessionId);
-            if (session.isEmpty()) {
-                return null;
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.warn("解析主账户 ProjectContext 失败，本轮跳过默认记忆注入: error={}", e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
             }
-            return projectContextResolver.resolve(session.get().projectId());
+        }
+        Optional<com.lifepilot.interaction.web.model.ChatSession> session;
+        try {
+            session = chatSessionRepository.findById(sessionId);
         } catch (Exception e) {
-            log.debug("解析 ProjectContext 失败, 回退到默认 filter: sessionId={}, error={}",
+            log.warn("查询会话项目归属失败，本轮跳过默认记忆注入: sessionId={}, error={}",
                     sessionId, e.getMessage());
-            return null;
+            return ProjectContextResolution.failed("chat_session_lookup_failed");
+        }
+        if (session.isEmpty()) {
+            try {
+                return ProjectContextResolution.resolved(projectContextResolver.resolve(null));
+            } catch (Exception e) {
+                log.warn("解析主账户 ProjectContext 失败，本轮跳过默认记忆注入: sessionId={}, error={}",
+                        sessionId, e.getMessage());
+                return ProjectContextResolution.failed("personal_context_resolution_failed");
+            }
+        }
+        String projectId = session.get().projectId();
+        try {
+            return ProjectContextResolution.resolved(projectContextResolver.resolve(projectId));
+        } catch (Exception e) {
+            log.warn("解析 ProjectContext 失败，本轮跳过默认记忆注入: sessionId={}, projectId={}, error={}",
+                    sessionId, projectId != null ? projectId : "<personal>", e.getMessage());
+            return ProjectContextResolution.failed("project_context_resolution_failed");
         }
     }
 
     /**
      * 按 ProjectContext + scopes 构造记忆读取 filter。
-     *
-     * <p>ctx 为 null 时按 scopes 回退到 {@link MemoryReadFilter#userProfile()} /
-     * {@link MemoryReadFilter#userMemory()} / {@link MemoryReadFilter#agentExperience()} 原行为，
-     * 保证新旧路径向后兼容。</p>
-     *
-     * <p>仅为保留调用点可读性；实际逻辑 delegate 到
-     * {@link MemoryReadFilter#fromProjectContextOrFallback}。</p>
      */
-    MemoryReadFilter toProjectFilter(@Nullable ProjectContext ctx, Set<MemoryScope> scopes) {
-        return MemoryReadFilter.fromProjectContextOrFallback(
-                ctx != null,
-                ctx != null ? ctx.projectSpaceId() : null,
-                ctx != null ? ctx.personalSpaceId() : null,
-                ctx != null ? ctx.experienceSpaceId() : null,
-                ctx != null && ctx.isolated(),
+    MemoryReadFilter toProjectFilter(ProjectContext ctx, Set<MemoryScope> scopes) {
+        return MemoryReadFilter.buildForProject(
+                ctx.projectSpaceId(),
+                ctx.personalSpaceId(),
+                ctx.experienceSpaceId(),
+                ctx.isolated(),
                 scopes);
     }
 
     @Nullable
-    private HotMemoryDigest safeBuildHotMemoryDigest(@Nullable ProjectContext projectContext,
-                                                     MemoryReadFilter filter) {
+    private HotMemoryDigest buildHotMemoryDigest(ProjectContext projectContext,
+                                                 MemoryReadFilter filter) {
         if (hotMemoryDigestService == null) {
             return null;
         }
-        try {
-            return hotMemoryDigestService.build(filter, hotDigestViewKey(projectContext));
-        } catch (Exception e) {
-            log.warn("热记忆摘要构建失败，本轮跳过默认记忆注入: error={}", e.getMessage());
-            return null;
-        }
+        return hotMemoryDigestService.build(filter, hotDigestViewKey(projectContext));
     }
 
-    private String hotDigestViewKey(@Nullable ProjectContext projectContext) {
-        if (projectContext == null || projectContext.projectId() == null || projectContext.projectId().isBlank()) {
+    private String hotDigestViewKey(ProjectContext projectContext) {
+        if (projectContext.projectId() == null || projectContext.projectId().isBlank()) {
             return "personal";
         }
         return "project:" + projectContext.projectId()
@@ -459,37 +486,65 @@ public class ContextAssembler {
                 : new InjectedMemorySection(String.join("\n\n", parts), sourceIds);
     }
 
-    private AssembledContext buildFallbackContext(ReactAgentState state) {
-        String systemPrompt = buildAugmentedSystemPrompt(state);
-        String userPrompt = buildUserPrompt(state);
-        TokenBudget budget = buildTokenBudget(
-                resolveContextBudgetTokens(state),
-                systemPrompt,
-                0,
-                0,
-                0);
-        return new AssembledContext(
-                systemPrompt,
-                List.of(),
-                List.of(),
-                userPrompt,
-                List.of(),
-                budget,
-                0,
-                0.0f,
-                0,
-                true,
-                List.of(),
-                null
-        );
-    }
-
     boolean isMediaPlaceholderQuery(@Nullable String goal) {
         if (goal == null || goal.isBlank()) {
             return true;
         }
         String trimmed = goal.trim();
         return trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.length() <= 20;
+    }
+
+    boolean shouldSkipDefaultMemoryInjection(@Nullable String goal, MemoryContextMode mode) {
+        if (mode == MemoryContextMode.FOCUSED) {
+            return false;
+        }
+        if (mode == MemoryContextMode.OFF) {
+            log.debug("默认热记忆注入跳过: reason=single_turn_memory_context_off");
+            return true;
+        }
+        var decision = MemoryUserBoundaryPolicy.defaultMemoryReadBoundary(goal);
+        if (decision.skip()) {
+            log.debug("默认热记忆注入跳过: reason={}", decision.reason());
+            return true;
+        }
+        return false;
+    }
+
+    String buildMemoryContextPolicySection(ReactAgentState state) {
+        return switch (resolveMemoryContextMode(state.memoryContextMode())) {
+            case FOCUSED -> """
+                    <memory_context_policy>
+                    - 用户本轮显式选择了"我的记忆"上下文
+                    - 优先利用已注入的 user_profile_context / memory_context / experience_context 保持个性化和连续性
+                    - 如果当前注入不足且任务需要更多长期信息，可以主动调用 memory.search / memory.recall
+                    - 引用记忆时用自然语言说明参考了用户偏好或事实，不要暴露内部标签
+                    </memory_context_policy>
+                    """.strip();
+            case OFF -> """
+                    <memory_context_policy>
+                    - 用户本轮关闭了默认长期记忆上下文
+                    - 不要主动利用历史偏好、事实或经验，除非用户在本轮消息里重新明确要求
+                    </memory_context_policy>
+                    """.strip();
+            case AUTO -> "";
+        };
+    }
+
+    MemoryContextMode resolveMemoryContextMode(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return MemoryContextMode.AUTO;
+        }
+        return switch (raw.trim().toLowerCase()) {
+            case "focused" -> MemoryContextMode.FOCUSED;
+            case "off" -> MemoryContextMode.OFF;
+            default -> MemoryContextMode.AUTO;
+        };
+    }
+
+    enum MemoryContextMode {
+        AUTO,
+        FOCUSED,
+        OFF
     }
 
     String buildReactSystemPrompt(@Nullable ReactAgentState state) {
@@ -637,26 +692,77 @@ public class ContextAssembler {
     }
 
     /**
-     * 构建决策信号文本 — 由 AdaptiveDecisionEngine 生成，注入系统提示词。
+     * 构建决策信号文本，由 AdaptiveDecisionEngine 生成并注入上下文消息。
      *
      * <p>智能层 Phase 1：将历史经验、工具能力、环境状态等信号注入 LLM 上下文，
-     * 让 LLM 基于更丰富的信息做出更好的决策。失败时静默降级，不影响主流程。</p>
+     * 让 LLM 基于更丰富的信息做出更好的决策。辅助信号失败时记录日志并跳过本段。</p>
      */
     @Nullable
     private String buildDecisionSignalSection(ReactAgentState state) {
         if (adaptiveDecisionEngine == null) return null;
+        long timeoutMs = Math.max(0, config.getContext().getDecisionSignalTimeoutMs());
+        if (timeoutMs == 0) {
+            warmDecisionSignalSectionAsync(state);
+            log.debug("决策信号上下文预算为 0，本轮不等待注入，仅后台热身: traceId={}", state.traceId());
+            return null;
+        }
+        CompletableFuture<String> signalFuture = CompletableFuture.supplyAsync(
+                () -> buildDecisionSignalSectionNow(state), VIRTUAL_EXECUTOR);
+        try {
+            return signalFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.debug("决策信号构建超过 {}ms，跳过本轮信号注入: traceId={}",
+                    timeoutMs, state.traceId());
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("决策信号构建被中断，跳过本轮信号注入: traceId={}", state.traceId());
+            return null;
+        } catch (Exception e) {
+            log.warn("决策信号构建失败，跳过本轮信号注入: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void warmDecisionSignalSectionAsync(ReactAgentState state) {
+        String warmKey = decisionSignalWarmKey(state);
+        if (!warmingDecisionSignalKeys.add(warmKey)) {
+            log.debug("决策信号后台热身已在运行，跳过重复热身: traceId={}", state.traceId());
+            return;
+        }
+        CompletableFuture.runAsync(() -> buildDecisionSignalSectionNow(state), VIRTUAL_EXECUTOR)
+                .whenComplete((ignored, error) -> {
+                    warmingDecisionSignalKeys.remove(warmKey);
+                    if (error != null) {
+                        log.debug("决策信号后台热身失败，已跳过: traceId={}, error={}",
+                                state.traceId(), error.getMessage());
+                    }
+                });
+    }
+
+    private String decisionSignalWarmKey(ReactAgentState state) {
+        String traceId = state.traceId() != null ? state.traceId() : "";
+        String turnId = state.turnId() != null ? state.turnId() : "";
+        String sessionId = state.sessionId() != null ? state.sessionId() : "";
+        String memoryMode = state.memoryContextMode() != null ? state.memoryContextMode() : "";
+        return traceId + "|" + turnId + "|" + sessionId + "|" + memoryMode + "|" + state.goal();
+    }
+
+    @Nullable
+    private String buildDecisionSignalSectionNow(ReactAgentState state) {
         try {
             var availableToolIds = state.discoveredToolIds() != null
                     ? state.discoveredToolIds() : Set.<String>of();
+            boolean includeExperience = resolveMemoryContextMode(state.memoryContextMode()) != MemoryContextMode.OFF;
             var signal = adaptiveDecisionEngine.buildDecisionSignal(
-                    state.goal(), availableToolIds);
+                    state.goal(), availableToolIds, includeExperience);
             String formatted = adaptiveDecisionEngine.formatForPrompt(signal);
             if (formatted != null && !formatted.isBlank()) {
                 return "<decision_context>\n" + formatted + "\n</decision_context>";
             }
             return null;
         } catch (Exception e) {
-            log.debug("决策信号构建失败，静默跳过: {}", e.getMessage());
+            log.warn("决策信号构建失败，跳过本轮信号注入: {}", e.getMessage());
             return null;
         }
     }
@@ -693,6 +799,10 @@ public class ContextAssembler {
         if (!knowledgeBindingPrompt.isBlank()) {
             userPrompt = userPrompt + "\n\n" + knowledgeBindingPrompt;
         }
+        String memoryContextPolicy = buildMemoryContextPolicySection(state);
+        if (!memoryContextPolicy.isBlank()) {
+            userPrompt = userPrompt + "\n\n" + memoryContextPolicy;
+        }
         if (state.goal() != null && state.goal().contains("<resume_user_input>")) {
             userPrompt = userPrompt + """
 
@@ -702,7 +812,319 @@ public class ContextAssembler {
                 </resume_instruction>
                 """;
         }
+        if (state.goal() != null && state.goal().contains("<restart_instruction>")) {
+            userPrompt = userPrompt + """
+
+                    <restart_instruction_contract>
+                - 当前请求包含 <restart_original_user_input> 与 <restart_instruction>，表示这是对同一轮任务的重新开始
+                - 以 <restart_original_user_input> 作为用户原始目标，以 <restart_instruction> 和恢复断点作为本次重启约束
+                - 优先修正上一轮失败点，再完成原始目标
+                </restart_instruction_contract>
+                """;
+        }
+        String recoveryCheckpoint = buildTaskRecoveryCheckpointSection(state);
+        if (!recoveryCheckpoint.isBlank()) {
+            userPrompt = userPrompt + "\n\n" + recoveryCheckpoint;
+        }
         return userPrompt;
+    }
+
+    String buildTaskRecoveryCheckpointSection(ReactAgentState state) {
+        if (!isRecoveryRun(state)) {
+            return "";
+        }
+        if (state.goal() != null && state.goal().contains("<task_recovery_checkpoint>")) {
+            return "";
+        }
+        String requestRecoveryContext = buildTaskRecoveryCheckpointSectionFromRequest(state);
+        if (!requestRecoveryContext.isBlank()) {
+            return requestRecoveryContext;
+        }
+        var recoveryContext = TaskRecoverySummaryBuilder.recoveryContextFromSteps(state.steps());
+        if (recoveryContext.isEmpty()) {
+            return """
+                    <task_recovery_checkpoint>
+                    - 这是从上一轮中断状态恢复，不是新的独立任务。
+                    - 继续沿用已有步骤与结论，优先补齐未完成部分，避免重复已完成工作。
+                    </task_recovery_checkpoint>
+                    """.strip();
+        }
+        var context = recoveryContext.get();
+        Object checkpointValue = context.get("checkpoint");
+        if (!(checkpointValue instanceof Map<?, ?> checkpoint)) {
+            return "";
+        }
+
+        StringBuilder section = new StringBuilder("<task_recovery_checkpoint>\n");
+        section.append("- 这是从上一轮中断状态恢复，不是新的独立任务。\n");
+        appendRecoveryLine(section, "上次 trace", state.resumedFromTraceId());
+        appendRecoveryLine(section, "继续策略", valueAsString(context.get("resumeStrategy")));
+        appendRecoveryLine(section, "类型", valueAsString(checkpoint.get("kind")));
+        appendRecoveryLine(section, "调用 ID", valueAsString(checkpoint.get("callId")));
+        appendRecoveryLine(section, "工具", firstPresent(
+                valueAsString(checkpoint.get("toolName")),
+                valueAsString(checkpoint.get("toolId"))));
+        appendRecoveryLine(section, "执行类型", valueAsString(checkpoint.get("executionKind")));
+        appendRecoveryLine(section, "失败分类", failureCategoryAsLine(checkpoint.get("failureCategory")));
+        appendRecoveryLine(section, "缺失能力", missingCapabilitiesAsLine(checkpoint.get("missingCapabilities")));
+        appendRecoveryLine(section, "操作", valueAsString(checkpoint.get("action")));
+        appendRecoveryLine(section, "中断状态", interruptedAsLine(checkpoint.get("interrupted")));
+        appendRecoveryLine(section, "工作目录", valueAsString(checkpoint.get("workingDirectory")));
+        appendRecoveryLine(section, "输入", valueAsString(checkpoint.get("inputSummary")));
+        appendRecoveryLine(section, "输入详情", compactRecoveryText(
+                valueAsString(checkpoint.get("inputDetail")),
+                RECOVERY_OUTPUT_DETAIL_MAX_LENGTH));
+        appendRecoveryLine(section, "输出", valueAsString(checkpoint.get("outputSummary")));
+        appendRecoveryLine(section, "详细输出", compactRecoveryText(
+                valueAsString(checkpoint.get("outputDetail")),
+                RECOVERY_OUTPUT_DETAIL_MAX_LENGTH));
+        appendRecoveryLine(section, "生成文件", valueAsString(checkpoint.get("generatedFilePath")));
+        appendRecoveryLine(section, "产物复用", generatedFileReuseLine(
+                valueAsString(checkpoint.get("generatedFilePath"))));
+        appendRecoveryLine(section, "产物引用", artifactRefsAsLine(checkpoint.get("artifactRefs")));
+        appendRecoveryLine(section, "关联对象", subjectAsLine(
+                checkpoint.get("subjectLabel"),
+                checkpoint.get("subjectNames")));
+        appendNextActions(section, context.get("nextActions"));
+        section.append("- 继续时优先处理失败点后的剩余任务，不要无意义重放已成功步骤。\n");
+        section.append("</task_recovery_checkpoint>");
+        return section.toString();
+    }
+
+    private String buildTaskRecoveryCheckpointSectionFromRequest(ReactAgentState state) {
+        Map<String, Object> context = state.turnRecoveryContext();
+        if (context == null || context.isEmpty()) {
+            return "";
+        }
+
+        Object checkpointValue = context.get("checkpoint");
+        Map<?, ?> checkpoint = checkpointValue instanceof Map<?, ?> raw ? raw : Map.of();
+        Object nextActionsValue = context.get("nextActions");
+
+        StringBuilder section = new StringBuilder("<task_recovery_checkpoint>\n");
+        section.append("- 这是从上一轮中断状态恢复，不是新的独立任务。\n");
+        appendRecoveryLine(section, "恢复动作", valueAsString(context.get("action")));
+        appendRecoveryLine(section, "上次 trace", firstPresent(
+                valueAsString(context.get("sourceTraceId")),
+                state.resumedFromTraceId()));
+        appendRecoveryLine(section, "标题", valueAsString(context.get("title")));
+        appendRecoveryLine(section, "详情", valueAsString(context.get("detail")));
+        appendRecoveryLine(section, "继续策略", valueAsString(context.get("resumeStrategy")));
+        if (!checkpoint.isEmpty()) {
+            appendRecoveryLine(section, "类型", valueAsString(checkpoint.get("kind")));
+            appendRecoveryLine(section, "调用 ID", valueAsString(checkpoint.get("callId")));
+            appendRecoveryLine(section, "工具", firstPresent(
+                    valueAsString(checkpoint.get("toolName")),
+                    valueAsString(checkpoint.get("toolId"))));
+            appendRecoveryLine(section, "执行类型", valueAsString(checkpoint.get("executionKind")));
+            appendRecoveryLine(section, "失败分类", failureCategoryAsLine(checkpoint.get("failureCategory")));
+            appendRecoveryLine(section, "缺失能力", missingCapabilitiesAsLine(checkpoint.get("missingCapabilities")));
+            appendRecoveryLine(section, "操作", valueAsString(checkpoint.get("action")));
+            appendRecoveryLine(section, "中断状态", interruptedAsLine(checkpoint.get("interrupted")));
+            appendRecoveryLine(section, "工作目录", valueAsString(checkpoint.get("workingDirectory")));
+            appendRecoveryLine(section, "输入", valueAsString(checkpoint.get("inputSummary")));
+            appendRecoveryLine(section, "输入详情", compactRecoveryText(
+                    valueAsString(checkpoint.get("inputDetail")),
+                    RECOVERY_OUTPUT_DETAIL_MAX_LENGTH));
+            appendRecoveryLine(section, "输出", valueAsString(checkpoint.get("outputSummary")));
+            appendRecoveryLine(section, "详细输出", compactRecoveryText(
+                    valueAsString(checkpoint.get("outputDetail")),
+                    RECOVERY_OUTPUT_DETAIL_MAX_LENGTH));
+            appendRecoveryLine(section, "生成文件", valueAsString(checkpoint.get("generatedFilePath")));
+            appendRecoveryLine(section, "产物复用", generatedFileReuseLine(
+                    valueAsString(checkpoint.get("generatedFilePath"))));
+            appendRecoveryLine(section, "产物引用", artifactRefsAsLine(checkpoint.get("artifactRefs")));
+            appendRecoveryLine(section, "关联对象", subjectAsLine(
+                    checkpoint.get("subjectLabel"),
+                    checkpoint.get("subjectNames")));
+        }
+        appendNextActions(section, nextActionsValue);
+        section.append(checkpoint.isEmpty()
+                ? "- 继续时保留已经完成的内容，按恢复计划推进剩余任务。\n"
+                : "- 继续时优先处理失败点后的剩余任务，不要无意义重放已成功步骤。\n");
+        section.append("</task_recovery_checkpoint>");
+        return section.toString();
+    }
+
+    private void appendNextActions(StringBuilder section, @Nullable Object nextActionsValue) {
+        if (!(nextActionsValue instanceof List<?> nextActions) || nextActions.isEmpty()) {
+            return;
+        }
+        List<String> compacted = new ArrayList<>();
+        for (Object nextAction : nextActions) {
+            String text = compactRecoveryText(
+                    valueAsString(nextAction),
+                    RECOVERY_NEXT_ACTION_MAX_LENGTH);
+            if (text != null && !text.isBlank()) {
+                compacted.add(text);
+            }
+            if (compacted.size() >= RECOVERY_NEXT_ACTION_LIMIT) {
+                break;
+            }
+        }
+        if (compacted.isEmpty()) {
+            return;
+        }
+        section.append("- 建议下一步:\n");
+        for (String nextAction : compacted) {
+            section.append("  - ").append(nextAction).append('\n');
+        }
+    }
+
+    @Nullable
+    private String failureCategoryAsLine(@Nullable Object value) {
+        return ToolExecutionSummarySupport.failureCategoryDisplay(valueAsString(value));
+    }
+
+    private boolean isRecoveryRun(ReactAgentState state) {
+        return (state.resumedFromTraceId() != null && !state.resumedFromTraceId().isBlank())
+                || (state.turnRecoveryContext() != null && !state.turnRecoveryContext().isEmpty())
+                || (state.goal() != null && (state.goal().contains("<resume_user_input>")
+                || state.goal().contains("<restart_instruction>")));
+    }
+
+    private void appendRecoveryLine(StringBuilder section, String label, @Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        section.append("- ").append(label).append(": ").append(value.strip()).append('\n');
+    }
+
+    @Nullable
+    private String generatedFileReuseLine(@Nullable String generatedFilePath) {
+        if (generatedFilePath == null || generatedFilePath.isBlank()) {
+            return null;
+        }
+        String path = generatedFilePath.strip();
+        return "已生成文件可直接复用：" + path + "。继续时先检查并引用它，不要无故重复生成或覆盖。";
+    }
+
+    @Nullable
+    private String artifactRefsAsLine(@Nullable Object value) {
+        if (!(value instanceof List<?> refs) || refs.isEmpty()) {
+            return null;
+        }
+        List<String> lines = new ArrayList<>();
+        for (Object ref : refs) {
+            if (!(ref instanceof Map<?, ?> raw)) {
+                continue;
+            }
+            String artifactId = valueAsString(raw.get("artifactId"));
+            if (artifactId == null) {
+                continue;
+            }
+            String fileName = firstPresent(valueAsString(raw.get("fileName")), artifactId);
+            String kind = valueAsString(raw.get("kind"));
+            String mimeType = valueAsString(raw.get("mimeType"));
+            String downloadUrl = valueAsString(raw.get("downloadUrl"));
+            List<String> detailParts = new ArrayList<>();
+            if (kind != null && !kind.isBlank()) {
+                detailParts.add(kind);
+            }
+            if (mimeType != null && !mimeType.isBlank()) {
+                detailParts.add(mimeType);
+            }
+            String detail = String.join("/", detailParts);
+            String suffix = detail.isBlank() ? "" : "（" + detail + "）";
+            lines.add(fileName + suffix + " id=" + artifactId
+                    + (downloadUrl != null ? " url=" + downloadUrl : ""));
+            if (lines.size() >= 8) {
+                break;
+            }
+        }
+        return lines.isEmpty()
+                ? null
+                : String.join("；", lines)
+                + "。继续时优先复用这些产物，不要无故重复生成。";
+    }
+
+    @Nullable
+    private String missingCapabilitiesAsLine(@Nullable Object value) {
+        if (!(value instanceof List<?> items) || items.isEmpty()) {
+            return null;
+        }
+        List<String> lines = new ArrayList<>();
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> raw)) {
+                String text = valueAsString(item);
+                if (text != null && !text.isBlank()) {
+                    lines.add(text);
+                }
+                continue;
+            }
+            String id = valueAsString(raw.get("id"));
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            String kind = valueAsString(raw.get("kind"));
+            String source = valueAsString(raw.get("source"));
+            String reason = valueAsString(raw.get("reason"));
+            List<String> detailParts = new ArrayList<>();
+            if (kind != null && !kind.isBlank()) {
+                detailParts.add(kind);
+            }
+            if (source != null && !source.isBlank()) {
+                detailParts.add(source);
+            }
+            if (reason != null && !reason.isBlank()) {
+                detailParts.add(reason);
+            }
+            String detail = String.join("/", detailParts);
+            lines.add(detail.isBlank() ? id : id + "（" + detail + "）");
+            if (lines.size() >= 6) {
+                break;
+            }
+        }
+        return lines.isEmpty() ? null : String.join("；", lines);
+    }
+
+    @Nullable
+    private String compactRecoveryText(@Nullable String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String text = value.strip();
+        return text.length() > maxLength ? text.substring(0, maxLength - 1) + "…" : text;
+    }
+
+    @Nullable
+    private String firstPresent(@Nullable String first, @Nullable String second) {
+        return first != null && !first.isBlank() ? first : second;
+    }
+
+    @Nullable
+    private String valueAsString(@Nullable Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
+    }
+
+    @Nullable
+    private String interruptedAsLine(@Nullable Object value) {
+        return Boolean.TRUE.equals(value) ? "已开始但没有返回执行结果" : null;
+    }
+
+    @Nullable
+    private String valuesAsLine(@Nullable Object value) {
+        if (value instanceof List<?> values && !values.isEmpty()) {
+            return values.stream()
+                    .map(this::valueAsString)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.joining("、"));
+        }
+        return valueAsString(value);
+    }
+
+    @Nullable
+    private String subjectAsLine(@Nullable Object labelValue, @Nullable Object namesValue) {
+        String names = valuesAsLine(namesValue);
+        if (names == null) {
+            return null;
+        }
+        String label = valueAsString(labelValue);
+        return label == null ? names : label + " " + names;
     }
 
     private String buildKnowledgeBindingPrompt(@Nullable String sessionId, @Nullable List<String> overrideKnowledgeBaseIds) {
@@ -1003,8 +1425,8 @@ public class ContextAssembler {
      * 构建 Skill Catalog 段 —— 全量列出所有已启用 skill。
      *
      * <p>过滤链：skills 表（enabled=true） → SkillRegistry 内存定义 →
-     * {@link SkillRequirementGate} requires 满足 → 按 query 关键词打分 + priority
-     * 排序（命中关键词的排在前面，便于 LLM 优先注意），不做截断。</p>
+     * {@link SkillRequirementGate} requires 满足 → 按 query 关键词打分排序
+     * （命中关键词的排在前面，便于 LLM 优先注意），不做截断。</p>
      *
      * <p>输出渲染进 {@code agent/skill-catalog.st} 模板，
      * XML 标签格式（{@code <skill name="..."><description>...</description></skill>}）；
@@ -1054,14 +1476,19 @@ public class ContextAssembler {
         }
     }
 
-    /** Skill catalog 一行映射：name + description + tags。 */
-    record SkillCatalogEntry(String name, String description, List<String> tags) {}
+    /** Skill catalog 一行映射：name + description + tags + outputs。 */
+    record SkillCatalogEntry(String name, String description, List<String> tags, List<String> outputs) {
+        SkillCatalogEntry {
+            tags = tags == null ? List.of() : List.copyOf(tags);
+            outputs = outputs == null ? List.of() : List.copyOf(outputs);
+        }
+    }
 
     /** 把 {@link SkillDefinition} 投影到 {@link SkillCatalogEntry}；优先 frontmatter name，缺则回退 id。 */
     private static SkillCatalogEntry toCatalogEntry(SkillDefinition def) {
         SkillZhiweiMeta meta = def.zhiweiMeta();
         String displayName = (def.name() != null && !def.name().isBlank()) ? def.name() : def.id();
-        return new SkillCatalogEntry(displayName, def.description(), meta.tags());
+        return new SkillCatalogEntry(displayName, def.description(), meta.tags(), meta.outputs());
     }
 
     /**
@@ -1112,7 +1539,7 @@ public class ContextAssembler {
     }
 
     /**
-     * 按 (score 降, priority 升, name 升) 排序，全量返回（不截断）。
+     * 按 (score 降, name 升) 排序，全量返回（不截断）。
      * 命中 query 关键词的排在前面，让 LLM 优先注意。
      */
     private static List<SkillCatalogEntry> sortAllEntries(List<SkillCatalogEntry> all,
@@ -1140,8 +1567,11 @@ public class ContextAssembler {
             sb.append("<skill name=\"").append(e.name()).append("\">")
                     .append("<description>")
                     .append(escapeXml(stripKeywordList(e.description())))
-                    .append("</description>")
-                    .append("</skill>\n");
+                    .append("</description>");
+            if (!e.outputs().isEmpty()) {
+                sb.append("<outputs>").append(escapeXml(String.join(",", e.outputs()))).append("</outputs>");
+            }
+            sb.append("</skill>\n");
         }
         return sb.toString().stripTrailing();
     }

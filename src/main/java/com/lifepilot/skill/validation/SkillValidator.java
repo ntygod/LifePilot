@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -17,7 +19,7 @@ import java.util.regex.Pattern;
  * <p>两条路径（见 docs/skill-spec.md §5）：
  * <ul>
  *   <li>{@link #validate(ParsedSkill)}：预置 / 导入 / 市场 路径，宽松 ——
- *       description + body 硬约束校验 + secret 模式扫描 + 未知工具仅 WARN 不阻断</li>
+ *       description + body 硬约束校验 + secret 模式扫描 + 未知工具仅 DEBUG 不阻断</li>
  *   <li>{@link #validateGenerated(ParsedSkill)}：自生成路径，严格 ——
  *       额外强校验工具存在性 + 拒绝 HIGH / CRITICAL 风险工具</li>
  * </ul>
@@ -41,9 +43,14 @@ public class SkillValidator {
             Pattern.compile("sk-[a-zA-Z0-9]{40,}")
     );
 
+    /** v3 输出形态枚举；只作为路由和 UI 提示，不代表硬执行能力。 */
+    private static final Set<String> ALLOWED_OUTPUTS = Set.of(
+            "text", "file", "a2ui", "memory", "notification", "task");
+
     private final SkillDescriptionValidator descriptionValidator;
     private final SkillBodyValidator bodyValidator;
     private final DynamicToolRegistry toolRegistry;
+    private final Set<String> reportedUnknownSuggestedTools = ConcurrentHashMap.newKeySet();
 
     public SkillValidator(SkillDescriptionValidator descriptionValidator,
                           SkillBodyValidator bodyValidator,
@@ -56,7 +63,7 @@ public class SkillValidator {
     /**
      * 预置 / 导入 / 市场 路径校验。
      *
-     * <p>{@code suggestedTools} 引用的工具不存在时只记 WARN，不抛异常 ——
+     * <p>{@code suggestedTools} 引用的工具不存在时只记 DEBUG，不抛异常 ——
      * 真正的工具可用性在加载期由 {@link SkillRequirementGate} 基于
      * {@code requires.tools} 做硬过滤。</p>
      *
@@ -66,9 +73,11 @@ public class SkillValidator {
     public void validate(ParsedSkill parsed) {
         validateCommon(parsed);
         for (String toolId : parsed.frontmatter().zhiweiMeta().suggestedTools()) {
+            if (SkillToolReferenceCatalog.isCanonicalToolId(toolId)) {
+                continue;
+            }
             if (toolRegistry.resolve(toolId).isEmpty()) {
-                log.warn("skill '{}' 引用了未知工具 '{}'（仅 WARN，不阻断）",
-                        parsed.frontmatter().name(), toolId);
+                logUnknownSuggestedToolOnce(parsed.frontmatter().name(), toolId);
             }
         }
     }
@@ -91,6 +100,11 @@ public class SkillValidator {
         for (String toolId : parsed.frontmatter().zhiweiMeta().suggestedTools()) {
             var toolOpt = toolRegistry.resolve(toolId);
             if (toolOpt.isEmpty()) {
+                if (SkillToolReferenceCatalog.isCanonicalToolId(toolId)) {
+                    throw new IllegalArgumentException(
+                            "自生成 skill '" + parsed.frontmatter().name()
+                                    + "' 引用了当前不可用工具: " + toolId);
+                }
                 throw new IllegalArgumentException(
                         "自生成 skill '" + parsed.frontmatter().name()
                                 + "' 引用了未知工具: " + toolId);
@@ -109,11 +123,26 @@ public class SkillValidator {
         SkillFrontmatter fm = parsed.frontmatter();
         descriptionValidator.validate(fm.description());
         bodyValidator.validate(parsed.body());
+        for (String output : fm.zhiweiMeta().outputs()) {
+            if (!ALLOWED_OUTPUTS.contains(output)) {
+                throw new IllegalArgumentException(
+                        "metadata.zhiwei.outputs 包含未知输出形态: " + output
+                                + "（允许: " + ALLOWED_OUTPUTS + "）");
+            }
+        }
         for (Pattern p : SECRET_PATTERNS) {
             if (p.matcher(parsed.body()).find()) {
                 throw new IllegalArgumentException(
                         "body 命中疑似 secret 模式: " + p.pattern() + "（见 docs/skill-spec.md §5）");
             }
         }
+    }
+
+    private void logUnknownSuggestedToolOnce(String skillName, String toolId) {
+        String key = skillName + "\u0000" + toolId;
+        if (!reportedUnknownSuggestedTools.add(key)) {
+            return;
+        }
+        log.debug("skill '{}' 引用了未知工具 '{}'（仅 DEBUG，不阻断）", skillName, toolId);
     }
 }

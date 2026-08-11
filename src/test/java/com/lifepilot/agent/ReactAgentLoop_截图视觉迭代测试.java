@@ -259,8 +259,7 @@ class ReactAgentLoop_截图视觉迭代测试 {
                 null,                 // intentMatcher
                 null,                 // compactionEngine
                 sharedScheduler,
-                null,                 // workspaceService
-                null                  // experienceSummarizer
+                null                  // workspaceService
         );
     }
 

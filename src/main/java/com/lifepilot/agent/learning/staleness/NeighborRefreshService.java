@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 邻居刷新服务 —— 为被标记为 STALE_CANDIDATE 的邻居生成"刷新候选"。
@@ -29,7 +30,7 @@ public final class NeighborRefreshService {
     private final AgentLearningProperties.Staleness config;
 
     public NeighborRefreshService(AgentLearningProperties.Staleness config) {
-        this.config = config;
+        this.config = Objects.requireNonNull(config, "staleness 配置不能为空");
     }
 
     /**
@@ -38,14 +39,20 @@ public final class NeighborRefreshService {
     public int writeRefreshCandidates(TemporalEntity triggeringEntity,
                                       List<TemporalEntity> neighbors) {
         if (!config.isNeighborRefreshEnabled()) return 0;
-        if (triggeringEntity == null || neighbors == null || neighbors.isEmpty()) return 0;
+        Objects.requireNonNull(triggeringEntity, "触发实体不能为空");
+        String triggeringId = requireCleanText(triggeringEntity.id(), "触发实体 ID 不能为空");
+        Objects.requireNonNull(neighbors, "邻居列表不能为空");
+        if (neighbors.isEmpty()) return 0;
         int count = 0;
         for (TemporalEntity neighbor : neighbors) {
-            if (neighbor == null) continue;
-            // 日志式落地：触发实体 + 邻居 + 建议文本，后续由 Consolidator 消费
+            Objects.requireNonNull(neighbor, "邻居不能为空");
+            String neighborId = requireCleanText(neighbor.id(), "邻居 ID 不能为空");
+            if (neighbor.type() == null) {
+                throw new IllegalStateException("邻居类型不能为空: id=" + neighborId);
+            }
             log.info("neighbor-refresh-candidate: triggering={} neighbor={} neighborType={} suggested={}",
-                    triggeringEntity.id(), neighbor.id(),
-                    neighbor.type() == null ? "?" : neighbor.type().name(),
+                    triggeringId, neighborId,
+                    neighbor.type().name(),
                     buildSuggestedDescription(triggeringEntity, neighbor));
             count++;
         }
@@ -53,14 +60,30 @@ public final class NeighborRefreshService {
     }
 
     private static String buildSuggestedDescription(TemporalEntity trigger, TemporalEntity neighbor) {
-        String trig = trigger.description() == null ? trigger.name() : trigger.description();
-        String orig = neighbor.description() == null ? neighbor.name() : neighbor.description();
+        String trig = descriptionOrName(trigger, "触发实体");
+        String orig = descriptionOrName(neighbor, "邻居");
         return "原事实: " + safeTrim(orig, 80) + "；新事实暗示: " + safeTrim(trig, 80);
     }
 
+    private static String descriptionOrName(TemporalEntity entity, String label) {
+        if (entity.description() != null && !entity.description().isBlank()) {
+            return entity.description();
+        }
+        return requireCleanText(entity.name(), label + "名称不能为空");
+    }
+
     private static String safeTrim(String s, int max) {
-        if (s == null) return "";
         String oneLine = s.replaceAll("\\s+", " ").trim();
         return oneLine.length() <= max ? oneLine : oneLine.substring(0, max) + "...";
+    }
+
+    private static String requireCleanText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(message + "，且不能包含首尾空白: " + value);
+        }
+        return value;
     }
 }

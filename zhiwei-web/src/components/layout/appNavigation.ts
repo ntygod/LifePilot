@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bot,
   Brain,
+  Compass,
   Cpu,
   GitBranch,
   Key,
@@ -41,6 +42,7 @@ export const sidebarNavGroups: NavGroup[] = [
     label: '工作台',
     iconColor: 'text-violet-500/70',
     items: [
+      { label: '能力中心', path: '/capabilities', icon: Compass, matchPrefixes: ['/capabilities'] },
       { label: '智能体', path: '/agents', icon: Bot, matchPrefixes: ['/agents'] },
       { label: '技能', path: '/skills', icon: Puzzle, matchPrefixes: ['/skills'] },
       { label: '扩展市场', path: '/marketplace', icon: ShoppingBag, matchPrefixes: ['/marketplace'] },
@@ -79,7 +81,6 @@ export const settingsNavGroups: NavGroup[] = [
       { label: '知识与检索', path: '/settings/knowledge', icon: BookOpen, matchPrefixes: ['/settings/knowledge'] },
       { label: '集成渠道', path: '/settings/channels', icon: MessageSquare, matchPrefixes: ['/settings/channels'] },
       { label: '授权与执行', path: '/settings/permissions', icon: Key, matchPrefixes: ['/settings/permissions'] },
-      { label: '主动助手', path: '/settings/proactive', icon: Sparkles, matchPrefixes: ['/settings/proactive'] },
       { label: '代码执行环境', path: '/settings/code-execution', icon: Cpu, matchPrefixes: ['/settings/code-execution'] },
     ],
   },

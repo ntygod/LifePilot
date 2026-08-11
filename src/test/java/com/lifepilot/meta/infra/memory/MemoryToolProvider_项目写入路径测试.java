@@ -5,6 +5,7 @@ import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.SessionKnowledgeBaseRepository;
 import com.lifepilot.knowledge.retrieve.DocumentRetriever;
 import com.lifepilot.knowledge.retrieve.SessionKnowledgeScopeResolver;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.retrieval.config.MemoryRetrievalProperties;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.retrieval.HybridRetriever;
@@ -63,7 +64,8 @@ class MemoryToolProvider_项目写入路径测试 {
                 mock(SessionKnowledgeScopeResolver.class),
                 new MemoryRetrievalProperties(),
                 projectContextResolver,
-                chatSessionRepository
+                chatSessionRepository,
+                new MemoryAccessPolicy()
         );
         provider.registerTools(registry);
 
@@ -116,7 +118,19 @@ class MemoryToolProvider_项目写入路径测试 {
 
         var oldEntity = new TemporalEntity("e-1", EntityType.PREFERENCE, "旧名", "desc",
                 Map.of(), 1, true, Instant.now(), null, "s-upd",
-                1.0f, 0.5f, 0, null, Instant.now(), Instant.now());
+                1.0f, 0.5f, 0, null, Instant.now(), Instant.now(),
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        Instant.now());
         when(semanticMemory.findByIds(any(), any())).thenReturn(Map.of("e-1", oldEntity));
 
         var tool = registry.resolve("memory").orElseThrow();
@@ -155,31 +169,6 @@ class MemoryToolProvider_项目写入路径测试 {
         assertThat(captor.getValue().spaceId()).isEqualTo("space-tag");
     }
 
-    @Test
-    void create路径_resolver缺失_走fallback填null() {
-        // 构造未注入 resolver 的 provider
-        var providerWithoutResolver = new MemoryToolProvider(
-                mock(HybridRetriever.class),
-                semanticMemory,
-                mock(EpisodicMemory.class),
-                mock(DocumentRetriever.class),
-                mock(SessionKnowledgeBaseRepository.class),
-                mock(SessionKnowledgeScopeResolver.class),
-                new MemoryRetrievalProperties()
-        );
-        var fallbackRegistry = new DynamicToolRegistry(mock(ApplicationEventPublisher.class));
-        providerWithoutResolver.registerTools(fallbackRegistry);
-
-        var tool = fallbackRegistry.resolve("memory").orElseThrow();
-        tool.execute(new ToolInput(tool.id(),
-                Map.of("action", "create", "name", "x", "entityType", "PREFERENCE"),
-                tool.inputSchema(), null,
-                Map.of("sessionId", "s")));
-
-        MemoryWriteContext ctx = captureWriteContext();
-        assertThat(ctx.spaceId()).isNull();
-    }
-
     private MemoryWriteContext captureWriteContext() {
         ArgumentCaptor<MemoryWriteContext> captor = ArgumentCaptor.forClass(MemoryWriteContext.class);
         verify(semanticMemory).upsertWithConflictDetection(any(), any(), captor.capture());
@@ -196,13 +185,37 @@ class MemoryToolProvider_项目写入路径测试 {
         return new TemporalEntity("gen-" + System.nanoTime(), e.type(), e.name(), e.description(),
                 e.properties(), e.version(), e.isCurrent(), e.validFrom(), e.validTo(),
                 e.sourceConversationId(), e.extractionConfidence(), e.importanceScore(),
-                e.accessCount(), e.lastAccessedAt(), e.createdAt(), e.updatedAt());
+                e.accessCount(), e.lastAccessedAt(), e.createdAt(), e.updatedAt(),
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        e.updatedAt());
     }
 
     private TemporalEntity entity(String id) {
         var now = Instant.now();
         return new TemporalEntity(id, EntityType.PREFERENCE, id, "desc",
                 Map.of(), 1, true, now, null, "s-tag",
-                1.0f, 0.5f, 0, null, now, now);
+                1.0f, 0.5f, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

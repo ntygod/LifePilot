@@ -48,6 +48,7 @@ public class WorkflowRegistry {
     private final WorkflowYamlParser parser;
     private final ConcurrentHashMap<String, Instant> fileLastModified = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> fileToWorkflowId = new ConcurrentHashMap<>();
+    private final Set<Path> missingDirectoryLogged = ConcurrentHashMap.newKeySet();
     private static volatile String duplicateStemSignature = "";
 
     /** 持久化仓储，注册时同步写入数据库以满足外键约束。 */
@@ -239,9 +240,13 @@ public class WorkflowRegistry {
 
     void performScan(Path directory) {
         if (!Files.isDirectory(directory)) {
-            log.debug("工作流定义目录不存在，跳过扫描: path={}", directory);
+            Path normalized = directory.toAbsolutePath().normalize();
+            if (missingDirectoryLogged.add(normalized)) {
+                log.debug("工作流定义目录不存在，跳过扫描: path={}", directory);
+            }
             return;
         }
+        missingDirectoryLogged.remove(directory.toAbsolutePath().normalize());
 
         Set<String> currentFiles = new HashSet<>();
         try (Stream<Path> files = Files.list(directory)) {

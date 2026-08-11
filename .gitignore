@@ -22,6 +22,10 @@ target/
 *.log
 hs_err_pid*
 
+# === Python ===
+__pycache__/
+*.py[cod]
+
 # === Node / Frontend ===
 node_modules/
 dist/
@@ -57,3 +61,6 @@ zhiwei-web/src-tauri/resources/*.jar
 .superpowers/
 /tmp/
 .worktrees/
+
+# === Local personal data ===
+/user_profile.md

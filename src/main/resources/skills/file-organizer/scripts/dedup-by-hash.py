@@ -11,7 +11,7 @@
   ]
 
 LLM 调用示例:
-  shell_exec(command="python {skill_scripts_dir}/dedup-by-hash.py /home/user/downloads --json")
+  shell.exec(command="python {skill_scripts_dir}/dedup-by-hash.py /home/user/downloads --json")
 """
 
 import argparse

@@ -2,6 +2,9 @@ package com.lifepilot.interaction.web.model;
 
 import jakarta.annotation.Nullable;
 
+import java.time.Instant;
+import java.util.Map;
+
 /**
  * 统一记忆搜索结果 DTO。
  *
@@ -16,5 +19,15 @@ public record MemorySearchResultDto(
         float relevanceScore,
         @Nullable String spaceId,
         @Nullable String memoryScope,
-        @Nullable String realityType
+        @Nullable String realityType,
+        String lifecycleState,
+        boolean historical,
+        boolean stale,
+        boolean needsRevalidation,
+        String evidenceKind,
+        String trustLevel,
+        float trustScore,
+        int evidenceCount,
+        @Nullable Instant lastVerifiedAt,
+        Map<String, Float> scoreBreakdown
 ) {}

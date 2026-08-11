@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "tauri:build": "node scripts/prepare-backend.mjs && vue-tsc -b && vite build",
+    "tauri:prepare": "node scripts/prepare-backend.mjs && vue-tsc -b && vite build",
+    "tauri:prepare:jre": "node scripts/prepare-jre.mjs --force",
+    "tauri:prepare:jre:dry-run": "node scripts/prepare-jre.mjs --dry-run",
+    "tauri:build": "node scripts/check-tauri-build-env.mjs && tauri build",
+    "tauri:build:windows": "node scripts/check-tauri-build-env.mjs --require-embedded-jre && tauri build --bundles nsis --ci",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest --run"

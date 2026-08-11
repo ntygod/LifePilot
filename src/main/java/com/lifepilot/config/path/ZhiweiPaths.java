@@ -58,12 +58,14 @@ public class ZhiweiPaths {
     public static final String DIR_RUNTIME_PYTHON = "runtime/python";
     /** 日志目录 */
     public static final String DIR_LOGS = "logs";
+    /** 备份目录 */
+    public static final String DIR_BACKUPS = "backups";
 
     /** 所有需要在初始化时创建的固定子目录 */
     private static final List<String> REQUIRED_SUBDIRS = List.of(
             DIR_DB, DIR_SKILLS, DIR_CHANNELS,
             DIR_KNOWLEDGE, DIR_CACHE, DIR_CACHE_BROWSER, DIR_CACHE_PYTHON,
-            DIR_RUNTIME, DIR_RUNTIME_PYTHON, DIR_LOGS
+            DIR_RUNTIME, DIR_RUNTIME_PYTHON, DIR_LOGS, DIR_BACKUPS
     );
 
     /** HOME 默认值 */

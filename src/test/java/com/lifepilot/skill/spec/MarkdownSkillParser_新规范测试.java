@@ -24,7 +24,7 @@ class MarkdownSkillParser_新规范测试 {
                 description: 当需要创建/合并/审查 PR 时使用。关键词 pr / issue / ci
                 version: 1.0.0
                 ---
-                ## 适用场景
+                ## 触发判断
                 - 创建 PR
                 """;
 
@@ -32,7 +32,7 @@ class MarkdownSkillParser_新规范测试 {
 
         assertThat(parsed.frontmatter().name()).isEqualTo("github-workflow");
         assertThat(parsed.frontmatter().version()).isEqualTo("1.0.0");
-        assertThat(parsed.body()).contains("## 适用场景");
+        assertThat(parsed.body()).contains("## 触发判断");
     }
 
     @Test
@@ -46,6 +46,7 @@ class MarkdownSkillParser_新规范测试 {
                   zhiwei:
                     suggested_tools: [a, b]
                     tags: [foo]
+                    outputs: [text, file]
                     requires:
                       bins: [git]
                       env: [GITHUB_TOKEN]
@@ -60,6 +61,7 @@ class MarkdownSkillParser_新规范测试 {
 
         assertThat(meta.suggestedTools()).containsExactly("a", "b");
         assertThat(meta.tags()).containsExactly("foo");
+        assertThat(meta.outputs()).containsExactly("text", "file");
         assertThat(meta.requires().bins()).containsExactly("git");
         assertThat(meta.requires().env()).containsExactly("GITHUB_TOKEN");
         assertThat(meta.requires().os()).containsExactly("linux");
@@ -104,6 +106,41 @@ class MarkdownSkillParser_新规范测试 {
 
         assertThatThrownBy(() -> parser.parse(md))
                 .hasMessageContaining("缺少必需字段");
+    }
+
+    @Test
+    void version不符合semver应拒绝() {
+        var md = """
+                ---
+                name: x
+                description: 当用时
+                version: latest
+                ---
+                body
+                """;
+
+        assertThatThrownBy(() -> parser.parse(md))
+                .hasMessageContaining("version")
+                .hasMessageContaining("semver");
+    }
+
+    @Test
+    void outputs包含未知值应拒绝() {
+        var md = """
+                ---
+                name: bad-output
+                description: 当需要测试输出形态时使用
+                version: 1.0.0
+                metadata:
+                  zhiwei:
+                    outputs: [hologram]
+                ---
+                body
+                """;
+
+        assertThatThrownBy(() -> parser.parse(md))
+                .hasMessageContaining("outputs")
+                .hasMessageContaining("hologram");
     }
 
 }

@@ -3,6 +3,7 @@ package com.lifepilot.agent.learning.extraction;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.semantic.AudnDecision;
 import com.lifepilot.memory.semantic.AudnOperation;
 import org.slf4j.Logger;
@@ -12,6 +13,7 @@ import org.springframework.lang.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 提取后验证器 — 对 LLM 返回的 AudnDecision 列表执行质量门控。
@@ -20,9 +22,10 @@ import java.util.List;
  * <ul>
  *   <li>entityName 非空且长度在 [1, maxEntityNameLength] 之间</li>
  *   <li>ADD 类型的 description 非空且长度 >= minDescriptionLength</li>
+ *   <li>extractionConfidence / importanceScore 必须存在且位于 [0.0, 1.0]</li>
  *   <li>extractionConfidence >= minExtractionConfidence</li>
+ *   <li>temporality 必须是 EPHEMERAL / SHORT_TERM / PERSISTENT</li>
  *   <li>单次提取数量不超过 maxEntitiesPerExtraction</li>
- *   <li>null 或越界的 confidence/importance 修正为 0.5f</li>
  * </ul></p>
  *
  * @author zsg
@@ -31,7 +34,6 @@ import java.util.List;
 public class ExtractionValidator {
 
     private static final Logger log = LoggerFactory.getLogger(ExtractionValidator.class);
-    private static final float DEFAULT_SCORE = 0.5f;
 
     private final int maxEntitiesPerExtraction;
     private final float minExtractionConfidence;
@@ -63,20 +65,25 @@ public class ExtractionValidator {
      * 在质量门控阶段静默丢失。</p>
      */
     public ValidationResult validateWithResult(List<AudnDecision> decisions) {
-        if (decisions == null || decisions.isEmpty()) {
+        Objects.requireNonNull(decisions, "AUDN 决策列表不能为空");
+        if (decisions.isEmpty()) {
             return new ValidationResult(List.of(), List.of());
         }
 
-        // 1. 修正 confidence/importance 字段
-        var normalized = decisions.stream()
-                .map(this::normalizeScores)
-                .toList();
-
-        // 2. 逐条验证
+        // 1. 逐条验证
         var valid = new ArrayList<AudnDecision>();
         var rejected = new ArrayList<RejectedDecision>();
-        for (var d : normalized) {
-            String rejectionReason = rejectionReason(d);
+        for (var d : decisions) {
+            Objects.requireNonNull(d, "AUDN 决策不能为空");
+            if (d.operation() == null) {
+                log.debug("ExtractionValidator: 丢弃缺少 operation 的决策, entityName={}", d.entityName());
+                throw new IllegalStateException("AUDN 决策 operation 不能为空: entity=" + d.entityName());
+            }
+            if (d.operation() == AudnOperation.NOOP) {
+                continue;
+            }
+            requireDecisionContract(d);
+            String rejectionReason = qualityRejectionReason(d);
             if (rejectionReason != null) {
                 rejected.add(new RejectedDecision(d, rejectionReason));
                 continue;
@@ -84,13 +91,11 @@ public class ExtractionValidator {
             valid.add(d);
         }
 
-        // 3. 数量限制：按 extractionConfidence 降序保留前 N 条
+        // 2. 数量限制：按 extractionConfidence 降序保留前 N 条
         if (valid.size() > maxEntitiesPerExtraction) {
             log.warn("AUDN 提取数量超限: original={}, limit={}",
                     valid.size(), maxEntitiesPerExtraction);
-            valid.sort(Comparator.comparing(
-                    (AudnDecision d) -> d.extractionConfidence() != null
-                            ? d.extractionConfidence() : 0f).reversed());
+            valid.sort(Comparator.comparing(AudnDecision::extractionConfidence).reversed());
             valid.subList(maxEntitiesPerExtraction, valid.size()).stream()
                     .map(d -> new RejectedDecision(d, "MAX_ENTITIES_EXCEEDED"))
                     .forEach(rejected::add);
@@ -100,59 +105,37 @@ public class ExtractionValidator {
         return new ValidationResult(List.copyOf(valid), List.copyOf(rejected));
     }
 
-    /** 修正 null 或越界的 confidence/importance 为默认值 0.5f。 */
-    AudnDecision normalizeScores(AudnDecision d) {
-        Float confidence = d.extractionConfidence();
-        Float importance = d.importanceScore();
-        boolean needsFix = false;
-
-        if (confidence == null || confidence < 0.0f || confidence > 1.0f) {
-            confidence = DEFAULT_SCORE;
-            needsFix = true;
-        }
-        if (importance == null || importance < 0.0f || importance > 1.0f) {
-            importance = DEFAULT_SCORE;
-            needsFix = true;
-        }
-
-        if (needsFix) {
-            return new AudnDecision(d.operation(), d.entityName(), d.entityType(),
-                    d.description(), d.properties(), confidence, importance,
-                    d.temporalityRaw(), d.expiresAtRaw(), d.evidenceKindRaw(), d.evidenceExcerpt());
-        }
-        return d;
-    }
-
-    private boolean validateEntityName(AudnDecision d) {
+    private void requireEntityName(AudnDecision d) {
         String name = d.entityName();
         if (name == null || name.isBlank()) {
             log.debug("ExtractionValidator: 丢弃空名称决策, operation={}", d.operation());
-            return false;
+            throw new IllegalStateException("AUDN 决策实体名称不能为空: operation=" + d.operation());
         }
         if (name.length() > maxEntityNameLength) {
             log.debug("ExtractionValidator: 丢弃超长名称决策, name={}, length={}",
                     name.substring(0, Math.min(20, name.length())) + "...", name.length());
-            return false;
+            throw new IllegalStateException(
+                    "AUDN 决策实体名称超长: name=%s, length=%d, max=%d"
+                            .formatted(name, name.length(), maxEntityNameLength));
         }
-        return true;
     }
 
-    private boolean validateDescription(AudnDecision d) {
+    private void requireDescription(AudnDecision d) {
         if (d.operation() != AudnOperation.ADD) {
-            return true;
+            return;
         }
         String desc = d.description();
         if (desc == null || desc.isBlank() || desc.length() < minDescriptionLength) {
             log.debug("ExtractionValidator: 丢弃无描述 ADD 决策, entityName={}",
                     d.entityName());
-            return false;
+            throw new IllegalStateException(
+                    "AUDN ADD 决策描述不能为空且长度不能低于 %d: entity=%s"
+                            .formatted(minDescriptionLength, d.entityName()));
         }
-        return true;
     }
 
     private boolean validateConfidence(AudnDecision d) {
-        float confidence = d.extractionConfidence() != null
-                ? d.extractionConfidence() : 0f;
+        float confidence = d.extractionConfidence();
         if (confidence < minExtractionConfidence) {
             log.debug("ExtractionValidator: 丢弃低置信度决策, entityName={}, confidence={}",
                     d.entityName(), confidence);
@@ -162,41 +145,89 @@ public class ExtractionValidator {
     }
 
     @Nullable
-    private String rejectionReason(AudnDecision d) {
-        if (d.operation() == null) {
-            log.debug("ExtractionValidator: 丢弃缺少 operation 的决策, entityName={}", d.entityName());
-            return "OPERATION_MISSING";
-        }
-        if (d.operation() == AudnOperation.NOOP) {
-            return "NOOP";
-        }
-        if (d.operation() == AudnOperation.DELETE) {
-            return null;
-        }
-        if (d.entityType() == null) {
-            log.debug("ExtractionValidator: 丢弃缺少 entityType 的决策, entityName={}", d.entityName());
-            return "ENTITY_TYPE_MISSING";
-        }
-        if (!validateEntityName(d)) {
-            return "INVALID_ENTITY_NAME";
-        }
-        if (!validateDescription(d)) {
-            return "INVALID_DESCRIPTION";
-        }
+    private String qualityRejectionReason(AudnDecision d) {
         if (!validateConfidence(d)) {
             return "LOW_CONFIDENCE";
         }
-        if (d.evidenceKindRaw() != null && !d.evidenceKindRaw().isBlank()) {
-            MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.parseEvidenceKind(d.evidenceKindRaw());
-            if (evidenceKind == MemoryEvidenceKind.UNKNOWN) {
-                return "UNKNOWN_EVIDENCE";
-            }
-            if (evidenceKind == MemoryEvidenceKind.CHAT_INFERRED
-                    && (d.evidenceExcerpt() == null || d.evidenceExcerpt().isBlank())) {
-                return "INFERRED_WITHOUT_EVIDENCE";
-            }
+        MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.parseEvidenceKind(d.evidenceKindRaw());
+        if (evidenceKind == MemoryEvidenceKind.UNKNOWN) {
+            return "UNKNOWN_EVIDENCE";
+        }
+        if (evidenceKind == MemoryEvidenceKind.CHAT_INFERRED
+                && d.extractionConfidence() < 0.60f) {
+            return "INFERRED_LOW_TRUST";
         }
         return null;
+    }
+
+    private void requireDecisionContract(AudnDecision d) {
+        if (d.entityType() == null) {
+            log.debug("ExtractionValidator: 丢弃缺少 entityType 的决策, entityName={}", d.entityName());
+            throw new IllegalStateException("AUDN 决策 entityType 不能为空: entity=" + d.entityName());
+        }
+        requireEntityName(d);
+        if (d.operation() != AudnOperation.DELETE) {
+            requireDescription(d);
+        }
+        requireScores(d);
+        requireTemporality(d);
+        if (d.evidenceKindRaw() == null || d.evidenceKindRaw().isBlank()) {
+            throw new IllegalStateException("AUDN 决策 evidenceKind 不能为空: entity=" + d.entityName());
+        }
+        MemoryEvidenceKind evidenceKind = MemoryQualityPolicy.parseEvidenceKind(d.evidenceKindRaw());
+        if ((evidenceKind == MemoryEvidenceKind.CHAT_INFERRED || evidenceKind == MemoryEvidenceKind.USER_EXPLICIT)
+                && (d.evidenceExcerpt() == null || d.evidenceExcerpt().isBlank())) {
+            throw new IllegalStateException("AUDN 决策 evidenceExcerpt 不能为空: entity=" + d.entityName());
+        }
+    }
+
+    private void requireScores(AudnDecision d) {
+        if (d.extractionConfidence() == null) {
+            log.debug("ExtractionValidator: 丢弃缺少 extractionConfidence 的决策, entityName={}", d.entityName());
+            throw new IllegalStateException("AUDN 决策 extractionConfidence 不能为空: entity=" + d.entityName());
+        }
+        if (!isScoreInRange(d.extractionConfidence())) {
+            log.debug("ExtractionValidator: 丢弃越界 extractionConfidence 的决策, entityName={}, confidence={}",
+                    d.entityName(), d.extractionConfidence());
+            throw new IllegalStateException(
+                    "AUDN 决策 extractionConfidence 越界: entity=%s, value=%s"
+                            .formatted(d.entityName(), d.extractionConfidence()));
+        }
+        if (d.importanceScore() == null) {
+            log.debug("ExtractionValidator: 丢弃缺少 importanceScore 的决策, entityName={}", d.entityName());
+            throw new IllegalStateException("AUDN 决策 importanceScore 不能为空: entity=" + d.entityName());
+        }
+        if (!isScoreInRange(d.importanceScore())) {
+            log.debug("ExtractionValidator: 丢弃越界 importanceScore 的决策, entityName={}, importance={}",
+                    d.entityName(), d.importanceScore());
+            throw new IllegalStateException(
+                    "AUDN 决策 importanceScore 越界: entity=%s, value=%s"
+                            .formatted(d.entityName(), d.importanceScore()));
+        }
+    }
+
+    private boolean isScoreInRange(float score) {
+        return score >= 0.0f && score <= 1.0f;
+    }
+
+    private void requireTemporality(AudnDecision d) {
+        String raw = d.temporalityRaw();
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalStateException("AUDN 决策 temporality 不能为空: entity=" + d.entityName());
+        }
+        if (!raw.equals(raw.trim())) {
+            throw new IllegalStateException(
+                    "AUDN 决策 temporality 不能包含首尾空白: entity=%s, temporality=%s"
+                            .formatted(d.entityName(), raw));
+        }
+        try {
+            Temporality.valueOf(raw);
+        } catch (IllegalArgumentException ex) {
+            log.debug("ExtractionValidator: 丢弃非法 temporality 决策, entityName={}, temporality={}",
+                    d.entityName(), raw);
+            throw new IllegalStateException(
+                    "AUDN 决策 temporality 非法: entity=%s, temporality=%s".formatted(d.entityName(), raw), ex);
+        }
     }
 
     public record ValidationResult(

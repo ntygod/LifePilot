@@ -53,7 +53,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-1", ChatTurnAction.SEND, "请帮我读这份合同",
-                List.of("att-doc"), null));
+                List.of("att-doc"), null, null));
         when(attachmentRepository.findById("att-doc")).thenReturn(new AttachmentRecord(
                 "att-doc", "session-1", "contract.docx", docx.toString(),
                 Files.size(docx),
@@ -80,7 +80,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-marker", ChatTurnAction.SEND, "解析需求文档",
-                List.of("att-marker"), null));
+                List.of("att-marker"), null, null));
         when(attachmentRepository.findById("att-marker")).thenReturn(new AttachmentRecord(
                 "att-marker", "session-1", "spec.docx", docx.toString(),
                 Files.size(docx),
@@ -112,7 +112,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-pdf", ChatTurnAction.SEND, "总结这篇论文",
-                List.of("att-pdf"), null));
+                List.of("att-pdf"), null, null));
         when(attachmentRepository.findById("att-pdf")).thenReturn(new AttachmentRecord(
                 "att-pdf", "session-1", "paper.pdf", pdf.toString(),
                 Files.size(pdf), "application/pdf",
@@ -137,7 +137,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-2", ChatTurnAction.SEND, "看这张图",
-                List.of("att-img"), null));
+                List.of("att-img"), null, null));
         when(attachmentRepository.findById("att-img")).thenReturn(new AttachmentRecord(
                 "att-img", "session-1", "photo.png", img.toString(),
                 Files.size(img), "image/png", "/api/attachments/att-img"));
@@ -160,7 +160,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-csv", ChatTurnAction.SEND, "分析这份数据",
-                List.of("att-csv"), null));
+                List.of("att-csv"), null, null));
         when(attachmentRepository.findById("att-csv")).thenReturn(new AttachmentRecord(
                 "att-csv", "session-1", "data.csv", csv.toString(),
                 Files.size(csv), "text/csv",
@@ -190,7 +190,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-mix", ChatTurnAction.SEND, "把这些资料整合一下",
-                List.of("att-docx", "att-img", "att-pdf"), null));
+                List.of("att-docx", "att-img", "att-pdf"), null, null));
         when(attachmentRepository.findById("att-docx")).thenReturn(new AttachmentRecord(
                 "att-docx", "session-1", "contract.docx", docx.toString(),
                 Files.size(docx),
@@ -229,7 +229,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-xlsx", ChatTurnAction.SEND, "看这份销售表",
-                List.of("att-xlsx"), null));
+                List.of("att-xlsx"), null, null));
         when(attachmentRepository.findById("att-xlsx")).thenReturn(new AttachmentRecord(
                 "att-xlsx", "session-1", "sales.xlsx", xlsx.toString(),
                 Files.size(xlsx),
@@ -255,7 +255,7 @@ class BrowserIngressService_文档附件提示测试 {
 
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-pptx", ChatTurnAction.SEND, "看这个方案",
-                List.of("att-pptx"), null));
+                List.of("att-pptx"), null, null));
         when(attachmentRepository.findById("att-pptx")).thenReturn(new AttachmentRecord(
                 "att-pptx", "session-1", "deck.pptx", pptx.toString(),
                 Files.size(pptx),
@@ -278,7 +278,7 @@ class BrowserIngressService_文档附件提示测试 {
     void 无附件时不注入任何提示() {
         when(chatTurnService.prepare(anyString(), any())).thenReturn(new ResolvedTurnRequest(
                 "turn-3", ChatTurnAction.SEND, "你好",
-                null, null));
+                null, null, null));
 
         var service = newService();
         var request = new ChatRequest("turn-3", ChatTurnAction.SEND,

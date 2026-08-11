@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -47,13 +48,25 @@ class AssociationCandidateGenerator_单元测试 {
     }
 
     @Test
-    void 缺依赖时返回空() {
+    void 缺retriever时构造失败() {
         var sem = mock(SemanticMemory.class);
+        var router = mock(GenerationRouter.class);
         var props = new AgentLearningProperties();
-        props.getRem().setEnabled(true);
 
-        var gen = new AssociationCandidateGenerator(sem, null, null, props);
-        assertThat(gen.generate()).isEmpty();
+        assertThatThrownBy(() -> new AssociationCandidateGenerator(sem, null, router, props))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("hybridRetriever 不能为空");
+    }
+
+    @Test
+    void 缺router时构造失败() {
+        var sem = mock(SemanticMemory.class);
+        var retriever = mock(HybridRetriever.class);
+        var props = new AgentLearningProperties();
+
+        assertThatThrownBy(() -> new AssociationCandidateGenerator(sem, retriever, null, props))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("generationRouter 不能为空");
     }
 
     @Test
@@ -70,7 +83,7 @@ class AssociationCandidateGenerator_单元测试 {
                         entity("g3", 0.7f, "目标 3")
                 ));
 
-        var gen = new AssociationCandidateGenerator(sem, null, null, props);
+        var gen = generator(sem, props);
         var seeds = gen.selectSeeds();
         assertThat(seeds).hasSize(2);
         assertThat(seeds.get(0).id()).isEqualTo("g2");
@@ -89,10 +102,36 @@ class AssociationCandidateGenerator_单元测试 {
                         entity("g2", 0.5f, "有描述")
                 ));
 
-        var gen = new AssociationCandidateGenerator(sem, null, null, props);
+        var gen = generator(sem, props);
         var seeds = gen.selectSeeds();
         assertThat(seeds).hasSize(1);
         assertThat(seeds.getFirst().id()).isEqualTo("g2");
+    }
+
+    @Test
+    void seedTypes包含未知实体类型时应失败() {
+        var sem = mock(SemanticMemory.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setSeedTypes(java.util.Set.of("GOAL", "UNKNOWN_TYPE"));
+
+        var gen = generator(sem, props);
+
+        assertThatThrownBy(gen::selectSeeds)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未知 REM seedTypes 实体类型: UNKNOWN_TYPE");
+    }
+
+    @Test
+    void seedTypes包含首尾空白时应失败() {
+        var sem = mock(SemanticMemory.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setSeedTypes(java.util.Set.of(" GOAL"));
+
+        var gen = generator(sem, props);
+
+        assertThatThrownBy(gen::selectSeeds)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("REM seedTypes不能包含首尾空白");
     }
 
     @Test
@@ -110,8 +149,8 @@ class AssociationCandidateGenerator_单元测试 {
         when(retriever.retrieve(anyString(), anyInt(), any()))
                 .thenReturn(List.of(retrievalResult("n1", "Rust 书籍")));
 
-        String llmJson = "一些前缀文字 [{\"sourceId\":\"n1\",\"targetId\":\"g1\","
-                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85,\"evidence\":\"书籍是学习资源\"}] 尾部";
+        String llmJson = "[{\"sourceId\":\"n1\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85,\"evidence\":\"书籍是学习资源\"}]";
         when(router.call(anyString(), anyString(), any(), any(), any(),
                 eq(GenerationCapability.CHAT), any(), anyBoolean()))
                 .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock", 0, false));
@@ -127,7 +166,82 @@ class AssociationCandidateGenerator_单元测试 {
     }
 
     @Test
-    void LLM返回非JSON时返回空() {
+    void 邻居检索返回null时应失败() {
+        var sem = mock(SemanticMemory.class);
+        var retriever = mock(HybridRetriever.class);
+        var router = mock(GenerationRouter.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setEnabled(true);
+        props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
+
+        when(sem.findCurrentByType(EntityType.GOAL))
+                .thenReturn(List.of(entity("g1", 0.8f, "学习 Rust")));
+        when(retriever.retrieve(anyString(), anyInt(), any()))
+                .thenReturn(null);
+
+        var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
+
+        assertThatThrownBy(gen::generate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("REM 邻居检索结果不能为空");
+    }
+
+    @Test
+    void LLM返回sourceId不在邻居集中时应失败() {
+        var sem = mock(SemanticMemory.class);
+        var retriever = mock(HybridRetriever.class);
+        var router = mock(GenerationRouter.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setEnabled(true);
+        props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
+
+        when(sem.findCurrentByType(EntityType.GOAL))
+                .thenReturn(List.of(entity("g1", 0.8f, "学习 Rust")));
+        when(retriever.retrieve(anyString(), anyInt(), any()))
+                .thenReturn(List.of(retrievalResult("n1", "Rust 书籍")));
+        String llmJson = "[{\"sourceId\":\"n2\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85,\"evidence\":\"书籍是学习资源\"}]";
+        when(router.call(anyString(), anyString(), any(), any(), any(),
+                eq(GenerationCapability.CHAT), any(), anyBoolean()))
+                .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(),
+                        0, 0, null, 0, "mock", "mock", 0, false));
+
+        var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
+
+        assertThatThrownBy(gen::generate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("REM 联想候选 sourceId 不在邻居集中");
+    }
+
+    @Test
+    void LLM返回targetId不是seed时应失败() {
+        var sem = mock(SemanticMemory.class);
+        var retriever = mock(HybridRetriever.class);
+        var router = mock(GenerationRouter.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setEnabled(true);
+        props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
+
+        when(sem.findCurrentByType(EntityType.GOAL))
+                .thenReturn(List.of(entity("g1", 0.8f, "学习 Rust")));
+        when(retriever.retrieve(anyString(), anyInt(), any()))
+                .thenReturn(List.of(retrievalResult("n1", "Rust 书籍")));
+        String llmJson = "[{\"sourceId\":\"n1\",\"targetId\":\"g2\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85,\"evidence\":\"书籍是学习资源\"}]";
+        when(router.call(anyString(), anyString(), any(), any(), any(),
+                eq(GenerationCapability.CHAT), any(), anyBoolean()))
+                .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(),
+                        0, 0, null, 0, "mock", "mock", 0, false));
+
+        var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
+
+        assertThatThrownBy(gen::generate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("REM 联想候选 targetId 必须等于 seedId");
+    }
+
+    @Test
+    void LLM返回非JSON时按契约失败() {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
@@ -144,11 +258,39 @@ class AssociationCandidateGenerator_单元测试 {
                 .thenReturn(new LlmResponse("没有 JSON 数组", null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock", 0, false));
 
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
-        assertThat(gen.generate()).isEmpty();
+        assertThatThrownBy(gen::generate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("REM 联想数组解析失败");
     }
 
     @Test
-    void LLM异常时返回空_不抛() {
+    void LLM返回带前后缀的JSON时按契约失败() {
+        var sem = mock(SemanticMemory.class);
+        var retriever = mock(HybridRetriever.class);
+        var router = mock(GenerationRouter.class);
+        var props = new AgentLearningProperties();
+        props.getRem().setEnabled(true);
+        props.getRem().setSeedTypes(java.util.Set.of("GOAL"));
+
+        when(sem.findCurrentByType(EntityType.GOAL))
+                .thenReturn(List.of(entity("g1", 0.8f, "学习 Rust")));
+        when(retriever.retrieve(anyString(), anyInt(), any()))
+                .thenReturn(List.of(retrievalResult("n1", "Rust 书籍")));
+        String llmJson = "前缀 [{\"sourceId\":\"n1\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.85}] 后缀";
+        when(router.call(anyString(), anyString(), any(), any(), any(),
+                eq(GenerationCapability.CHAT), any(), anyBoolean()))
+                .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(),
+                        0, 0, null, 0, "mock", "mock", 0, false));
+
+        var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
+        assertThatThrownBy(gen::generate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("REM 联想数组解析失败");
+    }
+
+    @Test
+    void LLM异常时直接暴露() {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
@@ -165,11 +307,13 @@ class AssociationCandidateGenerator_单元测试 {
                 .thenThrow(new RuntimeException("模拟 LLM 不可用"));
 
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
-        assertThat(gen.generate()).isEmpty();
+        assertThatThrownBy(gen::generate)
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("模拟 LLM 不可用");
     }
 
     @Test
-    void 未知关系类型降级为RELATED_TO() {
+    void 未知关系类型应按契约失败() {
         var sem = mock(SemanticMemory.class);
         var retriever = mock(HybridRetriever.class);
         var router = mock(GenerationRouter.class);
@@ -188,10 +332,67 @@ class AssociationCandidateGenerator_单元测试 {
                 .thenReturn(new LlmResponse(llmJson, null, null, List.of(), Map.of(), 0, 0, null, 0, "mock", "mock", 0, false));
 
         var gen = new AssociationCandidateGenerator(sem, retriever, router, props);
-        var result = gen.generate();
+        assertThatThrownBy(gen::generate)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未知关系类型: UNKNOWN_TYPE");
+    }
 
-        assertThat(result).hasSize(1);
-        assertThat(result.getFirst().relationType()).isEqualTo(AssociationType.RELATED_TO);
+    @Test
+    void confidence缺失时应按契约失败() {
+        var sem = mock(SemanticMemory.class);
+        var props = new AgentLearningProperties();
+        var gen = generator(sem, props);
+        String llmJson = "[{\"sourceId\":\"n1\",\"targetId\":\"g1\",\"relationType\":\"SUPPORTS\"}]";
+
+        assertThatThrownBy(() -> gen.parseResponse(llmJson, "g1", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("confidence 不能为空");
+    }
+
+    @Test
+    void 候选ID含首尾空白时应按契约失败() {
+        var sem = mock(SemanticMemory.class);
+        var props = new AgentLearningProperties();
+        var gen = generator(sem, props);
+        String llmJson = "[{\"sourceId\":\" n1\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":0.8}]";
+
+        assertThatThrownBy(() -> gen.parseResponse(llmJson, "g1", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("REM 联想候选 sourceId不能包含首尾空白");
+    }
+
+    @Test
+    void confidence非数值时应按契约失败() {
+        var sem = mock(SemanticMemory.class);
+        var props = new AgentLearningProperties();
+        var gen = generator(sem, props);
+        String llmJson = "[{\"sourceId\":\"n1\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":\"high\"}]";
+
+        assertThatThrownBy(() -> gen.parseResponse(llmJson, "g1", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("confidence 必须是数值");
+    }
+
+    @Test
+    void confidence越界时应按契约失败() {
+        var sem = mock(SemanticMemory.class);
+        var props = new AgentLearningProperties();
+        var gen = generator(sem, props);
+        String llmJson = "[{\"sourceId\":\"n1\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":1.2},"
+                + "{\"sourceId\":\"n2\",\"targetId\":\"g1\","
+                + "\"relationType\":\"SUPPORTS\",\"confidence\":-0.1}]";
+
+        assertThatThrownBy(() -> gen.parseResponse(llmJson, "g1", Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("confidence 必须在 [0,1] 范围内");
+    }
+
+    private AssociationCandidateGenerator generator(SemanticMemory sem, AgentLearningProperties props) {
+        return new AssociationCandidateGenerator(
+                sem, mock(HybridRetriever.class), mock(GenerationRouter.class), props);
     }
 
     private TemporalEntity entity(String id, float importance, String desc) {
@@ -199,7 +400,19 @@ class AssociationCandidateGenerator_单元测试 {
         return new TemporalEntity(
                 id, EntityType.GOAL, "name-" + id, desc,
                 Map.of(), 1, true, now, null, null,
-                0.8f, importance, 0, null, now, now);
+                0.8f, importance, 0, null, now, now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 
     private RetrievalResult retrievalResult(String id, String name) {

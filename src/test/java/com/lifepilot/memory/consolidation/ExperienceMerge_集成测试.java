@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consolidation;
 
 import ch.qos.logback.classic.Level;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
@@ -14,6 +15,7 @@ import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
 import com.lifepilot.prompt.PromptRegistry;
@@ -144,10 +146,11 @@ class ExperienceMerge_集成测试 {
         // 提示词桩：LLM 已被 mock，提示词内容无关紧要。
         when(promptRegistry.render(any(), any())).thenReturn("merge-prompt");
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, generationRouter, 0.92f, promptRegistry);
         MemoryProjectionService projectionService =
-                MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
+                MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
 
         experienceMerger = new ExperienceMerger(
                 semanticMemory, vectorSearcher, generationRouter, promptRegistry, new AgentLearningProperties());
@@ -180,8 +183,10 @@ class ExperienceMerge_集成测试 {
                 "调用天气工具按城市名查询未来三天天气并汇总要点。", 0.9f, true);
         var 经验B = 构造经验实体(经验B_ID, "查询上海未来天气生成简报",
                 "调用天气工具按城市名查询未来三天天气并生成简报。", 0.85f, true);
-        var 持久化A = semanticMemory.upsertWithConflictDetection(经验A, "subtask-reflection");
-        var 持久化B = semanticMemory.upsertWithConflictDetection(经验B, "subtask-reflection");
+        var 持久化A = semanticMemory.upsertWithConflictDetection(
+                经验A, "subtask-reflection", MemoryWriteContext.consolidation("subtask-reflection"));
+        var 持久化B = semanticMemory.upsertWithConflictDetection(
+                经验B, "subtask-reflection", MemoryWriteContext.consolidation("subtask-reflection"));
 
         assertThat(semanticMemory.findCurrentByType(EntityType.EXPERIENCE)).hasSize(2);
 
@@ -226,7 +231,7 @@ class ExperienceMerge_集成测试 {
                 "SELECT status FROM memory_entities WHERE id = ?", String.class, entityId);
     }
 
-    /** 构造一条 EXPERIENCE 实体（16 参兼容构造器，properties 含 success 标志）。 */
+    /** 构造一条 EXPERIENCE 实体，properties 含 success 标志。 */
     private TemporalEntity 构造经验实体(String id, String name, String description,
                                    float importance, boolean success) {
         var now = Instant.now();
@@ -235,7 +240,10 @@ class ExperienceMerge_集成测试 {
                 EntityType.EXPERIENCE,
                 name,
                 description,
-                Map.of("success", success),
+                Map.of(
+                        "lessons", List.of("先确认目标城市"),
+                        "toolsUsed", List.of("weather"),
+                        "success", success),
                 1,
                 true,
                 now,
@@ -246,6 +254,18 @@ class ExperienceMerge_集成测试 {
                 0,
                 null,
                 now,
-                now);
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

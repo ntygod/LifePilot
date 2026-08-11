@@ -3,6 +3,7 @@ package com.lifepilot.memory.forgetting;
 import com.lifepilot.agent.learning.forgetting.ForgettingEngine;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.governance.lifecycle.ChangeSource;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -83,7 +84,7 @@ class ForgettingEngine_访问保护测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test
@@ -98,7 +99,7 @@ class ForgettingEngine_访问保护测试 {
         int count = engine.forget();
 
         assertEquals(0, count);
-        verify(semanticMemory, never()).archive(any());
+        verify(semanticMemory, never()).archive(any(), any(ChangeSource.class));
     }
 
     @Test
@@ -110,6 +111,7 @@ class ForgettingEngine_访问保护测试 {
                 Instant.now().minus(400, ChronoUnit.DAYS));
 
         when(semanticMemory.findAllCurrent()).thenReturn(List.of(forgettableEntity));
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
 
         int count = engine.forget();
 
@@ -127,6 +129,18 @@ class ForgettingEngine_访问保护测试 {
                 Map.of(), 1, true, createdAt, null,
                 null, 0.8f, importanceScore, accessCount, lastAccessedAt,
                 createdAt, createdAt
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                createdAt);
     }
 }

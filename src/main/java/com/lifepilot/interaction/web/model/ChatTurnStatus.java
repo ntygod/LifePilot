@@ -11,5 +11,6 @@ public enum ChatTurnStatus {
     SUCCESS,
     FAILED,
     DEGRADED,
-    SUSPENDED
+    SUSPENDED,
+    CANCELLED
 }

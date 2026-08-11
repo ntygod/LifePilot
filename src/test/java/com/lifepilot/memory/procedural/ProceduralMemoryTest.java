@@ -1,5 +1,6 @@
 package com.lifepilot.memory.procedural;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
@@ -8,6 +9,8 @@ import com.lifepilot.memory.store.projection.MemoryProjectionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -17,6 +20,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -41,7 +45,7 @@ class ProceduralMemoryTest {
         dataSource = new SingleConnectionDataSource("jdbc:sqlite::memory:", true);
         jdbcTemplate = new JdbcTemplate(dataSource);
 
-        // 创建 procedure_templates 表（V1 + V15 新增 source_entity_id / deactivated_reason 列）
+        // 创建 procedure_templates 表，覆盖 L4 级联失活字段
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS procedure_templates (
                     template_id         TEXT PRIMARY KEY,
@@ -60,7 +64,7 @@ class ProceduralMemoryTest {
                     deactivated_reason  TEXT
                 )""");
 
-        // 创建 preference_rules 表（V1 + V15 新增 source_entity_id / deactivated_reason 列）
+        // 创建 preference_rules 表，覆盖 L4 级联失活字段
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS preference_rules (
                     rule_id             TEXT PRIMARY KEY,
@@ -89,12 +93,25 @@ class ProceduralMemoryTest {
                 )""");
 
         projectionService = mock(MemoryProjectionService.class);
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService, new ObjectMapper());
     }
 
     @AfterEach
     void tearDown() {
         dataSource.destroy();
+    }
+
+    @Test
+    void 构造依赖为空时应直接失败() {
+        assertThatThrownBy(() -> new ProceduralMemory(null, projectionService, new ObjectMapper()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("JdbcTemplate 不能为空");
+        assertThatThrownBy(() -> new ProceduralMemory(jdbcTemplate, null, new ObjectMapper()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("MemoryProjectionService 不能为空");
+        assertThatThrownBy(() -> new ProceduralMemory(jdbcTemplate, projectionService, null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("ObjectMapper 不能为空");
     }
 
     @Test
@@ -199,6 +216,19 @@ class ProceduralMemoryTest {
     }
 
     @Test
+    void update_模板不存在时应直接失败且不登记投影() {
+        var now = Instant.now();
+        var missing = createSimpleTemplate("tpl-missing-update", "不存在模板", now);
+
+        assertThatThrownBy(() -> proceduralMemory.update(missing))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 更新模板失败")
+                .hasMessageContaining("tpl-missing-update");
+        verify(projectionService, never())
+                .enqueueProcedureTemplateVectorUpsertAfterCommit(anyString(), anyString());
+    }
+
+    @Test
     void delete_删除后_查询返回空() {
         var now = Instant.now();
         var template = createSimpleTemplate("tpl-delete", "待删除模板", now);
@@ -210,6 +240,16 @@ class ProceduralMemoryTest {
 
         assertThat(proceduralMemory.findById(template.templateId())).isEmpty();
         verify(projectionService).enqueueProcedureTemplateVectorDeleteAfterCommit(template.templateId());
+    }
+
+    @Test
+    void delete_模板不存在时应直接失败且不登记投影() {
+        assertThatThrownBy(() -> proceduralMemory.delete("tpl-missing-delete"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 删除模板失败")
+                .hasMessageContaining("tpl-missing-delete");
+        verify(projectionService, never())
+                .enqueueProcedureTemplateVectorDeleteAfterCommit(anyString());
     }
 
     @Test
@@ -229,6 +269,25 @@ class ProceduralMemoryTest {
         assertThat(found.get().steps()).isEmpty();
         assertThat(found.get().variables()).isEmpty();
         assertThat(found.get().sourceTraceIds()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0} 被污染时读取模板应失败")
+    @CsvSource({
+            "steps_json, {不是合法JSON",
+            "variables_json, {不是合法JSON",
+            "source_trace_ids_json, {不是合法JSON"
+    })
+    void 模板Json字段被污染时读取应失败(String columnName, String invalidValue) {
+        var now = Instant.now();
+        var template = createSimpleTemplate("tpl-json-broken-" + columnName, "污染模板", now);
+        proceduralMemory.save(template);
+        jdbcTemplate.update("UPDATE procedure_templates SET " + columnName + " = ? WHERE template_id = ?",
+                invalidValue, template.templateId());
+
+        assertThatThrownBy(() -> proceduralMemory.findById(template.templateId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(columnName)
+                .hasMessageContaining(template.templateId());
     }
 
     // --- 成功率追踪测试 ---
@@ -273,9 +332,11 @@ class ProceduralMemoryTest {
     }
 
     @Test
-    void recordExecution_模板不存在_不抛异常() {
-        // 不应抛异常，仅记录 WARN 日志
-        proceduralMemory.recordExecution("non-existent-id", true);
+    void recordExecution_模板不存在时应直接失败() {
+        assertThatThrownBy(() -> proceduralMemory.recordExecution("non-existent-id", true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 记录执行结果失败")
+                .hasMessageContaining("non-existent-id");
     }
 
     @Test
@@ -408,9 +469,11 @@ class ProceduralMemoryTest {
     }
 
     @Test
-    void reinforcePreference_规则不存在_不抛异常() {
-        // 不应抛异常，仅记录 WARN 日志
-        proceduralMemory.reinforcePreference("non-existent-id");
+    void reinforcePreference_规则不存在时应直接失败() {
+        assertThatThrownBy(() -> proceduralMemory.reinforcePreference("non-existent-id"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("程序记忆: 强化偏好规则失败")
+                .hasMessageContaining("non-existent-id");
     }
 
     // --- 辅助方法 ---

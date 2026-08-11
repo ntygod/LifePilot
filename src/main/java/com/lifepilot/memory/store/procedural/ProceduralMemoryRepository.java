@@ -10,9 +10,8 @@ import java.util.List;
 /**
  * L4 操作模板数据访问仓库 — 专供 {@code L4SyncListener} 使用的失活路径。
  *
- * <p>与 {@link PreferenceRuleRepository} 对称：V15 只为 {@code procedure_templates} 新增了
- * {@code source_entity_id} 与 {@code deactivated_reason}，未引入 {@code is_active} 列。
- * 本仓库同样以 {@code deactivated_reason IS NULL} 判定模板仍在生效。</p>
+ * <p>与 {@link PreferenceRuleRepository} 对称，本仓库以
+ * {@code deactivated_reason IS NULL} 判定模板仍在生效。</p>
  *
  * <p>{@link ProceduralMemory} 的 CRUD/删除路径保留原样 —— 本仓库只为生命周期联动提供
  * 精准失活通道，不干扰巩固与检索原有逻辑。</p>
@@ -35,7 +34,7 @@ public class ProceduralMemoryRepository {
      * 将指定源实体关联的仍处于活跃状态（{@code deactivated_reason IS NULL}）的操作模板
      * 批量失活，写入理由。
      *
-     * <p>{@code source_entity_id} 为空的旧模板不受影响；此方法不涉及向量清理 ——
+     * <p>{@code source_entity_id} 为空的模板不受影响；此方法不涉及向量清理 ——
      * {@code VectorListener} 会独立处理 L3 实体向量。</p>
      *
      * @param sourceEntityId 来源实体 ID

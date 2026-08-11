@@ -4,8 +4,11 @@ import com.lifepilot.skill.activation.SkillActivator;
 import com.lifepilot.skill.install.SkillInstallation;
 import com.lifepilot.skill.install.SkillInstallationRepository;
 import com.lifepilot.skill.model.SkillActivation;
+import com.lifepilot.skill.validation.SkillToolReferenceCatalog;
+import com.lifepilot.tool.registry.DynamicToolRegistry;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,11 +43,14 @@ public class SkillLoadToolExecutor {
 
     private final SkillActivator activator;
     private final SkillInstallationRepository repository;
+    private final DynamicToolRegistry toolRegistry;
 
     public SkillLoadToolExecutor(SkillActivator activator,
-                                 SkillInstallationRepository repository) {
+                                 SkillInstallationRepository repository,
+                                 DynamicToolRegistry toolRegistry) {
         this.activator = activator;
         this.repository = repository;
+        this.toolRegistry = toolRegistry;
     }
 
     /**
@@ -72,6 +78,9 @@ public class SkillLoadToolExecutor {
         StringBuilder content = new StringBuilder();
         // 用 LinkedHashSet 保留首次出现顺序并自动去重
         LinkedHashSet<String> distinctReferences = new LinkedHashSet<>();
+        LinkedHashSet<String> suggestedTools = new LinkedHashSet<>();
+        LinkedHashSet<String> availableSuggestedTools = new LinkedHashSet<>();
+        List<Map<String, Object>> missingCapabilities = new ArrayList<>();
         for (int i = 0; i < names.size(); i++) {
             String name = names.get(i);
             SkillActivation activation = activator.activate(name);
@@ -83,6 +92,8 @@ public class SkillLoadToolExecutor {
                     .append(instructions)
                     .append("\n</skill>");
             collectReferences(instructions, distinctReferences);
+            collectSuggestedToolHealth(name, activation.suggestedTools(),
+                    suggestedTools, availableSuggestedTools, missingCapabilities);
         }
 
         // references 强引导：让 LLM 在收到当回合就看到具体路径，避免凭印象做事。
@@ -93,9 +104,32 @@ public class SkillLoadToolExecutor {
             }
         }
 
-        return Map.of(
-                "content", content.toString()
-        );
+        if (!missingCapabilities.isEmpty()) {
+            content.append("\n\n技能能力状态：部分建议工具当前不可用。依赖这些能力的步骤请先修复缺失能力或调整 Skill 元数据：");
+            for (Map<String, Object> missing : missingCapabilities) {
+                content.append("\n- unknown suggested tool: ")
+                        .append(missing.get("id"))
+                        .append("（")
+                        .append(missing.get("reason"))
+                        .append("，skill=")
+                        .append(missing.get("skillName"))
+                        .append("）");
+            }
+        }
+
+        var result = new LinkedHashMap<String, Object>();
+        result.put("content", content.toString());
+        result.put("capabilityStatus", missingCapabilities.isEmpty() ? "READY" : "DEGRADED");
+        if (!suggestedTools.isEmpty()) {
+            result.put("suggestedTools", List.copyOf(suggestedTools));
+        }
+        if (!availableSuggestedTools.isEmpty()) {
+            result.put("availableSuggestedTools", List.copyOf(availableSuggestedTools));
+        }
+        if (!missingCapabilities.isEmpty()) {
+            result.put("missingCapabilities", List.copyOf(missingCapabilities));
+        }
+        return Map.copyOf(result);
     }
 
     /** 从 instructions 中扫出 references 绝对路径加入集合。 */
@@ -106,6 +140,45 @@ public class SkillLoadToolExecutor {
         Matcher m = REFERENCES_PATH_PATTERN.matcher(instructions);
         while (m.find()) {
             sink.add(m.group());
+        }
+    }
+
+    /** 汇总 suggestedTools 的当前可用性，作为 skill.load 的轻量能力健康信号。 */
+    private void collectSuggestedToolHealth(String skillName,
+                                            List<String> rawSuggestedTools,
+                                            LinkedHashSet<String> suggestedTools,
+                                            LinkedHashSet<String> availableSuggestedTools,
+                                            List<Map<String, Object>> missingCapabilities) {
+        if (rawSuggestedTools == null || rawSuggestedTools.isEmpty()) {
+            return;
+        }
+        for (String rawToolId : rawSuggestedTools) {
+            String toolId = rawToolId == null ? "" : rawToolId.strip();
+            if (toolId.isBlank() || !suggestedTools.add(toolId)) {
+                continue;
+            }
+            if (isToolRegistered(toolId)) {
+                availableSuggestedTools.add(toolId);
+                continue;
+            }
+            var missing = new LinkedHashMap<String, Object>();
+            missing.put("kind", "TOOL");
+            missing.put("id", toolId);
+            missing.put("source", "skill_reference");
+            missing.put("skillName", skillName);
+            missing.put("reason", SkillToolReferenceCatalog.isCanonicalToolId(toolId)
+                    ? "Skill 引用了当前不可用工具"
+                    : "Skill 引用了未知工具");
+            missingCapabilities.add(Map.copyOf(missing));
+        }
+    }
+
+    private boolean isToolRegistered(String toolId) {
+        try {
+            var resolved = toolRegistry.resolve(toolId);
+            return resolved != null && resolved.isPresent();
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 

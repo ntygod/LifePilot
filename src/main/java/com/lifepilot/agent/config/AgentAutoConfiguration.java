@@ -3,9 +3,12 @@ package com.lifepilot.agent.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
 import com.lifepilot.agent.ReactAgentLoop;
+import com.lifepilot.agent.capability.ConversationCapabilityPlanner;
 import com.lifepilot.agent.checkpoint.AgentCheckpointStore;
 import com.lifepilot.agent.checkpoint.SqliteAgentCheckpointStore;
 import com.lifepilot.agent.context.*;
+import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
+import com.lifepilot.agent.learning.extraction.MemoryExtractionCandidateRepository;
 import com.lifepilot.agent.learning.experience.*;
 import com.lifepilot.agent.media.MediaDataExtractor;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
@@ -30,15 +33,13 @@ import com.lifepilot.llm.multimodal.MultimodalRouter;
 import com.lifepilot.mcp.config.McpConfigProperties;
 import com.lifepilot.media.MediaProcessor;
 import com.lifepilot.media.MediaValidator;
-import com.lifepilot.memory.store.document.MemoryDocumentRepository;
-import com.lifepilot.agent.learning.experience.*;
-import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.consumption.hot.HotMemoryDigestService;
+import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
+import com.lifepilot.memory.retrieval.InjectionRecordRepository;
+import com.lifepilot.memory.store.document.MemoryDocumentRepository;
+import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
-import com.lifepilot.memory.retrieval.InjectionRecordRepository;
-import com.lifepilot.agent.learning.extraction.RealtimeExtractor;
-import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.workspace.SessionWorkspaceService;
 import com.lifepilot.memory.store.workspace.WorkspaceProperties;
 import com.lifepilot.observability.context.ContextReportRepository;
@@ -55,6 +56,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -94,11 +96,13 @@ public class AgentAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({SemanticMemory.class, ProjectContextResolver.class,
+            ChatSessionRepository.class, MemoryAccessPolicy.class})
     public ToolTipResolver toolTipResolver(
-            @Autowired(required = false) SemanticMemory semanticMemory,
-            @Autowired(required = false) ProjectContextResolver projectContextResolver,
-            @Autowired(required = false) ChatSessionRepository chatSessionRepository,
-            @Autowired(required = false) MemoryAccessPolicy memoryAccessPolicy) {
+            SemanticMemory semanticMemory,
+            ProjectContextResolver projectContextResolver,
+            ChatSessionRepository chatSessionRepository,
+            MemoryAccessPolicy memoryAccessPolicy) {
         return new ToolTipResolver(
                 semanticMemory, projectContextResolver, chatSessionRepository, memoryAccessPolicy);
     }
@@ -291,9 +295,29 @@ public class AgentAutoConfiguration {
             ObjectMapper objectMapper,
             @Autowired(required = false) SessionKnowledgeBaseRepository sessionKnowledgeBaseRepository,
             @Autowired(required = false) KnowledgeBaseRepository knowledgeBaseRepository,
-            @Autowired(required = false) AttachmentRepository attachmentRepository) {
+            @Autowired(required = false) AttachmentRepository attachmentRepository,
+            @Autowired(required = false) InjectionRecordRepository injectionRecordRepository,
+            @Autowired(required = false) SemanticMemory semanticMemory,
+            @Autowired(required = false) MemoryExtractionCandidateRepository memoryExtractionCandidateRepository) {
         return new StreamingEventHandler(
-                objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository, attachmentRepository);
+                objectMapper, sessionKnowledgeBaseRepository, knowledgeBaseRepository, attachmentRepository,
+                injectionRecordRepository, semanticMemory, memoryExtractionCandidateRepository);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(DynamicToolRegistry.class)
+    @ConditionalOnProperty(prefix = "lifepilot.agent.capability-discovery", name = "enabled",
+            havingValue = "true", matchIfMissing = true)
+    public ConversationCapabilityPlanner conversationCapabilityPlanner(
+            DynamicToolRegistry toolRegistry,
+            AgentConfigProperties config) {
+        var discovery = config.getCapabilityDiscovery();
+        return new ConversationCapabilityPlanner(
+                toolRegistry,
+                discovery.isEnabled(),
+                discovery.getControlPrefixChars(),
+                discovery.getPlanningProbeMaxChars());
     }
 
     @Bean
@@ -315,10 +339,10 @@ public class AgentAutoConfiguration {
             @Autowired(required = false) CompactionEngine compactionEngine,
             SharedScheduler sharedScheduler,
             @Autowired(required = false) SessionWorkspaceService workspaceService,
-            @Autowired(required = false) ExperienceSummarizer experienceSummarizer,
             @Autowired(required = false) SessionArtifactRepository sessionArtifactRepository,
             @Autowired(required = false) com.lifepilot.interaction.web.sse.SseSessionManager sseSessionManager,
-            @Autowired(required = false) com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor) {
+            @Autowired(required = false) com.lifepilot.agent.intelligence.CapabilityAssessor capabilityAssessor,
+            @Autowired(required = false) ConversationCapabilityPlanner capabilityPlanner) {
         var loop = new ReactAgentLoop(
                 contextAssembler,
                 providerMessageBuilder,
@@ -334,14 +358,14 @@ public class AgentAutoConfiguration {
                 intentMatcher,
                 compactionEngine,
                 sharedScheduler,
-                workspaceService,
-                experienceSummarizer);
+                workspaceService);
         // 注入 run(sessionId, UserMessage) 便捷入口所需的路由器
         loop.setGenerationRouter(generationRouter);
         // 文件产物链路：让 Agent 主循环把工具产物升级为 session_artifacts 并通过 SSE 推送
         loop.setSessionArtifactRepository(sessionArtifactRepository);
         loop.setSseSessionManager(sseSessionManager);
         loop.setCapabilityAssessor(capabilityAssessor);
+        loop.setCapabilityPlanner(capabilityPlanner);
         return loop;
     }
 

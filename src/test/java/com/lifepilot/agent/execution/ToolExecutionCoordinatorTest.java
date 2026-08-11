@@ -23,6 +23,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,7 +74,10 @@ class ToolExecutionCoordinatorTest {
                 .build();
         var request = new AgentRequest("执行测试代码", "session-1", "web", null, null,
                 budget, null, 0, null, null, null, null);
-        ReactAgentState state = ReactAgentState.init(request, budget);
+        ReactAgentState state = ReactAgentState.init(request, budget)
+                .toBuilder()
+                .turnId("turn-code-error")
+                .build();
 
         ToolCallback callback = new ToolCallback() {
             private final ToolDefinition definition = DefaultToolDefinition.builder()
@@ -115,9 +120,19 @@ class ToolExecutionCoordinatorTest {
         assertThat(observation.success()).isFalse();
         assertThat(observation.output()).contains("exitCode=9009");
 
+        verify(transcriptStore, timeout(1000)).appendToolCall(
+                eq("session-1"),
+                eq("turn-code-error"),
+                eq(result.traceId()),
+                eq("code.execute"),
+                eq("call-1"),
+                eq("执行代码"),
+                eq("{\"language\":\"python\",\"code\":\"print('Hello')\"}"),
+                nullable(java.time.Instant.class)
+        );
         verify(transcriptStore, timeout(1000)).appendToolResult(
                 eq("session-1"),
-                nullable(String.class),
+                eq("turn-code-error"),
                 eq(result.traceId()),
                 eq("code.execute"),
                 eq("call-1"),
@@ -232,6 +247,183 @@ class ToolExecutionCoordinatorTest {
                         && !query.contains("`")));
         verify(proceduralMemory).recordExecution("tpl-file-write", true);
         verify(proceduralMemory, never()).recordExecution("tpl-file-write", false);
+    }
+
+    @Test
+    void 工具经验后台记录关闭时不应启动意图匹配() throws InterruptedException {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
+        IntentMatcher intentMatcher = mock(IntentMatcher.class);
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                proceduralMemory,
+                intentMatcher,
+                4,
+                null,
+                null,
+                0
+        );
+
+        coordinator.execute(
+                baseState(),
+                new AssistantMessage.ToolCall("call-memory-off", "function",
+                        "file.write", "{\"path\":\"notes.md\"}"),
+                List.of(callback("file.write", 0, new AtomicInteger(), new AtomicInteger(), "{\"ok\":true}")),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        Thread.sleep(100);
+        verify(intentMatcher, never()).match(anyString());
+        verify(proceduralMemory, never()).recordExecution(anyString(), eq(true));
+    }
+
+    @Test
+    void 工具经验后台记录达到上限时应跳过后续沉淀() throws Exception {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
+        IntentMatcher intentMatcher = mock(IntentMatcher.class);
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        when(intentMatcher.match(argThat(query -> query != null && query.contains("tool alpha"))))
+                .thenAnswer(invocation -> {
+                    firstStarted.countDown();
+                    assertThat(releaseFirst.await(1, TimeUnit.SECONDS)).isTrue();
+                    return Optional.empty();
+                });
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                proceduralMemory,
+                intentMatcher,
+                4,
+                null,
+                null,
+                1
+        );
+
+        coordinator.execute(
+                baseState(),
+                new AssistantMessage.ToolCall("call-alpha", "function",
+                        "tool.alpha", "{\"query\":\"alpha\"}"),
+                List.of(callback("tool.alpha", 0, new AtomicInteger(), new AtomicInteger(), "{\"ok\":true}")),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+        assertThat(firstStarted.await(300, TimeUnit.MILLISECONDS)).isTrue();
+
+        coordinator.execute(
+                baseState(),
+                new AssistantMessage.ToolCall("call-beta", "function",
+                        "tool.beta", "{\"query\":\"beta\"}"),
+                List.of(callback("tool.beta", 0, new AtomicInteger(), new AtomicInteger(), "{\"ok\":true}")),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        Thread.sleep(100);
+        verify(intentMatcher, never()).match(argThat(query -> query != null && query.contains("tool beta")));
+        releaseFirst.countDown();
+    }
+
+    @Test
+    void 工具经验后台记录超时后应释放名额且不写入超时结果() throws Exception {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+        ProceduralMemory proceduralMemory = mock(ProceduralMemory.class);
+        IntentMatcher intentMatcher = mock(IntentMatcher.class);
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        when(intentMatcher.match(argThat(query -> query != null && query.contains("tool alpha"))))
+                .thenAnswer(invocation -> {
+                    firstStarted.countDown();
+                    assertThat(releaseFirst.await(1, TimeUnit.SECONDS)).isTrue();
+                    return Optional.of(new IntentMatcher.TemplateMatch(
+                            template("tpl-alpha"), 0.92f));
+                });
+        when(intentMatcher.match(argThat(query -> query != null && query.contains("tool beta"))))
+                .thenAnswer(invocation -> {
+                    secondStarted.countDown();
+                    return Optional.of(new IntentMatcher.TemplateMatch(
+                            template("tpl-beta"), 0.92f));
+                });
+        var coordinator = new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                proceduralMemory,
+                intentMatcher,
+                4,
+                null,
+                null,
+                1,
+                Duration.ofMillis(30)
+        );
+
+        coordinator.execute(
+                baseState(),
+                new AssistantMessage.ToolCall("call-alpha", "function",
+                        "tool.alpha", "{\"query\":\"alpha\"}"),
+                List.of(callback("tool.alpha", 0, new AtomicInteger(), new AtomicInteger(), "{\"ok\":true}")),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+        assertThat(firstStarted.await(300, TimeUnit.MILLISECONDS)).isTrue();
+        Thread.sleep(80);
+
+        coordinator.execute(
+                baseState(),
+                new AssistantMessage.ToolCall("call-beta", "function",
+                        "tool.beta", "{\"query\":\"beta\"}"),
+                List.of(callback("tool.beta", 0, new AtomicInteger(), new AtomicInteger(), "{\"ok\":true}")),
+                null,
+                new CancellationToken(),
+                new AgentLoopContext(),
+                (currentState, step, loopContext) -> currentState.appendStep(step)
+        );
+
+        assertThat(secondStarted.await(300, TimeUnit.MILLISECONDS)).isTrue();
+        verify(proceduralMemory, timeout(300)).recordExecution("tpl-beta", true);
+        releaseFirst.countDown();
+        Thread.sleep(80);
+        verify(proceduralMemory, never()).recordExecution("tpl-alpha", true);
+    }
+
+    @Test
+    void 构造器应拒绝非法工具经验后台记录超时() {
+        AgentToolProvider agentToolProvider = mock(AgentToolProvider.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ToolExecutionCoordinator(
+                agentToolProvider,
+                new ObjectMapper(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                4,
+                null,
+                null,
+                1,
+                Duration.ofMillis(-1)
+        )).hasMessageContaining("工具经验后台记录超时时间");
     }
 
     @Test
@@ -590,6 +782,24 @@ class ToolExecutionCoordinatorTest {
         var request = new AgentRequest("测试工具批次执行", "session-batch", "web", null, null,
                 budget, null, 0, null, null, null, null);
         return ReactAgentState.init(request, budget);
+    }
+
+    private ProcedureTemplate template(String templateId) {
+        return new ProcedureTemplate(
+                templateId,
+                templateId,
+                "测试模板",
+                "测试意图",
+                List.of(),
+                java.util.Map.of(),
+                0.95f,
+                3,
+                Instant.now(),
+                List.of("trace-test"),
+                Instant.now(),
+                Instant.now(),
+                null,
+                null);
     }
 
     private ToolCallback callback(String toolName,

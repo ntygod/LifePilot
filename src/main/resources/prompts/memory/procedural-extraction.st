@@ -19,12 +19,13 @@
 2. 将变化点抽象为变量（使用 ${variable} 占位符）
 3. 提取触发意图（triggerIntent）：用户表达此操作的自然语言模式
 4. 为每个步骤提供清晰的描述
-5. 若共同模式不足以形成稳定模板，输出空模板：name/description/triggerIntent 为空字符串，steps 为空数组
+5. 若共同模式不足以形成稳定模板，输出 createTemplate=false；不要用空字符串模板表达拒绝
 </instructions>
 
 <constraints>
 输出格式（JSON）：
 {
+  "createTemplate": true,
   "name": "模板名称（简洁，如'创建待办并设置提醒'）",
   "description": "模板描述（说明此模板的用途和适用场景）",
   "triggerIntent": "触发意图（用户可能使用的自然语言表达，如'创建一个待办事项并设置提醒'）",
@@ -41,7 +42,20 @@
   ]
 }
 
+拒绝生成模板时必须输出：
+{
+  "createTemplate": false,
+  "name": null,
+  "description": null,
+  "triggerIntent": null,
+  "steps": []
+}
+
 注意：
+- 所有字段必须完整输出，不得省略。
+- createTemplate=true 时，name/description/triggerIntent 必须是非空字符串，steps 必须是非空数组。
+- createTemplate=true 时，每个 step 的 toolId/action/parameterTemplate/description 必须完整输出；没有参数时 parameterTemplate 输出空对象。
+- 字符串字段不要带首尾空白。
 - parameterTemplate 中的变量名应具有语义（如 ${title}, ${priority}）
 - 固定值不要使用占位符
 - triggerIntent 应覆盖用户可能的表达方式

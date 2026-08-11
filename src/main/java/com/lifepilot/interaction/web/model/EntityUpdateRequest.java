@@ -10,6 +10,7 @@ import java.util.Map;
  * @since 2026-03-13
  */
 public record EntityUpdateRequest(
+        @Nullable String name,
         @Nullable String description,
         @Nullable Map<String, Object> properties,
         @Nullable Float importanceScore

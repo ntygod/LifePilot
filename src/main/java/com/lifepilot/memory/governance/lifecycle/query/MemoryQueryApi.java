@@ -7,20 +7,21 @@ import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.SourceType;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProcedureTemplate;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
 import com.lifepilot.memory.store.procedural.TemplateStep;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -39,7 +40,6 @@ import java.util.Optional;
 @Service
 public class MemoryQueryApi {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryQueryApi.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<Map<String, Object>> PROPERTIES_TYPE = new TypeReference<>() {};
 
@@ -50,9 +50,9 @@ public class MemoryQueryApi {
     public MemoryQueryApi(SemanticMemory semanticMemory,
                           MemoryProvenanceRepository provenanceRepository,
                           JdbcTemplate jdbcTemplate) {
-        this.semanticMemory = semanticMemory;
-        this.provenanceRepository = provenanceRepository;
-        this.jdbcTemplate = jdbcTemplate;
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.provenanceRepository = Objects.requireNonNull(provenanceRepository, "provenanceRepository 不能为空");
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
     }
 
     // ========== 实体查询 ==========
@@ -69,9 +69,6 @@ public class MemoryQueryApi {
      */
     public Optional<TemporalEntity> findLatestByType(String typeName) {
         EntityType type = parseEntityType(typeName);
-        if (type == null) {
-            return Optional.empty();
-        }
         return semanticMemory.findCurrentByType(type).stream()
                 .max((a, b) -> a.updatedAt().compareTo(b.updatedAt()));
     }
@@ -86,9 +83,6 @@ public class MemoryQueryApi {
     /** 按类型找所有生命周期处于 {@code ACTIVE} 的当前实体（按重要度降序）。 */
     public List<TemporalEntity> findActiveByType(String typeName) {
         EntityType type = parseEntityType(typeName);
-        if (type == null) {
-            return List.of();
-        }
         return semanticMemory.findCurrentByType(type).stream()
                 .filter(e -> e.lifecycleState() == LifecycleState.ACTIVE)
                 .toList();
@@ -111,7 +105,8 @@ public class MemoryQueryApi {
                        extraction_confidence, importance_score, access_count, last_accessed_at,
                        created_at, updated_at,
                        lifecycle_state, lifecycle_reason, expires_at, temporality,
-                       succeeded_by, is_derived, derivation_sources
+                       succeeded_by, is_derived, derivation_sources,
+                       evidence_kind, trust_level, trust_score, evidence_count, last_verified_at
                 FROM temporal_entities
                 WHERE id = ?
                 ORDER BY version ASC
@@ -129,12 +124,14 @@ public class MemoryQueryApi {
             try {
                 properties = MAPPER.readValue(propsJson, PROPERTIES_TYPE);
             } catch (Exception e) {
-                log.warn("MemoryQueryApi: properties_json 解析失败, id={}", rs.getString("id"));
+                throw new IllegalStateException(
+                        "MemoryQueryApi: properties_json 解析失败, id=" + rs.getString("id"), e);
             }
         }
         String validToStr = rs.getString("valid_to");
         String lastAccessedStr = rs.getString("last_accessed_at");
         String expiresStr = rs.getString("expires_at");
+        String lastVerifiedStr = rs.getString("last_verified_at");
         String derivationSourcesJson = rs.getString("derivation_sources");
         List<String> derivationSources = List.of();
         if (derivationSourcesJson != null && !derivationSourcesJson.isBlank()) {
@@ -142,7 +139,8 @@ public class MemoryQueryApi {
                 derivationSources = MAPPER.readValue(
                         derivationSourcesJson, new TypeReference<List<String>>() {});
             } catch (Exception e) {
-                log.warn("MemoryQueryApi: derivation_sources 解析失败, id={}", rs.getString("id"));
+                throw new IllegalStateException(
+                        "MemoryQueryApi: derivation_sources 解析失败, id=" + rs.getString("id"), e);
             }
         }
         LifecycleState lifecycleState = parseLifecycleState(rs.getString("lifecycle_state"));
@@ -170,29 +168,47 @@ public class MemoryQueryApi {
                 temporality,
                 rs.getString("succeeded_by"),
                 rs.getInt("is_derived") == 1,
-                derivationSources
+                derivationSources,
+                parseEvidenceKind(rs.getString("evidence_kind")),
+                parseTrustLevel(rs.getString("trust_level")),
+                rs.getFloat("trust_score"),
+                rs.getInt("evidence_count"),
+                lastVerifiedStr != null ? Instant.parse(lastVerifiedStr) : null
         );
     }
 
     private static LifecycleState parseLifecycleState(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return LifecycleState.ACTIVE;
-        }
-        try {
-            return LifecycleState.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            return LifecycleState.ACTIVE;
-        }
+        return parseRequiredEnum("lifecycle_state", raw, LifecycleState.class);
     }
 
     private static Temporality parseTemporality(String raw) {
+        return parseRequiredEnum("temporality", raw, Temporality.class);
+    }
+
+    private static MemoryEvidenceKind parseEvidenceKind(String raw) {
+        return parseRequiredEnum("evidence_kind", raw, MemoryEvidenceKind.class);
+    }
+
+    private static MemoryTrustLevel parseTrustLevel(String raw) {
+        return parseRequiredEnum("trust_level", raw, MemoryTrustLevel.class);
+    }
+
+    private static <E extends Enum<E>> E parseRequiredEnum(
+            String columnName,
+            String raw,
+            Class<E> enumType) {
         if (raw == null || raw.isBlank()) {
-            return Temporality.PERSISTENT;
+            throw new IllegalStateException("MemoryQueryApi: " + columnName + " 不能为空");
+        }
+        if (!raw.equals(raw.trim())) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 不能包含首尾空白: " + raw);
         }
         try {
-            return Temporality.valueOf(raw);
-        } catch (IllegalArgumentException ignored) {
-            return Temporality.PERSISTENT;
+            return Enum.valueOf(enumType, raw);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 包含未知值: " + raw, ex);
         }
     }
 
@@ -219,28 +235,30 @@ public class MemoryQueryApi {
      * 按来源实体 ID 查找 L4 偏好规则。
      *
      * @param sourceEntityId L3 源实体 ID
-     * @return 匹配的偏好规则，未找到时返回 null
+     * @return 匹配的偏好规则
      */
-    public PreferenceRule findRuleBySourceEntity(String sourceEntityId) {
+    public Optional<PreferenceRule> findRuleBySourceEntity(String sourceEntityId) {
+        requireText(sourceEntityId, "L4 偏好源实体 ID 不能为空");
         var results = jdbcTemplate.query(
                 "SELECT rule_id, category, key, value, confidence, learned_from_json, observation_count, created_at, updated_at, source_entity_id, deactivated_reason FROM preference_rules WHERE source_entity_id = ?",
                 (rs, rowNum) -> mapPreferenceRow(rs),
                 sourceEntityId);
-        return results.isEmpty() ? null : results.getFirst();
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     /**
      * 按来源实体 ID 查找 L4 程序模板。
      *
      * @param sourceEntityId L3 源实体 ID
-     * @return 匹配的程序模板，未找到时返回 null
+     * @return 匹配的程序模板
      */
-    public ProcedureTemplate findProcedureBySourceEntity(String sourceEntityId) {
+    public Optional<ProcedureTemplate> findProcedureBySourceEntity(String sourceEntityId) {
+        requireText(sourceEntityId, "L4 程序源实体 ID 不能为空");
         var results = jdbcTemplate.query(
                 "SELECT template_id, name, description, trigger_intent, steps_json, variables_json, success_rate, use_count, last_used_at, source_trace_ids_json, created_at, updated_at, source_entity_id, deactivated_reason FROM procedure_templates WHERE source_entity_id = ?",
                 (rs, rowNum) -> mapTemplateRow(rs),
                 sourceEntityId);
-        return results.isEmpty() ? null : results.getFirst();
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     @SuppressWarnings("unchecked")
@@ -258,27 +276,19 @@ public class MemoryQueryApi {
 
     @SuppressWarnings("unchecked")
     private ProcedureTemplate mapTemplateRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        String templateId = rs.getString("template_id");
         String stepsJson = rs.getString("steps_json");
-        List<TemplateStep> steps = List.of();
-        if (stepsJson != null && !stepsJson.isBlank()) {
-            try { steps = MAPPER.readValue(stepsJson, new TypeReference<>() {}); }
-            catch (Exception ignored) {}
-        }
+        List<TemplateStep> steps = parseRequiredJson(
+                "steps_json", templateId, stepsJson, new TypeReference<List<TemplateStep>>() {});
         String varsJson = rs.getString("variables_json");
-        Map<String, String> variables = Map.of();
-        if (varsJson != null && !varsJson.isBlank()) {
-            try { variables = MAPPER.readValue(varsJson, new TypeReference<Map<String, String>>() {}); }
-            catch (Exception ignored) {}
-        }
+        Map<String, String> variables = parseRequiredJson(
+                "variables_json", templateId, varsJson, new TypeReference<Map<String, String>>() {});
         String sourceTraceJson = rs.getString("source_trace_ids_json");
-        List<String> sourceTraceIds = List.of();
-        if (sourceTraceJson != null && !sourceTraceJson.isBlank()) {
-            try { sourceTraceIds = MAPPER.readValue(sourceTraceJson, new TypeReference<List<String>>() {}); }
-            catch (Exception ignored) {}
-        }
+        List<String> sourceTraceIds = parseRequiredJson(
+                "source_trace_ids_json", templateId, sourceTraceJson, new TypeReference<List<String>>() {});
         String lastUsedStr = rs.getString("last_used_at");
         return new ProcedureTemplate(
-                rs.getString("template_id"), rs.getString("name"),
+                templateId, rs.getString("name"),
                 rs.getString("description"), rs.getString("trigger_intent"),
                 steps, variables,
                 rs.getFloat("success_rate"), rs.getInt("use_count"),
@@ -290,17 +300,41 @@ public class MemoryQueryApi {
                 rs.getString("deactivated_reason"));
     }
 
-    // ========== 内部辅助 ==========
-
-    /** 尝试解析实体类型字符串为枚举；非法值返回 null（调用方视作空结果）。 */
-    private static EntityType parseEntityType(String typeName) {
-        if (typeName == null || typeName.isBlank()) {
-            return null;
+    private static <T> T parseRequiredJson(
+            String columnName,
+            String templateId,
+            String json,
+            TypeReference<T> typeReference) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 不能为空, templateId=" + templateId);
         }
         try {
+            return MAPPER.readValue(json, typeReference);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "MemoryQueryApi: " + columnName + " 解析失败, templateId=" + templateId, e);
+        }
+    }
+
+    // ========== 内部辅助 ==========
+
+    /** 解析实体类型字符串为枚举；非法值直接失败。 */
+    private static EntityType parseEntityType(String typeName) {
+        requireText(typeName, "实体类型不能为空");
+        try {
             return EntityType.valueOf(typeName);
-        } catch (IllegalArgumentException ignored) {
-            return null;
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("未知实体类型: " + typeName, ex);
+        }
+    }
+
+    private static void requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(message + "，不能包含首尾空白");
         }
     }
 }

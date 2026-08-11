@@ -211,7 +211,6 @@ class ReactAgentLoopGracefulSummaryTest {
                 null,
                 null,
                 sharedScheduler,
-                null,
                 null
         );
     }

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -44,7 +45,28 @@ class ReactStepSerializerTest {
         assertEquals("web.search", result.getFirst().get("toolId"));
         assertEquals("网页搜索", result.getFirst().get("toolName"));
         assertEquals("搜索「test」", result.getFirst().get("inputSummary"));
+        assertEquals("{\"query\":\"test\"}", result.getFirst().get("inputDetail"));
         assertEquals(150L, result.getFirst().get("latencyMs"));
+    }
+
+    @Test
+    void serialize_ToolCall步骤_inputDetail应截断并脱敏() {
+        var steps = List.<ReactStep>of(
+                new ReactStep.ToolCall(
+                        "mcp.call",
+                        "调用连接器",
+                        "{\"apiKey\":\"secret-value\",\"nested\":{\"access_token\":\"abc\"},\"query\":\""
+                                + "x".repeat(2200) + "\"}",
+                        150));
+        var result = ReactStepSerializer.serialize(steps);
+
+        String inputDetail = (String) result.getFirst().get("inputDetail");
+        assertNotNull(inputDetail);
+        assertTrue(inputDetail.length() <= 2001);
+        assertTrue(inputDetail.endsWith("…"));
+        assertTrue(inputDetail.contains("\"apiKey\":\"***\""));
+        assertTrue(inputDetail.contains("\"access_token\":\"***\""));
+        assertFalse(inputDetail.contains("secret-value"));
     }
 
     @Test
@@ -300,6 +322,136 @@ class ReactStepSerializerTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void serializeStep_skillLoad保留流式恢复字段() {
+        var toolCall = new ReactStep.ToolCall(
+                "skill.load",
+                "加载 Skill",
+                "{\"names\":[\"research-assistant\"]}",
+                12,
+                "call-skill-load-1"
+        );
+        var callStep = ReactStepSerializer.serializeStep(toolCall, 3);
+
+        assertEquals("TOOL_CALL", callStep.get("type"));
+        assertEquals(3, callStep.get("index"));
+        assertEquals("skill.load", callStep.get("toolId"));
+        assertEquals("加载 Skill", callStep.get("toolName"));
+        assertEquals("call-skill-load-1", callStep.get("callId"));
+        assertEquals("加载技能「research-assistant」", callStep.get("inputSummary"));
+        assertEquals("技能", callStep.get("subjectLabel"));
+        assertEquals(List.of("research-assistant"), (List<String>) callStep.get("subjectNames"));
+        assertEquals(12L, callStep.get("latencyMs"));
+
+        var observation = new ReactStep.Observation(
+                "skill.load",
+                "加载 Skill",
+                false,
+                "{\"message\":\"技能 research-assistant 不存在\"}",
+                0,
+                "call-skill-load-1"
+        );
+        var observationStep = ReactStepSerializer.serializeStep(observation, 4);
+
+        assertEquals("OBSERVATION", observationStep.get("type"));
+        assertEquals(4, observationStep.get("index"));
+        assertEquals("call-skill-load-1", observationStep.get("callId"));
+        assertEquals(false, observationStep.get("success"));
+        assertEquals("技能 research-assistant 不存在", observationStep.get("outputSummary"));
+        assertEquals("技能 research-assistant 不存在", observationStep.get("outputDetail"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serializeStep_skillLoad应透传缺失建议工具并更新摘要() {
+        String output = """
+                {
+                  "content":"<skill name=\\"research\\">指南</skill>",
+                  "capabilityStatus":"DEGRADED",
+                  "missingCapabilities":[
+                    {"kind":"TOOL","id":"web.search","source":"skill_reference","reason":"Skill 引用了当前不可用工具","skillName":"research"}
+                  ]
+                }
+                """;
+        var observation = new ReactStep.Observation(
+                "skill.load",
+                "加载 Skill",
+                true,
+                output,
+                0,
+                "call-skill-load-2"
+        );
+
+        var observationStep = ReactStepSerializer.serializeStep(observation, 6);
+
+        assertEquals("已加载 1 个技能，缺少建议工具 web.search", observationStep.get("outputSummary"));
+        List<Map<String, Object>> missingCapabilities =
+                (List<Map<String, Object>>) observationStep.get("missingCapabilities");
+        assertEquals(List.of(Map.of(
+                "kind", "TOOL",
+                "id", "web.search",
+                "source", "skill_reference",
+                "reason", "Skill 引用了当前不可用工具",
+                "skillName", "research")), missingCapabilities);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serializeStep_skillLoad应识别别名和对象数组主体() {
+        var toolCall = new ReactStep.ToolCall(
+                "skill.load",
+                "加载 Skill",
+                "{\"skillNames\":[\"writer\"],\"skills\":[{\"name\":\"reviewer\"},{\"skillId\":\"planner\"}]}",
+                9,
+                "call-skill-load-alias"
+        );
+
+        var callStep = ReactStepSerializer.serializeStep(toolCall, 4);
+
+        assertEquals("TOOL_CALL", callStep.get("type"));
+        assertEquals("skill.load", callStep.get("toolId"));
+        assertEquals("加载技能「writer、reviewer、planner」", callStep.get("inputSummary"));
+        assertEquals("技能", callStep.get("subjectLabel"));
+        assertEquals(List.of("writer", "reviewer", "planner"), (List<String>) callStep.get("subjectNames"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serializeStep_skillRun也应保留技能主体用于断点恢复() {
+        var toolCall = new ReactStep.ToolCall(
+                "skill.run",
+                "执行 Skill",
+                "{\"skill\":\"research-assistant\",\"step\":\"collect\"}",
+                18,
+                "call-skill-run-1"
+        );
+        var callStep = ReactStepSerializer.serializeStep(toolCall, 5);
+
+        assertEquals("TOOL_CALL", callStep.get("type"));
+        assertEquals("skill.run", callStep.get("toolId"));
+        assertEquals("执行技能「research-assistant」", callStep.get("inputSummary"));
+        assertEquals("技能", callStep.get("subjectLabel"));
+        assertEquals(List.of("research-assistant"), (List<String>) callStep.get("subjectNames"));
+
+        var observation = new ReactStep.Observation(
+                "skill.run",
+                "执行 Skill",
+                false,
+                "{\"message\":\"资料源不可用\",\"skill\":\"research-assistant\"}",
+                0,
+                "call-skill-run-1"
+        );
+        var observationStep = ReactStepSerializer.serializeStep(observation, 6);
+
+        assertEquals("OBSERVATION", observationStep.get("type"));
+        assertEquals("skill.run", observationStep.get("toolId"));
+        assertEquals("资料源不可用", observationStep.get("outputSummary"));
+        assertEquals("资料源不可用", observationStep.get("outputDetail"));
+        assertEquals("技能", observationStep.get("subjectLabel"));
+        assertEquals(List.of("research-assistant"), (List<String>) observationStep.get("subjectNames"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void serialize_browser工具_observation含output原始字段() {
         String output = "{\"url\":\"https://example.com\",\"title\":\"示例\","
                 + "\"screenshot\":\"AAAA\","
@@ -347,6 +499,82 @@ class ReactStepSerializerTest {
 
         assertFalse(result.getFirst().containsKey("output"),
                 "非 browser 工具 observation 不应携带 output 字段");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serialize_observation从artifactRefs输出提取产物引用() {
+        String output = """
+                {
+                  "message": "报告生成失败前已保存草稿",
+                  "artifactRefs": [
+                    {
+                      "artifactId": "artifact-report",
+                      "fileName": "report.md",
+                      "mimeType": "text/markdown",
+                      "kind": "FILE",
+                      "size": 128,
+                      "downloadUrl": "/api/artifacts/artifact-report/download"
+                    },
+                    {
+                      "id": "artifact-image",
+                      "name": "cover.png",
+                      "type": "image/png",
+                      "size": 256
+                    },
+                    {
+                      "artifactId": "artifact-report",
+                      "fileName": "duplicate.md"
+                    },
+                    {
+                      "fileName": "missing-id.md"
+                    }
+                  ]
+                }
+                """;
+
+        var result = ReactStepSerializer.serialize(List.of(
+                new ReactStep.Observation("file.write", "文件写入", false, output, 0, "call-file-1")));
+
+        var artifactRefs = (List<Map<String, Object>>) result.getFirst().get("artifactRefs");
+        assertEquals(2, artifactRefs.size());
+        assertEquals("artifact-report", artifactRefs.get(0).get("artifactId"));
+        assertEquals("report.md", artifactRefs.get(0).get("fileName"));
+        assertEquals("text/markdown", artifactRefs.get(0).get("mimeType"));
+        assertEquals("FILE", artifactRefs.get(0).get("kind"));
+        assertEquals(128L, artifactRefs.get(0).get("size"));
+        assertEquals("/api/artifacts/artifact-report/download", artifactRefs.get(0).get("downloadUrl"));
+        assertEquals("artifact-image", artifactRefs.get(1).get("artifactId"));
+        assertEquals("cover.png", artifactRefs.get(1).get("fileName"));
+        assertEquals("image/png", artifactRefs.get(1).get("mimeType"));
+        assertEquals("/api/artifacts/artifact-image/download", artifactRefs.get(1).get("downloadUrl"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serialize_observation从单个artifactId输出提取产物引用但不误用普通id() {
+        String output = """
+                {
+                  "artifactId": "artifact-single",
+                  "filename": "result.md",
+                  "type": "FILE",
+                  "size": 64
+                }
+                """;
+
+        var result = ReactStepSerializer.serialize(List.of(
+                new ReactStep.Observation("file.write", "文件写入", true, output, 0, "call-file-1")));
+
+        var artifactRefs = (List<Map<String, Object>>) result.getFirst().get("artifactRefs");
+        assertEquals(1, artifactRefs.size());
+        assertEquals("artifact-single", artifactRefs.getFirst().get("artifactId"));
+        assertEquals("result.md", artifactRefs.getFirst().get("fileName"));
+        assertEquals("FILE", artifactRefs.getFirst().get("kind"));
+        assertEquals("/api/artifacts/artifact-single/download", artifactRefs.getFirst().get("downloadUrl"));
+
+        var nonArtifact = ReactStepSerializer.serialize(List.of(
+                new ReactStep.Observation("mcp.custom", "自定义工具", true, "{\"id\":\"business-1\"}", 0)));
+        assertFalse(nonArtifact.getFirst().containsKey("artifactRefs"));
     }
 
     @Test

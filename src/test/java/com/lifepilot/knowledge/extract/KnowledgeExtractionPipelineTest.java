@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
@@ -304,6 +305,90 @@ class KnowledgeExtractionPipelineTest {
         verifyNoMoreInteractions(semanticMemory);
     }
 
+    @Test
+    void 实体写入失败应直接中断提取() {
+        var generationRouter = mock(GenerationRouter.class);
+        var semanticMemory = mock(SemanticMemory.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var memorySpaceRepository = mock(MemorySpaceRepository.class);
+        var extraction = new KnowledgeBaseProperties.Extraction(true, 4);
+
+        var pipeline = new KnowledgeExtractionPipeline(
+                generationRouter,
+                semanticMemory,
+                extraction,
+                promptRegistry,
+                memorySpaceRepository
+        );
+
+        when(memorySpaceRepository.ensureKnowledgeBaseDomainSpace("kb-1"))
+                .thenReturn(domainSpace("space-kb-1", "kb-1"));
+        when(promptRegistry.render(eq("knowledge/entity-extraction"), any(Map.class))).thenReturn("prompt");
+        when(generationRouter.callEntity(
+                eq("knowledge_extraction"),
+                eq("prompt"),
+                eq(KnowledgeExtractionPipeline.ExtractionResponse.class),
+                eq(null),
+                eq(null),
+                eq(null)
+        )).thenReturn(new KnowledgeExtractionPipeline.ExtractionResponse(
+                List.of(new KnowledgeExtractionPipeline.ExtractionResponse.EntityInfo(
+                        "角色A", "PERSON", "角色A描述", "chunk-domain")),
+                List.of()
+        ));
+        when(semanticMemory.upsertWithConflictDetection(any(TemporalEntity.class), eq("doc-domain"), any(MemoryWriteContext.class)))
+                .thenThrow(new IllegalStateException("写入失败"));
+
+        assertThatThrownBy(() -> pipeline.extract(
+                buildDocument("doc-domain", "kb-1"),
+                List.of(chunk("chunk-domain", "doc-domain", "kb-1", "角色A"))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("写入失败");
+    }
+
+    @Test
+    void 多分块结果缺少sourceChunkId时应拒绝写入() {
+        var generationRouter = mock(GenerationRouter.class);
+        var semanticMemory = mock(SemanticMemory.class);
+        var promptRegistry = mock(PromptRegistry.class);
+        var memorySpaceRepository = mock(MemorySpaceRepository.class);
+        var extraction = new KnowledgeBaseProperties.Extraction(true, 4);
+
+        var pipeline = new KnowledgeExtractionPipeline(
+                generationRouter,
+                semanticMemory,
+                extraction,
+                promptRegistry,
+                memorySpaceRepository
+        );
+
+        when(memorySpaceRepository.ensureKnowledgeBaseDomainSpace("kb-1"))
+                .thenReturn(domainSpace("space-kb-1", "kb-1"));
+        when(promptRegistry.render(eq("knowledge/entity-extraction"), any(Map.class))).thenReturn("prompt");
+        when(generationRouter.callEntity(
+                eq("knowledge_extraction"),
+                eq("prompt"),
+                eq(KnowledgeExtractionPipeline.ExtractionResponse.class),
+                eq(null),
+                eq(null),
+                eq(null)
+        )).thenReturn(new KnowledgeExtractionPipeline.ExtractionResponse(
+                List.of(new KnowledgeExtractionPipeline.ExtractionResponse.EntityInfo(
+                        "角色A", "PERSON", "角色A描述")),
+                List.of()
+        ));
+
+        assertThatThrownBy(() -> pipeline.extract(
+                buildDocument("doc-domain", "kb-1"),
+                List.of(
+                        chunk("chunk-a", "doc-domain", "kb-1", "角色A 上半段"),
+                        chunk("chunk-b", "doc-domain", "kb-1", "角色A 下半段")
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("缺少 sourceChunkId");
+        verifyNoInteractions(semanticMemory);
+    }
+
     private TemporalEntity buildEntity(String id, String name) {
         Instant now = Instant.now();
         return new TemporalEntity(
@@ -323,7 +408,19 @@ class KnowledgeExtractionPipelineTest {
                 null,
                 now,
                 now
-        );
+        ,
+                com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                null,
+                null,
+                com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                null,
+                false,
+                java.util.List.of(),
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                now);
     }
 
     private Document buildDocument(String documentId, String knowledgeBaseId) {
@@ -345,6 +442,38 @@ class KnowledgeExtractionPipelineTest {
                 Instant.now(),
                 DocumentSourceType.FILE,
                 "FILE:" + documentId,
+                Map.of()
+        );
+    }
+
+    private MemorySpace domainSpace(String id, String knowledgeBaseId) {
+        return new MemorySpace(
+                id,
+                "domain:knowledge-base:" + knowledgeBaseId,
+                MemorySpaceType.DOMAIN,
+                "知识库领域记忆",
+                "KNOWLEDGE_BASE",
+                knowledgeBaseId,
+                Map.of("knowledgeBaseId", knowledgeBaseId),
+                Instant.now(),
+                Instant.now()
+        );
+    }
+
+    private DocumentChunk chunk(String id, String documentId, String knowledgeBaseId, String content) {
+        return new DocumentChunk(
+                id,
+                documentId,
+                knowledgeBaseId,
+                content,
+                java.util.Optional.empty(),
+                0,
+                content.length(),
+                0,
+                content.length(),
+                "hash-" + id,
+                List.of(),
+                0,
                 Map.of()
         );
     }

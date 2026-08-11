@@ -21,6 +21,11 @@ JSON 格式，字段：
 - applicableConditions: 适用条件（数组，最多 2 条）
 - toolsUsed: 工具 ID 列表（数组）
 - success: 布尔值
+- failureAttribution: 成功时必须为 null；失败时必须为 "strategy" 或 "system"
+- effectivenessScore: 数字，初始固定为 0.0
+- injectionCount: 整数，初始固定为 0
+- positiveOutcomes: 整数，初始固定为 0
+- negativeOutcomes: 整数，初始固定为 0
 
 ## 质量标准
 - 不提取"参数要正确"这类空话教训

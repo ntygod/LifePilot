@@ -13,6 +13,7 @@ import com.lifepilot.agent.config.AgentConfigProperties;
 import com.lifepilot.agent.context.AgentLoopContext;
 import com.lifepilot.agent.model.*;
 import com.lifepilot.agent.persistence.AgentPersistenceHandler;
+import com.lifepilot.agent.recovery.TaskRecoverySummaryBuilder;
 import com.lifepilot.agent.streaming.StreamingEventHandler;
 import com.lifepilot.agent.suspend.model.ResumePayload;
 import com.lifepilot.agent.suspend.model.SuspendedAgent;
@@ -291,6 +292,18 @@ public class AgentOrchestrator {
 
             // ── 阶段 4: 挂起检测 ────────────────────────────────────
             cleanupWorkspaceProgress(state);
+            if (cancellationToken.isCancelled()) {
+                state = markStreamingCancelled(state, callback.getFinalContent());
+                finalContent = state.finalOutput() != null ? state.finalOutput() : "";
+                finalTokenUsage = aggregateTokenUsage(traceContext);
+                clearCheckpoint(effectiveRequest);
+                if (!testSession) {
+                    executionPersistence.markTurnCompleted(state, null, ChatTurnStatus.CANCELLED);
+                }
+                log.info("流式执行已按用户停止请求取消: sessionId={}, traceId={}, turnId={}",
+                        state.sessionId(), state.traceId(), state.turnId());
+                return;
+            }
             if (state.suspended() && state.suspendReason() != null) {
                 clearCheckpoint(effectiveRequest);
                 handleSuspendStreaming(state, streamId, sseManager, loopContext, eventBuffer);
@@ -331,7 +344,7 @@ public class AgentOrchestrator {
                     saveCheckpoint(state, effectiveRequest);
                 }
 
-                // 从 ui.emit 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
+                // 从 ui.render 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
                 if (uiEmitTreeCapture != null) {
                     var capturedTree = uiEmitTreeCapture.poll(streamId);
                     if (capturedTree != null) {
@@ -358,7 +371,7 @@ public class AgentOrchestrator {
                 state = degradeForException(state, ex);
                 finalContent = state.finalOutput() != null ? state.finalOutput() : "";
                 saveCheckpoint(state, effectiveRequest);
-                // 从 ui.emit 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
+                // 从 ui.render 工具捕获的组件树写回 loopContext（必须在 serialize 之前）
                 if (uiEmitTreeCapture != null) {
                     var capturedTree = uiEmitTreeCapture.poll(streamId);
                     if (capturedTree != null) {
@@ -405,15 +418,19 @@ public class AgentOrchestrator {
                             state.traceId(), tempTurnId, ChatTurnStatus.FAILED);
                 }
             } else {
+                boolean cancelled = state.completionReason() == CompletionReason.CANCELLED;
                 agentLoop.sendReasoningEvent(sseManager, streamId, request.sessionId(), tempTurnId,
-                        "ANSWER_FINALIZED", "回答已完成",
-                        "流式输出已完成，正在发送 DONE 事件。",
+                        cancelled ? "GENERATION_CANCELLED" : "ANSWER_FINALIZED",
+                        cancelled ? "已停止生成" : "回答已完成",
+                        cancelled ? "用户已停止本轮生成，正在发送 DONE 事件。"
+                                : "流式输出已完成，正在发送 DONE 事件。",
                         null, Map.of(), eventBuffer);
                 var doneData = streamingEventHandler.buildDoneEventPayload(
                         request, state, tempTurnId, finalTokenUsage,
                         state.steps(), reasoningSummary, finalContent, assistantEntryId,
                         loopContext.getLastCollectedA2uiTree(),
-                        loopContext.streamingTimingsMs());
+                        loopContext.streamingTimingsMs(),
+                        loopContext.getCollectedArtifactRefs());
                 if (eventBuffer != null && !eventBuffer.isClosed()) {
                     // 缓冲区模式：offerTerminal 触发排空 → 派发 DONE → 关闭 emitter
                     eventBuffer.offerTerminal(SseEventType.DONE, doneData);
@@ -510,8 +527,7 @@ public class AgentOrchestrator {
                 assistantEntryId = executionPersistence.persistAssistantSync(
                         state, reactStepsJson, new AgentLoopContext());
             }
-            // 没有 CANCELLED 枚举，FAILED 是最贴近的状态；terminationReason 里说明取消原因
-            executionPersistence.markTurnCompleted(state, assistantEntryId, ChatTurnStatus.FAILED);
+            executionPersistence.markTurnCompleted(state, assistantEntryId, ChatTurnStatus.CANCELLED);
             log.info("挂起 Agent 已硬终止：traceId={}, reasonType={}, reason={}",
                     traceId, suspended.suspendReason().getClass().getSimpleName(), reason);
         } catch (Exception e) {
@@ -577,10 +593,13 @@ public class AgentOrchestrator {
                     state.depth(),
                     state.preferredProvider(),
                     state.allowedToolIds(),
+                    state.disabledToolIds(),
                     null,
                     null,
                     ResumePolicy.AUTO,
-                    state.overrideKnowledgeBaseIds()
+                    state.overrideKnowledgeBaseIds(),
+                    state.memoryContextMode(),
+                    state.turnRecoveryContext()
             );
             var callback = new com.lifepilot.agent.callback.NonStreamingCallback(
                     config, generationRouter, multimodalRouter, request, agentLoop);
@@ -653,10 +672,13 @@ public class AgentOrchestrator {
                     request.depth(),
                     request.preferredProvider(),
                     request.allowedToolIds(),
+                    request.disabledToolIds(),
                     processedMedia,
                     request.temperature(),
                     request.resumePolicy(),
-                    request.overrideKnowledgeBaseIds()
+                    request.overrideKnowledgeBaseIds(),
+                    request.memoryContextMode(),
+                    request.turnRecoveryContext()
             );
         } catch (MediaValidationException e) {
             log.warn("媒体内容校验失败：sessionId={}, error={}", request.sessionId(), e.getMessage());
@@ -767,6 +789,9 @@ public class AgentOrchestrator {
                 .source(request.source())
                 .parentTraceId(oldTraceId)
                 .resumedFromTraceId(oldTraceId)
+                .turnRecoveryContext(request.turnRecoveryContext() != null
+                        ? request.turnRecoveryContext()
+                        : restoredState.turnRecoveryContext())
                 .preferredProvider(
                         request.preferredProvider() != null
                                 ? request.preferredProvider()
@@ -775,6 +800,10 @@ public class AgentOrchestrator {
                         request.allowedToolIds() != null
                                 ? request.allowedToolIds()
                                 : restoredState.allowedToolIds())
+                .disabledToolIds(
+                        request.disabledToolIds() != null
+                                ? request.disabledToolIds()
+                                : restoredState.disabledToolIds())
                 .done(false)
                 .finalOutput(null)
                 .terminationReason(null)
@@ -810,11 +839,25 @@ public class AgentOrchestrator {
                                    ReactAgentState state, @Nullable Throwable error) {
         if (traceRecorder == null || traceContext == null) return;
         String finalOutput = state.finalOutput();
-        boolean success = error == null && state.terminationReason() == null;
+        boolean success = error == null
+                && state.terminationReason() == null
+                && state.completionReason() != CompletionReason.CANCELLED;
         String errorMessage = error != null ? error.getMessage() : null;
         String terminationReason = error != null
                 ? error.getClass().getSimpleName() : state.terminationReason();
         traceRecorder.endTrace(traceContext, finalOutput, success, errorMessage, terminationReason);
+    }
+
+    /** 构造用户主动停止后的终态，避免误记 SUCCESS 或触发助手后处理。 */
+    private ReactAgentState markStreamingCancelled(ReactAgentState state, @Nullable String partialContent) {
+        String content = partialContent != null ? partialContent.strip() : "";
+        return state.toBuilder()
+                .done(true)
+                .finalOutput(content)
+                .terminationReason("用户主动停止生成")
+                .completionReason(CompletionReason.CANCELLED)
+                .completionMode(CompletionMode.NORMAL)
+                .build();
     }
     /** 尝试获取当前 session 的 checkpoint 用于恢复（fingerprint 用于区分同一 session 的不同对话分支） */
     private Optional<AgentCheckpoint> claimCheckpoint(AgentRequest request) {
@@ -1007,7 +1050,14 @@ public class AgentOrchestrator {
                 && browserTakeover.timeoutSeconds() != null) {
             suspendedEvent.put("timeoutSeconds", browserTakeover.timeoutSeconds());
         }
-        suspendedEvent.put("reasonDetail", agentLoop.formatSuspendReason(suspendedState.suspendReason()));
+        String reasonDetail = agentLoop.formatSuspendReason(suspendedState.suspendReason());
+        suspendedEvent.put("reasonDetail", reasonDetail);
+        suspendedEvent.put("taskRecovery", TaskRecoverySummaryBuilder.fromSuspendReason(
+                suspendedState.suspendReason(), reasonDetail));
+        Map<String, Object> executionConstraints = ExecutionConstraintSummarySupport.from(suspendedState);
+        if (!executionConstraints.isEmpty()) {
+            suspendedEvent.put("executionConstraints", executionConstraints);
+        }
         suspendedEvent.put("terminationReason", resolveSuspendTerminationReason(suspendedState));
         suspendedEvent.put("content", suspendMessage);
         suspendedEvent.put("suspendedAt", Instant.now().toString());
@@ -1109,6 +1159,8 @@ public class AgentOrchestrator {
                                              @Nullable List<com.lifepilot.interaction.web.model.A2uiComponent> a2uiComponents,
                                              @Nullable TokenUsage tokenUsage,
                                              java.util.List<com.lifepilot.interaction.model.ArtifactRef> artifactRefs) {
+        var toolSummaries = TaskRecoverySummaryBuilder.toolSummariesFromSteps(state.steps(), artifactRefs);
+        var taskRecovery = TaskRecoverySummaryBuilder.fromState(state, toolSummaries).orElse(null);
         return new AgentResponse(
                 state.traceId(),
                 state.sessionId(),
@@ -1125,7 +1177,9 @@ public class AgentOrchestrator {
                 state.completionMode(),
                 state.resumedFromTraceId(),
                 resolveTurnStatus(state),
-                artifactRefs
+                artifactRefs,
+                toolSummaries,
+                taskRecovery
         );
     }
 
@@ -1156,6 +1210,9 @@ public class AgentOrchestrator {
 
     /** 根据 execution 状态决定 turn 的最终状态：success/degraded/suspended */
     private ChatTurnStatus resolveTurnStatus(ReactAgentState state) {
+        if (state.completionReason() == CompletionReason.CANCELLED) {
+            return ChatTurnStatus.CANCELLED;
+        }
         if (state.suspended()) {
             return ChatTurnStatus.SUSPENDED;
         }

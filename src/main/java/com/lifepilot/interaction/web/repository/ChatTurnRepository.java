@@ -78,11 +78,13 @@ public class ChatTurnRepository {
     public void markAttemptStarted(String sessionId,
                                    String turnId,
                                    ChatTurnAction action,
+                                   String requestPayloadJson,
                                    Instant now) {
         jdbcTemplate.update("""
                 UPDATE chat_turns
                 SET last_action = ?,
                     status = ?,
+                    request_payload_json = ?,
                     assistant_entry_id = NULL,
                     latest_trace_id = NULL,
                     resumed_from_trace_id = NULL,
@@ -93,7 +95,8 @@ public class ChatTurnRepository {
                     updated_at = ?
                 WHERE session_id = ? AND turn_id = ?
                 """,
-                action.name(), ChatTurnStatus.PENDING.name(), now.toString(), sessionId, turnId
+                action.name(), ChatTurnStatus.PENDING.name(), requestPayloadJson,
+                now.toString(), sessionId, turnId
         );
     }
 

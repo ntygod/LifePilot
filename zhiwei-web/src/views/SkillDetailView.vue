@@ -482,7 +482,7 @@ function runTest() {
                   </li>
                   <li class="flex items-start gap-2">
                     <span class="mt-2 size-1.5 rounded-full bg-primary/70" />
-                    <span>如果依赖工具缺失，优先补齐工具注册，再进行测试。</span>
+                    <span>如果依赖工具缺失，优先补齐缺失工具能力，再进行测试。</span>
                   </li>
                 </ul>
                 <Button class="mt-4 w-full sm:w-auto" @click="runTest">

@@ -1,6 +1,7 @@
 package com.lifepilot.memory.consumption.attention;
 
 import com.lifepilot.memory.consumption.config.MemoryConsumptionProperties;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
@@ -11,6 +12,7 @@ import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,7 +77,7 @@ class 记忆注意力_集成测试 {
         jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("PRAGMA foreign_keys = ON");
         semanticMemory = new SemanticMemory(jdbcTemplate, mock(ConflictDetector.class),
-                new VersionMerger(), mock(VectorSearcher.class));
+                new VersionMerger(), mock(VectorSearcher.class), SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), SemanticMemoryTestSupport.projectionService());
         reasoner = new GraphReasoner(jdbcTemplate, 25);
         attentionService = new MemoryAttentionService(
                 semanticMemory, reasoner, new MemoryConsumptionProperties(), CLOCK);
@@ -120,8 +122,8 @@ class 记忆注意力_集成测试 {
         // 连接链：推荐系统项目 -相关-> 机器学习 -相关-> 深度学习（深度学习为连接机会）
         插入实体("ml", "机器学习", EntityType.TOPIC, 0.5f, null, NOW);
         插入实体("dl", "深度学习", EntityType.TOPIC, 0.5f, null, NOW);
-        semanticMemory.addRelation(关系("p-rec", "ml", "相关"));
-        semanticMemory.addRelation(关系("ml", "dl", "相关"));
+        semanticMemory.addRelation(关系("p-rec", "ml", "相关"), relationContext());
+        semanticMemory.addRelation(关系("ml", "dl", "相关"), relationContext());
 
         var items = attentionService.computeAttention(null, 20);
 
@@ -181,7 +183,13 @@ class 记忆注意力_集成测试 {
     }
 
     private TemporalRelation 关系(String src, String tgt, String type) {
-        return new TemporalRelation(UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, NOW, null, "test", NOW);
+        return new TemporalRelation(
+                UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, NOW, null, "test", NOW,
+                MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f);
+    }
+
+    private MemoryWriteContext relationContext() {
+        return MemoryWriteContext.consolidation("test-relation");
     }
 
     private void 插入实体(String id, String name, EntityType type, float importance,

@@ -19,9 +19,11 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link ProactiveTaskCancelListener} 单元测试 —— 验证 ACTIVE insight 级联 CANCELLED、
@@ -83,6 +85,23 @@ class ProactiveTaskCancelListener_单元测试 {
                 .updateLifecycleState(anyString(), any(), any(), any());
     }
 
+    @Test
+    void 状态更新失败应直接抛出() {
+        when(semanticMemory.findById("ins-fail"))
+                .thenReturn(Optional.of(构造实体("ins-fail", LifecycleState.ACTIVE)));
+        doThrow(new RuntimeException("状态更新失败"))
+                .when(semanticMemory).updateLifecycleState(
+                        "ins-fail",
+                        LifecycleState.CANCELLED,
+                        "proactive-task-cancelled:t-fail",
+                        ChangeSource.PROACTIVE_CANCEL);
+
+        assertThatThrownBy(() -> listener.onCancelled(
+                new ProactiveTaskCancelled("t-fail", List.of("ins-fail"))))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("状态更新失败");
+    }
+
     // ---------- 测试夹具 ----------
 
     private TemporalEntity 构造实体(String id, LifecycleState state) {
@@ -92,6 +111,11 @@ class ProactiveTaskCancelListener_单元测试 {
                 Map.of(), 1, true, now, null, null,
                 0.9f, 0.5f, 0, null, now, now,
                 state, null, null, Temporality.PERSISTENT,
-                null, false, List.of());
+                null, false, List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

@@ -15,6 +15,11 @@ export interface PendingFirstSend {
   singleTurnOverride?: SessionConfigOverride | null
 }
 
+interface StartNewSessionOptions {
+  /** 首轮消息已乐观入列时，激活新会话不要清空当前消息。 */
+  preserveCurrentMessages?: boolean
+}
+
 export const useChatStore = defineStore('chat', () => {
   // 会话列表
   const sessions = ref<ChatSession[]>([])
@@ -28,21 +33,24 @@ export const useChatStore = defineStore('chat', () => {
   const streamingContent = ref('')
   // 首屏输入的待发送消息（纯文本形态，历史路径保留兼容）
   const pendingFirstMessage = ref<string | null>(null)
+  // 跨路由预填到新对话输入框的草稿，不自动发送
+  const pendingDraftMessage = ref<string | null>(null)
   // 首轮完整待发送结构（项目详情页等页面跨路由使用，支持附件 / sessionConfig）
   const pendingFirstSend = ref<PendingFirstSend | null>(null)
 
-  /** 加载会话列表。 */
-  async function loadSessions() {
+  /** 加载会话列表。默认只刷新列表，不抢占当前路由正在表达的会话意图。 */
+  async function loadSessions(options: { activateFirst?: boolean } = {}) {
     sessions.value = await chatApi.listSessions()
-    // 当前未选中会话时，默认选中最近一个。
-    if (!activeSessionId.value && sessions.value.length > 0) {
+    // 少数旧入口需要打开应用即选中最近会话时，可以显式 opt-in。
+    if (options.activateFirst && !activeSessionId.value && sessions.value.length > 0) {
       activeSessionId.value = sessions.value[0]?.id ?? null
     }
   }
 
   /** 加载指定会话的历史消息。 */
   async function loadMessages(sessionId: string) {
-    messages.value = await chatApi.getSessionMessages(sessionId)
+    const historyMessages = await chatApi.getSessionMessages(sessionId)
+    messages.value = mergeLoadedMessages(historyMessages, messages.value)
   }
 
   /** 向当前消息列表追加一条消息。 */
@@ -82,10 +90,15 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /** 开始新对话，立即创建并激活一个新会话。可选传入 projectId 继承项目上下文。 */
-  async function startNewSession(title?: string, projectId?: string | null): Promise<ChatSession> {
+  async function startNewSession(
+    title?: string,
+    projectId?: string | null,
+    options: StartNewSessionOptions = {},
+  ): Promise<ChatSession> {
     const session = await createSession(title, projectId)
     // 新建会话没有历史消息，跳过 watch 中的 loadMessages 避免竞态覆盖
     skipNextLoad = true
+    preserveMessagesOnNextActivation = options.preserveCurrentMessages === true
     activeSessionId.value = session.id
     return session
   }
@@ -138,10 +151,26 @@ export const useChatStore = defineStore('chat', () => {
 
   // 新建会话时跳过 loadMessages 的竞态守卫
   let skipNextLoad = false
+  let preserveMessagesOnNextActivation = false
+
+  function mergeLoadedMessages(historyMessages: Message[], localMessages: Message[]) {
+    if (localMessages.length === 0) {
+      return historyMessages
+    }
+    const merged = new Map<string, Message>()
+    historyMessages.forEach(message => merged.set(message.id, message))
+    localMessages.forEach(message => merged.set(message.id, message))
+    return Array.from(merged.values())
+  }
 
   // 切换会话时清空本地消息，并重新加载对应历史。
   watch(activeSessionId, async (newId) => {
-    messages.value = []
+    const preserveMessages = preserveMessagesOnNextActivation
+    preserveMessagesOnNextActivation = false
+    const hasPendingLocalMessages = messages.value.some(message => message.status === 'pending')
+    if (!preserveMessages && !isStreaming.value && !hasPendingLocalMessages) {
+      messages.value = []
+    }
     streamingContent.value = ''
     if (newId && !skipNextLoad) {
       await loadMessages(newId)
@@ -156,6 +185,7 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming,
     streamingContent,
     pendingFirstMessage,
+    pendingDraftMessage,
     pendingFirstSend,
     loadSessions,
     loadMessages,

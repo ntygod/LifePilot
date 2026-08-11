@@ -3,21 +3,31 @@ package com.lifepilot.memory.smoke;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.agent.AgentToolProvider;
+import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
 import com.lifepilot.agent.orchestration.AgentOrchestrator;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.interaction.web.controller.AgentController;
 import com.lifepilot.interaction.web.controller.MemoryController;
+import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.interaction.web.repository.MemoryProvenanceRepository;
 import com.lifepilot.knowledge.KnowledgeBaseManager;
-import com.lifepilot.agent.learning.forgetting.ForgettingLogRepository;
+import com.lifepilot.llm.LlmResponse;
+import com.lifepilot.memory.retrieval.VectorSearcher;
+import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.store.procedural.PreferenceRule;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.store.support.MemoryVectorTestDoubles;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
 import com.lifepilot.memory.store.scope.MemoryRealityType;
 import com.lifepilot.memory.store.scope.MemoryScope;
 import com.lifepilot.memory.store.scope.MemorySpaceRepository;
 import com.lifepilot.memory.store.scope.MemoryWriteContext;
+import com.lifepilot.memory.store.vector.SqliteVecInitializer;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -31,11 +41,16 @@ import com.lifepilot.multiagent.model.AgentBudget;
 import com.lifepilot.multiagent.model.AgentDefinition;
 import com.lifepilot.multiagent.model.AgentSource;
 import com.lifepilot.multiagent.registry.AgentRegistry;
+import com.lifepilot.project.context.ProjectContextResolver;
+import com.lifepilot.project.repository.ProjectRepository;
+import com.lifepilot.rerank.router.RerankRouter;
 import com.lifepilot.skill.config.SkillConfigProperties;
 import com.lifepilot.tool.config.ToolConfigProperties;
 import com.lifepilot.tool.registry.DynamicToolRegistry;
+import org.springframework.beans.factory.annotation.Value;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -52,12 +67,17 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.sqlite.SQLiteConfig;
+import org.sqlite.SQLiteDataSource;
 
+import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,7 +91,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import com.lifepilot.llm.LlmResponse;
 
 /**
  * 记忆模块端到端冒烟测试。
@@ -198,8 +217,9 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
         mockMvc.perform(get("/api/memories/entities/{id}", entityId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.lifecycleState").value("ARCHIVED"));
+                .andExpect(status().isNotFound());
+        assertThat(semanticMemory.findById(entityId).orElseThrow().lifecycleState().name())
+                .isEqualTo("ARCHIVED");
     }
 
     @Test
@@ -218,7 +238,8 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 .param("topK", "5"));
 
         assertThat(response.at("/code").asInt()).isEqualTo(200);
-        assertThat(arrayItems(response.path("data"))).anySatisfy(item -> {
+        assertThat(response.at("/data/count").asInt()).isGreaterThanOrEqualTo(1);
+        assertThat(arrayItems(response.at("/data/results"))).anySatisfy(item -> {
             assertThat(item.path("entityId").asText()).isEqualTo(entityId);
             assertThat(item.path("memoryScope").asText()).isEqualTo("USER_FACT");
             assertThat(item.path("realityType").asText()).isEqualTo("UNKNOWN");
@@ -230,6 +251,7 @@ class MemorySmokeE2E_端到端冒烟测试 {
         String domainNeedle = unique("domain-only-needle");
         String userNeedle = unique("hot-user-needle");
         TemporalEntity domainEntity = persistDomainEntity(domainNeedle);
+        String domainSpaceId = memorySpaceRepository.ensureKnowledgeBaseDomainSpace("kb-smoke").id();
         JsonNode userEntity = createEntity(
                 "冒烟用户画像 " + userNeedle,
                 EntityType.PREFERENCE,
@@ -252,6 +274,7 @@ class MemorySmokeE2E_端到端冒烟测试 {
         registerSmokeAgent();
 
         mockMvc.perform(get("/api/memories/entities")
+                        .param("spaceId", domainSpaceId)
                         .param("memoryScope", "DOMAIN_MEMORY")
                         .param("q", domainNeedle))
                 .andExpect(status().isOk())
@@ -296,7 +319,10 @@ class MemorySmokeE2E_端到端冒烟测试 {
                 now,
                 null,
                 "smoke",
-                now));
+                now,
+                MemoryEvidenceKind.USER_CONFIRMED,
+                MemoryTrustLevel.EXPLICIT,
+                0.9f), MemoryWriteContext.tool("smoke"));
 
         mockMvc.perform(get("/api/memories/relations")
                         .param("relationType", "RELATED_TO"))
@@ -366,6 +392,18 @@ class MemorySmokeE2E_端到端冒烟测试 {
                         0,
                         null,
                         now,
+                        now,
+                        LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        Temporality.PERSISTENT,
+                        null,
+                        false,
+                        List.of(),
+                        MemoryEvidenceKind.USER_CONFIRMED,
+                        MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
                         now),
                 "doc-smoke",
                 context);
@@ -426,8 +464,29 @@ class MemorySmokeE2E_端到端冒烟测试 {
             GenerationRouter router = mock(GenerationRouter.class);
             when(router.resolveMaxContextWindow(anyString(), any(), any())).thenReturn(16000);
             when(router.call(anyString(), anyString(), any(), any(), any(), any(GenerationCapability.class), any()))
-                    .thenReturn(new LlmResponse("{}", null, null, List.of(), Map.of(), 0, 0, null, 0, "smoke", "smoke-model", 0, false));
+                    .thenReturn(new LlmResponse(
+                            "{\"isSame\":false,\"confidence\":0.0,\"reason\":\"smoke\"}",
+                            null,
+                            null,
+                            List.of(),
+                            Map.of(),
+                            0,
+                            0,
+                            null,
+                            0,
+                            "smoke",
+                            "smoke-model",
+                            0,
+                            false));
             return router;
+        }
+
+        @Bean
+        @Primary
+        IntentMatcher smokeIntentMatcher() {
+            IntentMatcher matcher = mock(IntentMatcher.class);
+            when(matcher.match(anyString())).thenReturn(Optional.empty());
+            return matcher;
         }
 
         @Bean
@@ -436,6 +495,38 @@ class MemorySmokeE2E_端到端冒烟测试 {
             EmbeddingRouter router = mock(EmbeddingRouter.class);
             when(router.embed(anyString(), any(), any(), any())).thenReturn(new float[1024]);
             return router;
+        }
+
+        @Bean
+        @Primary
+        SqliteVecInitializer smokeSqliteVecInitializer() {
+            return MemoryVectorTestDoubles.noopSqliteVecInitializer();
+        }
+
+        @Bean
+        @Primary
+        VectorSearcher smokeVectorSearcher() {
+            return MemoryVectorTestDoubles.emptyVectorSearcher();
+        }
+
+        @Bean
+        @Primary
+        DataSource smokeDataSource(@Value("${spring.datasource.url}") String url) {
+            var config = new SQLiteConfig();
+            config.setJournalMode(SQLiteConfig.JournalMode.WAL);
+            config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
+            config.enforceForeignKeys(true);
+            config.enableLoadExtension(true);
+
+            var dataSource = new SQLiteDataSource(config);
+            dataSource.setUrl(url);
+            return dataSource;
+        }
+
+        @Bean
+        @Primary
+        JdbcTemplate smokeJdbcTemplate(@Qualifier("smokeDataSource") DataSource dataSource) {
+            return new JdbcTemplate(dataSource);
         }
 
         @Bean
@@ -501,6 +592,33 @@ class MemorySmokeE2E_端到端冒烟测试 {
             org.mockito.Mockito.lenient().when(paths.home(anyString())).thenAnswer(inv -> tmpDir.resolve(inv.getArgument(0, String.class)));
             org.mockito.Mockito.lenient().when(paths.workspace()).thenReturn(tmpDir.resolve("workspace"));
             return paths;
+        }
+
+        @Bean
+        @Primary
+        ProjectRepository smokeProjectRepository() {
+            return mock(ProjectRepository.class);
+        }
+
+        @Bean
+        @Primary
+        ProjectContextResolver smokeProjectContextResolver(ProjectRepository projectRepository,
+                                                           MemorySpaceRepository memorySpaceRepository) {
+            return new ProjectContextResolver(projectRepository, memorySpaceRepository);
+        }
+
+        @Bean
+        @Primary
+        ChatSessionRepository smokeChatSessionRepository() {
+            ChatSessionRepository repository = mock(ChatSessionRepository.class);
+            when(repository.findById(anyString())).thenReturn(Optional.empty());
+            return repository;
+        }
+
+        @Bean
+        @Primary
+        RerankRouter smokeRerankRouter() {
+            return mock(RerankRouter.class);
         }
     }
 }

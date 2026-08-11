@@ -7,15 +7,20 @@ import com.lifepilot.agent.initiative.model.ThoughtKind;
 import com.lifepilot.agent.initiative.model.ThoughtState;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
- * ThoughtPool 成熟度演化单元测试（纯内存，repository=null）。
+ * ThoughtPool 成熟度演化单元测试。
  *
  * @author zsg
  * @since 2026-06-07
@@ -27,7 +32,14 @@ class ThoughtPool_演化单元测试 {
             new MaturityModel.Config(0.6f, 0.5f, 0.15f, 0.15f, 48.0, 24.0, 72.0));
 
     private ThoughtPool pool() {
-        return new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(48), null, MODEL);
+        return new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(48), emptyRepository(),
+                MODEL, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private ThoughtRepository emptyRepository() {
+        var repository = mock(ThoughtRepository.class);
+        when(repository.findByState(any(ThoughtState.class))).thenReturn(List.of());
+        return repository;
     }
 
     private Thought thought(String id, String intentKey, float maturity, Instant matureAt,
@@ -109,6 +121,21 @@ class ThoughtPool_演化单元测试 {
 
         p.evolve(NOW);
 
+        assertThat(p.findById("t1").orElseThrow().state()).isEqualTo(ThoughtState.DISMISSED);
+    }
+
+    @Test
+    void cleanup_READY无成熟时间时按创建时间过期() {
+        var p = new ThoughtPool(20, Duration.ofHours(72), Duration.ofHours(1), emptyRepository(),
+                MODEL, Clock.fixed(NOW, ZoneOffset.UTC));
+        Instant createdAt = NOW.minus(Duration.ofHours(2));
+        var ev = new Evidence("memory_entity", "e-ready", null, "摘要", "hint", createdAt, 0.8f);
+        p.submit(new Thought("t1", "intent-ready", ThoughtKind.FOLLOW_UP, "概要", List.of(ev),
+                0.8f, 0.8f, createdAt, null, ThoughtState.READY, null, createdAt));
+
+        int cleaned = p.cleanup(NOW);
+
+        assertThat(cleaned).isEqualTo(1);
         assertThat(p.findById("t1").orElseThrow().state()).isEqualTo(ThoughtState.DISMISSED);
     }
 }

@@ -1,8 +1,6 @@
 package com.lifepilot.memory.retrieval;
 
 import com.lifepilot.memory.store.support.MemoryQuerySignals;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
@@ -10,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * FTS5 全文搜索器 — 基于 SQLite FTS5 + BM25 的消息和实体关键词检索。
@@ -22,12 +21,10 @@ import java.util.List;
  */
 public class FtsSearcher {
 
-    private static final Logger log = LoggerFactory.getLogger(FtsSearcher.class);
-
     private final JdbcTemplate jdbcTemplate;
 
     public FtsSearcher(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
     }
 
     /**
@@ -38,42 +35,42 @@ public class FtsSearcher {
      * @return 排名条目列表
      */
     public List<RankedItem> search(String query, int topK) {
+        if (topK <= 0) {
+            throw new IllegalArgumentException("全文搜索 topK 必须大于 0: " + topK);
+        }
         if (query == null || query.isBlank()) {
-            return List.of();
+            throw new IllegalArgumentException("全文搜索 query 不能为空");
         }
-        try {
-            // 路径 1: 通过会话记录 FTS5 检索关联实体
-            String normalizedQuery = SQLiteFtsQueryNormalizer.normalize(query);
-            List<RankedItem> transcriptResults = normalizedQuery.isBlank()
-                    ? List.of()
-                    : searchViaTranscript(normalizedQuery, topK);
+        String normalizedInput = query.trim();
 
-            // 路径 2: 实体名称/描述子串匹配（补充无 source_conversation_id 的实体）
-            List<RankedItem> entityResults = searchEntityText(query, topK);
+        // 路径 1: 通过会话记录 FTS5 检索关联实体
+        String normalizedQuery = SQLiteFtsQueryNormalizer.normalize(normalizedInput);
+        List<RankedItem> transcriptResults = normalizedQuery.isBlank()
+                ? List.of()
+                : searchViaTranscript(normalizedQuery, topK);
 
-            // 合并去重（同一实体保留高分项）
-            var merged = new LinkedHashMap<String, RankedItem>();
-            for (var item : transcriptResults) {
-                merged.put(item.entityId(), item);
-            }
-            for (var item : entityResults) {
-                merged.merge(item.entityId(), item,
-                        (existing, incoming) -> existing.score() >= incoming.score() ? existing : incoming);
-            }
+        // 路径 2: 实体名称/描述子串匹配（补充无 source_conversation_id 的实体）
+        List<RankedItem> entityResults = searchEntityText(normalizedInput, topK);
 
-            return merged.values().stream()
-                    .sorted(Comparator.comparingDouble(RankedItem::score).reversed())
-                    .limit(topK)
-                    .toList();
-        } catch (Exception e) {
-            log.warn("全文搜索: 查询失败, query={}, error={}", query, e.getMessage());
-            return List.of();
+        // 合并去重（同一实体保留高分项）
+        var merged = new LinkedHashMap<String, RankedItem>();
+        for (var item : transcriptResults) {
+            merged.put(item.entityId(), item);
         }
+        for (var item : entityResults) {
+            merged.merge(item.entityId(), item,
+                    (existing, incoming) -> existing.score() >= incoming.score() ? existing : incoming);
+        }
+
+        return merged.values().stream()
+                .sorted(Comparator.comparingDouble(RankedItem::score).reversed())
+                .limit(topK)
+                .toList();
     }
 
     /** 通过会话记录 FTS5 检索关联实体。 */
     private List<RankedItem> searchViaTranscript(String normalizedQuery, int topK) {
-        return jdbcTemplate.query(
+        return requireRankedItems(jdbcTemplate.query(
                 """
                 WITH matched_sessions AS (
                     SELECT e.session_id AS session_id,
@@ -98,56 +95,65 @@ public class FtsSearcher {
                 LIMIT ?
                 """,
                 (rs, rowNum) -> mapRankedItem(rs),
-                normalizedQuery, topK);
+                normalizedQuery, topK), "全文搜索 transcript 查询结果");
     }
 
     /** 通过实体名称/描述子串匹配检索（补充 FTS 无法覆盖的无 source_conversation_id 实体）。 */
     private List<RankedItem> searchEntityText(String query, int topK) {
-        try {
-            List<String> lookupTerms = MemoryQuerySignals.lookupTerms(query);
-            if (lookupTerms.isEmpty()) {
-                return List.of();
-            }
-            String nameClause = MemoryQuerySignals.likeWhereClause("te.name", lookupTerms.size());
-            String descriptionClause = MemoryQuerySignals.likeWhereClause("COALESCE(te.description, '')", lookupTerms.size());
-            String sql = """
-                    SELECT te.id, te.type, te.name, te.description,
-                           0.0 AS score,
-                           te.last_accessed_at, te.importance_score, te.valid_to,
-                           te.updated_at
-                    FROM temporal_entities te
-                    WHERE te.is_current = 1
-                      AND (te.valid_to IS NULL OR te.valid_to > datetime('now'))
-                      AND te.lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')
-                      AND (%s OR %s)
-                    ORDER BY te.updated_at DESC, te.importance_score DESC
-                    LIMIT ?
-                    """.formatted(nameClause, descriptionClause);
-            List<Object> args = new ArrayList<>();
-            for (String term : lookupTerms) {
-                args.add(MemoryQuerySignals.likePattern(term));
-            }
-            for (String term : lookupTerms) {
-                args.add(MemoryQuerySignals.likePattern(term));
-            }
-            args.add(Math.max(topK * 4, topK));
-
-            return jdbcTemplate.query(sql, (rs, rowNum) -> mapRankedItem(rs), args.toArray()).stream()
-                    .map(item -> new RankedItem(
-                            item.entityId(), item.entityType(), item.name(), item.description(),
-                            MemoryQuerySignals.textMatchScore(query, item.name(), item.description()),
-                            item.lastAccessedAt(), item.importanceScore(), item.validTo(), item.updatedAt()))
-                    .filter(item -> item.score() > 0.0f)
-                    .sorted(Comparator
-                            .comparingDouble(RankedItem::score).reversed()
-                            .thenComparing(RankedItem::importanceScore, Comparator.reverseOrder())
-                            .thenComparing(RankedItem::updatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                    .limit(topK)
-                    .toList();
-        } catch (Exception e) {
-            log.warn("全文搜索: 实体文本搜索失败, query={}, error={}", query, e.getMessage());
+        List<String> lookupTerms = MemoryQuerySignals.lookupTerms(query);
+        if (lookupTerms.isEmpty()) {
             return List.of();
         }
+        String nameClause = MemoryQuerySignals.likeWhereClause("te.name", lookupTerms.size());
+        String descriptionClause = MemoryQuerySignals.likeWhereClause("COALESCE(te.description, '')", lookupTerms.size());
+        String sql = """
+                SELECT te.id, te.type, te.name, te.description,
+                       0.0 AS score,
+                       te.last_accessed_at, te.importance_score, te.valid_to,
+                       te.updated_at
+                FROM temporal_entities te
+                WHERE te.is_current = 1
+                  AND (te.valid_to IS NULL OR te.valid_to > datetime('now'))
+                  AND te.lifecycle_state NOT IN ('EXPIRED', 'SUPERSEDED', 'ARCHIVED', 'CANCELLED')
+                  AND (%s OR %s)
+                ORDER BY te.updated_at DESC, te.importance_score DESC
+                LIMIT ?
+                """.formatted(nameClause, descriptionClause);
+        List<Object> args = new ArrayList<>();
+        for (String term : lookupTerms) {
+            args.add(MemoryQuerySignals.likePattern(term));
+        }
+        for (String term : lookupTerms) {
+            args.add(MemoryQuerySignals.likePattern(term));
+        }
+        args.add(Math.max(topK * 4, topK));
+
+        List<RankedItem> results = requireRankedItems(
+                jdbcTemplate.query(sql, (rs, rowNum) -> mapRankedItem(rs), args.toArray()),
+                "全文搜索实体文本查询结果");
+
+        return results.stream()
+                .map(item -> new RankedItem(
+                        item.entityId(), item.entityType(), item.name(), item.description(),
+                        MemoryQuerySignals.textMatchScore(query, item.name(), item.description()),
+                        item.lastAccessedAt(), item.importanceScore(), item.validTo(), item.updatedAt()))
+                .filter(item -> item.score() > 0.0f)
+                .sorted(Comparator
+                        .comparingDouble(RankedItem::score).reversed()
+                        .thenComparing(RankedItem::importanceScore, Comparator.reverseOrder())
+                        .thenComparing(RankedItem::updatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(topK)
+                .toList();
+    }
+
+    private List<RankedItem> requireRankedItems(List<RankedItem> results, String label) {
+        if (results == null) {
+            throw new IllegalStateException(label + "不能为空");
+        }
+        if (results.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalStateException(label + "包含 null 条目");
+        }
+        return results;
     }
 
     /** 行映射为 RankedItem。 */

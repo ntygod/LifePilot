@@ -35,8 +35,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 工具执行协调器。
@@ -51,6 +54,8 @@ public class ToolExecutionCoordinator {
 
     private static final Logger log = LoggerFactory.getLogger(ToolExecutionCoordinator.class);
     private static final Executor VIRTUAL_EXECUTOR = command -> Thread.ofVirtual().start(command);
+    private static final int DEFAULT_MAX_PENDING_TOOL_EXPERIENCE_RECORDS = 4;
+    private static final Duration DEFAULT_TOOL_EXPERIENCE_RECORD_TIMEOUT = Duration.ofMillis(1200);
 
     private final AgentToolProvider agentToolProvider;
     private final ObjectMapper objectMapper;
@@ -72,6 +77,9 @@ public class ToolExecutionCoordinator {
     @Nullable
     private final SessionWorkspaceService workspaceService;
     private final int maxParallelToolCalls;
+    private final int maxPendingToolExperienceRecords;
+    private final Duration toolExperienceRecordTimeout;
+    private final Map<String, CompletableFuture<Void>> pendingToolExperienceRecords = new ConcurrentHashMap<>();
     /**
      * 会话产物持久化仓库 — 通过 setter 注入，让 ToolExecutionCoordinator 在工具执行
      * 结束后把 ToolArtifact 写入 session_artifacts。为 null 时降级为不写入，
@@ -85,8 +93,11 @@ public class ToolExecutionCoordinator {
 
     /** 值得持久化到工作区的工具 ID 集合（写操作或产生结构化结果的工具）。 */
     private static final Set<String> WORKSPACE_WORTHY_TOOLS = Set.of(
-            "memory.create", "memory.update", "memory.tag",
-            "code");
+            "code", "file.attach", "git.mutate");
+
+    /** {@code memory} 单工具内值得持久化的写入动作。 */
+    private static final Set<String> WORKSPACE_WORTHY_MEMORY_ACTIONS = Set.of(
+            "create", "update", "tag", "complete", "supersede", "cancel");
 
     public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
                                     ObjectMapper objectMapper,
@@ -135,6 +146,47 @@ public class ToolExecutionCoordinator {
                                     int maxParallelToolCalls,
                                     @Nullable MultimodalRouter multimodalRouter,
                                     @Nullable SessionWorkspaceService workspaceService) {
+        this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
+                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls,
+                multimodalRouter, workspaceService, DEFAULT_MAX_PENDING_TOOL_EXPERIENCE_RECORDS,
+                DEFAULT_TOOL_EXPERIENCE_RECORD_TIMEOUT);
+    }
+
+    public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
+                                    ObjectMapper objectMapper,
+                                    @Nullable TraceRecorder traceRecorder,
+                                    @Nullable TranscriptStore transcriptStore,
+                                    @Nullable MediaDataExtractor mediaDataExtractor,
+                                    @Nullable ProceduralMemory proceduralMemory,
+                                    @Nullable IntentMatcher intentMatcher,
+                                    int maxParallelToolCalls,
+                                    @Nullable MultimodalRouter multimodalRouter,
+                                    @Nullable SessionWorkspaceService workspaceService,
+                                    int maxPendingToolExperienceRecords) {
+        this(agentToolProvider, objectMapper, traceRecorder, transcriptStore,
+                mediaDataExtractor, proceduralMemory, intentMatcher, maxParallelToolCalls,
+                multimodalRouter, workspaceService, maxPendingToolExperienceRecords,
+                DEFAULT_TOOL_EXPERIENCE_RECORD_TIMEOUT);
+    }
+
+    public ToolExecutionCoordinator(AgentToolProvider agentToolProvider,
+                                    ObjectMapper objectMapper,
+                                    @Nullable TraceRecorder traceRecorder,
+                                    @Nullable TranscriptStore transcriptStore,
+                                    @Nullable MediaDataExtractor mediaDataExtractor,
+                                    @Nullable ProceduralMemory proceduralMemory,
+                                    @Nullable IntentMatcher intentMatcher,
+                                    int maxParallelToolCalls,
+                                    @Nullable MultimodalRouter multimodalRouter,
+                                    @Nullable SessionWorkspaceService workspaceService,
+                                    int maxPendingToolExperienceRecords,
+                                    Duration toolExperienceRecordTimeout) {
+        if (maxPendingToolExperienceRecords < 0) {
+            throw new IllegalArgumentException("工具经验后台记录上限不能为负");
+        }
+        if (toolExperienceRecordTimeout == null || toolExperienceRecordTimeout.isNegative()) {
+            throw new IllegalArgumentException("工具经验后台记录超时时间不能为负");
+        }
         this.agentToolProvider = agentToolProvider;
         this.objectMapper = objectMapper;
         this.traceRecorder = traceRecorder;
@@ -143,6 +195,8 @@ public class ToolExecutionCoordinator {
         this.proceduralMemory = proceduralMemory;
         this.intentMatcher = intentMatcher;
         this.maxParallelToolCalls = Math.max(1, maxParallelToolCalls);
+        this.maxPendingToolExperienceRecords = maxPendingToolExperienceRecords;
+        this.toolExperienceRecordTimeout = toolExperienceRecordTimeout;
         this.multimodalRouter = multimodalRouter;
         this.workspaceService = workspaceService;
     }
@@ -498,9 +552,11 @@ public class ToolExecutionCoordinator {
             success = inferToolExecutionSuccess(rawOutput);
         } catch (Throwable e) {
             // 捕获 Throwable — 防止 Error 级别异常导致 ReAct 循环静默终止
+            String errorMessage = messageOf(e);
             log.error("工具执行失败: toolId={}, errorType={}, error={}",
-                    planned.toolId(), e.getClass().getSimpleName(), e.getMessage(), e);
-            rawOutput = "工具执行异常: " + e.getMessage();
+                    planned.toolId(), e.getClass().getSimpleName(), errorMessage);
+            log.debug("工具执行失败堆栈: toolId={}", planned.toolId(), e);
+            rawOutput = "工具执行异常: " + errorMessage;
             success = false;
         }
 
@@ -624,17 +680,10 @@ public class ToolExecutionCoordinator {
         // L4 程序记忆：异步记录意图匹配，不阻塞主链路
         if (outcome.success() && proceduralMemory != null && intentMatcher != null) {
             String intentQuery = buildIntentMatchQuery(planned.toolId(), planned.inputJson());
-            Thread.startVirtualThread(() -> {
-                try {
-                    var match = intentMatcher.match(intentQuery);
-                    match.ifPresent(m -> proceduralMemory.recordExecution(m.template().templateId(), true));
-                } catch (Exception e) {
-                    log.warn("L4 执行结果记录失败: toolId={}, error={}", planned.toolId(), e.getMessage());
-                }
-            });
+            scheduleToolExperienceRecord(planned.toolId(), intentQuery);
         }
 
-        // 智能层：记录工具执行结果到 CapabilityAssessor（异步，不阻塞主链路）
+        // 智能层：轻量记录工具执行结果到 CapabilityAssessor。
         if (capabilityAssessor != null) {
             long latencyMs = outcome.duration().toMillis();
             String error = outcome.success() ? null : outcome.observationOutput();
@@ -663,7 +712,9 @@ public class ToolExecutionCoordinator {
     private void persistToolResultToWorkspace(ReactAgentState state,
                                                PlannedToolCall planned,
                                                ToolExecutionOutcome outcome) {
-        if (!WORKSPACE_WORTHY_TOOLS.contains(planned.toolId())) {
+        String memoryAction = resolveMemoryAction(planned);
+        if (!WORKSPACE_WORTHY_TOOLS.contains(planned.toolId())
+                && (memoryAction == null || !WORKSPACE_WORTHY_MEMORY_ACTIONS.contains(memoryAction))) {
             return;
         }
         try {
@@ -671,10 +722,15 @@ public class ToolExecutionCoordinator {
             if (summary.length() > 300) {
                 summary = summary.substring(0, 300) + "…";
             }
+            var metadata = new LinkedHashMap<String, Object>();
+            metadata.put("toolId", planned.toolId());
+            if (memoryAction != null) {
+                metadata.put("action", memoryAction);
+            }
             workspaceService.saveWorkingSet(state.sessionId(), new WorkingSetItem(
                     planned.toolDisplayName() + " 执行结果",
                     summary,
-                    Map.of("toolId", planned.toolId()),
+                    Map.copyOf(metadata),
                     40,
                     state.traceId(),
                     state.traceId(),
@@ -682,6 +738,23 @@ public class ToolExecutionCoordinator {
         } catch (Exception e) {
             log.debug("工具结果工作区持久化失败: toolId={}, error={}", planned.toolId(), e.getMessage());
         }
+    }
+
+    @Nullable
+    private String resolveMemoryAction(PlannedToolCall planned) {
+        if (!"memory".equals(planned.toolId()) || planned.inputJson() == null || planned.inputJson().isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(planned.inputJson());
+            JsonNode action = root.get("action");
+            if (action != null && action.isTextual()) {
+                return action.asText();
+            }
+        } catch (Exception e) {
+            log.debug("解析 memory action 失败: error={}", e.getMessage());
+        }
+        return null;
     }
 
     private ReactAgentState replayExtractedMedia(ReactAgentState state,
@@ -871,6 +944,91 @@ public class ToolExecutionCoordinator {
         return builder.toString();
     }
 
+    private void scheduleToolExperienceRecord(String toolId, String intentQuery) {
+        if (proceduralMemory == null || intentMatcher == null) {
+            return;
+        }
+        String normalizedQuery = intentQuery == null ? "" : intentQuery.strip();
+        if (normalizedQuery.isBlank()) {
+            return;
+        }
+        pruneCompletedToolExperienceRecords();
+        if (pendingToolExperienceRecords.containsKey(normalizedQuery)) {
+            log.debug("L4 执行结果记录已有后台任务，跳过重复探针: toolId={}, query={}",
+                    toolId, normalizedQuery);
+            return;
+        }
+        if (maxPendingToolExperienceRecords == 0
+                || pendingToolExperienceRecords.size() >= maxPendingToolExperienceRecords) {
+            log.debug("L4 执行结果记录后台任务已达上限 {}，跳过本轮沉淀: toolId={}",
+                    maxPendingToolExperienceRecords, toolId);
+            return;
+        }
+        pendingToolExperienceRecords.computeIfAbsent(normalizedQuery, query -> {
+            CompletableFuture<Void> future = withToolExperienceRecordTimeout(
+                    query,
+                    CompletableFuture.supplyAsync(
+                            () -> matchToolExperience(toolId, query), VIRTUAL_EXECUTOR)
+            ).thenAccept(match -> recordToolExperienceMatch(toolId, match));
+            future.whenComplete((ignored, error) -> pendingToolExperienceRecords.remove(query, future));
+            return future;
+        });
+    }
+
+    private CompletableFuture<Optional<IntentMatcher.TemplateMatch>> withToolExperienceRecordTimeout(
+            String normalizedQuery,
+            CompletableFuture<Optional<IntentMatcher.TemplateMatch>> future) {
+        if (toolExperienceRecordTimeout.isZero()) {
+            return future;
+        }
+        return future.orTimeout(toolExperienceRecordTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                .whenComplete((ignored, error) -> {
+                    if (isTimeout(error)) {
+                        log.debug("L4 执行结果记录超过 {}ms，释放后台名额: query={}",
+                                toolExperienceRecordTimeout.toMillis(), normalizedQuery);
+                    }
+                });
+    }
+
+    private boolean isTimeout(@Nullable Throwable error) {
+        if (error == null) {
+            return false;
+        }
+        if (error instanceof TimeoutException) {
+            return true;
+        }
+        return error.getCause() instanceof TimeoutException;
+    }
+
+    private void pruneCompletedToolExperienceRecords() {
+        pendingToolExperienceRecords.entrySet().removeIf(entry -> entry.getValue().isDone());
+    }
+
+    private Optional<IntentMatcher.TemplateMatch> matchToolExperience(String toolId, String intentQuery) {
+        if (proceduralMemory == null || intentMatcher == null) {
+            return Optional.empty();
+        }
+        try {
+            return intentMatcher.match(intentQuery);
+        } catch (Exception e) {
+            log.warn("L4 执行结果记录失败: toolId={}, error={}", toolId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private void recordToolExperienceMatch(
+            String toolId,
+            Optional<IntentMatcher.TemplateMatch> match) {
+        if (proceduralMemory == null || match.isEmpty()) {
+            return;
+        }
+        try {
+            proceduralMemory.recordExecution(match.get().template().templateId(), true);
+        } catch (Exception e) {
+            log.warn("L4 执行结果记录失败: toolId={}, error={}", toolId, e.getMessage());
+        }
+    }
+
     private void appendIntentTerm(StringBuilder builder, @Nullable String term) {
         if (term == null || term.isBlank()) {
             return;
@@ -980,7 +1138,7 @@ public class ToolExecutionCoordinator {
             try {
                 transcriptStore.appendToolCall(
                         state.sessionId(),
-                        state.traceId(),
+                        state.turnId(),
                         state.traceId(),
                         toolId,
                         toolCall.id(),
@@ -1040,7 +1198,7 @@ public class ToolExecutionCoordinator {
             try {
                 transcriptStore.appendToolResult(
                         state.sessionId(),
-                        state.traceId(),
+                        state.turnId(),
                         state.traceId(),
                         toolId,
                         toolCall.id(),
@@ -1189,6 +1347,11 @@ public class ToolExecutionCoordinator {
                 .count();
         long otherChars = text.length() - cjkChars;
         return Math.max(1, (int) (cjkChars + otherChars / 4));
+    }
+
+    private static String messageOf(Throwable e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
     }
 
     /** 允许主循环决定“追加步骤后是否同步推送 SSE”。 */

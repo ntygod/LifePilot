@@ -1,7 +1,10 @@
 package com.lifepilot.memory.consolidation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.agent.learning.consolidation.ExperiencePromoter;
+import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.store.config.MemoryStoreProperties;
@@ -13,7 +16,9 @@ import com.lifepilot.memory.store.entity.VersionMerger;
 import com.lifepilot.memory.store.procedural.IntentMatcher;
 import com.lifepilot.memory.store.procedural.ProceduralMemory;
 import com.lifepilot.memory.store.projection.MemoryProjectionService;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import com.lifepilot.memory.store.support.MemoryProjectionTestSupport;
+import com.lifepilot.prompt.PromptRegistry;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -106,11 +112,12 @@ class ExperiencePromotion_集成测试 {
                     return List.of(new VectorSearchResult(templateId, 1.0f));
                 });
 
-        var conflictDetector = new ConflictDetector(jdbcTemplate, vectorSearcher, null, 0.92f, null);
-        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher);
+        var conflictDetector = new ConflictDetector(
+                jdbcTemplate, vectorSearcher, mock(GenerationRouter.class), 0.92f, mock(PromptRegistry.class));
         MemoryProjectionService projectionService =
-                MemoryProjectionTestSupport.attach(semanticMemory, jdbcTemplate, vectorSearcher);
-        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService);
+                MemoryProjectionTestSupport.create(jdbcTemplate, vectorSearcher);
+        semanticMemory = new SemanticMemory(jdbcTemplate, conflictDetector, new VersionMerger(), vectorSearcher, SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), projectionService);
+        proceduralMemory = new ProceduralMemory(jdbcTemplate, projectionService, new ObjectMapper());
         experiencePromoter = new ExperiencePromoter(semanticMemory, proceduralMemory, new AgentLearningProperties());
         intentMatcher = new IntentMatcher(proceduralMemory, vectorSearcher, jdbcTemplate, new MemoryStoreProperties());
     }
@@ -131,7 +138,8 @@ class ExperiencePromotion_集成测试 {
         // ── Arrange：在 L3 构造满足阈值的 EXPERIENCE（importance>=0.8、accessCount>=3）──
         var 源经验 = 构造经验实体("exp-天气-1", "查询某城市未来天气",
                 "调用天气工具按城市名查询未来三天天气并汇总要点。", 0.95f);
-        var 持久化经验 = semanticMemory.upsertWithConflictDetection(源经验, "subtask-reflection");
+        var 持久化经验 = semanticMemory.upsertWithConflictDetection(
+                源经验, "subtask-reflection", MemoryWriteContext.consolidation("subtask-reflection"));
         // 新建实体 accessCount 固定为 0，递增三次使其达到 minAccessCount(默认 3)
         semanticMemory.incrementAccessCount(持久化经验.id());
         semanticMemory.incrementAccessCount(持久化经验.id());
@@ -172,7 +180,8 @@ class ExperiencePromotion_集成测试 {
     void 重复触发阶段6应幂等仅提升一次() {
         var 源经验 = 构造经验实体("exp-天气-2", "查询某城市未来天气",
                 "调用天气工具按城市名查询未来三天天气并汇总要点。", 0.9f);
-        var 持久化经验 = semanticMemory.upsertWithConflictDetection(源经验, "subtask-reflection");
+        var 持久化经验 = semanticMemory.upsertWithConflictDetection(
+                源经验, "subtask-reflection", MemoryWriteContext.consolidation("subtask-reflection"));
         semanticMemory.incrementAccessCount(持久化经验.id());
         semanticMemory.incrementAccessCount(持久化经验.id());
         semanticMemory.incrementAccessCount(持久化经验.id());
@@ -190,7 +199,8 @@ class ExperiencePromotion_集成测试 {
     void 访问次数不足的经验不应被提升() {
         var 源经验 = 构造经验实体("exp-天气-3", "查询某城市未来天气",
                 "调用天气工具按城市名查询未来三天天气并汇总要点。", 0.95f);
-        var 持久化经验 = semanticMemory.upsertWithConflictDetection(源经验, "subtask-reflection");
+        var 持久化经验 = semanticMemory.upsertWithConflictDetection(
+                源经验, "subtask-reflection", MemoryWriteContext.consolidation("subtask-reflection"));
         // 仅访问 1 次（< minAccessCount 默认 3）
         semanticMemory.incrementAccessCount(持久化经验.id());
 
@@ -202,7 +212,7 @@ class ExperiencePromotion_集成测试 {
 
     // ========== helpers ==========
 
-    /** 构造一条 EXPERIENCE 实体（16 参兼容构造器，accessCount 由 upsert 重置为 0 后另行递增）。 */
+    /** 构造一条 EXPERIENCE 实体，accessCount 由 upsert 重置为 0 后另行递增。 */
     private TemporalEntity 构造经验实体(String id, String name, String description, float importance) {
         var now = Instant.now();
         return new TemporalEntity(
@@ -221,6 +231,18 @@ class ExperiencePromotion_集成测试 {
                 0,
                 null,
                 now,
-                now);
+                now,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        now);
     }
 }

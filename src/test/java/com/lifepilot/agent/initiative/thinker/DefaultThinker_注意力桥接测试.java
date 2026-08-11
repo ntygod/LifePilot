@@ -6,7 +6,9 @@ import com.lifepilot.memory.consumption.attention.MemoryAttentionService.Attenti
 import com.lifepilot.memory.consumption.attention.MemoryAttentionService.AttentionKind;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,8 +25,15 @@ import static org.mockito.Mockito.when;
  */
 class DefaultThinker_注意力桥接测试 {
 
+    private static final Instant NOW = Instant.parse("2026-06-07T10:00:00Z");
+    private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+
     private AttentionItem item(AttentionKind kind, String id, String name, float score) {
-        return new AttentionItem(id, name, "GOAL", kind, score, "原因-" + name, Instant.now(), null, null);
+        return new AttentionItem(id, name, "GOAL", kind, score, "原因-" + name, NOW, null, null);
+    }
+
+    private DefaultThinker thinker(MemoryAttentionService attention, float readyThreshold) {
+        return new DefaultThinker(attention, readyThreshold, CLOCK);
     }
 
     @Test
@@ -34,13 +43,18 @@ class DefaultThinker_注意力桥接测试 {
                 item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.8f),
                 item(AttentionKind.NEGLECTED, "g2", "学小提琴", 0.6f),
                 item(AttentionKind.CONNECTION, "g3", "网易", 0.7f)));
-        var thinker = new DefaultThinker(null, attention);
+        var thinker = thinker(attention, 0.6f);
 
         var thoughts = thinker.idleThink();
 
         assertThat(thoughts).extracting(t -> t.kind())
                 .containsExactlyInAnyOrder(ThoughtKind.REMINDER, ThoughtKind.FOLLOW_UP, ThoughtKind.INSIGHT);
         assertThat(thoughts).allSatisfy(t -> assertThat(t.summary()).startsWith("原因-"));
+        assertThat(thoughts).allSatisfy(t -> {
+            assertThat(t.createdAt()).isEqualTo(NOW);
+            assertThat(t.lastReinforcedAt()).isEqualTo(NOW);
+            assertThat(t.evidence().getFirst().observedAt()).isEqualTo(NOW);
+        });
     }
 
     @Test
@@ -48,7 +62,7 @@ class DefaultThinker_注意力桥接测试 {
         var attention = mock(MemoryAttentionService.class);
         when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
                 item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.9f)));
-        var thinker = new DefaultThinker(null, attention);
+        var thinker = thinker(attention, 0.6f);
 
         var thoughts = thinker.idleThink();
 
@@ -64,14 +78,29 @@ class DefaultThinker_注意力桥接测试 {
         var attention = mock(MemoryAttentionService.class);
         when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
                 item(AttentionKind.EVOLVING, "g1", "演进中目标", 0.5f)));
-        var thinker = new DefaultThinker(null, attention);
+        var thinker = thinker(attention, 0.6f);
 
         assertThat(thinker.idleThink()).isEmpty();
     }
 
     @Test
-    void 注意力服务不可用时回退且无异常() {
-        var thinker = new DefaultThinker(null, null);  // 无 semanticMemory + 无 attention
+    void 注意力计算失败时返回空列表() {
+        var attention = mock(MemoryAttentionService.class);
+        when(attention.computeAttention(any(), anyInt())).thenThrow(new IllegalStateException("索引暂不可用"));
+        var thinker = thinker(attention, 0.6f);
+
         assertThat(thinker.idleThink()).isEmpty();
+    }
+
+    @Test
+    void 就绪阈值升高时高分注意力仍可保持酝酿() {
+        var attention = mock(MemoryAttentionService.class);
+        when(attention.computeAttention(any(), anyInt())).thenReturn(List.of(
+                item(AttentionKind.DUE_SOON, "g1", "述职报告", 0.9f)));
+        var thinker = thinker(attention, 0.95f);
+
+        var thoughts = thinker.idleThink();
+
+        assertThat(thoughts).singleElement().satisfies(t -> assertThat(t.isReady()).isFalse());
     }
 }

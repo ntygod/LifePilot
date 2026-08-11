@@ -28,16 +28,21 @@ public record EvidenceBundle(
 ) {
 
     public EvidenceBundle {
-        query = Objects.requireNonNullElse(query, "");
-        strategy = Objects.requireNonNullElse(strategy, "GENERAL");
-        items = items == null ? List.of() : List.copyOf(items);
-        sources = sources == null ? Set.of() : Set.copyOf(sources);
-        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
-        latencyMs = Math.max(0L, latencyMs);
+        Objects.requireNonNull(query, "query 不能为空");
+        Objects.requireNonNull(strategy, "strategy 不能为空");
+        Objects.requireNonNull(items, "items 不能为空");
+        Objects.requireNonNull(sources, "sources 不能为空");
+        Objects.requireNonNull(metadata, "metadata 不能为空");
+        items = List.copyOf(items);
+        sources = Set.copyOf(sources);
+        metadata = Map.copyOf(metadata);
+        if (latencyMs < 0L) {
+            throw new IllegalArgumentException("检索耗时不能为负数: " + latencyMs);
+        }
     }
 
     /** 空结果便利构造。 */
     public static EvidenceBundle empty(String query) {
-        return new EvidenceBundle(query, "GENERAL", List.of(), 0L, Set.of(), Map.of());
+        return new EvidenceBundle(query == null ? "" : query, "GENERAL", List.of(), 0L, Set.of(), Map.of());
     }
 }

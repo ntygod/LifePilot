@@ -1,5 +1,6 @@
 package com.lifepilot.agent.learning.trace;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.observability.guardrail.RiskLevel;
 import com.lifepilot.observability.trace.LlmCallStep;
@@ -17,12 +18,14 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * AgentTraceWriter 单元测试 — 验证轨迹落库的 SQL 与关键字段映射。
@@ -38,6 +41,7 @@ class AgentTraceWriter_单元测试 {
     @BeforeEach
     void setUp() {
         jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.update(any(String.class), any(Object[].class))).thenReturn(1);
         writer = new AgentTraceWriter(jdbcTemplate, new ObjectMapper());
     }
 
@@ -106,13 +110,109 @@ class AgentTraceWriter_单元测试 {
     }
 
     @Test
-    @DisplayName("持久化异常不抛出（不阻塞主循环）")
-    void persist_异常被吞() {
+    @DisplayName("持久化异常应抛出")
+    void persist_异常应抛出() {
         org.mockito.Mockito.doThrow(new RuntimeException("db down"))
                 .when(jdbcTemplate).update(any(String.class), any(Object[].class));
         var tool = new ToolCallStep(0, Instant.now(), Duration.ofMillis(1),
                 "memory", "search", null, null, true, null, RiskLevel.LOW);
-        // 不应抛出
-        writer.persist(buildRecord(List.of(tool)));
+
+        assertThatThrownBy(() -> writer.persist(buildRecord(List.of(tool))))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("db down");
+    }
+
+    @Test
+    @DisplayName("sessionId 为空时应拒绝且不写库")
+    void persist_sessionId为空_应拒绝且不写库() {
+        var tool = new ToolCallStep(0, Instant.now(), Duration.ofMillis(1),
+                "memory", "search", null, null, true, null, RiskLevel.LOW);
+        var record = new TraceRecord(
+                "trace-1", " ", "帮我查一下天气",
+                Instant.now(), Instant.now(), 1L, 1, 0, 0, 0,
+                true, null, "已完成", null, List.of(tool), null);
+
+        assertThatThrownBy(() -> writer.persist(record))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("学习轨迹 sessionId不能为空");
+        verify(jdbcTemplate, never()).update(any(String.class), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("totalSteps 与 steps 数量不一致时应拒绝且不写库")
+    void persist_totalSteps不一致_应拒绝且不写库() {
+        var tool = new ToolCallStep(0, Instant.now(), Duration.ofMillis(1),
+                "memory", "search", null, null, true, null, RiskLevel.LOW);
+        var record = new TraceRecord(
+                "trace-1", "session-1", "帮我查一下天气",
+                Instant.now(), Instant.now(), 1L, 2, 0, 0, 0,
+                true, null, "已完成", null, List.of(tool), null);
+
+        assertThatThrownBy(() -> writer.persist(record))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("学习轨迹 totalSteps 必须等于 steps 数量");
+        verify(jdbcTemplate, never()).update(any(String.class), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("步骤耗时为空时应拒绝且不写库")
+    void persist_步骤耗时为空_应拒绝且不写库() {
+        var tool = new ToolCallStep(0, Instant.now(), null,
+                "memory", "search", null, null, true, null, RiskLevel.LOW);
+
+        assertThatThrownBy(() -> writer.persist(buildRecord(List.of(tool))))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("学习轨迹步骤耗时不能为空");
+        verify(jdbcTemplate, never()).update(any(String.class), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("action_json 序列化失败时应抛出且不写入空步骤")
+    void persist_actionJson序列化失败_应抛出且不写空步骤() throws Exception {
+        ObjectMapper failingMapper = mock(ObjectMapper.class);
+        when(failingMapper.writeValueAsString(any()))
+                .thenThrow(new JsonProcessingException("序列化失败") {});
+        writer = new AgentTraceWriter(jdbcTemplate, failingMapper);
+        var tool = new ToolCallStep(0, Instant.now(), Duration.ofMillis(1),
+                "memory", "search", null, null, true, null, RiskLevel.LOW);
+
+        assertThatThrownBy(() -> writer.persist(buildRecord(List.of(tool))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("学习轨迹: action_json 序列化失败");
+
+        verify(jdbcTemplate).update(contains("INSERT INTO agent_traces"), any(Object[].class));
+        verify(jdbcTemplate, never()).update(contains("INSERT INTO agent_trace_steps"), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("主记录写入0行应失败")
+    void persist_主记录写入0行应失败() {
+        when(jdbcTemplate.update(contains("INSERT INTO agent_traces"), any(Object[].class)))
+                .thenReturn(0);
+        var tool = new ToolCallStep(0, Instant.now(), Duration.ofMillis(1),
+                "memory", "search", null, null, true, null, RiskLevel.LOW);
+
+        assertThatThrownBy(() -> writer.persist(buildRecord(List.of(tool))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("学习轨迹主记录写入影响行数必须为 1")
+                .hasMessageContaining("id=trace-1")
+                .hasMessageContaining("rows=0");
+
+        verify(jdbcTemplate, never()).update(contains("INSERT INTO agent_trace_steps"), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("步骤写入0行应失败")
+    void persist_步骤写入0行应失败() {
+        when(jdbcTemplate.update(contains("INSERT INTO agent_trace_steps"), any(Object[].class)))
+                .thenReturn(0);
+        var tool = new ToolCallStep(0, Instant.now(), Duration.ofMillis(1),
+                "memory", "search", null, null, true, null, RiskLevel.LOW);
+
+        assertThatThrownBy(() -> writer.persist(buildRecord(List.of(tool))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("学习轨迹步骤写入影响行数必须为 1")
+                .hasMessageContaining("id=trace-1:0")
+                .hasMessageContaining("rows=0");
     }
 }

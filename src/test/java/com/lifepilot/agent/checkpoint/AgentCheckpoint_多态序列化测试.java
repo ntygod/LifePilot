@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -119,6 +120,157 @@ class AgentCheckpoint_多态序列化测试 {
                 .as("恢复后的 steps 应与原 state 一一等值（多态还原正确）")
                 .containsExactlyElementsOf(state.steps());
         assertThat(restored.stepCount()).isEqualTo(state.stepCount());
+    }
+
+    @Test
+    void checkpoint恢复应保留执行约束并注入最新恢复上下文() {
+        AgentRequest request = new AgentRequest("检查项目并修复失败测试", "session-ckpt-1", "web");
+        ReactAgentState state = ReactAgentState.init(request, testBudget())
+                .toBuilder()
+                .preferredProvider("provider-fast")
+                .allowedToolIds(List.of("shell.exec", "file.write"))
+                .disabledToolIds(List.of("web", "browser"))
+                .turnRecoveryContext(Map.of(
+                        "action", "OLD",
+                        "title", "旧恢复上下文"))
+                .build();
+
+        AgentCheckpoint checkpoint = AgentCheckpoint.from(state, "task-fingerprint", objectMapper);
+        Map<String, Object> latestRecoveryContext = Map.of(
+                "action", "RESUME",
+                "sourceTraceId", "trace-failed-1",
+                "title", "修正后继续",
+                "nextActions", List.of("查看命令输出并修正报错原因", "从失败命令后继续执行验证"));
+        AgentRequest resumeRequest = new AgentRequest(
+                "检查项目并修复失败测试\n\n<resume_user_input>\n继续修复测试\n</resume_user_input>",
+                "session-ckpt-1",
+                com.lifepilot.interaction.model.InteractionSource.legacy("web", "session-ckpt-1"),
+                null,
+                "turn-resume-1",
+                com.lifepilot.interaction.web.model.ChatTurnAction.RESUME,
+                null,
+                null,
+                null,
+                null,
+                0,
+                null,
+                null,
+                null,
+                null,
+                com.lifepilot.agent.model.ResumePolicy.AUTO,
+                null,
+                latestRecoveryContext);
+
+        ReactAgentState restored = checkpoint.restore(objectMapper, resumeRequest);
+
+        assertThat(restored.preferredProvider()).isEqualTo("provider-fast");
+        assertThat(restored.allowedToolIds()).containsExactly("shell.exec", "file.write");
+        assertThat(restored.disabledToolIds()).containsExactly("web", "browser");
+        assertThat(restored.turnRecoveryContext())
+                .containsEntry("action", "RESUME")
+                .containsEntry("sourceTraceId", "trace-failed-1")
+                .containsEntry("title", "修正后继续");
+        assertThat(restored.resumedFromTraceId()).isEqualTo(checkpoint.sourceTraceId());
+        assertThat(restored.turnId()).isEqualTo("turn-resume-1");
+    }
+
+    @Test
+    void checkpoint恢复未带最新上下文时应保留已保存恢复上下文() {
+        AgentRequest request = new AgentRequest("检查项目并生成报告", "session-ckpt-keep-context", "web");
+        Map<String, Object> savedRecoveryContext = Map.of(
+                "action", "RESUME",
+                "sourceTraceId", "trace-failed-saved",
+                "checkpoint", Map.of(
+                        "kind", "TOOL_FAILURE",
+                        "toolId", "file.write",
+                        "artifactRefs", List.of(Map.of(
+                                "artifactId", "artifact-report",
+                                "fileName", "报告.md",
+                                "kind", "FILE"))));
+        ReactAgentState state = ReactAgentState.init(request, testBudget())
+                .toBuilder()
+                .turnRecoveryContext(savedRecoveryContext)
+                .build();
+
+        AgentCheckpoint checkpoint = AgentCheckpoint.from(state, "task-fingerprint", objectMapper);
+        AgentRequest resumeRequestWithoutContext = new AgentRequest(
+                "检查项目并生成报告\n\n<resume_user_input>\n继续刚才的报告\n</resume_user_input>",
+                "session-ckpt-keep-context",
+                "web");
+
+        ReactAgentState restored = checkpoint.restore(objectMapper, resumeRequestWithoutContext);
+
+        assertThat(restored.turnRecoveryContext())
+                .containsEntry("action", "RESUME")
+                .containsEntry("sourceTraceId", "trace-failed-saved");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> checkpointContext = (Map<String, Object>) restored.turnRecoveryContext().get("checkpoint");
+        assertThat(checkpointContext)
+                .containsEntry("toolId", "file.write")
+                .containsKey("artifactRefs");
+    }
+
+    @Test
+    void 恢复补充文本不应改变同任务checkpoint指纹() {
+        AgentRequest original = new AgentRequest("检查项目并修复失败测试", "session-ckpt-1", "web");
+        AgentRequest resumeWithUserInput = new AgentRequest("""
+                检查项目并修复失败测试
+
+                <resume_user_input>
+                继续，优先处理刚才失败的 npm test
+                </resume_user_input>
+                """, "session-ckpt-1", "web");
+
+        assertThat(AgentCheckpointFingerprinter.fingerprint(resumeWithUserInput))
+                .isEqualTo(AgentCheckpointFingerprinter.fingerprint(original));
+        assertThat(AgentCheckpointFingerprinter.normalizeMessage(resumeWithUserInput.message()))
+                .isEqualTo("检查项目并修复失败测试");
+    }
+
+    @Test
+    void 重启恢复提示不应改变同任务checkpoint指纹() {
+        AgentRequest original = new AgentRequest("检查项目并修复失败测试", "session-ckpt-1", "web");
+        AgentRequest restartWithRecoveryCheckpoint = new AgentRequest("""
+                <restart_original_user_input>
+                检查项目并修复失败测试
+                </restart_original_user_input>
+
+                <restart_instruction>
+                重新开始：重新开始。目标：Shell 执行（命令执行）。请重新开始这一轮，并优先修正这个失败点。
+                </restart_instruction>
+
+                <task_recovery_checkpoint>
+                - 这是对上一轮未完成任务的重新开始，不是新的独立任务。
+                - 工具: Shell 执行
+                - 失败分类: 命令执行/COMMAND
+                - 输入: 执行 `npm test`
+                - 输出: 断言失败
+                </task_recovery_checkpoint>
+                """, "session-ckpt-1", "web");
+
+        assertThat(AgentCheckpointFingerprinter.fingerprint(restartWithRecoveryCheckpoint))
+                .isEqualTo(AgentCheckpointFingerprinter.fingerprint(original));
+        assertThat(AgentCheckpointFingerprinter.normalizeMessage(restartWithRecoveryCheckpoint.message()))
+                .isEqualTo("检查项目并修复失败测试");
+    }
+
+    @Test
+    void 原始问题追加恢复断点不应改变同任务checkpoint指纹() {
+        AgentRequest original = new AgentRequest("检查项目并修复失败测试", "session-ckpt-1", "web");
+        AgentRequest restartWithCheckpointOnly = new AgentRequest("""
+                检查项目并修复失败测试
+
+                <task_recovery_checkpoint>
+                - 这是对上一轮未完成任务的重新开始，不是新的独立任务。
+                - 工具: Shell 执行
+                - 失败分类: 命令执行/COMMAND
+                </task_recovery_checkpoint>
+                """, "session-ckpt-1", "web");
+
+        assertThat(AgentCheckpointFingerprinter.fingerprint(restartWithCheckpointOnly))
+                .isEqualTo(AgentCheckpointFingerprinter.fingerprint(original));
+        assertThat(AgentCheckpointFingerprinter.normalizeMessage(restartWithCheckpointOnly.message()))
+                .isEqualTo("检查项目并修复失败测试");
     }
 
     @Test

@@ -8,6 +8,12 @@ import com.lifepilot.interaction.web.model.ChatSession;
 import com.lifepilot.interaction.web.repository.ChatSessionRepository;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryQualityPolicy;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
+import com.lifepilot.memory.retrieval.VectorSearchResult;
 import com.lifepilot.memory.retrieval.VectorSearcher;
 import com.lifepilot.memory.consumption.compression.TokenEstimator;
 import com.lifepilot.memory.store.scope.MemoryOriginType;
@@ -48,40 +54,29 @@ public class SubtaskReflector {
 
     private final SemanticMemory semanticMemory;
     private final VectorSearcher vectorSearcher;
-    @Nullable
     private final GenerationRouter generationRouter;
     private final PromptRegistry promptRegistry;
     private final AgentLearningProperties.Experience.Subtask config;
     private final float dedupThreshold;
-    @Nullable
     private final ChatSessionRepository chatSessionRepository;
-    @Nullable
     private final ProjectContextResolver projectContextResolver;
 
     public SubtaskReflector(SemanticMemory semanticMemory,
                             VectorSearcher vectorSearcher,
-                            @Nullable GenerationRouter generationRouter,
-                            PromptRegistry promptRegistry,
-                            AgentLearningProperties AgentLearningProperties) {
-        this(semanticMemory, vectorSearcher, generationRouter, promptRegistry,
-                AgentLearningProperties, null, null);
-    }
-
-    public SubtaskReflector(SemanticMemory semanticMemory,
-                            VectorSearcher vectorSearcher,
-                            @Nullable GenerationRouter generationRouter,
+                            GenerationRouter generationRouter,
                             PromptRegistry promptRegistry,
                             AgentLearningProperties AgentLearningProperties,
-                            @Nullable ChatSessionRepository chatSessionRepository,
-                            @Nullable ProjectContextResolver projectContextResolver) {
-        this.semanticMemory = semanticMemory;
-        this.vectorSearcher = vectorSearcher;
-        this.generationRouter = generationRouter;
-        this.promptRegistry = promptRegistry;
-        this.config = AgentLearningProperties.getExperience().getSubtask();
-        this.dedupThreshold = AgentLearningProperties.getExperience().getDedupSimilarityThreshold();
-        this.chatSessionRepository = chatSessionRepository;
-        this.projectContextResolver = projectContextResolver;
+                            ChatSessionRepository chatSessionRepository,
+                            ProjectContextResolver projectContextResolver) {
+        this.semanticMemory = Objects.requireNonNull(semanticMemory, "semanticMemory 不能为空");
+        this.vectorSearcher = Objects.requireNonNull(vectorSearcher, "vectorSearcher 不能为空");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter 不能为空");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "promptRegistry 不能为空");
+        var properties = Objects.requireNonNull(AgentLearningProperties, "AgentLearningProperties 不能为空");
+        this.config = properties.getExperience().getSubtask();
+        this.dedupThreshold = properties.getExperience().getDedupSimilarityThreshold();
+        this.chatSessionRepository = Objects.requireNonNull(chatSessionRepository, "chatSessionRepository 不能为空");
+        this.projectContextResolver = Objects.requireNonNull(projectContextResolver, "projectContextResolver 不能为空");
     }
 
     /**
@@ -91,97 +86,90 @@ public class SubtaskReflector {
      * @param state Agent 最终状态
      */
     public void reflect(ReactAgentState state) {
+        Objects.requireNonNull(state, "Agent 状态不能为空");
+        requireNonBlank(state.goal(), "子任务反思任务目标");
         if (!config.isEnabled()) {
             log.debug("子任务反思: 功能已关闭");
             return;
         }
-        if (generationRouter == null) {
-            log.debug("子任务反思: GenerationRouter 不可用，跳过");
+
+        // 提取连续 ToolCall → Observation 步骤对
+        var pairs = extractToolObservationPairs(state.steps());
+
+        // 检查序列长度
+        if (pairs.size() < config.getMinToolSequence()) {
+            log.debug("子任务反思: 工具调用序列长度不足, size={}, min={}",
+                    pairs.size(), config.getMinToolSequence());
             return;
         }
 
-        try {
-            // 提取连续 ToolCall → Observation 步骤对
-            var pairs = extractToolObservationPairs(state.steps());
-
-            // 检查序列长度
-            if (pairs.size() < config.getMinToolSequence()) {
-                log.debug("子任务反思: 工具调用序列长度不足, size={}, min={}",
-                        pairs.size(), config.getMinToolSequence());
-                return;
-            }
-
-            // 检查至少一个成功 Observation
-            boolean hasSuccess = pairs.stream()
-                    .anyMatch(p -> p.observation().success());
-            if (!hasSuccess) {
-                log.debug("子任务反思: 无成功 Observation，跳过");
-                return;
-            }
-
-            // 格式化工具序列并截断
-            String formattedSequence = formatToolSequence(pairs);
-
-            // 渲染提示词
-            String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
-                    "goal", state.goal() != null ? state.goal() : "",
-                    "toolSequence", formattedSequence
-            ));
-
-            // 调用 LLM
-            ExperienceRecord record;
-            try {
-                Duration timeout = Duration.ofSeconds(Math.max(1, config.getLlmTimeoutSeconds()));
-                log.debug("子任务反思: 发起 JSON 反思调用, sessionId={}, timeoutSeconds={}, promptChars={}, sequenceSize={}",
-                        state.sessionId(), timeout.toSeconds(), prompt.length(), pairs.size());
-                LlmResponse response = generationRouter.call(
-                        LlmScene.BACKGROUND_ANALYSIS,
-                        prompt,
-                        null,
-                        null,
-                        null,
-                        GenerationCapability.CHAT,
-                        timeout);
-                log.debug("子任务反思: JSON 反思响应返回, sessionId={}, providerId={}, model={}, latencyMs={}, outputChars={}",
-                        state.sessionId(),
-                        response.providerId(),
-                        response.modelName(),
-                        response.latencyMs(),
-                        response.content() != null ? response.content().length() : 0);
-                record = JsonOutputParser.parse(response.content(), ExperienceRecord.class);
-            } catch (Exception e) {
-                log.warn("子任务反思: JSON 反思失败, sessionId={}, timeoutSeconds={}, errorType={}, error={}",
-                        state.sessionId(), config.getLlmTimeoutSeconds(), e.getClass().getSimpleName(), e.getMessage());
-                return;
-            }
-
-            if (record == null) {
-                log.warn("子任务反思: LLM 返回空结果");
-                return;
-            }
-
-            // 验证结果
-            if (record.scenario() == null || record.scenario().isBlank()
-                    || record.strategy() == null || record.strategy().isBlank()) {
-                log.debug("子任务反思: scenario 或 strategy 为空，丢弃");
-                return;
-            }
-
-            // 去重检查
-            String textRepresentation = record.scenario() + ": " + record.strategy();
-            var similar = vectorSearcher.searchEntities(textRepresentation, 1, dedupThreshold);
-            if (!similar.isEmpty()) {
-                log.debug("子任务反思: 去重命中，跳过, similarEntityId={}",
-                        similar.getFirst().entityId());
-                return;
-            }
-
-            // 构建并写入 TemporalEntity
-            persistSubtaskExperience(record, state);
-
-        } catch (Exception e) {
-            log.warn("子任务反思失败: error={}", e.getMessage());
+        // 检查至少一个成功 Observation
+        boolean hasSuccess = pairs.stream()
+                .anyMatch(p -> p.observation().success());
+        if (!hasSuccess) {
+            log.debug("子任务反思: 无成功 Observation，跳过");
+            return;
         }
+
+        // 格式化工具序列并截断
+        String formattedSequence = formatToolSequence(pairs);
+
+        // 渲染提示词
+        String prompt = promptRegistry.render(PROMPT_KEY, Map.of(
+                "goal", state.goal(),
+                "toolSequence", formattedSequence
+        ));
+        if (prompt == null || prompt.isBlank()) {
+            throw new IllegalStateException("子任务反思 prompt 渲染结果不能为空");
+        }
+
+        // 调用 LLM
+        Duration timeout = Duration.ofSeconds(positive(config.getLlmTimeoutSeconds(), "子任务反思 LLM 超时秒数"));
+        log.debug("子任务反思: 发起 JSON 反思调用, sessionId={}, timeoutSeconds={}, promptChars={}, sequenceSize={}",
+                state.sessionId(), timeout.toSeconds(), prompt.length(), pairs.size());
+        LlmResponse response = generationRouter.call(
+                LlmScene.BACKGROUND_ANALYSIS,
+                prompt,
+                null,
+                null,
+                null,
+                GenerationCapability.CHAT,
+                timeout);
+        if (response == null || response.content() == null || response.content().isBlank()) {
+            throw new IllegalStateException("子任务反思 LLM 响应不能为空");
+        }
+        log.debug("子任务反思: JSON 反思响应返回, sessionId={}, providerId={}, model={}, latencyMs={}, outputChars={}",
+                state.sessionId(),
+                response.providerId(),
+                response.modelName(),
+                response.latencyMs(),
+                response.content() != null ? response.content().length() : 0);
+        ExperienceRecordContract.validateLlmResponse(response.content(), "子任务反思");
+        ExperienceRecord record = JsonOutputParser.parse(response.content(), ExperienceRecord.class);
+
+        // 验证结果
+        if (record == null || record.scenario() == null || record.scenario().isBlank()
+                || record.strategy() == null || record.strategy().isBlank()) {
+            throw new IllegalStateException("子任务反思 LLM 响应缺少 scenario 或 strategy");
+        }
+
+        // 去重检查
+        String textRepresentation = record.scenario() + ": " + record.strategy();
+        var similar = requireVectorResults(vectorSearcher.searchEntities(
+                textRepresentation, 1, similarityThreshold(dedupThreshold, "子任务反思去重相似度阈值")));
+        if (!similar.isEmpty()) {
+            String existingId = similar.getFirst().entityId();
+            var existing = semanticMemory.findById(existingId);
+            if (existing == null || existing.isEmpty()) {
+                throw new IllegalStateException("子任务反思: 去重命中实体不存在: " + existingId);
+            }
+            log.debug("子任务反思: 去重命中，跳过, similarEntityId={}",
+                    existingId);
+            return;
+        }
+
+        // 构建并写入 TemporalEntity
+        persistSubtaskExperience(record, state);
     }
 
     /**
@@ -245,16 +233,14 @@ public class SubtaskReflector {
         String name = "[工具] " + (scenarioText.length() > 94 ? scenarioText.substring(0, 94) : scenarioText);
 
         Map<String, Object> props = new LinkedHashMap<>();
-        props.put("lessons", record.lessons() != null ? record.lessons() : List.of());
-        props.put("applicableConditions", record.applicableConditions() != null
-                ? record.applicableConditions() : List.of());
-        props.put("toolsUsed", record.toolsUsed() != null ? record.toolsUsed() : List.of());
+        props.put("lessons", record.lessons());
+        props.put("applicableConditions", record.applicableConditions());
+        props.put("toolsUsed", record.toolsUsed());
         props.put("success", record.success());
         props.put("subtask", true);
         // 工具级经验标记：粒度 + 主工具 ID
         props.put("granularity", TOOL_LEVEL);
-        String primaryToolId = record.toolsUsed() != null && !record.toolsUsed().isEmpty()
-                ? record.toolsUsed().getFirst() : null;
+        String primaryToolId = !record.toolsUsed().isEmpty() ? record.toolsUsed().getFirst() : null;
         props.put("toolId", primaryToolId);
         props.put("executionContext", ExecutionContext.infer(state).name());
         props.put("effectivenessScore", 0.0f);
@@ -262,6 +248,10 @@ public class SubtaskReflector {
         props.put("positiveOutcomes", 0);
         props.put("negativeOutcomes", 0);
 
+        float extractionConfidence = 0.8f;
+        MemoryEvidenceKind evidenceKind = MemoryEvidenceKind.LLM_SUMMARIZED_EXPERIENCE;
+        float trustScore = MemoryQualityPolicy.trustScoreFor(evidenceKind, extractionConfidence);
+        MemoryTrustLevel trustLevel = MemoryQualityPolicy.trustLevelFor(evidenceKind, trustScore);
         var entity = new TemporalEntity(
                 UUID.randomUUID().toString(),
                 EntityType.EXPERIENCE,
@@ -273,12 +263,24 @@ public class SubtaskReflector {
                 now,
                 null,
                 null,
-                0.8f,
+                extractionConfidence,
                 config.getInitialImportance(),
                 0,
                 null,
                 now,
-                now
+                now,
+                LifecycleState.ACTIVE,
+                null,
+                null,
+                Temporality.PERSISTENT,
+                null,
+                false,
+                List.of(),
+                evidenceKind,
+                trustLevel,
+                trustScore,
+                1,
+                null
         );
 
         MemoryWriteContext writeContext = resolveWriteContext(state.sessionId());
@@ -290,7 +292,7 @@ public class SubtaskReflector {
     /**
      * 构造子任务经验写入上下文。
      *
-     * <p>ISOLATED 项目 → spaceId=项目 space；主账户/SHARED/异常 → spaceId=null
+     * <p>ISOLATED 项目 → spaceId=项目 space；主账户/SHARED → spaceId=null
      * 让 SemanticMemory 按 entity type 推断默认 space。memoryScope 保持 null。</p>
      */
     private MemoryWriteContext resolveWriteContext(@Nullable String sessionId) {
@@ -312,28 +314,70 @@ public class SubtaskReflector {
 
     @Nullable
     private String resolveProjectSpaceId(@Nullable String sessionId) {
-        if (chatSessionRepository == null || projectContextResolver == null
-                || sessionId == null || sessionId.isBlank()) {
+        if (sessionId == null || sessionId.isBlank()) {
             return null;
         }
-        try {
-            java.util.Optional<ChatSession> session = chatSessionRepository.findById(sessionId);
-            if (session.isEmpty()) {
-                return null;
-            }
-            String projectId = session.get().projectId();
-            if (projectId == null) {
-                return null;
-            }
-            var ctx = projectContextResolver.resolve(projectId);
-            return ctx.isolated() ? ctx.projectSpaceId() : null;
-        } catch (Exception e) {
-            log.debug("子任务反思: 项目上下文解析失败，回退主账户 space, sessionId={}, error={}",
-                    sessionId, e.getMessage());
+        java.util.Optional<ChatSession> session = chatSessionRepository.findById(sessionId);
+        if (session.isEmpty()) {
+            throw new IllegalStateException("无法找到会话，不能判定子任务经验写入空间: " + sessionId);
+        }
+        String projectId = session.get().projectId();
+        if (projectId == null) {
             return null;
         }
+        var ctx = projectContextResolver.resolve(projectId);
+        return ctx.isolated() ? ctx.projectSpaceId() : null;
     }
 
     /** ToolCall → Observation 步骤对。 */
     private record ToolObservationPair(ReactStep.ToolCall toolCall, ReactStep.Observation observation) {}
+
+    private static int positive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + "必须大于 0: " + value);
+        }
+        return value;
+    }
+
+    private static List<VectorSearchResult> requireVectorResults(List<VectorSearchResult> results) {
+        if (results == null) {
+            throw new IllegalStateException("子任务反思: 向量搜索结果不能为空");
+        }
+        for (VectorSearchResult result : results) {
+            if (result == null) {
+                throw new IllegalStateException("子任务反思: 向量搜索结果不能包含 null 元素");
+            }
+            requireCanonicalId(result.entityId(), "子任务反思向量候选 ID");
+            if (!Float.isFinite(result.similarity())
+                    || result.similarity() < 0.0f
+                    || result.similarity() > 1.0f) {
+                throw new IllegalStateException("子任务反思: 向量相似度必须在 [0,1] 范围内: "
+                        + result.similarity());
+            }
+        }
+        return results;
+    }
+
+    private static float similarityThreshold(float value, String name) {
+        if (!Float.isFinite(value) || value < 0.0f || value > 1.0f) {
+            throw new IllegalArgumentException(name + "必须在 [0,1] 范围内: " + value);
+        }
+        return value;
+    }
+
+    private static void requireCanonicalId(String value, String label) {
+        requireNonBlank(value, label);
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+    }
+
+    private static void requireNonBlank(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(label + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(label + "不能包含首尾空白: " + value);
+        }
+    }
 }

@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
@@ -158,7 +159,34 @@ class UserProfileConsolidator_单元测试 {
     }
 
     @Test
-    void 源已变化但距上次巩固不足两小时应延后() {
+    void LLM返回空画像应直接失败() {
+        // given
+        var preference = 画像碎片("pref-1", EntityType.PREFERENCE, "偏好中文回复", "用户希望默认使用中文沟通");
+        准备基础输入(List.of(preference), List.of(), Optional.empty());
+        when(promptRegistry.render(eq("generation/user-profile-consolidation"), anyMap()))
+                .thenReturn("画像巩固 prompt");
+        when(generationRouter.call(
+                eq(LlmScene.BACKGROUND_ANALYSIS),
+                eq("画像巩固 prompt"),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(GenerationCapability.CHAT),
+                eq(Duration.ofSeconds(120)),
+                eq(true)
+        )).thenReturn(new LlmResponse("   ", null, null, List.of(), Map.of(), 10, 5,
+                null, 0, "mock-provider", "mock-model", 100, false));
+
+        // then
+        assertThatThrownBy(() -> consolidator.consolidate())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("空画像");
+        verify(semanticMemory, never()).upsertWithConflictDetection(
+                any(TemporalEntity.class), eq("user-profile-consolidation"), any(MemoryWriteContext.class));
+    }
+
+    @Test
+    void 源已变化应立即重算画像() {
         // given
         var oldProperties = Map.<String, Object>of(
                 UserProfileConsolidator.PROFILE_SOURCE_SIGNATURE_KEY, "old-signature",
@@ -189,17 +217,34 @@ class UserProfileConsolidator_单元测试 {
                 null,
                 true,
                 List.of("pref-1")
-        ));
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                FIXED_TIME));
         var changedPreference = 画像碎片("pref-1", EntityType.PREFERENCE, "偏好中文回复", "用户希望默认使用中文，并要求结论更靠前");
         准备基础输入(List.of(changedPreference), List.of(), Optional.of(existingProfile));
+        when(promptRegistry.render(eq("generation/user-profile-consolidation"), anyMap()))
+                .thenReturn("画像巩固 prompt");
+        when(generationRouter.call(
+                eq(LlmScene.BACKGROUND_ANALYSIS),
+                eq("画像巩固 prompt"),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(GenerationCapability.CHAT),
+                eq(Duration.ofSeconds(120)),
+                eq(true)
+        )).thenReturn(new LlmResponse("用户偏好中文且喜欢结论靠前。", null, null, List.of(), Map.of(), 10, 5, null, 0, "mock-provider", "mock-model", 100, false));
 
         // when
         consolidator.consolidate();
 
         // then
-        verify(generationRouter, never()).call(
+        verify(generationRouter).call(
                 any(), any(), any(), any(), any(), any(), any(), eq(true));
-        verify(semanticMemory, never()).upsertWithConflictDetection(
+        verify(semanticMemory).upsertWithConflictDetection(
                 any(TemporalEntity.class), eq("user-profile-consolidation"), any(MemoryWriteContext.class));
     }
 
@@ -235,7 +280,12 @@ class UserProfileConsolidator_单元测试 {
                 null,
                 true,
                 List.of("pref-1")
-        ));
+        ,
+                com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                1.0f,
+                1,
+                FIXED_TIME));
         var changedPreference = 画像碎片("pref-1", EntityType.PREFERENCE,
                 "偏好中文回复", "用户希望默认使用中文，并要求结论更靠前");
         准备基础输入(List.of(changedPreference), List.of(), Optional.of(existingProfile));
@@ -299,7 +349,19 @@ class UserProfileConsolidator_单元测试 {
                 0,
                 null,
                 FIXED_TIME,
-                FIXED_TIME)
+                FIXED_TIME,
+                        com.lifepilot.memory.governance.lifecycle.LifecycleState.ACTIVE,
+                        null,
+                        null,
+                        com.lifepilot.memory.governance.lifecycle.Temporality.PERSISTENT,
+                        null,
+                        false,
+                        java.util.List.of(),
+                        com.lifepilot.memory.consumption.quality.MemoryEvidenceKind.USER_CONFIRMED,
+                        com.lifepilot.memory.consumption.quality.MemoryTrustLevel.EXPLICIT,
+                        1.0f,
+                        1,
+                        FIXED_TIME)
                 .withQuality(MemoryEvidenceKind.USER_EXPLICIT, MemoryTrustLevel.EXPLICIT, 0.9f, 1, FIXED_TIME);
     }
 

@@ -1,5 +1,6 @@
 package com.lifepilot.memory.governance.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.memory.store.episodic.EpisodicMemory;
 import com.lifepilot.memory.governance.policy.MemoryAccessPolicy;
 import com.lifepilot.memory.governance.server.MemoryMcpHandler;
@@ -11,7 +12,6 @@ import com.lifepilot.memory.governance.security.SpaceTrustDistribution;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.config.MemoryStoreAutoConfiguration;
 import com.lifepilot.memory.governance.audit.MemoryEventRecorder;
-import jakarta.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -44,9 +44,9 @@ public class MemoryGovernanceAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MemoryEventRecorder memoryEventRecorder(JdbcTemplate jdbcTemplate) {
+    public MemoryEventRecorder memoryEventRecorder(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         log.info("记忆模块: 注册 MemoryEventRecorder");
-        return new MemoryEventRecorder(jdbcTemplate);
+        return new MemoryEventRecorder(jdbcTemplate, objectMapper);
     }
 
     @Bean
@@ -86,9 +86,9 @@ public class MemoryGovernanceAutoConfiguration {
     public MemoryMcpHandler memoryMcpHandler(
             MemoryMcpToolRegistry toolRegistry,
             MemoryGovernanceProperties properties,
-            @Nullable HybridRetriever hybridRetriever,
-            @Nullable EpisodicMemory episodicMemory,
-            @Nullable SemanticMemory semanticMemory) {
+            HybridRetriever hybridRetriever,
+            EpisodicMemory episodicMemory,
+            SemanticMemory semanticMemory) {
         return new MemoryMcpHandler(
                 toolRegistry, properties, hybridRetriever, episodicMemory, semanticMemory);
     }

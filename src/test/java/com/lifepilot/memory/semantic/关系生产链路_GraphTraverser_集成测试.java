@@ -1,6 +1,7 @@
 package com.lifepilot.memory.semantic;
 
 import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.store.support.SemanticMemoryTestSupport;
 import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
 import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
@@ -11,6 +12,7 @@ import com.lifepilot.memory.store.entity.ConflictDetector;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.VersionMerger;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,7 +73,8 @@ class 关系生产链路_GraphTraverser_集成测试 {
                 jdbcTemplate,
                 mock(ConflictDetector.class),
                 new VersionMerger(),
-                mock(VectorSearcher.class));
+                mock(VectorSearcher.class),
+                SemanticMemoryTestSupport.memorySpaceRepository(jdbcTemplate), SemanticMemoryTestSupport.projectionService());
         graphTraverser = new GraphTraverser(jdbcTemplate);
     }
 
@@ -91,8 +94,8 @@ class 关系生产链路_GraphTraverser_集成测试 {
         插入实体("阿里", EntityType.ORGANIZATION);
         插入实体("杭州", EntityType.PLACE);
 
-        semanticMemory.addRelation(关系("张三", "阿里", "就职于"));
-        semanticMemory.addRelation(关系("阿里", "杭州", "位于"));
+        semanticMemory.addRelation(关系("张三", "阿里", "就职于"), relationContext());
+        semanticMemory.addRelation(关系("阿里", "杭州", "位于"), relationContext());
 
         var results = graphTraverser.traverse("张三", 10);
 
@@ -107,7 +110,7 @@ class 关系生产链路_GraphTraverser_集成测试 {
     void 归档关系不参与图遍历() {
         插入实体("张三", EntityType.PERSON);
         插入实体("阿里", EntityType.ORGANIZATION);
-        semanticMemory.addRelation(关系("张三", "阿里", "就职于"));
+        semanticMemory.addRelation(关系("张三", "阿里", "就职于"), relationContext());
 
         // 归档关系根记录
         jdbcTemplate.update("UPDATE memory_relations SET status = 'ARCHIVED' WHERE source_entity_id = ?", "张三");
@@ -124,7 +127,7 @@ class 关系生产链路_GraphTraverser_集成测试 {
         assertThat(semanticMemory.existsCurrentById("不存在")).isFalse();
         assertThat(semanticMemory.relationExists("张三", "阿里", "就职于")).isFalse();
 
-        semanticMemory.addRelation(关系("张三", "阿里", "就职于"));
+        semanticMemory.addRelation(关系("张三", "阿里", "就职于"), relationContext());
 
         assertThat(semanticMemory.relationExists("张三", "阿里", "就职于")).isTrue();
         assertThat(semanticMemory.relationExists("张三", "阿里", "其他类型")).isFalse();
@@ -133,7 +136,12 @@ class 关系生产链路_GraphTraverser_集成测试 {
     private TemporalRelation 关系(String src, String tgt, String type) {
         var now = Instant.parse(NOW);
         return new TemporalRelation(
-                UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, now, null, "test", now);
+                UUID.randomUUID().toString(), src, tgt, type, 0.8f, null, now, null, "test", now,
+                MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT, 0.9f);
+    }
+
+    private MemoryWriteContext relationContext() {
+        return MemoryWriteContext.consolidation("test-relation");
     }
 
     private void 插入实体(String id, EntityType type) {

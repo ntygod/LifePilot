@@ -1,5 +1,7 @@
 package com.lifepilot.memory.store.episodic;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lifepilot.conversation.transcript.TranscriptEntryType;
 import com.lifepilot.memory.episodic.CompressionLevel;
 import com.lifepilot.memory.episodic.ConversationRecord;
@@ -22,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -40,28 +43,26 @@ public class EpisodicMemory {
     private static final int RECALL_CANDIDATE_MULTIPLIER = 6;
 
     private final JdbcTemplate jdbcTemplate;
-
-    @Nullable
-    private Runnable writeCallback;
+    private final ObjectMapper objectMapper;
 
     public EpisodicMemory(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+        this(jdbcTemplate, new ObjectMapper());
     }
 
-    public void setWriteCallback(@Nullable Runnable writeCallback) {
-        this.writeCallback = writeCallback;
+    public EpisodicMemory(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "JdbcTemplate 不能为空");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "ObjectMapper 不能为空");
     }
 
     static String escapeFts5Query(String query) {
+        Objects.requireNonNull(query, "FTS5 查询不能为空");
         return "\"" + query.replace("\"", "\"\"") + "\"";
     }
 
     @Transactional
     public void save(ConversationRecord record) {
-        if (record == null) {
-            return;
-        }
-        String sessionId = normalizeBlank(record.sessionId()) != null ? record.sessionId() : record.id();
+        validateConversationRecordForSave(record);
+        String sessionId = record.sessionId();
         Instant lastMessageAt = record.messages().isEmpty()
                 ? record.updatedAt()
                 : record.messages().getLast().createdAt();
@@ -82,7 +83,7 @@ public class EpisodicMemory {
                             last_activity_at = excluded.last_activity_at
                         """,
                 sessionId,
-                normalizeBlank(record.goal()) != null ? record.goal() : sessionId,
+                record.goal(),
                 record.summary(),
                 record.messages().size(),
                 lastMessageAt != null ? lastMessageAt.toString() : null,
@@ -92,7 +93,7 @@ public class EpisodicMemory {
         jdbcTemplate.update("DELETE FROM session_transcript_entries WHERE session_id = ?", sessionId);
 
         for (var msg : record.messages()) {
-            String payloadJson = "{\"content\":\"" + escapeJson(msg.content()) + "\"}";
+            String payloadJson = payloadJson(msg);
             jdbcTemplate.update("""
                             INSERT INTO session_transcript_entries (
                                 id, session_id, branch_id, entry_type, role, turn_id, trace_id,
@@ -101,21 +102,20 @@ public class EpisodicMemory {
                             """,
                     msg.id(),
                     sessionId,
-                    TranscriptEntryType.fromLegacyRole(msg.role()).value(),
+                    TranscriptEntryType.fromRole(msg.role()).value(),
                     msg.role(),
                     payloadJson,
-                    Math.max(0, msg.tokenCount()),
+                    tokenEstimate(msg),
                     msg.createdAt().toString());
         }
 
-        notifyWriteCallback();
         log.debug("情景记忆已写入 transcript 读模型: sessionId={}, messages={}",
                 sessionId, record.messageCount());
     }
 
     public List<ConversationRecord> getRecent(int limit) {
         if (limit <= 0) {
-            return List.of();
+            throw new IllegalArgumentException("情景记忆最近会话 limit 必须大于 0: " + limit);
         }
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
@@ -124,19 +124,14 @@ public class EpisodicMemory {
                 ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 LIMIT ?
                 """,
-                (rs, rowNum) -> new SessionRow(
-                        rs.getString("id"),
-                        rs.getString("title"),
-                        rs.getString("summary"),
-                        Instant.parse(rs.getString("created_at")),
-                        Instant.parse(rs.getString("updated_at"))),
+                (rs, rowNum) -> mapSessionRow(rs),
                 limit);
         return sessions.stream().map(this::toConversationRecord).toList();
     }
 
     public List<ConversationRecord> getRecent(Duration duration) {
         if (duration == null || duration.isNegative() || duration.isZero()) {
-            return List.of();
+            throw new IllegalArgumentException("情景记忆最近会话 duration 必须为正数");
         }
         String since = Instant.now().minus(duration).toString();
         List<SessionRow> sessions = jdbcTemplate.query(
@@ -146,30 +141,25 @@ public class EpisodicMemory {
                 WHERE COALESCE(last_activity_at, last_message_at, created_at) >= ?
                 ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 """,
-                (rs, rowNum) -> new SessionRow(
-                        rs.getString("id"),
-                        rs.getString("title"),
-                        rs.getString("summary"),
-                        Instant.parse(rs.getString("created_at")),
-                        Instant.parse(rs.getString("updated_at"))),
+                (rs, rowNum) -> mapSessionRow(rs),
                 since);
         return sessions.stream().map(this::toConversationRecord).toList();
     }
 
     public List<ConversationRecord> search(String query) {
         if (query == null || query.isBlank()) {
-            return List.of();
+            throw new IllegalArgumentException("情景记忆搜索关键词不能为空");
         }
         List<String> sessionIds = searchSessionIds(query, null, DEFAULT_SEARCH_LIMIT);
         return sessionIds.stream()
-                .map(this::getById)
-                .flatMap(Optional::stream)
+                .map(sessionId -> getById(sessionId)
+                        .orElseThrow(() -> new IllegalStateException("情景记忆搜索命中缺少会话记录: " + sessionId)))
                 .toList();
     }
 
     public Optional<ConversationRecord> getById(String conversationId) {
         if (conversationId == null || conversationId.isBlank()) {
-            return Optional.empty();
+            throw new IllegalArgumentException("情景记忆会话 ID 不能为空");
         }
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
@@ -177,19 +167,14 @@ public class EpisodicMemory {
                 FROM session_store
                 WHERE session_id = ?
                 """,
-                (rs, rowNum) -> new SessionRow(
-                        rs.getString("id"),
-                        rs.getString("title"),
-                        rs.getString("summary"),
-                        Instant.parse(rs.getString("created_at")),
-                        Instant.parse(rs.getString("updated_at"))),
+                (rs, rowNum) -> mapSessionRow(rs),
                 conversationId);
         return sessions.stream().findFirst().map(this::toConversationRecord);
     }
 
     public List<MessageRecord> getMessagesBySessionId(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
-            return List.of();
+            throw new IllegalArgumentException("情景记忆会话 ID 不能为空");
         }
         return loadTranscriptMessages(sessionId);
     }
@@ -198,54 +183,46 @@ public class EpisodicMemory {
                                                                           String excludeSessionId,
                                                                           int limit) {
         if (query == null || query.isBlank() || excludeSessionId == null || excludeSessionId.isBlank() || limit <= 0) {
-            return List.of();
+            throw new IllegalArgumentException("跨会话片段召回参数非法");
         }
-        try {
-            int candidateLimit = Math.max(limit * RECALL_CANDIDATE_MULTIPLIER, limit);
-            List<RecallHitRow> hits = searchRecallHits(query, excludeSessionId, candidateLimit);
 
+        int candidateLimit = Math.max(limit * RECALL_CANDIDATE_MULTIPLIER, limit);
+        List<RecallHitRow> hits = searchRecallHits(query, excludeSessionId, candidateLimit);
+
+        if (hits.isEmpty()) {
+            if (!shouldUseRecentRecallFallback(query)) {
+                return List.of();
+            }
+            hits = searchRecentRecallHits(excludeSessionId, candidateLimit);
             if (hits.isEmpty()) {
-                if (!shouldUseRecentRecallFallback(query)) {
-                    return List.of();
-                }
-                hits = searchRecentRecallHits(excludeSessionId, candidateLimit);
-                if (hits.isEmpty()) {
-                    return List.of();
-                }
+                return List.of();
             }
-
-            Map<String, List<TimelineMessage>> timelineCache = new HashMap<>();
-            Map<String, ConversationSnippetRecord> snippets = new HashMap<>();
-            int rank = 0;
-            for (RecallHitRow hit : hits) {
-                rank++;
-                List<TimelineMessage> timeline = timelineCache.computeIfAbsent(
-                        hit.sessionId(), this::loadTimelineMessages);
-                ConversationSnippetRecord snippet = buildSnippet(hit, rank, timeline);
-                if (snippet == null) {
-                    continue;
-                }
-                ConversationSnippetRecord existing = snippets.get(snippet.id());
-                if (existing == null || snippet.hitRank() < existing.hitRank()) {
-                    snippets.put(snippet.id(), snippet);
-                }
-            }
-
-            return snippets.values().stream()
-                    .sorted(Comparator.comparingInt(ConversationSnippetRecord::hitRank)
-                            .thenComparing(ConversationSnippetRecord::endedAt, Comparator.reverseOrder()))
-                    .limit(limit)
-                    .toList();
-        } catch (Exception e) {
-            log.warn("对话片段回忆失败: query={}, excludeSessionId={}, error={}",
-                    query, excludeSessionId, e.getMessage());
-            return List.of();
         }
+
+        Map<String, List<TimelineMessage>> timelineCache = new HashMap<>();
+        Map<String, ConversationSnippetRecord> snippets = new HashMap<>();
+        int rank = 0;
+        for (RecallHitRow hit : hits) {
+            rank++;
+            List<TimelineMessage> timeline = timelineCache.computeIfAbsent(
+                    hit.sessionId(), this::loadTimelineMessages);
+            ConversationSnippetRecord snippet = buildSnippet(hit, rank, timeline);
+            ConversationSnippetRecord existing = snippets.get(snippet.id());
+            if (existing == null || snippet.hitRank() < existing.hitRank()) {
+                snippets.put(snippet.id(), snippet);
+            }
+        }
+
+        return snippets.values().stream()
+                .sorted(Comparator.comparingInt(ConversationSnippetRecord::hitRank)
+                        .thenComparing(ConversationSnippetRecord::endedAt, Comparator.reverseOrder()))
+                .limit(limit)
+                .toList();
     }
 
     public List<ConversationRecord> getByIntent(String intentType, int limit) {
         if (intentType == null || intentType.isBlank() || limit <= 0) {
-            return List.of();
+            throw new IllegalArgumentException("情景记忆意图查询参数非法");
         }
         String pattern = "%" + intentType + "%";
         List<SessionRow> sessions = jdbcTemplate.query(
@@ -256,27 +233,27 @@ public class EpisodicMemory {
                 ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 LIMIT ?
                 """,
-                (rs, rowNum) -> new SessionRow(
-                        rs.getString("id"),
-                        rs.getString("title"),
-                        rs.getString("summary"),
-                        Instant.parse(rs.getString("created_at")),
-                        Instant.parse(rs.getString("updated_at"))),
+                (rs, rowNum) -> mapSessionRow(rs),
                 pattern, pattern, limit);
         return sessions.stream().map(this::toConversationRecord).toList();
     }
 
     public long countConversations() {
         Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM session_store", Long.class);
-        return count != null ? count : 0L;
+        if (count == null) {
+            throw new IllegalStateException("情景记忆会话计数查询返回 null");
+        }
+        return count;
     }
 
     public List<ConversationRecord> listConversations(int page, int size) {
-        if (size <= 0) {
-            return List.of();
+        if (page < 0) {
+            throw new IllegalArgumentException("情景记忆分页 page 不能为负数: " + page);
         }
-        int safePage = Math.max(0, page);
-        int offset = safePage * size;
+        if (size <= 0) {
+            throw new IllegalArgumentException("情景记忆分页 size 必须大于 0: " + size);
+        }
+        int offset = Math.multiplyExact(page, size);
         List<SessionRow> sessions = jdbcTemplate.query(
                 """
                 SELECT session_id AS id, title, summary, created_at, updated_at
@@ -284,34 +261,21 @@ public class EpisodicMemory {
                 ORDER BY COALESCE(last_activity_at, last_message_at, updated_at, created_at) DESC
                 LIMIT ? OFFSET ?
                 """,
-                (rs, rowNum) -> new SessionRow(
-                        rs.getString("id"),
-                        rs.getString("title"),
-                        rs.getString("summary"),
-                        Instant.parse(rs.getString("created_at")),
-                        Instant.parse(rs.getString("updated_at"))),
+                (rs, rowNum) -> mapSessionRow(rs),
                 size, offset);
         return sessions.stream().map(this::toConversationRecord).toList();
     }
 
     @Transactional
     public boolean delete(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            throw new IllegalArgumentException("情景记忆会话 ID 不能为空");
+        }
         int rows = jdbcTemplate.update("DELETE FROM session_store WHERE session_id = ?", conversationId);
         if (rows > 0) {
             log.info("已从 transcript 会话读模型删除会话: sessionId={}", conversationId);
         }
         return rows > 0;
-    }
-
-    private void notifyWriteCallback() {
-        if (writeCallback == null) {
-            return;
-        }
-        try {
-            writeCallback.run();
-        } catch (Exception e) {
-            log.warn("情景记忆写回调执行失败: error={}", e.getMessage());
-        }
     }
 
     private ConversationRecord toConversationRecord(SessionRow row) {
@@ -341,22 +305,36 @@ public class EpisodicMemory {
                   AND trim(COALESCE(json_extract(e.payload_json, '$.content'), '')) <> ''
                 ORDER BY e.created_at, e.rowid
                 """,
-                (rs, rowNum) -> new MessageRecord(
-                        rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("role"),
-                        rs.getString("content"),
-                        null,
-                        CompressionLevel.ORIGINAL,
-                        false,
-                        null,
-                        estimateTokenCount(rs.getString("content")),
-                        Instant.parse(rs.getString("created_at"))),
+                (rs, rowNum) -> {
+                    String content = requiredText(rs, "content", "情景记忆消息");
+                    return new MessageRecord(
+                            requiredText(rs, "id", "情景记忆消息"),
+                            requiredText(rs, "session_id", "情景记忆消息"),
+                            requireUserOrAssistantRole(requiredText(rs, "role", "情景记忆消息")),
+                            content,
+                            null,
+                            CompressionLevel.ORIGINAL,
+                            false,
+                            null,
+                            estimateTokenCount(content),
+                            parseRequiredInstant(rs.getString("created_at"), "情景记忆消息.created_at"));
+                },
                 sessionId);
     }
 
-    private String escapeJson(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    private String payloadJson(MessageRecord message) {
+        try {
+            return objectMapper.writeValueAsString(Map.of("content", message.content()));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("情景记忆消息 payload 序列化失败: " + message.id(), e);
+        }
+    }
+
+    private int tokenEstimate(MessageRecord message) {
+        if (message.tokenCount() < 0) {
+            throw new IllegalArgumentException("情景记忆消息 tokenCount 不能为负数: " + message.id());
+        }
+        return message.tokenCount();
     }
 
     private List<TimelineMessage> loadTimelineMessages(String sessionId) {
@@ -374,12 +352,7 @@ public class EpisodicMemory {
                   AND trim(COALESCE(json_extract(payload_json, '$.content'), '')) <> ''
                 ORDER BY created_at, rowid
                 """,
-                (rs, rowNum) -> new TimelineMessage(
-                        rs.getString("id"),
-                        rs.getString("session_id"),
-                        rs.getString("role"),
-                        rs.getString("content"),
-                        Instant.parse(rs.getString("created_at"))),
+                (rs, rowNum) -> mapTimelineMessage(rs),
                 sessionId);
     }
 
@@ -469,12 +442,7 @@ public class EpisodicMemory {
                 ORDER BY e.created_at DESC, e.rowid DESC
                 LIMIT ?
                 """,
-                (rs, rowNum) -> new RecallHitRow(
-                        rs.getString("entry_id"),
-                        rs.getString("session_id"),
-                        normalizeBlank(rs.getString("session_title")),
-                        normalizeBlank(rs.getString("session_summary")),
-                        Instant.parse(rs.getString("created_at"))),
+                (rs, rowNum) -> mapRecallHitRow(rs),
                 excludeSessionId,
                 candidateLimit);
     }
@@ -497,12 +465,7 @@ public class EpisodicMemory {
                 ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
                 LIMIT ?
                 """,
-                (rs, rowNum) -> new RecallHitRow(
-                        rs.getString("entry_id"),
-                        rs.getString("session_id"),
-                        normalizeBlank(rs.getString("session_title")),
-                        normalizeBlank(rs.getString("session_summary")),
-                        Instant.parse(rs.getString("created_at"))),
+                (rs, rowNum) -> mapRecallHitRow(rs),
                 normalizedQuery,
                 excludeSessionId,
                 candidateLimit);
@@ -539,12 +502,7 @@ public class EpisodicMemory {
             args.add(MemoryQuerySignals.likePattern(term));
         }
         args.add(candidateLimit);
-        return jdbcTemplate.query(sql, (rs, rowNum) -> new RecallHitRow(
-                rs.getString("entry_id"),
-                rs.getString("session_id"),
-                normalizeBlank(rs.getString("session_title")),
-                normalizeBlank(rs.getString("session_summary")),
-                Instant.parse(rs.getString("created_at"))), args.toArray());
+        return jdbcTemplate.query(sql, (rs, rowNum) -> mapRecallHitRow(rs), args.toArray());
     }
 
     private List<String> searchSessionIdsByFts(String normalizedQuery,
@@ -560,7 +518,7 @@ public class EpisodicMemory {
                     ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
                     LIMIT ?
                     """,
-                    (rs, rowNum) -> rs.getString("session_id"),
+                    (rs, rowNum) -> requiredCleanText(rs.getString("session_id"), "情景记忆搜索命中 session_id"),
                     normalizedQuery,
                     candidateLimit);
         }
@@ -574,7 +532,7 @@ public class EpisodicMemory {
                 ORDER BY bm25(session_transcript_entries_fts), e.created_at DESC
                 LIMIT ?
                 """,
-                (rs, rowNum) -> rs.getString("session_id"),
+                (rs, rowNum) -> requiredCleanText(rs.getString("session_id"), "情景记忆搜索命中 session_id"),
                 normalizedQuery,
                 excludeSessionId,
                 candidateLimit);
@@ -609,19 +567,20 @@ public class EpisodicMemory {
             args.add(MemoryQuerySignals.likePattern(term));
         }
         args.add(candidateLimit);
-        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("session_id"), args.toArray());
+        return jdbcTemplate.query(sql,
+                (rs, rowNum) -> requiredCleanText(rs.getString("session_id"), "情景记忆搜索命中 session_id"),
+                args.toArray());
     }
 
-    @Nullable
     private ConversationSnippetRecord buildSnippet(RecallHitRow hit,
                                                    int hitRank,
                                                    List<TimelineMessage> timeline) {
         if (timeline.isEmpty()) {
-            return null;
+            throw new IllegalStateException("情景记忆召回命中缺少时间线: sessionId=" + hit.sessionId());
         }
         List<List<TimelineMessage>> turns = groupTurnsForRecall(timeline);
         if (turns.isEmpty()) {
-            return null;
+            throw new IllegalStateException("情景记忆召回时间线无法分组: sessionId=" + hit.sessionId());
         }
 
         int matchedTurnIndex = -1;
@@ -632,7 +591,7 @@ public class EpisodicMemory {
             }
         }
         if (matchedTurnIndex < 0) {
-            return null;
+            throw new IllegalStateException("情景记忆召回命中不在时间线中: entryId=" + hit.entryId());
         }
 
         int startTurn = Math.max(0, matchedTurnIndex - RECALL_CONTEXT_TURNS);
@@ -644,7 +603,7 @@ public class EpisodicMemory {
             }
         }
         if (snippetMessages.isEmpty()) {
-            return null;
+            throw new IllegalStateException("情景记忆召回片段为空: entryId=" + hit.entryId());
         }
 
         return new ConversationSnippetRecord(
@@ -700,7 +659,130 @@ public class EpisodicMemory {
     }
 
     private boolean isUserRole(@Nullable String role) {
-        return role != null && "user".equalsIgnoreCase(role.trim());
+        return "user".equals(role);
+    }
+
+    private void validateConversationRecordForSave(@Nullable ConversationRecord record) {
+        if (record == null) {
+            throw new IllegalArgumentException("情景记忆记录不能为空");
+        }
+        requiredArgumentCleanText(record.id(), "情景记忆记录 ID");
+        requiredArgumentCleanText(record.sessionId(), "情景记忆会话 ID");
+        requiredArgumentText(record.goal(), "情景记忆目标");
+        Objects.requireNonNull(record.messages(), "情景记忆消息列表不能为空");
+        Objects.requireNonNull(record.createdAt(), "情景记忆 createdAt 不能为空");
+        Objects.requireNonNull(record.updatedAt(), "情景记忆 updatedAt 不能为空");
+        for (MessageRecord message : record.messages()) {
+            validateMessageForSave(message, record.sessionId());
+        }
+    }
+
+    private void validateMessageForSave(@Nullable MessageRecord message, String sessionId) {
+        if (message == null) {
+            throw new IllegalArgumentException("情景记忆消息不能为空");
+        }
+        requiredArgumentCleanText(message.id(), "情景记忆消息 ID");
+        String messageConversationId = requiredArgumentCleanText(message.conversationId(), "情景记忆消息会话 ID");
+        if (!messageConversationId.equals(sessionId)) {
+            throw new IllegalArgumentException("情景记忆消息会话 ID 与记录会话 ID 不一致: messageId=" + message.id());
+        }
+        requireUserOrAssistantRoleForSave(message.role());
+        requiredArgumentText(message.content(), "情景记忆消息内容");
+        Objects.requireNonNull(message.compressionLevel(), "情景记忆消息 compressionLevel 不能为空");
+        Objects.requireNonNull(message.createdAt(), "情景记忆消息 createdAt 不能为空");
+        tokenEstimate(message);
+    }
+
+    private SessionRow mapSessionRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new SessionRow(
+                requiredCleanText(rs.getString("id"), "情景记忆会话 ID"),
+                normalizeBlank(rs.getString("title")),
+                normalizeBlank(rs.getString("summary")),
+                parseRequiredInstant(rs.getString("created_at"), "情景记忆会话.created_at"),
+                parseRequiredInstant(rs.getString("updated_at"), "情景记忆会话.updated_at"));
+    }
+
+    private TimelineMessage mapTimelineMessage(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new TimelineMessage(
+                requiredCleanText(rs.getString("id"), "情景记忆时间线消息 ID"),
+                requiredCleanText(rs.getString("session_id"), "情景记忆时间线会话 ID"),
+                requireUserOrAssistantRole(rs.getString("role")),
+                requiredText(rs, "content", "情景记忆时间线内容"),
+                parseRequiredInstant(rs.getString("created_at"), "情景记忆时间线.created_at"));
+    }
+
+    private RecallHitRow mapRecallHitRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new RecallHitRow(
+                requiredCleanText(rs.getString("entry_id"), "情景记忆召回命中 entry_id"),
+                requiredCleanText(rs.getString("session_id"), "情景记忆召回命中 session_id"),
+                normalizeBlank(rs.getString("session_title")),
+                normalizeBlank(rs.getString("session_summary")),
+                parseRequiredInstant(rs.getString("created_at"), "情景记忆召回命中.created_at"));
+    }
+
+    private String requiredText(java.sql.ResultSet rs, String column, String field) throws java.sql.SQLException {
+        return requiredText(rs.getString(column), field);
+    }
+
+    private String requiredText(@Nullable String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(field + "不能为空");
+        }
+        return value;
+    }
+
+    private String requiredCleanText(@Nullable String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(field + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalStateException(field + "不能包含首尾空白: " + value);
+        }
+        return value;
+    }
+
+    private String requireUserOrAssistantRole(@Nullable String role) {
+        String value = requiredCleanText(role, "情景记忆消息角色");
+        if (!value.equals("user") && !value.equals("assistant")) {
+            throw new IllegalStateException("情景记忆消息角色非法: " + value);
+        }
+        return value;
+    }
+
+    private String requireUserOrAssistantRoleForSave(@Nullable String role) {
+        String value = requiredArgumentCleanText(role, "情景记忆消息角色");
+        if (!value.equals("user") && !value.equals("assistant")) {
+            throw new IllegalArgumentException("情景记忆消息角色非法: " + value);
+        }
+        return value;
+    }
+
+    private String requiredArgumentText(@Nullable String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + "不能为空");
+        }
+        return value;
+    }
+
+    private String requiredArgumentCleanText(@Nullable String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + "不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(field + "不能包含首尾空白: " + value);
+        }
+        return value;
+    }
+
+    private Instant parseRequiredInstant(@Nullable String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(field + "不能为空");
+        }
+        try {
+            return Instant.parse(value);
+        } catch (Exception e) {
+            throw new IllegalStateException(field + "解析失败: " + value, e);
+        }
     }
 
     private int estimateTokenCount(@Nullable String content) {
@@ -712,7 +794,7 @@ public class EpisodicMemory {
 
     @Nullable
     private String normalizeBlank(@Nullable String value) {
-        return value == null || value.isBlank() ? null : value;
+        return value == null || value.isBlank() ? null : value.strip();
     }
 
     private record SessionRow(

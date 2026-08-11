@@ -58,8 +58,18 @@ public record AgentCheckpoint(
                     .goal(request.message())
                     .source(request.source())
                     .parentTraceId(sourceTraceId)
-                    .preferredProvider(request.preferredProvider())
-                    .allowedToolIds(request.allowedToolIds())
+                    .turnRecoveryContext(request.turnRecoveryContext() != null
+                            ? request.turnRecoveryContext()
+                            : restored.turnRecoveryContext())
+                    .preferredProvider(request.preferredProvider() != null
+                            ? request.preferredProvider()
+                            : restored.preferredProvider())
+                    .allowedToolIds(request.allowedToolIds() != null
+                            ? request.allowedToolIds()
+                            : restored.allowedToolIds())
+                    .disabledToolIds(request.disabledToolIds() != null
+                            ? request.disabledToolIds()
+                            : restored.disabledToolIds())
                     .done(false)
                     .finalOutput(null)
                     .terminationReason(null)

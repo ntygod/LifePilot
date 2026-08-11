@@ -43,9 +43,9 @@ memory(action="search", query="...")  +  memory(action="recall", query="...")
 典型场景："调研 X 然后写一份报告 / 读这份数据然后画图"。
 
 ```
-skill_load(names=["research-assistant", "content-creator"])
+skill.load(names=["research-assistant", "content-creator"])
    ↓ 按依赖串行
-research-assistant 出材料 → content-creator 写 → file_write 落盘
+research-assistant 出材料 → content-creator 写 → file.write 落盘
 ```
 
 中途任意子步骤报错 → 停下问用户怎么处理，不要假装继续。
@@ -57,10 +57,10 @@ research-assistant 出材料 → content-creator 写 → file_write 落盘
 
 ```
 memory(action="search", query="本周完成事项")  取记忆里的成就 / 项目进度
-file_read  读用户笔记 / 项目文档（路径靠用户给或先 file_read 探）
-按需 web_search 补外部背景（团队动态 / 行业事件）
+file.read  读用户笔记 / 项目文档（路径靠用户给或先 file.read 探）
+按需 web.search 补外部背景（团队动态 / 行业事件）
    ↓ 整合
-file_write(path="<reports/...>")  落盘并把路径告诉用户
+file.write(path="<reports/...>")  落盘并把路径告诉用户
 ```
 
 ## 常见错误处理

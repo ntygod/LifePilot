@@ -2,7 +2,6 @@ package com.lifepilot.agent.learning.consolidation;
 
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.llm.LlmResponse;
-import com.lifepilot.llm.LlmUnavailableException;
 import com.lifepilot.embedding.router.EmbeddingRouter;
 import com.lifepilot.embedding.router.EmbeddingUseCase;
 import com.lifepilot.generation.router.GenerationRouter;
@@ -16,7 +15,6 @@ import com.lifepilot.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.lang.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -37,7 +35,7 @@ import java.util.stream.Collectors;
  *   <li>记录巩固日志到 memory_consolidation_log</li>
  * </ol>
  *
- * <p>LLM 不可用时跳过模板提炼，返回 0 个新模板。</p>
+ * <p>生成与向量依赖为核心依赖，装配失败应在构造期暴露；运行期失败由巩固管线做阶段隔离。</p>
  *
  * @author zsg
  * @since 2026-03-01
@@ -51,9 +49,7 @@ public class EpisodicToProceduralConsolidator {
 
     private final JdbcTemplate jdbcTemplate;
     private final ProceduralMemory proceduralMemory;
-    @Nullable
     private final GenerationRouter generationRouter;
-    @Nullable
     private final EmbeddingRouter embeddingRouter;
     private final AgentLearningProperties properties;
     private final PromptRegistry promptRegistry;
@@ -69,16 +65,16 @@ public class EpisodicToProceduralConsolidator {
      */
     public EpisodicToProceduralConsolidator(JdbcTemplate jdbcTemplate,
                                             ProceduralMemory proceduralMemory,
-                                            @Nullable GenerationRouter generationRouter,
-                                            @Nullable EmbeddingRouter embeddingRouter,
+                                            GenerationRouter generationRouter,
+                                            EmbeddingRouter embeddingRouter,
                                             AgentLearningProperties properties,
                                             PromptRegistry promptRegistry) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.proceduralMemory = proceduralMemory;
-        this.generationRouter = generationRouter;
-        this.embeddingRouter = embeddingRouter;
-        this.properties = properties;
-        this.promptRegistry = promptRegistry;
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate 不能为空");
+        this.proceduralMemory = Objects.requireNonNull(proceduralMemory, "proceduralMemory 不能为空");
+        this.generationRouter = Objects.requireNonNull(generationRouter, "generationRouter 不能为空");
+        this.embeddingRouter = Objects.requireNonNull(embeddingRouter, "embeddingRouter 不能为空");
+        this.properties = Objects.requireNonNull(properties, "properties 不能为空");
+        this.promptRegistry = Objects.requireNonNull(promptRegistry, "promptRegistry 不能为空");
         log.info("EpisodicToProceduralConsolidator 初始化完成");
     }
 
@@ -91,10 +87,6 @@ public class EpisodicToProceduralConsolidator {
         // 操作模板聚类开关（可通过配置关闭以节省 LLM 成本）
         if (!properties.getConsolidation().isProceduralTemplateEnabled()) {
             log.debug("程序巩固: 操作模板聚类已关闭，跳过");
-            return new ConsolidationStats(CONSOLIDATION_TYPE, 0, 0, 0, 0, 0, 0, 0);
-        }
-        if (generationRouter == null || embeddingRouter == null) {
-            log.warn("程序巩固: GenerationRouter 或 EmbeddingRouter 不可用，跳过");
             return new ConsolidationStats(CONSOLIDATION_TYPE, 0, 0, 0, 0, 0, 0, 0);
         }
         long startMs = System.currentTimeMillis();
@@ -136,43 +128,32 @@ public class EpisodicToProceduralConsolidator {
         // 4. 向量化 + 聚类 + 模板提炼（需要 LLM）
         int templatesCreated = 0;
         int templatesUpdated = 0;
-        try {
-            // 4a. 向量化工具调用序列
-            var embeddings = embedTraceSequences(traceSequences);
+        // 4a. 向量化工具调用序列
+        var embeddings = embedTraceSequences(traceSequences);
 
-            // 4b. 余弦相似度贪心聚类
-            var clusters = clusterByCosineSimilarity(embeddings, config.getClusterSimilarityThreshold());
+        // 4b. 余弦相似度贪心聚类
+        var clusters = clusterByCosineSimilarity(embeddings, config.getClusterSimilarityThreshold());
 
-            // 4c. 过滤满足最小聚类大小的聚类
-            var eligibleClusters = clusters.stream()
-                    .filter(c -> c.size() >= config.getMinClusterSize())
-                    .toList();
+        // 4c. 过滤满足最小聚类大小的聚类
+        var eligibleClusters = clusters.stream()
+                .filter(c -> c.size() >= config.getMinClusterSize())
+                .toList();
 
-            log.info("程序巩固: 聚类完成, 总聚类={}, 符合条件聚类={}", clusters.size(), eligibleClusters.size());
+        log.info("程序巩固: 聚类完成, 总聚类={}, 符合条件聚类={}", clusters.size(), eligibleClusters.size());
 
-            // 4d. 对每个符合条件的聚类提炼模板（限制最大数量）
-            for (var cluster : eligibleClusters) {
-                if (templatesCreated >= config.getMaxTemplatesPerRun()) {
-                    log.info("程序巩固: 已达单次最大模板数限制, max={}", config.getMaxTemplatesPerRun());
-                    break;
-                }
-
-                try {
-                    var result = extractAndSaveTemplate(cluster, traceSequences);
-                    if (result == TemplateResult.CREATED) {
-                        templatesCreated++;
-                    } else if (result == TemplateResult.UPDATED) {
-                        templatesUpdated++;
-                    }
-                } catch (LlmUnavailableException e) {
-                    log.warn("程序巩固: LLM 不可用, 跳过剩余模板提炼, error={}", e.getMessage());
-                    break;
-                } catch (Exception e) {
-                    log.warn("程序巩固: 模板提炼失败, clusterSize={}, error={}", cluster.size(), e.getMessage());
-                }
+        // 4d. 对每个符合条件的聚类提炼模板（限制最大数量）
+        for (var cluster : eligibleClusters) {
+            if (templatesCreated >= config.getMaxTemplatesPerRun()) {
+                log.info("程序巩固: 已达单次最大模板数限制, max={}", config.getMaxTemplatesPerRun());
+                break;
             }
-        } catch (LlmUnavailableException e) {
-            log.warn("程序巩固: LLM 不可用, 跳过模板提炼, error={}", e.getMessage());
+
+            var result = extractAndSaveTemplate(cluster, traceSequences);
+            if (result == TemplateResult.CREATED) {
+                templatesCreated++;
+            } else if (result == TemplateResult.UPDATED) {
+                templatesUpdated++;
+            }
         }
 
         // 5. 记录巩固日志
@@ -309,42 +290,43 @@ public class EpisodicToProceduralConsolidator {
         // LLM 提炼模板
         String prompt = promptRegistry.render("memory/procedural-extraction",
                 Map.of("combinedSequences", combinedSequences));
+        if (prompt == null || prompt.isBlank()) {
+            throw new IllegalStateException("程序巩固 Prompt 渲染为空");
+        }
 
         log.debug("程序巩固: 发起 JSON 模板提炼调用, promptChars={}, clusterSize={}",
                 prompt.length(), cluster.size());
-        LlmResponse response = generationRouter.call(
+        LlmResponse response = Objects.requireNonNull(generationRouter.call(
                 LlmScene.KNOWLEDGE_EXTRACTION,
                 prompt,
                 null,
                 null,
                 null,
                 GenerationCapability.CHAT,
-                null);
-        var extraction = JsonOutputParser.parse(response.content(), TemplateExtraction.class);
-
-        if (extraction == null || extraction.name() == null || extraction.name().isBlank()) {
-            log.warn("程序巩固: LLM 返回空模板, clusterSize={}", cluster.size());
+                null), "程序巩固 LLM 响应不能为空");
+        if (response.content() == null || response.content().isBlank()) {
+            throw new IllegalStateException("程序巩固 LLM 响应内容不能为空");
+        }
+        var extraction = Objects.requireNonNull(
+                JsonOutputParser.parse(response.content(), TemplateExtraction.class),
+                "程序巩固 LLM JSON 不能为空");
+        Boolean createTemplate = requireCreateTemplateDecision(extraction);
+        if (!createTemplate) {
+            requireRejectedTemplateShape(extraction);
+            log.debug("程序巩固: LLM 判定聚类不足以形成稳定模板, clusterSize={}", cluster.size());
             return TemplateResult.SKIPPED;
         }
 
+        var name = requireCanonicalText("name", extraction.name());
+        var description = requireCanonicalText("description", extraction.description());
+        var triggerIntent = requireCanonicalText("triggerIntent", extraction.triggerIntent());
+        var steps = requireSteps(extraction.steps());
+
         // 去重检查：triggerIntent 向量相似度 ≥ 0.9 视为同一模板
-        if (isDuplicateTemplate(extraction.triggerIntent())) {
-            log.debug("程序巩固: 模板已存在（去重命中）, name={}", extraction.name());
+        if (isDuplicateTemplate(triggerIntent)) {
+            log.debug("程序巩固: 模板已存在（去重命中）, name={}", name);
             return TemplateResult.UPDATED;
         }
-
-        // 构建并保存新模板
-        var steps = extraction.steps() != null
-                ? extraction.steps().stream()
-                    .map(s -> new TemplateStep(
-                            extraction.steps().indexOf(s) + 1,
-                            s.toolId() != null ? s.toolId() : "",
-                            s.action() != null ? s.action() : "",
-                            s.parameterTemplate() != null ? s.parameterTemplate() : Map.of(),
-                            s.description() != null ? s.description() : "",
-                            false))
-                    .toList()
-                : List.<TemplateStep>of();
 
         var sourceTraceIds = cluster.stream().map(TraceInfo::traceId).toList();
         Instant now = Instant.now();
@@ -359,9 +341,9 @@ public class EpisodicToProceduralConsolidator {
 
         var template = new ProcedureTemplate(
                 UUID.randomUUID().toString(),
-                extraction.name(),
-                extraction.description() != null ? extraction.description() : "",
-                extraction.triggerIntent() != null ? extraction.triggerIntent() : extraction.name(),
+                name,
+                description,
+                triggerIntent,
                 steps,
                 Map.of(),
                 initialSuccessRate,
@@ -387,34 +369,25 @@ public class EpisodicToProceduralConsolidator {
      * @return 如果已存在相似模板返回 true
      */
     private boolean isDuplicateTemplate(String triggerIntent) {
-        if (triggerIntent == null || triggerIntent.isBlank()) {
-            return false;
-        }
-        try {
-            float[] newVector = embeddingRouter.embed(triggerIntent, EmbeddingUseCase.MEMORY, null, null);
+        triggerIntent = requireCanonicalText("triggerIntent", triggerIntent);
+        float[] newVector = embeddingRouter.embed(triggerIntent, EmbeddingUseCase.MEMORY, null, null);
+        requireEmbeddingVector("新模板触发意图向量", newVector);
 
-            // 查询所有已有模板的 triggerIntent
-            var existingTemplates = jdbcTemplate.query(
-                    "SELECT template_id, trigger_intent FROM procedure_templates",
-                    (rs, rowNum) -> new String[]{rs.getString("template_id"), rs.getString("trigger_intent")});
+        // 查询所有已有模板的 triggerIntent
+        var existingTemplates = jdbcTemplate.query(
+                "SELECT template_id, trigger_intent FROM procedure_templates",
+                (rs, rowNum) -> new String[]{rs.getString("template_id"), rs.getString("trigger_intent")});
 
-            for (var existing : existingTemplates) {
-                try {
-                    float[] existingVector = embeddingRouter.embed(existing[1], EmbeddingUseCase.MEMORY, null, null);
-                    float similarity = cosineSimilarity(newVector, existingVector);
-                    if (similarity >= DEDUP_SIMILARITY_THRESHOLD) {
-                        log.debug("程序巩固: 去重命中, existingId={}, similarity={}", existing[0], similarity);
-                        return true;
-                    }
-                } catch (LlmUnavailableException e) {
-                    // LLM 不可用时无法去重，保守跳过
-                    log.warn("程序巩固: 去重时 LLM 不可用, 跳过去重检查");
-                    return false;
-                }
+        for (var existing : existingTemplates) {
+            var existingId = requireCanonicalText("existing.template_id", existing[0]);
+            var existingTriggerIntent = requireCanonicalText("existing.trigger_intent", existing[1]);
+            float[] existingVector = embeddingRouter.embed(existingTriggerIntent, EmbeddingUseCase.MEMORY, null, null);
+            requireEmbeddingVector("已有模板触发意图向量:" + existingId, existingVector);
+            float similarity = cosineSimilarity(newVector, existingVector);
+            if (similarity >= DEDUP_SIMILARITY_THRESHOLD) {
+                log.debug("程序巩固: 去重命中, existingId={}, similarity={}", existingId, similarity);
+                return true;
             }
-        } catch (LlmUnavailableException e) {
-            log.warn("程序巩固: 去重时 LLM 不可用, 跳过去重检查");
-            return false;
         }
         return false;
     }
@@ -433,19 +406,14 @@ public class EpisodicToProceduralConsolidator {
         if (results.isEmpty()) {
             return Optional.empty();
         }
-        try {
-            return Optional.of(Instant.parse(results.getFirst()));
-        } catch (Exception e) {
-            log.warn("程序巩固: 解析上次巩固时间失败, raw={}", results.getFirst());
-            return Optional.empty();
-        }
+        return Optional.of(Instant.parse(results.getFirst()));
     }
 
     /**
      * 记录巩固日志到 memory_consolidation_log 表。
      */
     private void logConsolidation(ConsolidationStats stats) {
-        jdbcTemplate.update(
+        int inserted = jdbcTemplate.update(
                 "INSERT INTO memory_consolidation_log (id, consolidation_type, conversations_analyzed, entities_found, entities_boosted, extractions_triggered, templates_created, templates_updated, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID().toString(),
                 stats.consolidationType(),
@@ -457,13 +425,20 @@ public class EpisodicToProceduralConsolidator {
                 stats.templatesUpdated(),
                 stats.elapsedMs(),
                 Instant.now().toString());
+        if (inserted != 1) {
+            throw new IllegalStateException("程序巩固日志写入失败, inserted=" + inserted);
+        }
     }
 
     /**
      * 计算两个向量的余弦相似度。
      */
     private float cosineSimilarity(float[] a, float[] b) {
-        if (a.length != b.length) return 0.0f;
+        requireEmbeddingVector("向量A", a);
+        requireEmbeddingVector("向量B", b);
+        if (a.length != b.length) {
+            throw new IllegalStateException("程序巩固: 向量维度不一致, left=" + a.length + ", right=" + b.length);
+        }
         float dotProduct = 0.0f, normA = 0.0f, normB = 0.0f;
         for (int i = 0; i < a.length; i++) {
             dotProduct += a[i] * b[i];
@@ -471,7 +446,94 @@ public class EpisodicToProceduralConsolidator {
             normB += b[i] * b[i];
         }
         float denominator = (float) (Math.sqrt(normA) * Math.sqrt(normB));
-        return denominator == 0.0f ? 0.0f : dotProduct / denominator;
+        if (denominator == 0.0f) {
+            throw new IllegalStateException("程序巩固: 向量范数不能为 0");
+        }
+        return dotProduct / denominator;
+    }
+
+    private static Boolean requireCreateTemplateDecision(TemplateExtraction extraction) {
+        if (extraction.createTemplate() == null) {
+            throw new IllegalStateException("程序巩固 LLM 响应缺少 createTemplate 字段");
+        }
+        return extraction.createTemplate();
+    }
+
+    private static void requireRejectedTemplateShape(TemplateExtraction extraction) {
+        if (extraction.name() != null
+                || extraction.description() != null
+                || extraction.triggerIntent() != null) {
+            throw new IllegalStateException("程序巩固 LLM 拒绝模板时模板字段必须为 null");
+        }
+        if (extraction.steps() == null) {
+            throw new IllegalStateException("程序巩固 LLM 响应缺少 steps 字段");
+        }
+        if (!extraction.steps().isEmpty()) {
+            throw new IllegalStateException("程序巩固 LLM 拒绝模板时 steps 必须为空数组");
+        }
+    }
+
+    private static String requireCanonicalText(String fieldName, String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("程序巩固 LLM 响应缺少 " + fieldName + " 字段");
+        }
+        if (!value.equals(value.strip())) {
+            throw new IllegalStateException("程序巩固 LLM 响应字段存在首尾空白: " + fieldName);
+        }
+        return value;
+    }
+
+    private static List<TemplateStep> requireSteps(List<StepExtraction> extractedSteps) {
+        if (extractedSteps == null) {
+            throw new IllegalStateException("程序巩固 LLM 响应缺少 steps 字段");
+        }
+        if (extractedSteps.isEmpty()) {
+            throw new IllegalStateException("程序巩固 LLM 响应 steps 不能为空");
+        }
+        var steps = new ArrayList<TemplateStep>(extractedSteps.size());
+        for (int i = 0; i < extractedSteps.size(); i++) {
+            var step = Objects.requireNonNull(
+                    extractedSteps.get(i),
+                    "程序巩固 LLM 响应 steps[" + i + "] 不能为空");
+            var parameterTemplate = requireParameterTemplate(i, step.parameterTemplate());
+            steps.add(new TemplateStep(
+                    i + 1,
+                    requireCanonicalText("steps[" + i + "].toolId", step.toolId()),
+                    requireCanonicalText("steps[" + i + "].action", step.action()),
+                    parameterTemplate,
+                    requireCanonicalText("steps[" + i + "].description", step.description()),
+                    false));
+        }
+        return List.copyOf(steps);
+    }
+
+    private static Map<String, String> requireParameterTemplate(
+            int stepIndex,
+            Map<String, String> parameterTemplate) {
+        if (parameterTemplate == null) {
+            throw new IllegalStateException(
+                    "程序巩固 LLM 响应缺少 steps[" + stepIndex + "].parameterTemplate 字段");
+        }
+        var normalized = new LinkedHashMap<String, String>();
+        for (var entry : parameterTemplate.entrySet()) {
+            var key = requireCanonicalText(
+                    "steps[" + stepIndex + "].parameterTemplate.key", entry.getKey());
+            var value = requireCanonicalText(
+                    "steps[" + stepIndex + "].parameterTemplate." + key, entry.getValue());
+            normalized.put(key, value);
+        }
+        return Map.copyOf(normalized);
+    }
+
+    private static void requireEmbeddingVector(String label, float[] vector) {
+        if (vector == null || vector.length == 0) {
+            throw new IllegalStateException("程序巩固: " + label + "不能为空");
+        }
+        for (float value : vector) {
+            if (!Float.isFinite(value)) {
+                throw new IllegalStateException("程序巩固: " + label + "包含非法数值");
+            }
+        }
     }
 
     // ========== 内部 record ==========
@@ -481,6 +543,7 @@ public class EpisodicToProceduralConsolidator {
 
     /** LLM 模板提炼结果。 */
     private record TemplateExtraction(
+            Boolean createTemplate,
             String name,
             String description,
             String triggerIntent,

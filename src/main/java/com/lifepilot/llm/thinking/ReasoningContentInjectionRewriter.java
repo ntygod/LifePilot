@@ -184,7 +184,7 @@ public final class ReasoningContentInjectionRewriter extends AbstractJsonBodyRew
                 mutated = true;
             }
         }
-        log.info("reasoning rewriter 命中: mode={}, totalMessages={}, assistantTotal={}, "
+        log.debug("reasoning rewriter 命中: mode={}, totalMessages={}, assistantTotal={}, "
                         + "assistantWithToolCalls={}, assistantWithMarker={}, "
                         + "assistantWithReasoningField={}, mutated={}",
                 injectField ? "FULL_INJECTION" : "CLEANUP_ONLY",
@@ -194,7 +194,7 @@ public final class ReasoningContentInjectionRewriter extends AbstractJsonBodyRew
 
         // 关键诊断：dump 改写后所有 assistant 消息的结构，定位"rewriter 命中但 DeepSeek
         // 仍 400"问题（哪条 assistant 缺 reasoning_content / 字段值不对等）
-        if (injectField && log.isInfoEnabled()) {
+        if (injectField && log.isDebugEnabled()) {
             int idx = 0;
             for (JsonNode msg : (ArrayNode) messages) {
                 if (!msg.isObject()) { idx++; continue; }
@@ -212,7 +212,7 @@ public final class ReasoningContentInjectionRewriter extends AbstractJsonBodyRew
                                 ? "len=" + reasoningNode.asText().length()
                                   + (reasoningNode.asText().isEmpty() ? " (EMPTY)" : "")
                                 : "<NOT_STRING:" + reasoningNode.getNodeType() + ">");
-                log.info("  assistant[{}]: toolCalls={}, contentLen={}, reasoning_content={}",
+                log.debug("  assistant[{}]: toolCalls={}, contentLen={}, reasoning_content={}",
                         idx, toolCallsCount, contentLen, reasoningPreview);
                 idx++;
             }

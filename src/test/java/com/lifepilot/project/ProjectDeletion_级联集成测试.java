@@ -60,6 +60,7 @@ class ProjectDeletion_级联集成测试 {
     private MemorySpaceRepository memorySpaceRepository;
     private ProjectRepository projectRepository;
     private MemoryProjectionService projectionService;
+    private KnowledgeBaseManager knowledgeBaseManager;
 
     @BeforeEach
     void setUp() {
@@ -74,9 +75,18 @@ class ProjectDeletion_级联集成测试 {
         projectRepository = new ProjectRepository(jdbcTemplate);
         sessionStoreRepository = new SessionStoreRepository(jdbcTemplate, new ObjectMapper(), null);
         projectionService = mock(MemoryProjectionService.class);
-        // KnowledgeBaseManager = null：本测试集中于删除级联，不覆盖 KB 自动创建路径
+        knowledgeBaseManager = mock(KnowledgeBaseManager.class);
+        when(knowledgeBaseManager.getKnowledgeBase(anyString())).thenAnswer(invocation -> {
+            String kbId = invocation.getArgument(0);
+            Instant now = Instant.now();
+            KnowledgeBase kb = new KnowledgeBase(
+                    kbId, kbId + " · 项目知识库", "自动建的默认 KB",
+                    null, null, "smart", Map.of(), 0, 0,
+                    List.of("project"), now, now);
+            return Optional.of(kb);
+        });
         service = new ProjectService(projectRepository, memorySpaceRepository,
-                sessionStoreRepository, jdbcTemplate, null, projectionService);
+                sessionStoreRepository, jdbcTemplate, knowledgeBaseManager, projectionService);
     }
 
     @AfterEach
@@ -536,9 +546,9 @@ class ProjectDeletion_级联集成测试 {
     }
 
     @Test
-    void 删除项目_KB本体缺失时_Step0跳过_主流程继续() {
+    void 删除项目_KB本体缺失时_抛错且不继续级联() {
         // 边界场景：memory_space_knowledge_bases 里有绑定但 getKnowledgeBase 返回 empty
-        // （KB 本体已被别的路径先删了），Step 0 不抛 NPE，主流程继续到底。
+        // （KB 本体已被别的路径先删了），这是持久化契约损坏，必须暴露。
         KnowledgeBaseManager kbManager = mock(KnowledgeBaseManager.class);
         ProjectService serviceWithKb = new ProjectService(
                 projectRepository, memorySpaceRepository, sessionStoreRepository,
@@ -554,10 +564,12 @@ class ProjectDeletion_级联集成测试 {
 
         when(kbManager.getKnowledgeBase("kb-gone")).thenReturn(Optional.empty());
 
-        serviceWithKb.deleteProject(project.id());
+        assertThatThrownBy(() -> serviceWithKb.deleteProject(project.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("项目绑定的知识库不存在: kb-gone");
 
         verify(kbManager, never()).deleteKnowledgeBase(anyString());
-        assertThat(数行("SELECT COUNT(*) FROM projects WHERE id = ?", project.id())).isZero();
-        assertThat(数行("SELECT COUNT(*) FROM memory_spaces WHERE id = ?", spaceId)).isZero();
+        assertThat(数行("SELECT COUNT(*) FROM projects WHERE id = ?", project.id())).isEqualTo(1);
+        assertThat(数行("SELECT COUNT(*) FROM memory_spaces WHERE id = ?", spaceId)).isEqualTo(1);
     }
 }

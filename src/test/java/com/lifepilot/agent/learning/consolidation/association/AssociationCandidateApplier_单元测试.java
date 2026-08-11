@@ -3,6 +3,7 @@ package com.lifepilot.agent.learning.consolidation.association;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
 import com.lifepilot.memory.semantic.TemporalRelation;
 import com.lifepilot.memory.store.entity.SemanticMemory;
+import com.lifepilot.memory.store.scope.MemoryWriteContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,7 +14,9 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -55,7 +58,7 @@ class AssociationCandidateApplier_单元测试 {
         var result = applier.apply(today);
 
         assertThat(result.applied()).isEqualTo(1);
-        verify(semanticMemory, times(1)).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, times(1)).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test
@@ -69,7 +72,7 @@ class AssociationCandidateApplier_单元测试 {
 
         assertThat(result.applied()).isZero();
         assertThat(result.skippedLowConfidence()).isEqualTo(1);
-        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test
@@ -84,7 +87,7 @@ class AssociationCandidateApplier_单元测试 {
 
         assertThat(result.applied()).isZero();
         assertThat(result.skippedMissingEntity()).isEqualTo(1);
-        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test
@@ -99,7 +102,7 @@ class AssociationCandidateApplier_单元测试 {
 
         assertThat(result.applied()).isZero();
         assertThat(result.skippedDuplicate()).isEqualTo(1);
-        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class));
+        verify(semanticMemory, never()).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
     }
 
     @Test
@@ -111,5 +114,19 @@ class AssociationCandidateApplier_单元测试 {
 
         assertThat(result.input()).isZero();
         assertThat(result.applied()).isZero();
+    }
+
+    @Test
+    void 主库关系写入失败应直接暴露(@TempDir Path tempDir) {
+        var store = new AssociationCandidateStore(tempDir);
+        var today = LocalDate.now();
+        store.save(today, List.of(candidate("e1", "e2", 0.9f)));
+        doThrow(new IllegalStateException("主库写入失败"))
+                .when(semanticMemory).addRelation(any(TemporalRelation.class), any(MemoryWriteContext.class));
+        var applier = new AssociationCandidateApplier(props, store, semanticMemory);
+
+        assertThatThrownBy(() -> applier.apply(today))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("主库写入失败");
     }
 }

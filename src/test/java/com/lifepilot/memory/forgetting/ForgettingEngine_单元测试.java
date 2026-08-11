@@ -5,7 +5,11 @@ import com.lifepilot.generation.router.GenerationRouter;
 import com.lifepilot.llm.LlmResponse;
 import com.lifepilot.llm.LlmScene;
 import com.lifepilot.agent.learning.config.AgentLearningProperties;
+import com.lifepilot.memory.consumption.quality.MemoryEvidenceKind;
+import com.lifepilot.memory.consumption.quality.MemoryTrustLevel;
 import com.lifepilot.memory.governance.lifecycle.ChangeSource;
+import com.lifepilot.memory.governance.lifecycle.LifecycleState;
+import com.lifepilot.memory.governance.lifecycle.Temporality;
 import com.lifepilot.memory.store.entity.EntityType;
 import com.lifepilot.memory.store.entity.SemanticMemory;
 import com.lifepilot.memory.store.entity.TemporalEntity;
@@ -257,7 +261,7 @@ class ForgettingEngine_单元测试 {
     }
 
     @Test
-    void LLM调用失败时_降级为归档() {
+    void LLM调用失败时_暴露异常且不归档() {
         var entity = 创建实体("mid-fail-1", EntityType.TOPIC, 0.5f, 0,
                 null, Instant.now().minus(400, ChronoUnit.DAYS));
 
@@ -270,63 +274,53 @@ class ForgettingEngine_单元测试 {
                 eq(GenerationCapability.CHAT), isNull(),
                 eq(true)))
                 .thenThrow(new RuntimeException("LLM 调用超时"));
-        when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
 
-        int count = engine.forget();
+        var exception = assertThrows(RuntimeException.class, () -> engine.forget());
 
-        assertTrue(count > 0);
-        verify(semanticMemory, atLeastOnce()).archive(entity, ChangeSource.CRON_EXPIRE);
-        // 验证日志中 action 为 ARCHIVED，compression_summary 为 null
-        verify(jdbcTemplate, atLeastOnce()).update(
+        assertEquals("LLM 调用超时", exception.getMessage());
+        verify(semanticMemory, never()).archive(entity, ChangeSource.CRON_EXPIRE);
+        verify(jdbcTemplate, never()).update(
                 contains("INSERT INTO forgetting_log"),
-                any(), eq(entity.id()), eq(entity.name()),
-                eq("Hybrid"), eq("ARCHIVED"),
-                any(), any(),
-                isNull(), // compression_summary 为 null
-                any()
-        );
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
-    void GenerationRouter为null时_不尝试压缩_直接归档() {
-        // 构造一个没有 GenerationRouter 的引擎
-        var engineWithoutLlm = new ForgettingEngine(
-                semanticMemory, null, jdbcTemplate, properties, promptRegistry);
+    void GenerationRouter为null时_构造失败() {
+        var exception = assertThrows(NullPointerException.class, () -> new ForgettingEngine(
+                semanticMemory, null, jdbcTemplate, properties, promptRegistry));
 
-        var entity = 创建实体("no-llm-1", EntityType.TOPIC, 0.5f, 0,
+        assertEquals("generationRouter 不能为空", exception.getMessage());
+    }
+
+    @Test
+    void 实体遗忘异常时_暴露异常且不写日志() {
+        var entity1 = 创建实体("fail-1", EntityType.TOPIC, 0.1f, 0,
+                null, Instant.now().minus(400, ChronoUnit.DAYS));
+
+        when(semanticMemory.findAllCurrent()).thenReturn(List.of(entity1));
+        doThrow(new RuntimeException("数据库写入失败"))
+                .when(semanticMemory).archive(entity1, ChangeSource.CRON_EXPIRE);
+
+        var exception = assertThrows(RuntimeException.class, () -> engine.forget());
+
+        assertEquals("数据库写入失败", exception.getMessage());
+        verify(jdbcTemplate, never()).update(
+                contains("INSERT INTO forgetting_log"),
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void 遗忘日志写入零行时_直接失败() {
+        var entity = 创建实体("log-fail-1", EntityType.TOPIC, 0.1f, 0,
                 null, Instant.now().minus(400, ChronoUnit.DAYS));
         when(semanticMemory.findAllCurrent()).thenReturn(List.of(entity));
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
+                .thenReturn(0);
 
-        int count = engineWithoutLlm.forget();
+        var exception = assertThrows(IllegalStateException.class, () -> engine.forget());
 
-        assertTrue(count > 0);
+        assertTrue(exception.getMessage().contains("遗忘日志写入失败"));
         verify(semanticMemory, atLeastOnce()).archive(entity, ChangeSource.CRON_EXPIRE);
-        // 不应调用 LLM
-        verifyNoInteractions(generationRouter);
-    }
-
-    @Test
-    void 单个实体遗忘异常时_不影响其他实体的遗忘() {
-        var entity1 = 创建实体("fail-1", EntityType.TOPIC, 0.1f, 0,
-                null, Instant.now().minus(400, ChronoUnit.DAYS));
-        var entity2 = 创建实体("ok-2", EntityType.TOPIC, 0.15f, 0,
-                null, Instant.now().minus(500, ChronoUnit.DAYS));
-
-        when(semanticMemory.findAllCurrent()).thenReturn(List.of(entity1, entity2));
-        // entity1 归档时抛出异常
-        doThrow(new RuntimeException("数据库写入失败"))
-                .doNothing()
-                .when(semanticMemory).archive(any(), any(ChangeSource.class));
-        when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
-
-        int count = engine.forget();
-
-        // 至少有一个成功（entity2）
-        assertTrue(count >= 1, "即使有异常，其他实体的遗忘不应受影响");
     }
 
     @Test
@@ -668,7 +662,7 @@ class ForgettingEngine_单元测试 {
 
         @Test
         void 中等重要度实体被选中() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             // importanceScore=0.5，在 [0.3, 0.8) 范围内
             var entity = 创建实体("mid-1", EntityType.TOPIC, 0.5f, 3,
                     Instant.now().minus(10, ChronoUnit.DAYS),
@@ -682,7 +676,7 @@ class ForgettingEngine_单元测试 {
 
         @Test
         void 低于最低重要度的实体不被选中() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             // importanceScore=0.2，低于 minImportance 0.3
             var entity = 创建实体("low-1", EntityType.TOPIC, 0.2f, 0,
                     null, Instant.now().minus(100, ChronoUnit.DAYS));
@@ -694,7 +688,7 @@ class ForgettingEngine_单元测试 {
 
         @Test
         void 达到最高重要度的实体不被选中() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             // importanceScore=0.8，等于 maxImportance（不含）
             var entity = 创建实体("high-1", EntityType.TOPIC, 0.8f, 5,
                     Instant.now().minus(10, ChronoUnit.DAYS),
@@ -707,7 +701,7 @@ class ForgettingEngine_单元测试 {
 
         @Test
         void 恰好等于最低重要度的实体被选中() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             // importanceScore=0.3，等于 minImportance（含）
             var entity = 创建实体("exact-min", EntityType.TOPIC, 0.3f, 0,
                     null, Instant.now().minus(100, ChronoUnit.DAYS));
@@ -718,20 +712,15 @@ class ForgettingEngine_单元测试 {
         }
 
         @Test
-        void LLM不可用时返回空列表() {
-            // generationRouter 为 null
-            var policy = new ReflectionSummaryPolicy(null, forgettingConfig);
-            var entity = 创建实体("mid-1", EntityType.TOPIC, 0.5f, 0,
-                    null, Instant.now().minus(100, ChronoUnit.DAYS));
+        void 配置缺失时构造失败() {
+            var exception = assertThrows(NullPointerException.class, () -> new ReflectionSummaryPolicy(null));
 
-            var selected = policy.selectForForgetting(List.of(entity), 10);
-
-            assertTrue(selected.isEmpty(), "LLM 不可用时应跳过 Reflection-Summary 阶段");
+            assertEquals("config 不能为空", exception.getMessage());
         }
 
         @Test
         void 按importanceScore升序排列() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             var low = 创建实体("low", EntityType.TOPIC, 0.35f, 0,
                     null, Instant.now().minus(100, ChronoUnit.DAYS));
             var mid = 创建实体("mid", EntityType.TOPIC, 0.5f, 0,
@@ -749,19 +738,19 @@ class ForgettingEngine_单元测试 {
 
         @Test
         void 空列表返回空() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             assertTrue(policy.selectForForgetting(List.of(), 10).isEmpty());
         }
 
         @Test
         void null列表返回空() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             assertTrue(policy.selectForForgetting(null, 10).isEmpty());
         }
 
         @Test
         void 预算限制() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             var e1 = 创建实体("e1", EntityType.TOPIC, 0.4f, 0,
                     null, Instant.now().minus(100, ChronoUnit.DAYS));
             var e2 = 创建实体("e2", EntityType.TOPIC, 0.5f, 0,
@@ -776,7 +765,7 @@ class ForgettingEngine_单元测试 {
 
         @Test
         void 策略名称为ReflectionSummary() {
-            var policy = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var policy = new ReflectionSummaryPolicy(forgettingConfig);
             assertEquals("ReflectionSummary", policy.name());
         }
     }
@@ -794,7 +783,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             // 创建可被 FIFO 选中的实体（超过 365 天）
@@ -823,7 +812,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             // 创建大量可遗忘实体
@@ -842,7 +831,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             var entity = 创建实体("e1", EntityType.TOPIC, 0.5f, 0,
@@ -856,7 +845,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             assertTrue(hybrid.selectForForgetting(List.of(), 10).isEmpty());
@@ -867,7 +856,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             assertTrue(hybrid.selectForForgetting(null, 10).isEmpty());
@@ -879,7 +868,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             // 同时满足 FIFO 和 LRU 条件的实体
@@ -900,7 +889,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             // 大量可被 FIFO 选中的实体
@@ -920,7 +909,7 @@ class ForgettingEngine_单元测试 {
             var fifo = new FifoPolicy(forgettingConfig);
             var lru = new LruPolicy(forgettingConfig);
             var decay = new PriorityDecayPolicy(forgettingConfig);
-            var reflection = new ReflectionSummaryPolicy(generationRouter, forgettingConfig);
+            var reflection = new ReflectionSummaryPolicy(forgettingConfig);
             var hybrid = new HybridPolicy(fifo, lru, decay, reflection);
 
             assertEquals("Hybrid", hybrid.name());
@@ -1036,8 +1025,9 @@ class ForgettingEngine_单元测试 {
                 id, type, "测试实体-" + id, "测试描述",
                 Map.of(), 1, true, createdAt, null,
                 null, 0.8f, importanceScore, accessCount, lastAccessedAt,
-                createdAt, createdAt
-        );
+                createdAt, createdAt, LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
+                null, false, List.of(), MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT,
+                1.0f, 1, createdAt);
     }
 
     private static TemporalEntity 创建实体带属性(String id, EntityType type,
@@ -1048,7 +1038,8 @@ class ForgettingEngine_单元测试 {
                 id, type, "测试实体-" + id, "测试描述",
                 properties, 1, true, createdAt, null,
                 null, 0.8f, importanceScore, accessCount, lastAccessedAt,
-                createdAt, createdAt
-        );
+                createdAt, createdAt, LifecycleState.ACTIVE, null, null, Temporality.PERSISTENT,
+                null, false, List.of(), MemoryEvidenceKind.USER_CONFIRMED, MemoryTrustLevel.EXPLICIT,
+                1.0f, 1, createdAt);
     }
 }

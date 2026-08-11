@@ -10,9 +10,8 @@ import java.util.List;
 /**
  * L4 偏好规则数据访问仓库 — 专供 {@code L4SyncListener} 使用的失活路径。
  *
- * <p>V15 为 {@code preference_rules} 表加了 {@code source_entity_id} 与 {@code deactivated_reason}
- * 两列，但并未引入 {@code is_active} 布尔列；因此本仓库用"{@code deactivated_reason IS NULL}"
- * 作为"该规则仍然有效"的判定条件，向 {@code deactivated_reason} 写入理由即表示规则失活。</p>
+ * <p>本仓库用 "{@code deactivated_reason IS NULL}" 作为"该规则仍然有效"的判定条件，
+ * 向 {@code deactivated_reason} 写入理由即表示规则失活。</p>
  *
  * <p>{@link ProceduralMemory} 的 CRUD 路径保留原样 —— 本仓库仅负责生命周期联动更新，
  * 与巩固管线写入路径互不干扰。</p>
@@ -35,7 +34,7 @@ public class PreferenceRuleRepository {
      * 将指定源实体关联的仍处于活跃状态（{@code deactivated_reason IS NULL}）的偏好规则
      * 批量失活，写入理由。
      *
-     * <p>{@code source_entity_id} 为空的旧记录不受影响（WHERE 条件已过滤）。</p>
+     * <p>{@code source_entity_id} 为空的记录不受影响（WHERE 条件已过滤）。</p>
      *
      * @param sourceEntityId 来源实体 ID
      * @param reason         失活理由（一般为 {@code LifecycleState.name()} 或 event.reason()）

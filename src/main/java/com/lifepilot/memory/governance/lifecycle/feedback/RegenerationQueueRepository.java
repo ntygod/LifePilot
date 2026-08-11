@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -30,7 +31,7 @@ public class RegenerationQueueRepository {
     private final JdbcTemplate jdbc;
 
     public RegenerationQueueRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc 不能为空");
     }
 
     /**
@@ -44,18 +45,24 @@ public class RegenerationQueueRepository {
      * @param when                  入队时间
      */
     public void enqueue(String derivedEntityId, String triggerSourceEntityId, Instant when) {
-        jdbc.update(
+        String cleanDerivedEntityId = requireCleanText(derivedEntityId, "derivedEntityId");
+        String cleanTriggerSourceEntityId = requireCleanText(triggerSourceEntityId, "triggerSourceEntityId");
+        Objects.requireNonNull(when, "when 不能为空");
+        int affected = jdbc.update(
                 """
                 INSERT INTO derivation_regeneration_queue
                     (id, derived_entity_id, trigger_source_entity_id, status, created_at)
                 VALUES (?, ?, ?, 'PENDING', ?)
                 """,
                 UUID.randomUUID().toString(),
-                derivedEntityId,
-                triggerSourceEntityId,
+                cleanDerivedEntityId,
+                cleanTriggerSourceEntityId,
                 when.toString());
+        if (affected != 1) {
+            throw new IllegalStateException("派生实体重算入队影响行数异常: affected=" + affected);
+        }
         log.debug("派生实体重算入队: derived={}, trigger={}, when={}",
-                derivedEntityId, triggerSourceEntityId, when);
+                cleanDerivedEntityId, cleanTriggerSourceEntityId, when);
     }
 
     /**
@@ -65,13 +72,17 @@ public class RegenerationQueueRepository {
      * @return PENDING 行数
      */
     public int countPendingByDerived(String derivedEntityId) {
+        String cleanDerivedEntityId = requireCleanText(derivedEntityId, "derivedEntityId");
         Integer n = jdbc.queryForObject(
                 """
                 SELECT COUNT(*) FROM derivation_regeneration_queue
                  WHERE derived_entity_id = ? AND status = 'PENDING'
                 """,
-                Integer.class, derivedEntityId);
-        return n == null ? 0 : n;
+                Integer.class, cleanDerivedEntityId);
+        if (n == null) {
+            throw new IllegalStateException("派生实体重算队列计数结果不能为空");
+        }
+        return n;
     }
 
     /**
@@ -84,6 +95,9 @@ public class RegenerationQueueRepository {
      * @return 队列项列表（按 created_at 升序）
      */
     public List<QueueItem> findPending(int limit) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit 必须大于 0");
+        }
         return jdbc.query(
                 """
                 SELECT id, derived_entity_id, trigger_source_entity_id
@@ -105,33 +119,40 @@ public class RegenerationQueueRepository {
      * @param id 队列项 id
      */
     public void markDone(String id) {
-        jdbc.update(
+        String cleanId = requireCleanText(id, "id");
+        int affected = jdbc.update(
                 """
                 UPDATE derivation_regeneration_queue
                 SET status = 'DONE', processed_at = ?
                 WHERE id = ?
                 """,
-                Instant.now().toString(), id);
+                Instant.now().toString(), cleanId);
+        if (affected != 1) {
+            throw new IllegalStateException("派生实体重算队列 markDone 未命中: id=" + cleanId);
+        }
     }
 
     /**
      * 将队列项标记为 {@code FAILED}。
      *
-     * <p>V15 表结构未保留 {@code rationale} 列，失败原因仅通过 {@code logger.warn}
-     * 打印到日志 —— 后续如需持久化可在迁移里补列。</p>
+     * <p>当前队列表不持久化失败原因，仅通过 {@code logger.warn} 打印到日志。</p>
      *
      * @param id     队列项 id
      * @param reason 失败原因（仅用于日志）
      */
     public void markFailed(String id, String reason) {
-        jdbc.update(
+        String cleanId = requireCleanText(id, "id");
+        int affected = jdbc.update(
                 """
                 UPDATE derivation_regeneration_queue
                 SET status = 'FAILED', processed_at = ?
                 WHERE id = ?
                 """,
-                Instant.now().toString(), id);
-        log.warn("派生实体重算失败: queueId={}, reason={}", id, reason);
+                Instant.now().toString(), cleanId);
+        if (affected != 1) {
+            throw new IllegalStateException("派生实体重算队列 markFailed 未命中: id=" + cleanId);
+        }
+        log.warn("派生实体重算失败: queueId={}, reason={}", cleanId, reason);
     }
 
     /**
@@ -141,5 +162,21 @@ public class RegenerationQueueRepository {
      * @param derivedEntityId       待重算的派生实体 ID
      * @param triggerSourceEntityId 触发本次重算的源实体 ID
      */
-    public record QueueItem(String id, String derivedEntityId, String triggerSourceEntityId) {}
+    public record QueueItem(String id, String derivedEntityId, String triggerSourceEntityId) {
+        public QueueItem {
+            requireCleanText(id, "队列项 id");
+            requireCleanText(derivedEntityId, "队列项 derivedEntityId");
+            requireCleanText(triggerSourceEntityId, "队列项 triggerSourceEntityId");
+        }
+    }
+
+    private static String requireCleanText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " 不能为空");
+        }
+        if (!value.equals(value.trim())) {
+            throw new IllegalArgumentException(field + " 不能包含首尾空白: " + value);
+        }
+        return value;
+    }
 }
